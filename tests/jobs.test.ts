@@ -270,21 +270,23 @@ describe("job fuzzy matching", () => {
 
     /**
      * Query: "credit-card-payment-service"
-     * Expected: credit-card-payment-service-prod first, may include credit-card-processing-service-staging (2 results max)
-     * Tests that exact/prefix match ranks first, and jobs with high token overlap may also match.
+     * Expected: Only credit-card-payment-service-prod (all tokens must match)
+     * Tests that missing tokens exclude otherwise similar services.
      */
-    test("credit-card-payment-service ranks exact match first", () => {
+    test("credit-card-payment-service requires all tokens", () => {
       const results = rankJobs("credit-card-payment-service", jobs);
       const goodMatches = results.filter((r) => r.score >= MIN_SCORE);
 
       // Exact/prefix match should rank first
       expect(results[0]?.job.name).toBe("credit-card-payment-service-prod");
       expect(results[0]?.score).toBeGreaterThanOrEqual(80);
+      expect(goodMatches.length).toBe(1);
 
-      // Should NOT match services with low token overlap
+      // Should NOT match services missing any token
       const excludedServices = [
         "payment-service-prod",
         "debit-card-payment-service-prod",
+        "credit-card-processing-service-staging",
       ];
       for (const serviceName of excludedServices) {
         const match = goodMatches.find((r) => r.job.name === serviceName);

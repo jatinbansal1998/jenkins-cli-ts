@@ -294,6 +294,21 @@ function tokenize(input: string): string[] {
     .filter((token) => token.length > 0);
 }
 
+function hasAllQueryTokens(
+  queryTokens: string[],
+  candidateTokens: string[],
+): boolean {
+  if (queryTokens.length === 0) {
+    return false;
+  }
+  return queryTokens.every((queryToken) =>
+    candidateTokens.some(
+      (candidateToken) =>
+        candidateToken === queryToken || candidateToken.startsWith(queryToken),
+    ),
+  );
+}
+
 function scoreCandidate(
   normalizedQuery: string,
   queryTokens: string[],
@@ -303,6 +318,14 @@ function scoreCandidate(
 ): number {
   if (!normalizedQuery || !candidate) {
     return 0;
+  }
+
+  const candidateTokens = candidate.split(" ");
+  if (queryTokens.length > 0) {
+    const allTokensPresent = hasAllQueryTokens(queryTokens, candidateTokens);
+    if (!allTokensPresent) {
+      return 0;
+    }
   }
 
   if (candidate === normalizedQuery) {
@@ -321,18 +344,22 @@ function scoreCandidate(
 
     if (candidateTokenCount > queryTokenCount) {
       const extraTokens = candidateTokenCount - queryTokenCount;
+      const isSingleTokenQuery = queryTokenCount === 1;
 
       // If there's an exact/prefix match available, be more strict with substring matches
       // This ensures "payment-service-prod" doesn't match "credit-card-payment-service-prod"
       // when "payment-service-prod" exists as an exact match
       if (hasExactOrPrefixMatch) {
         // Aggressive penalty: -20 points per extra token when better match exists
-        const penalty = extraTokens * 20;
+        // For single-token queries, reduce the penalty to avoid over-filtering long names.
+        const penalty = extraTokens * (isSingleTokenQuery ? 10 : 20);
         return Math.max(0, 60 - penalty);
       } else {
         // Lighter penalty when no better match exists: -8 points per extra token
+        // For single-token queries, reduce the penalty to avoid over-filtering long names.
+        const perTokenPenalty = isSingleTokenQuery ? 4 : 8;
+        const penalty = extraTokens * perTokenPenalty;
         // This allows "analytics ml" to match "data-analytics-ml-pipeline-prod"
-        const penalty = extraTokens * 8;
         return Math.max(25, 60 - penalty);
       }
     }
@@ -343,7 +370,7 @@ function scoreCandidate(
     return 0;
   }
 
-  const candidateTokens = new Set(candidate.split(" "));
+  const candidateTokenSet = new Set(candidateTokens);
 
   // Calculate weighted overlap score
   // Rare tokens (low frequency) contribute more to the score
@@ -358,7 +385,7 @@ function scoreCandidate(
     const weight = 1.1 - frequency;
     totalWeight += weight;
 
-    if (candidateTokens.has(queryToken)) {
+    if (candidateTokenSet.has(queryToken)) {
       weightedOverlap += weight;
     }
   }

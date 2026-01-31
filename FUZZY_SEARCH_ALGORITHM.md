@@ -17,6 +17,15 @@ Scores range from 0 to 100, with higher scores indicating better matches:
 | **Substring Match** | 60    | Job name contains the query                      |
 | **Token Match**     | 0-40  | Based on overlapping tokens (weighted by rarity) |
 
+### Token Presence Requirement
+
+Before any scoring happens, **all query tokens must be present** in the job name
+as full tokens or token prefixes. If a query token is completely absent, the
+candidate is rejected (score 0), even if other tokens match.
+
+This ensures explicit tokens like `staging`, `prod`, or `engine` are always
+respected.
+
 ### 1. Exact Match (Score: 100)
 
 **When:** The normalized query exactly equals the normalized job name.
@@ -56,6 +65,7 @@ Score: 80 ✓
 - If job has more tokens than query, apply penalties based on extra tokens
 - **With exact/prefix match available:** -20 points per extra token
 - **Without better match:** -8 points per extra token (minimum 25)
+- **Single-token queries:** penalties are reduced (strict: -10, lenient: -4)
 
 **Examples:**
 
