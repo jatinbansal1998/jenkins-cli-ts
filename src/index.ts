@@ -128,7 +128,8 @@ async function main(): Promise<void> {
     .demandCommand(1, "Missing command. Use --help to see usage.")
     .strict()
     .help()
-    .epilog(`Command-specific options:
+    .epilog(
+      `Command-specific options:
   list:
     --search   Search jobs by name or description
     --refresh  Refresh the job cache from Jenkins
@@ -144,7 +145,8 @@ async function main(): Promise<void> {
     --job      Job name or description
     --job-url  Full Jenkins job URL
 
-Run "$0 <command> --help" for full details.`)
+Run "$0 <command> --help" for full details.`,
+    )
     .fail((message, error) => {
       if (error) {
         throw error;
@@ -155,7 +157,10 @@ Run "$0 <command> --help" for full details.`)
   await parser.parseAsync();
 }
 
-function createContext(): { env: ReturnType<typeof loadEnv>; client: JenkinsClient } {
+function createContext(): {
+  env: ReturnType<typeof loadEnv>;
+  client: JenkinsClient;
+} {
   const env = loadEnv();
   const client = new JenkinsClient({
     baseUrl: env.jenkinsUrl,

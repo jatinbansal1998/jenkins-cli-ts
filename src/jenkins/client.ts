@@ -4,7 +4,12 @@
  * listing jobs, fetching status, and triggering builds.
  */
 import { CliError } from "../cli";
-import { logApiRequest, logApiResponse, logApiError, logNetworkError } from "../logger";
+import {
+  logApiRequest,
+  logApiResponse,
+  logApiError,
+  logNetworkError,
+} from "../logger";
 
 /** Jenkins job metadata. */
 export type JenkinsJob = {
@@ -49,7 +54,10 @@ export class JenkinsClient {
 
   async listJobs(): Promise<JenkinsJob[]> {
     const url = this.withBase("api/json?tree=jobs[name,fullName,url]");
-    const data = await this.requestJson<{ jobs?: JenkinsJob[] }>(url, "list jobs");
+    const data = await this.requestJson<{ jobs?: JenkinsJob[] }>(
+      url,
+      "list jobs",
+    );
     if (!Array.isArray(data.jobs)) {
       throw new CliError("Unexpected Jenkins response when listing jobs.", [
         "Try `jenkins-cli list --refresh` again.",
@@ -59,7 +67,10 @@ export class JenkinsClient {
   }
 
   async getJobStatus(jobUrl: string): Promise<JobStatus> {
-    const url = this.withJob(jobUrl, "api/json?tree=lastBuild[number,url,result,building]");
+    const url = this.withJob(
+      jobUrl,
+      "api/json?tree=lastBuild[number,url,result,building]",
+    );
     const data = await this.requestJson<{
       lastBuild?: {
         number?: number;
@@ -185,7 +196,10 @@ export class JenkinsClient {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), this.timeoutMs);
     try {
-      const response = await fetch(url, { ...options, signal: controller.signal });
+      const response = await fetch(url, {
+        ...options,
+        signal: controller.signal,
+      });
       if (response.ok) {
         logApiResponse(method, url, response.status);
       } else {
@@ -194,12 +208,7 @@ export class JenkinsClient {
       return response;
     } catch (error) {
       if (retriesLeft > 0) {
-        return this.fetchWithTimeout(
-          url,
-          options,
-          retriesLeft - 1,
-          context,
-        );
+        return this.fetchWithTimeout(url, options, retriesLeft - 1, context);
       }
 
       if (error instanceof Error && error.name === "AbortError") {
@@ -219,13 +228,19 @@ export class JenkinsClient {
     }
   }
 
-  private async raiseHttpError(response: Response, context: string): Promise<never> {
+  private async raiseHttpError(
+    response: Response,
+    context: string,
+  ): Promise<never> {
     const status = response.status;
     if (status === 401 || status === 403) {
-      throw new CliError(`Jenkins rejected the request while trying to ${context}.`, [
-        "Check JENKINS_USER and JENKINS_API_TOKEN.",
-        `Confirm you can access ${this.baseUrl} in a browser.`,
-      ]);
+      throw new CliError(
+        `Jenkins rejected the request while trying to ${context}.`,
+        [
+          "Check JENKINS_USER and JENKINS_API_TOKEN.",
+          `Confirm you can access ${this.baseUrl} in a browser.`,
+        ],
+      );
     }
     if (status === 404) {
       throw new CliError(`Resource not found while trying to ${context}.`, [

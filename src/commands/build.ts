@@ -131,7 +131,9 @@ export async function runBuild(options: BuildOptions): Promise<void> {
   }
 }
 
-async function promptForJobSelection(candidates: JenkinsJob[]): Promise<JenkinsJob> {
+async function promptForJobSelection(
+  candidates: JenkinsJob[],
+): Promise<JenkinsJob> {
   const response = await select({
     message: "Select a job",
     options: candidates.map((job) => ({
