@@ -11,11 +11,16 @@ import type { EnvConfig } from "./env";
 import type { JenkinsClient, JenkinsJob } from "./jenkins/client";
 
 /** Cached job data with metadata. */
+export type CachedJob = JenkinsJob & {
+  branches?: string[];
+};
+
 export type JobCache = {
   jenkinsUrl: string;
   user: string;
   fetchedAt: string;
-  jobs: JenkinsJob[];
+  jobs: CachedJob[];
+  recentJobs?: string[];
 };
 
 const CACHE_DIR = path.join(process.cwd(), ".jenkins-cli");
@@ -101,10 +106,16 @@ export async function readJobCache(): Promise<JobCache | null> {
     if (!isValidCache(parsed)) {
       return null;
     }
+    normalizeCachedJobs(parsed.jobs);
     return parsed;
   } catch {
     return null;
   }
+}
+
+export async function writeJobCache(cache: JobCache): Promise<void> {
+  await mkdir(CACHE_DIR, { recursive: true });
+  await writeFile(CACHE_FILE, JSON.stringify(cache, null, 2), "utf-8");
 }
 
 async function fetchAndCacheJobs(
@@ -112,14 +123,20 @@ async function fetchAndCacheJobs(
   env: EnvConfig,
 ): Promise<JenkinsJob[]> {
   const jobs = await client.listJobs();
+  const existingCache = await readJobCache();
+  const cachedJobs = mergeCachedBranches(jobs, existingCache);
+  const recentJobs =
+    existingCache && cacheMatchesEnv(existingCache, env)
+      ? existingCache.recentJobs
+      : undefined;
   const payload: JobCache = {
     jenkinsUrl: env.jenkinsUrl,
     user: env.jenkinsUser,
     fetchedAt: new Date().toISOString(),
-    jobs,
+    jobs: cachedJobs,
+    recentJobs,
   };
-  await mkdir(CACHE_DIR, { recursive: true });
-  await writeFile(CACHE_FILE, JSON.stringify(payload, null, 2), "utf-8");
+  await writeJobCache(payload);
   return jobs;
 }
 
@@ -131,12 +148,59 @@ function isValidCache(cache: JobCache | null): cache is JobCache {
   if (!cache) {
     return false;
   }
-  return (
-    typeof cache.jenkinsUrl === "string" &&
-    typeof cache.user === "string" &&
-    typeof cache.fetchedAt === "string" &&
-    Array.isArray(cache.jobs)
-  );
+  if (
+    typeof cache.jenkinsUrl !== "string" ||
+    typeof cache.user !== "string" ||
+    typeof cache.fetchedAt !== "string" ||
+    !Array.isArray(cache.jobs)
+  ) {
+    return false;
+  }
+  return true;
+}
+
+function normalizeCachedJobs(jobs: CachedJob[]): void {
+  for (const job of jobs) {
+    if (Array.isArray(job.branches)) {
+      job.branches = normalizeBranches(job.branches);
+    } else if (job.branches) {
+      job.branches = undefined;
+    }
+  }
+}
+
+function mergeCachedBranches(
+  jobs: JenkinsJob[],
+  existingCache: JobCache | null,
+): CachedJob[] {
+  return jobs.map((job) => {
+    const existing = existingCache?.jobs.find((entry) => entry.url === job.url);
+    if (!Array.isArray(existing?.branches) || existing.branches.length === 0) {
+      return { ...job };
+    }
+    return { ...job, branches: normalizeBranches(existing.branches) };
+  });
+}
+
+function normalizeBranches(entries: string[]): string[] {
+  const deduped = new Set<string>();
+  const normalized: string[] = [];
+  for (const entry of entries) {
+    if (typeof entry !== "string") {
+      continue;
+    }
+    const trimmed = entry.trim();
+    if (!trimmed) {
+      continue;
+    }
+    const key = trimmed.toLowerCase();
+    if (deduped.has(key)) {
+      continue;
+    }
+    deduped.add(key);
+    normalized.push(trimmed);
+  }
+  return normalized;
 }
 
 export type RankedJob = {
@@ -146,73 +210,19 @@ export type RankedJob = {
 
 export function rankJobs(query: string, jobs: JenkinsJob[]): RankedJob[] {
   const normalizedQuery = normalizeText(query);
-
-  // Analyze token frequencies across all jobs to identify trivial/common tokens
   const tokenFrequencies = analyzeTokenFrequencies(jobs);
-
-  // Tokenize query - keep ALL tokens, we'll weight them differently
   const queryTokens = tokenize(normalizedQuery);
-
-  // First pass: check if any job has an exact or prefix match
-  // This helps us penalize substring matches when a better match exists
-  let hasExactOrPrefixMatch = false;
-  for (const job of jobs) {
-    const candidates = [job.name, job.fullName].filter(
-      (value): value is string => Boolean(value),
-    );
-    for (const candidate of candidates) {
-      const candidateNormalized = normalizeText(candidate);
-      if (
-        candidateNormalized === normalizedQuery ||
-        candidateNormalized.startsWith(normalizedQuery)
-      ) {
-        hasExactOrPrefixMatch = true;
-        break;
-      }
-    }
-    if (hasExactOrPrefixMatch) break;
-  }
-
-  const ranked: RankedJob[] = [];
-  for (const job of jobs) {
-    const candidates = [job.name, job.fullName].filter(
-      (value): value is string => Boolean(value),
-    );
-    let bestScore = 0;
-    for (const candidate of candidates) {
-      const candidateNormalized = normalizeText(candidate);
-      const score = scoreCandidate(
-        normalizedQuery,
-        queryTokens,
-        candidateNormalized,
-        tokenFrequencies,
-        hasExactOrPrefixMatch, // Pass this to apply stricter substring penalties
-      );
-      if (score > bestScore) {
-        bestScore = score;
-      }
-    }
-
-    if (bestScore > 0) {
-      ranked.push({ job, score: bestScore });
-    }
-  }
-
-  ranked.sort((a, b) => {
-    if (b.score !== a.score) {
-      return b.score - a.score;
-    }
-    // When scores are equal, prefer shorter job names (more specific matches)
-    // This ensures "payment-service-prod" ranks higher than "credit-card-payment-service-prod"
-    // when both have the same substring match score
-    const aLength = getJobDisplayName(a.job).length;
-    const bLength = getJobDisplayName(b.job).length;
-    if (aLength !== bLength) {
-      return aLength - bLength;
-    }
-    return getJobDisplayName(a.job).localeCompare(getJobDisplayName(b.job));
+  const hasExactOrPrefixMatch = hasExactOrPrefixMatchInJobs(
+    jobs,
+    normalizedQuery,
+  );
+  const ranked = collectRankedJobs(jobs, {
+    normalizedQuery,
+    queryTokens,
+    tokenFrequencies,
+    hasExactOrPrefixMatch,
   });
-
+  ranked.sort(compareRankedJobs);
   return ranked;
 }
 
@@ -279,8 +289,8 @@ export async function resolveJobMatch(options: {
 function normalizeText(input: string): string {
   return input
     .toLowerCase()
-    .replace(/[^a-z0-9]+/g, " ")
-    .replace(/\s+/g, " ")
+    .replaceAll(/[^a-z0-9]+/g, " ")
+    .replaceAll(/\s+/g, " ")
     .trim();
 }
 
@@ -321,67 +331,173 @@ function scoreCandidate(
   }
 
   const candidateTokens = candidate.split(" ");
-  if (queryTokens.length > 0) {
-    const allTokensPresent = hasAllQueryTokens(queryTokens, candidateTokens);
-    if (!allTokensPresent) {
-      return 0;
-    }
+  if (!passesTokenFilter(queryTokens, candidateTokens)) {
+    return 0;
   }
 
-  if (candidate === normalizedQuery) {
-    return 100;
+  const directScore = scoreDirectMatch(normalizedQuery, candidate);
+  if (directScore !== null) {
+    return directScore;
   }
 
-  if (candidate.startsWith(normalizedQuery)) {
-    return 80;
-  }
-
-  if (candidate.includes(normalizedQuery)) {
-    // For substring matches, penalize if job has significantly more tokens than query
-    // This prevents "payment-service-prod" from matching "credit-card-payment-service-prod"
-    const queryTokenCount = normalizedQuery.split(" ").length;
-    const candidateTokenCount = candidate.split(" ").length;
-
-    if (candidateTokenCount > queryTokenCount) {
-      const extraTokens = candidateTokenCount - queryTokenCount;
-      const isSingleTokenQuery = queryTokenCount === 1;
-
-      // If there's an exact/prefix match available, be more strict with substring matches
-      // This ensures "payment-service-prod" doesn't match "credit-card-payment-service-prod"
-      // when "payment-service-prod" exists as an exact match
-      if (hasExactOrPrefixMatch) {
-        // Aggressive penalty: -20 points per extra token when better match exists
-        // For single-token queries, reduce the penalty to avoid over-filtering long names.
-        const penalty = extraTokens * (isSingleTokenQuery ? 10 : 20);
-        return Math.max(0, 60 - penalty);
-      } else {
-        // Lighter penalty when no better match exists: -8 points per extra token
-        // For single-token queries, reduce the penalty to avoid over-filtering long names.
-        const perTokenPenalty = isSingleTokenQuery ? 4 : 8;
-        const penalty = extraTokens * perTokenPenalty;
-        // This allows "analytics ml" to match "data-analytics-ml-pipeline-prod"
-        return Math.max(25, 60 - penalty);
-      }
-    }
-    return 60;
+  const substringScore = scoreSubstringMatch(
+    normalizedQuery,
+    candidateTokens.length,
+    candidate,
+    hasExactOrPrefixMatch,
+  );
+  if (substringScore !== null) {
+    return substringScore;
   }
 
   if (queryTokens.length === 0) {
     return 0;
   }
 
-  const candidateTokenSet = new Set(candidateTokens);
+  return scoreTokenOverlap(queryTokens, candidateTokens, tokenFrequencies);
+}
 
-  // Calculate weighted overlap score
-  // Rare tokens (low frequency) contribute more to the score
-  // Common/trivial tokens (high frequency) contribute less
+function hasExactOrPrefixMatchInJobs(
+  jobs: JenkinsJob[],
+  normalizedQuery: string,
+): boolean {
+  for (const job of jobs) {
+    for (const candidate of getJobCandidates(job)) {
+      const candidateNormalized = normalizeText(candidate);
+      if (
+        candidateNormalized === normalizedQuery ||
+        candidateNormalized.startsWith(normalizedQuery)
+      ) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+function collectRankedJobs(
+  jobs: JenkinsJob[],
+  options: {
+    normalizedQuery: string;
+    queryTokens: string[];
+    tokenFrequencies: Map<string, number>;
+    hasExactOrPrefixMatch: boolean;
+  },
+): RankedJob[] {
+  const ranked: RankedJob[] = [];
+  for (const job of jobs) {
+    const bestScore = scoreJobCandidates(job, options);
+    if (bestScore > 0) {
+      ranked.push({ job, score: bestScore });
+    }
+  }
+  return ranked;
+}
+
+function scoreJobCandidates(
+  job: JenkinsJob,
+  options: {
+    normalizedQuery: string;
+    queryTokens: string[];
+    tokenFrequencies: Map<string, number>;
+    hasExactOrPrefixMatch: boolean;
+  },
+): number {
+  let bestScore = 0;
+  for (const candidate of getJobCandidates(job)) {
+    const candidateNormalized = normalizeText(candidate);
+    const score = scoreCandidate(
+      options.normalizedQuery,
+      options.queryTokens,
+      candidateNormalized,
+      options.tokenFrequencies,
+      options.hasExactOrPrefixMatch,
+    );
+    if (score > bestScore) {
+      bestScore = score;
+    }
+  }
+  return bestScore;
+}
+
+function getJobCandidates(job: JenkinsJob): string[] {
+  return [job.name, job.fullName].filter(isNonEmptyString);
+}
+
+function isNonEmptyString(value: unknown): value is string {
+  return typeof value === "string" && value.length > 0;
+}
+
+function compareRankedJobs(a: RankedJob, b: RankedJob): number {
+  if (b.score !== a.score) {
+    return b.score - a.score;
+  }
+  const aLength = getJobDisplayName(a.job).length;
+  const bLength = getJobDisplayName(b.job).length;
+  if (aLength !== bLength) {
+    return aLength - bLength;
+  }
+  return getJobDisplayName(a.job).localeCompare(getJobDisplayName(b.job));
+}
+
+function passesTokenFilter(
+  queryTokens: string[],
+  candidateTokens: string[],
+): boolean {
+  if (queryTokens.length === 0) {
+    return true;
+  }
+  return hasAllQueryTokens(queryTokens, candidateTokens);
+}
+
+function scoreDirectMatch(
+  normalizedQuery: string,
+  candidate: string,
+): number | null {
+  if (candidate === normalizedQuery) {
+    return 100;
+  }
+  if (candidate.startsWith(normalizedQuery)) {
+    return 80;
+  }
+  return null;
+}
+
+function scoreSubstringMatch(
+  normalizedQuery: string,
+  candidateTokenCount: number,
+  candidate: string,
+  hasExactOrPrefixMatch?: boolean,
+): number | null {
+  if (!candidate.includes(normalizedQuery)) {
+    return null;
+  }
+  const queryTokenCount = normalizedQuery.split(" ").length;
+  if (candidateTokenCount <= queryTokenCount) {
+    return 60;
+  }
+  const extraTokens = candidateTokenCount - queryTokenCount;
+  const isSingleTokenQuery = queryTokenCount === 1;
+  if (hasExactOrPrefixMatch) {
+    const penalty = extraTokens * (isSingleTokenQuery ? 10 : 20);
+    return Math.max(0, 60 - penalty);
+  }
+  const perTokenPenalty = isSingleTokenQuery ? 4 : 8;
+  const penalty = extraTokens * perTokenPenalty;
+  return Math.max(25, 60 - penalty);
+}
+
+function scoreTokenOverlap(
+  queryTokens: string[],
+  candidateTokens: string[],
+  tokenFrequencies?: Map<string, number>,
+): number {
+  const candidateTokenSet = new Set(candidateTokens);
   let weightedOverlap = 0;
   let totalWeight = 0;
 
   for (const queryToken of queryTokens) {
     const frequency = tokenFrequencies?.get(queryToken) ?? 0.5;
-    // Weight = inverse of frequency (rare tokens get higher weight)
-    // Add 0.1 to avoid division by zero and ensure all tokens have some weight
     const weight = 1.1 - frequency;
     totalWeight += weight;
 
@@ -394,7 +510,6 @@ function scoreCandidate(
     return 0;
   }
 
-  // Score based on weighted ratio (0-40 scale)
   const weightedRatio = weightedOverlap / totalWeight;
   return Math.round(weightedRatio * 40);
 }
