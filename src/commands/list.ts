@@ -6,6 +6,7 @@ import { confirm, isCancel, text } from "@clack/prompts";
 import { CliError, printOk } from "../cli";
 import type { EnvConfig } from "../env";
 import type { JenkinsClient } from "../jenkins/client";
+import { MIN_SCORE } from "../config/fuzzy";
 import { getJobDisplayName, loadJobs, rankJobs } from "../jobs";
 
 /** Options for the list command. */
@@ -48,7 +49,9 @@ export async function runList(options: ListOptions): Promise<void> {
   }
 
   const jobsToPrint = search
-    ? rankJobs(search, jobs).map((match) => match.job)
+    ? rankJobs(search, jobs)
+        .filter((match) => match.score >= MIN_SCORE)
+        .map((match) => match.job)
     : jobs
         .slice()
         .sort((a, b) =>

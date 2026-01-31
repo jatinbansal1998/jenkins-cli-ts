@@ -68,7 +68,25 @@ jobs:
           CURRENT_VERSION=$(bun -e "console.log(require('./package.json').version)")
           echo "Current version: $CURRENT_VERSION"
           
-          if [ "${{ steps.check-version.outputs.version_changed }}" = "true" ]; then
+          # Check if this is a fork (version bumps only happen on upstream)
+          IS_FORK="${{ github.event.repository.fork }}"
+          
+          if [ "$IS_FORK" = "true" ]; then
+            # On fork: Only lint/format, no version bump
+            echo "Running on fork - skipping version bump"
+            NEW_VERSION="$CURRENT_VERSION"
+            echo "new_version=$NEW_VERSION" >> $GITHUB_OUTPUT
+            echo "commit_message=chore: lint and format" >> $GITHUB_OUTPUT
+            echo "pr_title=chore: lint and format" >> $GITHUB_OUTPUT
+            {
+              echo "pr_body<<PRBODY"
+              echo "Automated changes:"
+              echo "- Applied oxlint --fix"
+              echo "- Applied Prettier formatting"
+              echo "PRBODY"
+            } >> "$GITHUB_OUTPUT"
+          elif [ "${{ steps.check-version.outputs.version_changed }}" = "true" ]; then
+            # On upstream: Version was manually updated, skip auto-bump
             echo "Version already changed in last commit; skipping auto-bump"
             NEW_VERSION="$CURRENT_VERSION"
             echo "new_version=$NEW_VERSION" >> $GITHUB_OUTPUT
@@ -82,6 +100,7 @@ jobs:
               echo "PRBODY"
             } >> "$GITHUB_OUTPUT"
           else
+            # On upstream: Auto-bump version
             # Split version into components
             IFS='.' read -r MAJOR MINOR PATCH <<< "$CURRENT_VERSION"
             
