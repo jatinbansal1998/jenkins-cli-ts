@@ -234,161 +234,23 @@ function scoreCandidate(
   }
 
   if (candidate.startsWith(normalizedQuery)) {
-    return 85;
+    return 80;
   }
 
   if (candidate.includes(normalizedQuery)) {
-    return 70;
-  }
-
-  const compactScore = scoreCompactMatch(normalizedQuery, candidate);
-  if (compactScore > 0) {
-    return compactScore;
+    return 60;
   }
 
   if (queryTokens.length === 0) {
     return 0;
   }
 
-  return scoreTokenOverlap(queryTokens, candidate);
-}
-
-function scoreCompactMatch(normalizedQuery: string, candidate: string): number {
-  const compactQuery = normalizedQuery.replace(/ /g, "");
-  if (compactQuery.length < 3) {
+  const candidateTokens = new Set(candidate.split(" "));
+  const overlap = queryTokens.filter((token) => candidateTokens.has(token)).length;
+  if (overlap === 0) {
     return 0;
   }
 
-  const compactCandidate = candidate.replace(/ /g, "");
-  if (compactCandidate === compactQuery) {
-    return 65;
-  }
-
-  if (compactCandidate.startsWith(compactQuery)) {
-    return 55;
-  }
-
-  if (compactCandidate.includes(compactQuery)) {
-    return 45;
-  }
-
-  return 0;
-}
-
-function scoreTokenOverlap(queryTokens: string[], candidate: string): number {
-  const candidateTokens = candidate.split(" ");
-  let matched = 0;
-
-  for (const token of queryTokens) {
-    let best = 0;
-    for (const candidateToken of candidateTokens) {
-      if (candidateToken === token) {
-        best = 1;
-        break;
-      }
-      if (candidateToken.startsWith(token)) {
-        best = Math.max(best, 0.85);
-        continue;
-      }
-      if (candidateToken.includes(token)) {
-        best = Math.max(best, 0.7);
-      }
-      const typoScore = scoreTypoMatch(token, candidateToken);
-      if (typoScore > best) {
-        best = typoScore;
-      }
-    }
-    matched += best;
-  }
-
-  if (matched === 0) {
-    return 0;
-  }
-
-  const ratio = matched / queryTokens.length;
-  return Math.round(ratio * 50);
-}
-
-function scoreTypoMatch(token: string, candidateToken: string): number {
-  const maxLen = Math.max(token.length, candidateToken.length);
-  const maxDistance = maxTypoDistance(maxLen);
-  if (maxDistance === 0) {
-    return 0;
-  }
-
-  const distance = levenshteinDistance(token, candidateToken, maxDistance);
-  if (distance > maxDistance) {
-    return 0;
-  }
-
-  const similarity = 1 - distance / maxLen;
-  return similarity * 0.65;
-}
-
-function maxTypoDistance(length: number): number {
-  if (length <= 2) {
-    return 0;
-  }
-  if (length <= 4) {
-    return 1;
-  }
-  if (length <= 7) {
-    return 2;
-  }
-  if (length <= 10) {
-    return 3;
-  }
-  return 4;
-}
-
-function levenshteinDistance(
-  a: string,
-  b: string,
-  maxDistance: number,
-): number {
-  if (a === b) {
-    return 0;
-  }
-
-  const aLen = a.length;
-  const bLen = b.length;
-
-  if (Math.abs(aLen - bLen) > maxDistance) {
-    return maxDistance + 1;
-  }
-
-  const prev = new Array(bLen + 1).fill(0);
-  const curr = new Array(bLen + 1).fill(0);
-
-  for (let j = 0; j <= bLen; j += 1) {
-    prev[j] = j;
-  }
-
-  for (let i = 1; i <= aLen; i += 1) {
-    curr[0] = i;
-    let minInRow = curr[0];
-    const aChar = a.charCodeAt(i - 1);
-
-    for (let j = 1; j <= bLen; j += 1) {
-      const cost = aChar === b.charCodeAt(j - 1) ? 0 : 1;
-      const deletion = prev[j] + 1;
-      const insertion = curr[j - 1] + 1;
-      const substitution = prev[j - 1] + cost;
-      const value = Math.min(deletion, insertion, substitution);
-      curr[j] = value;
-      if (value < minInRow) {
-        minInRow = value;
-      }
-    }
-
-    if (minInRow > maxDistance) {
-      return maxDistance + 1;
-    }
-
-    for (let j = 0; j <= bLen; j += 1) {
-      prev[j] = curr[j];
-    }
-  }
-
-  return prev[bLen];
+  const ratio = overlap / queryTokens.length;
+  return Math.round(ratio * 40);
 }
