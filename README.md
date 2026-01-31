@@ -76,15 +76,29 @@ Build and install once:
 bun run install:global
 ```
 
-Or manually:
+This uses `bun link` to symlink the CLI, so updates are simple.
+
+### Updating an Existing Installation
+
+After pulling new changes or making edits, just rebuild:
 
 ```bash
 bun run build
-bun install -g "file:."
 ```
 
-If you want a different command name, change the `bin` key in `package.json`,
-rebuild, and reinstall.
+The global `jenkins-cli` command automatically uses the updated build since it's symlinked.
+
+To check your current version:
+
+```bash
+jenkins-cli --version
+```
+
+### Uninstalling
+
+```bash
+bun unlink jenkins-cli-ts
+```
 
 ## Usage
 

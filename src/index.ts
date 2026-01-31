@@ -12,6 +12,9 @@ import { runList } from "./commands/list";
 import { runStatus } from "./commands/status";
 import { loadEnv } from "./env";
 import { JenkinsClient } from "./jenkins/client";
+import packageJson from "../package.json";
+
+const VERSION = packageJson.version;
 
 const DEFAULT_SCRIPT_NAME = "jenkins-cli";
 const rawScriptName = process.argv[1]
@@ -122,6 +125,7 @@ async function main(): Promise<void> {
     )
     .demandCommand(1, "Missing command. Use --help to see usage.")
     .strict()
+    .version(VERSION)
     .help()
     .fail((message, error) => {
       if (error) {
