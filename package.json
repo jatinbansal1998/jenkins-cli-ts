@@ -1,0 +1,24 @@
+{
+  "name": "jenkins-cli-ts",
+  "type": "module",
+  "private": true,
+  "module": "src/index.ts",
+  "bin": {
+    "jenkins-cli": "dist/index.js"
+  },
+  "scripts": {
+    "dev": "bun run src/index.ts",
+    "build": "bun build src/index.ts --outdir dist",
+    "lint": "oxlint",
+    "lint:fix": "oxlint --fix"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "oxlint": "^1.42.0",
+    "typescript": "^5"
+  },
+  "dependencies": {
+    "@clack/prompts": "^1.0.0",
+    "yargs": "^18.0.0"
+  }
+}
