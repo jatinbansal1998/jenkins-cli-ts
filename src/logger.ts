@@ -39,7 +39,11 @@ export function logApiRequest(method: string, url: string): void {
 /**
  * Log an API response (success) to the log file.
  */
-export function logApiResponse(method: string, url: string, status: number): void {
+export function logApiResponse(
+  method: string,
+  url: string,
+  status: number,
+): void {
   const line = `[${getTimestamp()}] RESPONSE ${method} ${url} -> ${status}\n`;
   safeAppendLine(line);
 }
@@ -55,7 +59,11 @@ export function logApiError(method: string, url: string, status: number): void {
 /**
  * Log a network/timeout error to the log file.
  */
-export function logNetworkError(method: string, url: string, error: string): void {
+export function logNetworkError(
+  method: string,
+  url: string,
+  error: string,
+): void {
   const line = `[${getTimestamp()}] NETWORK_ERROR ${method} ${url} -> ${error}\n`;
   safeAppendLine(line);
 }

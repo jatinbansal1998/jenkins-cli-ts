@@ -89,10 +89,14 @@ export async function runStatus(options: StatusOptions): Promise<void> {
 
   const result = status.building ? "RUNNING" : status.result || "UNKNOWN";
   const url = status.lastBuildUrl || jobUrl;
-  printOk(`Last build for ${jobLabel || jobUrl}: #${status.lastBuildNumber} ${result} ${url}`);
+  printOk(
+    `Last build for ${jobLabel || jobUrl}: #${status.lastBuildNumber} ${result} ${url}`,
+  );
 }
 
-async function promptForJobSelection(candidates: JenkinsJob[]): Promise<JenkinsJob> {
+async function promptForJobSelection(
+  candidates: JenkinsJob[],
+): Promise<JenkinsJob> {
   const response = await select({
     message: "Select a job",
     options: candidates.map((job) => ({
