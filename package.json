@@ -8,8 +8,8 @@
   },
   "scripts": {
     "dev": "bun run src/index.ts",
-    "build": "bun build src/index.ts --outdir dist",
-    "install:global": "bun run build && bun install -g .",
+    "build": "bun build src/index.ts --outdir dist --target bun",
+    "install:global": "bun run build && bun install -g \"file:.\"",
     "lint": "oxlint",
     "lint:fix": "oxlint --fix"
   },

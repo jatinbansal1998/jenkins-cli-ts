@@ -4,6 +4,7 @@
  * listing jobs, fetching status, and triggering builds.
  */
 import { CliError } from "../cli";
+import { logApiRequest, logApiResponse, logApiError, logNetworkError } from "../logger";
 
 /** Jenkins job metadata. */
 export type JenkinsJob = {
@@ -178,10 +179,19 @@ export class JenkinsClient {
     retriesLeft: number,
     context: string,
   ): Promise<Response> {
+    const method = options.method ?? "GET";
+    logApiRequest(method, url);
+
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), this.timeoutMs);
     try {
-      return await fetch(url, { ...options, signal: controller.signal });
+      const response = await fetch(url, { ...options, signal: controller.signal });
+      if (response.ok) {
+        logApiResponse(method, url, response.status);
+      } else {
+        logApiError(method, url, response.status);
+      }
+      return response;
     } catch (error) {
       if (retriesLeft > 0) {
         return this.fetchWithTimeout(
@@ -193,11 +203,14 @@ export class JenkinsClient {
       }
 
       if (error instanceof Error && error.name === "AbortError") {
+        logNetworkError(method, url, "TIMEOUT");
         throw new CliError(`Request timed out while trying to ${context}.`, [
           `Check your network and that ${this.baseUrl} is reachable.`,
         ]);
       }
 
+      const errorMsg = error instanceof Error ? error.message : "Unknown error";
+      logNetworkError(method, url, errorMsg);
       throw new CliError(`Network error while trying to ${context}.`, [
         `Check your network and that ${this.baseUrl} is reachable.`,
       ]);

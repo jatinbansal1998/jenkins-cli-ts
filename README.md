@@ -11,6 +11,19 @@ Set required environment variables:
 - `JENKINS_USER`
 - `JENKINS_API_TOKEN`
 
+The CLI also reads these values from `~/.config/jenkins-cli/jenkins-cli-config`
+(JSON) if the env vars are not set:
+
+```json
+{
+  "jenkinsUrl": "https://jenkins.example.com",
+  "jenkinsUser": "your-username",
+  "jenkinsApiToken": "your-token"
+}
+```
+
+Environment variables always take precedence.
+
 ## Setup script
 
 Run the helper script to set env vars and optionally persist them:
@@ -19,10 +32,17 @@ Run the helper script to set env vars and optionally persist them:
 bash setup.sh
 ```
 
+If you prefer executing directly:
+
+```bash
+chmod +x ./setup.sh
+./setup.sh
+```
+
 It installs Bun if needed, installs dependencies, installs the CLI globally,
-saves values to `~/.jenkins-cli-env`, and can add a line to your shell profile to
-load them automatically. After saving, open a new terminal or run `. ~/.zshrc`
-(or your chosen profile).
+saves values to `~/.config/jenkins-cli/jenkins-cli-config`, and can optionally
+add environment variable exports to your shell profile. After saving, open a new
+terminal or run `. ~/.zshrc` (or your chosen profile).
 
 Skip installs and only set env vars:
 
@@ -60,7 +80,7 @@ Or manually:
 
 ```bash
 bun run build
-bun install -g .
+bun install -g "file:."
 ```
 
 If you want a different command name, change the `bin` key in `package.json`,
