@@ -326,7 +326,7 @@ if [ "$use_defaults" = true ]; then
 fi
 
 print "Jenkins CLI setup"
-print "This will prompt for Jenkins credentials."
+print "This will prompt for Jenkins credentials if any are missing."
 print ""
 
 if [ "$install_cli" = true ]; then
@@ -346,9 +346,21 @@ else
   print "Skipping install steps."
 fi
 
-prompt_with_default "Jenkins URL (e.g., https://jenkins.example.com)" "$default_url" JENKINS_URL
-prompt_with_default "Jenkins username" "$default_user" JENKINS_USER
-prompt_secret_with_default "Jenkins API token" "$default_token" JENKINS_API_TOKEN
+if [ "$use_defaults" = true ]; then
+  JENKINS_URL="$default_url"
+  JENKINS_USER="$default_user"
+  JENKINS_API_TOKEN="$default_token"
+fi
+
+if [ -z "${JENKINS_URL:-}" ]; then
+  prompt_with_default "Jenkins URL (e.g., https://jenkins.example.com)" "" JENKINS_URL
+fi
+if [ -z "${JENKINS_USER:-}" ]; then
+  prompt_with_default "Jenkins username" "" JENKINS_USER
+fi
+if [ -z "${JENKINS_API_TOKEN:-}" ]; then
+  prompt_secret_with_default "Jenkins API token" "" JENKINS_API_TOKEN
+fi
 
 saved_config=false
 if confirm "Save values to $config_file? [y/N]: "; then
