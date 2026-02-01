@@ -14,15 +14,18 @@ type RawEnv = {
   JENKINS_URL?: string;
   JENKINS_USER?: string;
   JENKINS_API_TOKEN?: string;
+  JENKINS_DEBUG?: string;
 };
 
 type FileConfig = {
   jenkinsUrl?: string;
   jenkinsUser?: string;
   jenkinsApiToken?: string;
+  debug?: boolean;
   JENKINS_URL?: string;
   JENKINS_USER?: string;
   JENKINS_API_TOKEN?: string;
+  JENKINS_DEBUG?: string | boolean;
 };
 
 /** Jenkins connection configuration. */
@@ -101,6 +104,16 @@ function parseConfigFile(contents: string): RawEnv {
     result.JENKINS_API_TOKEN = token;
   }
 
+  // Parse debug setting (supports boolean or string "true"/"false")
+  const debugValue = record.debug ?? record.JENKINS_DEBUG;
+  if (debugValue !== undefined) {
+    if (typeof debugValue === "boolean") {
+      result.JENKINS_DEBUG = debugValue ? "true" : "false";
+    } else if (typeof debugValue === "string") {
+      result.JENKINS_DEBUG = debugValue;
+    }
+  }
+
   return result;
 }
 
@@ -153,4 +166,21 @@ export function loadEnv(): EnvConfig {
     jenkinsUser: rawUser.trim(),
     jenkinsApiToken: rawToken.trim(),
   };
+}
+
+/**
+ * Get the debug setting from environment variable or config file.
+ * Returns true if JENKINS_DEBUG is set to "true" or "1".
+ * This is used as the default value when --debug flag is not explicitly passed.
+ */
+export function getDebugDefault(): boolean {
+  const config = readConfigFile();
+  const rawDebug = process.env.JENKINS_DEBUG ?? config.JENKINS_DEBUG;
+
+  if (!rawDebug) {
+    return false;
+  }
+
+  const normalized = rawDebug.trim().toLowerCase();
+  return normalized === "true" || normalized === "1";
 }

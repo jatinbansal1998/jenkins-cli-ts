@@ -10,8 +10,9 @@ import { CliError, handleCliError } from "./cli";
 import { runBuild } from "./commands/build";
 import { runList } from "./commands/list";
 import { runStatus } from "./commands/status";
-import { loadEnv } from "./env";
+import { loadEnv, getDebugDefault } from "./env";
 import { JenkinsClient } from "./jenkins/client";
+import { setDebugMode } from "./logger";
 import packageJson from "../package.json";
 
 const VERSION = packageJson.version;
@@ -31,6 +32,25 @@ async function main(): Promise<void> {
       type: "boolean",
       default: false,
       describe: "Disable prompts and fail fast",
+    })
+    .option("debug", {
+      type: "boolean",
+      describe: "Log API requests and responses to console",
+    })
+    .middleware((argv) => {
+      // Check if --debug or --no-debug was explicitly passed
+      const rawArgs = hideBin(process.argv);
+      const debugExplicitlyPassed = rawArgs.some(
+        (arg) => arg === "--debug" || arg === "--no-debug",
+      );
+
+      if (debugExplicitlyPassed) {
+        // Use the explicit CLI value
+        setDebugMode(Boolean(argv.debug));
+      } else {
+        // Fall back to env/config default
+        setDebugMode(getDebugDefault());
+      }
     })
     .command(
       "list",
