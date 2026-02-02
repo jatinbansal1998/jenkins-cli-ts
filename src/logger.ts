@@ -1,7 +1,7 @@
 /**
  * File-based API logger.
  * Logs Jenkins API requests to ~/.config/jenkins-cli/api.log
- * Optionally logs to console when debug mode is enabled.
+ * Includes headers and body when available.
  */
 import fs from "node:fs";
 import os from "node:os";
@@ -10,7 +10,7 @@ import path from "node:path";
 const CONFIG_DIR = path.join(os.homedir(), ".config", "jenkins-cli");
 const LOG_FILE = path.join(CONFIG_DIR, "api.log");
 
-/** Whether debug mode is enabled (logs to console). */
+/** Whether debug mode is enabled (kept for backward compatibility). */
 let debugMode = false;
 
 /**
@@ -46,20 +46,67 @@ function safeAppendLine(line: string): void {
   }
 }
 
-function logToConsole(line: string): void {
-  if (debugMode) {
-    // Remove trailing newline for console output
-    console.error(`[DEBUG] ${line.trimEnd()}`);
+function normalizeHeaders(headers?: HeadersInit): Array<[string, string]> {
+  if (!headers) {
+    return [];
   }
+  if (headers instanceof Headers) {
+    const entries: Array<[string, string]> = [];
+    headers.forEach((value, key) => entries.push([key, value]));
+    return entries;
+  }
+  if (Array.isArray(headers)) {
+    return headers.map(([key, value]) => [key, value]);
+  }
+  return Object.entries(headers);
+}
+
+function indentLines(text: string, indent: string): string {
+  return text
+    .split("\n")
+    .map((line) => `${indent}${line}`)
+    .join("\n");
+}
+
+function formatHeadersBlock(headers?: HeadersInit): string | null {
+  const entries = normalizeHeaders(headers);
+  if (entries.length === 0) {
+    return null;
+  }
+  const lines = entries.map(([key, value]) => `  ${key}: ${value}`);
+  return `Headers:\n${lines.join("\n")}`;
+}
+
+function formatBodyBlock(body: string | null | undefined): string | null {
+  if (body === null || body === undefined) {
+    return null;
+  }
+  const rendered = body === "" ? "<empty>" : body;
+  return `Body:\n${indentLines(rendered, "  ")}`;
+}
+
+function logBlock(lines: Array<string | null>): void {
+  const payload = lines.filter((line) => line && line.length > 0).join("\n");
+  if (!payload) {
+    return;
+  }
+  safeAppendLine(`${payload}\n\n`);
 }
 
 /**
  * Log an API request to the log file and optionally console.
  */
-export function logApiRequest(method: string, url: string): void {
-  const line = `[${getTimestamp()}] REQUEST ${method} ${url}\n`;
-  safeAppendLine(line);
-  logToConsole(line);
+export function logApiRequest(
+  method: string,
+  url: string,
+  headers?: HeadersInit,
+  body?: string | null,
+): void {
+  logBlock([
+    `[${getTimestamp()}] REQUEST ${method} ${url}`,
+    formatHeadersBlock(headers),
+    formatBodyBlock(body),
+  ]);
 }
 
 /**
@@ -69,19 +116,31 @@ export function logApiResponse(
   method: string,
   url: string,
   status: number,
+  headers?: HeadersInit,
+  body?: string | null,
 ): void {
-  const line = `[${getTimestamp()}] RESPONSE ${method} ${url} -> ${status}\n`;
-  safeAppendLine(line);
-  logToConsole(line);
+  logBlock([
+    `[${getTimestamp()}] RESPONSE ${method} ${url} -> ${status}`,
+    formatHeadersBlock(headers),
+    formatBodyBlock(body),
+  ]);
 }
 
 /**
  * Log an API error to the log file and optionally console.
  */
-export function logApiError(method: string, url: string, status: number): void {
-  const line = `[${getTimestamp()}] ERROR ${method} ${url} -> HTTP ${status}\n`;
-  safeAppendLine(line);
-  logToConsole(line);
+export function logApiError(
+  method: string,
+  url: string,
+  status: number,
+  headers?: HeadersInit,
+  body?: string | null,
+): void {
+  logBlock([
+    `[${getTimestamp()}] ERROR ${method} ${url} -> HTTP ${status}`,
+    formatHeadersBlock(headers),
+    formatBodyBlock(body),
+  ]);
 }
 
 /**
@@ -92,7 +151,5 @@ export function logNetworkError(
   url: string,
   error: string,
 ): void {
-  const line = `[${getTimestamp()}] NETWORK_ERROR ${method} ${url} -> ${error}\n`;
-  safeAppendLine(line);
-  logToConsole(line);
+  logBlock([`[${getTimestamp()}] NETWORK_ERROR ${method} ${url} -> ${error}`]);
 }

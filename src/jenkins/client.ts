@@ -23,6 +23,37 @@ export type JobStatus = {
   lastBuildUrl?: string;
   result?: string | null;
   building?: boolean;
+  lastBuildTimestamp?: number;
+  lastBuildDurationMs?: number;
+  lastBuildEstimatedDurationMs?: number;
+  queueTimeMs?: number;
+  parameters?: { name: string; value: string }[];
+  branch?: string;
+  stage?: {
+    name?: string;
+    status?: string;
+  };
+};
+
+type BuildAction = {
+  parameters?: { name?: string; value?: unknown }[];
+};
+
+type BuildDetails = {
+  number?: number;
+  url?: string;
+  result?: string | null;
+  building?: boolean;
+  timestamp?: number;
+  duration?: number;
+  estimatedDuration?: number;
+  queueId?: number;
+  actions?: BuildAction[];
+};
+
+type PipelineInfo = {
+  stage?: { name?: string; status?: string };
+  queueDurationMs?: number;
 };
 
 type Crumb = {
@@ -69,15 +100,10 @@ export class JenkinsClient {
   async getJobStatus(jobUrl: string): Promise<JobStatus> {
     const url = this.withJob(
       jobUrl,
-      "api/json?tree=lastBuild[number,url,result,building]",
+      "api/json?tree=lastBuild[number,url,result,building,timestamp,duration,estimatedDuration]",
     );
     const data = await this.requestJson<{
-      lastBuild?: {
-        number?: number;
-        url?: string;
-        result?: string | null;
-        building?: boolean;
-      };
+      lastBuild?: BuildDetails;
     }>(url, "job status");
 
     const lastBuild = data.lastBuild;
@@ -85,11 +111,34 @@ export class JenkinsClient {
       return {};
     }
 
+    const buildUrl = lastBuild.url;
+    const buildDetails = buildUrl ? await this.getBuildDetails(buildUrl) : null;
+    const pipeline = buildUrl ? await this.getPipelineInfo(buildUrl) : null;
+    const queueTimeMs =
+      typeof pipeline?.queueDurationMs === "number" &&
+      pipeline.queueDurationMs >= 0
+        ? pipeline.queueDurationMs
+        : buildDetails?.queueId && lastBuild.timestamp
+          ? await this.getQueueWaitTimeMs(
+              buildDetails.queueId,
+              lastBuild.timestamp,
+            )
+          : undefined;
+    const parameters = extractBuildParameters(buildDetails?.actions);
+    const branch = extractBranchParam(parameters);
+
     return {
       lastBuildNumber: lastBuild.number,
       lastBuildUrl: lastBuild.url,
       result: lastBuild.result ?? null,
       building: lastBuild.building ?? false,
+      lastBuildTimestamp: lastBuild.timestamp,
+      lastBuildDurationMs: lastBuild.duration,
+      lastBuildEstimatedDurationMs: lastBuild.estimatedDuration,
+      queueTimeMs,
+      parameters,
+      branch,
+      stage: pipeline?.stage,
     };
   }
 
@@ -191,7 +240,8 @@ export class JenkinsClient {
     context: string,
   ): Promise<Response> {
     const method = options.method ?? "GET";
-    logApiRequest(method, url);
+    const requestBody = this.serializeRequestBody(options.body);
+    logApiRequest(method, url, options.headers, requestBody);
 
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), this.timeoutMs);
@@ -200,10 +250,23 @@ export class JenkinsClient {
         ...options,
         signal: controller.signal,
       });
+      const responseBody = await this.readResponseBody(response);
       if (response.ok) {
-        logApiResponse(method, url, response.status);
+        logApiResponse(
+          method,
+          url,
+          response.status,
+          response.headers,
+          responseBody,
+        );
       } else {
-        logApiError(method, url, response.status);
+        logApiError(
+          method,
+          url,
+          response.status,
+          response.headers,
+          responseBody,
+        );
       }
       return response;
     } catch (error) {
@@ -225,6 +288,46 @@ export class JenkinsClient {
       ]);
     } finally {
       clearTimeout(timeout);
+    }
+  }
+
+  private serializeRequestBody(
+    body: BodyInit | null | undefined,
+  ): string | null {
+    if (body === null || body === undefined) {
+      return null;
+    }
+    if (typeof body === "string") {
+      return body;
+    }
+    if (body instanceof URLSearchParams) {
+      return body.toString();
+    }
+    if (body instanceof FormData) {
+      const entries: string[] = [];
+      for (const [key, value] of body.entries()) {
+        entries.push(`${key}=${typeof value === "string" ? value : "<file>"}`);
+      }
+      return entries.join("&");
+    }
+    if (body instanceof Blob) {
+      return `<blob size=${body.size} type=${body.type || "unknown"}>`;
+    }
+    if (body instanceof ArrayBuffer) {
+      return `<arraybuffer byteLength=${body.byteLength}>`;
+    }
+    if (ArrayBuffer.isView(body)) {
+      return `<binary byteLength=${body.byteLength}>`;
+    }
+    return `<body type=${typeof body}>`;
+  }
+
+  private async readResponseBody(response: Response): Promise<string | null> {
+    try {
+      return await response.clone().text();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unknown error";
+      return `<unreadable body: ${message}>`;
     }
   }
 
@@ -263,4 +366,135 @@ export class JenkinsClient {
     const base = jobUrl.endsWith("/") ? jobUrl : `${jobUrl}/`;
     return new URL(path, base).toString();
   }
+
+  private async getBuildDetails(
+    buildUrl: string,
+  ): Promise<BuildDetails | null> {
+    const url = this.withJob(
+      buildUrl,
+      "api/json?tree=number,url,result,building,timestamp,duration,estimatedDuration,queueId,actions[parameters[name,value]]",
+    );
+    try {
+      const response = await this.fetchWithTimeout(
+        url,
+        { method: "GET", headers: this.authHeaders() },
+        0,
+        "fetch build details",
+      );
+      if (!response.ok) {
+        return null;
+      }
+      return (await response.json()) as BuildDetails;
+    } catch {
+      return null;
+    }
+  }
+
+  private async getQueueWaitTimeMs(
+    queueId: number,
+    startTimestamp: number,
+  ): Promise<number | undefined> {
+    if (!Number.isFinite(queueId) || queueId <= 0) {
+      return undefined;
+    }
+    const url = this.withBase(`queue/item/${queueId}/api/json`);
+    try {
+      const response = await this.fetchWithTimeout(
+        url,
+        { method: "GET", headers: this.authHeaders() },
+        0,
+        "fetch queue item",
+      );
+      if (!response.ok) {
+        return undefined;
+      }
+      const data = (await response.json()) as { inQueueSince?: number };
+      if (typeof data.inQueueSince !== "number") {
+        return undefined;
+      }
+      const wait = startTimestamp - data.inQueueSince;
+      return wait >= 0 ? wait : undefined;
+    } catch {
+      return undefined;
+    }
+  }
+
+  private async getPipelineInfo(
+    buildUrl: string,
+  ): Promise<PipelineInfo | null> {
+    const base = buildUrl.endsWith("/") ? buildUrl : `${buildUrl}/`;
+    const url = new URL("wfapi/describe", base).toString();
+    try {
+      const response = await this.fetchWithTimeout(
+        url,
+        { method: "GET", headers: this.authHeaders() },
+        0,
+        "fetch pipeline stage",
+      );
+      if (!response.ok) {
+        return null;
+      }
+      const data = (await response.json()) as {
+        stages?: { name?: string; status?: string }[];
+        queueDurationMillis?: number;
+      };
+      const stages = Array.isArray(data.stages) ? data.stages : [];
+      const activeStage = stages.find(
+        (stage) =>
+          stage.status === "IN_PROGRESS" ||
+          stage.status === "PAUSED_PENDING_INPUT",
+      );
+      const stage = activeStage ?? stages[stages.length - 1];
+      return {
+        stage,
+        queueDurationMs: data.queueDurationMillis,
+      };
+    } catch {
+      return null;
+    }
+  }
+}
+
+function extractBuildParameters(
+  actions?: BuildAction[],
+): { name: string; value: string }[] | undefined {
+  if (!Array.isArray(actions)) {
+    return undefined;
+  }
+  const params: { name: string; value: string }[] = [];
+  for (const action of actions) {
+    if (!action || !Array.isArray(action.parameters)) {
+      continue;
+    }
+    for (const param of action.parameters) {
+      if (!param || typeof param.name !== "string") {
+        continue;
+      }
+      const value =
+        param.value === null || param.value === undefined
+          ? ""
+          : String(param.value);
+      params.push({ name: param.name, value });
+    }
+  }
+  return params.length > 0 ? params : undefined;
+}
+
+function extractBranchParam(
+  params: { name: string; value: string }[] | undefined,
+): string | undefined {
+  if (!params || params.length === 0) {
+    return undefined;
+  }
+  const candidates = ["BRANCH", "GIT_BRANCH", "BRANCH_NAME", "REF", "TAG"];
+  for (const key of candidates) {
+    const match = params.find((param) => param.name === key && param.value);
+    if (match) {
+      return match.value;
+    }
+  }
+  const fallback = params.find(
+    (param) => param.name.toLowerCase().includes("branch") && param.value,
+  );
+  return fallback?.value;
 }

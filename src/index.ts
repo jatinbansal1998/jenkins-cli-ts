@@ -35,7 +35,7 @@ async function main(): Promise<void> {
     })
     .option("debug", {
       type: "boolean",
-      describe: "Log API requests and responses to console",
+      describe: "Log API requests and responses to api.log",
     })
     .middleware((argv) => {
       // Check if --debug or --no-debug was explicitly passed
