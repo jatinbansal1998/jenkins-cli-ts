@@ -80,11 +80,17 @@ export async function runBuild(options: BuildOptions): Promise<void> {
     // Ignore cache write failures for build success.
   }
 
-  if (result.queueUrl) {
-    printOk(`Build queued at ${result.queueUrl}.`);
-  } else {
-    printOk(`Build triggered for ${jobLabel || jobUrl}.`);
+  const displayJob = jobLabel || jobUrl;
+  if (result.buildUrl) {
+    printOk(`Build started at ${result.buildUrl}.`);
+    return;
   }
+  if (result.queueUrl) {
+    const trackingUrl = result.jobUrl || jobUrl;
+    printOk(`Build queued for ${displayJob}. Track at ${trackingUrl}.`);
+    return;
+  }
+  printOk(`Build triggered for ${displayJob}.`);
 }
 
 function validateBuildOptions(options: BuildOptions): void {

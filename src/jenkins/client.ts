@@ -51,6 +51,25 @@ type BuildDetails = {
   actions?: BuildAction[];
 };
 
+type QueueItem = {
+  id?: number;
+  task?: {
+    url?: string;
+  };
+  executable?: {
+    number?: number;
+    url?: string;
+  };
+};
+
+type TriggerBuildResult = {
+  queueUrl?: string;
+  queueId?: number;
+  jobUrl?: string;
+  buildUrl?: string;
+  buildNumber?: number;
+};
+
 type PipelineInfo = {
   stage?: { name?: string; status?: string };
   queueDurationMs?: number;
@@ -145,7 +164,7 @@ export class JenkinsClient {
   async triggerBuild(
     jobUrl: string,
     params: Record<string, string>,
-  ): Promise<{ queueUrl?: string }> {
+  ): Promise<TriggerBuildResult> {
     const crumb = await this.getCrumb();
     const url = this.withJob(jobUrl, "buildWithParameters");
     const body = new URLSearchParams(params).toString();
@@ -169,7 +188,17 @@ export class JenkinsClient {
       await this.raiseHttpError(response, "trigger build");
     }
 
-    return { queueUrl: response.headers.get("location") ?? undefined };
+    const location = response.headers.get("location") ?? undefined;
+    const queueUrl = location ? this.resolveUrl(location) : undefined;
+    const queueItem = queueUrl ? await this.getQueueItem(queueUrl) : null;
+
+    return {
+      queueUrl,
+      queueId: queueItem?.id,
+      jobUrl: queueItem?.task?.url ?? jobUrl,
+      buildUrl: queueItem?.executable?.url,
+      buildNumber: queueItem?.executable?.number,
+    };
   }
 
   private async getCrumb(): Promise<Crumb | null> {
@@ -367,6 +396,15 @@ export class JenkinsClient {
     return new URL(path, base).toString();
   }
 
+  private resolveUrl(value: string): string {
+    const base = this.baseUrl.endsWith("/") ? this.baseUrl : `${this.baseUrl}/`;
+    try {
+      return new URL(value, base).toString();
+    } catch {
+      return value;
+    }
+  }
+
   private async getBuildDetails(
     buildUrl: string,
   ): Promise<BuildDetails | null> {
@@ -416,6 +454,27 @@ export class JenkinsClient {
       return wait >= 0 ? wait : undefined;
     } catch {
       return undefined;
+    }
+  }
+
+  private async getQueueItem(queueUrl: string): Promise<QueueItem | null> {
+    const url = this.withJob(
+      queueUrl,
+      "api/json?tree=id,task[url],executable[number,url]",
+    );
+    try {
+      const response = await this.fetchWithTimeout(
+        url,
+        { method: "GET", headers: this.authHeaders() },
+        0,
+        "fetch queue item",
+      );
+      if (!response.ok) {
+        return null;
+      }
+      return (await response.json()) as QueueItem;
+    } catch {
+      return null;
     }
   }
 
@@ -486,7 +545,14 @@ function extractBranchParam(
   if (!params || params.length === 0) {
     return undefined;
   }
-  const candidates = ["BRANCH", "GIT_BRANCH", "BRANCH_NAME", "REF", "TAG"];
+  const candidates = [
+    "BRANCH",
+    "BRANCH_TAG",
+    "GIT_BRANCH",
+    "BRANCH_NAME",
+    "REF",
+    "TAG",
+  ];
   for (const key of candidates) {
     const match = params.find((param) => param.name === key && param.value);
     if (match) {

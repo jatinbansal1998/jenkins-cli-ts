@@ -8,10 +8,12 @@ import yargs from "yargs/yargs";
 import { hideBin } from "yargs/helpers";
 import { CliError, handleCliError } from "./cli";
 import { runBuild } from "./commands/build";
+import { runLogin } from "./commands/login";
 import { runList } from "./commands/list";
 import { runStatus } from "./commands/status";
 import { loadEnv, getDebugDefault } from "./env";
 import { JenkinsClient } from "./jenkins/client";
+import { getJobCachePath } from "./jobs";
 import { setDebugMode } from "./logger";
 import packageJson from "../package.json";
 
@@ -53,6 +55,39 @@ async function main(): Promise<void> {
       }
     })
     .command(
+      "login",
+      "Save Jenkins credentials to the config file",
+      (yargsInstance) =>
+        yargsInstance
+          .option("url", {
+            type: "string",
+            describe: "Jenkins base URL",
+          })
+          .option("user", {
+            type: "string",
+            describe: "Jenkins username",
+          })
+          .option("token", {
+            type: "string",
+            alias: "api-token",
+            describe: "Jenkins API token",
+          })
+          .option("branch-param", {
+            type: "string",
+            describe: "Branch parameter name (default from env/config)",
+          }),
+      async (argv) => {
+        await runLogin({
+          url: typeof argv.url === "string" ? argv.url : undefined,
+          user: typeof argv.user === "string" ? argv.user : undefined,
+          apiToken: typeof argv.token === "string" ? argv.token : undefined,
+          branchParam:
+            typeof argv.branchParam === "string" ? argv.branchParam : undefined,
+          nonInteractive: Boolean(argv.nonInteractive),
+        });
+      },
+    )
+    .command(
       "list",
       "List Jenkins jobs",
       (yargsInstance) =>
@@ -78,8 +113,8 @@ async function main(): Promise<void> {
       },
     )
     .command(
-      "build",
-      "Trigger a Jenkins build",
+      ["build", "deploy"],
+      "Trigger a Jenkins build (alias: deploy)",
       (yargsInstance) =>
         yargsInstance
           .option("job", {
@@ -106,14 +141,25 @@ async function main(): Promise<void> {
           }),
       async (argv) => {
         const { env, client } = createContext();
+        const rawArgs = hideBin(process.argv);
+        const branchParamExplicitlyPassed = rawArgs.some(
+          (arg) =>
+            arg === "--branch-param" ||
+            arg.startsWith("--branch-param=") ||
+            arg === "--branchParam" ||
+            arg.startsWith("--branchParam="),
+        );
         await runBuild({
           client,
           env,
           job: typeof argv.job === "string" ? argv.job : undefined,
           jobUrl: typeof argv.jobUrl === "string" ? argv.jobUrl : undefined,
           branch: typeof argv.branch === "string" ? argv.branch : undefined,
-          branchParam:
-            typeof argv.branchParam === "string" ? argv.branchParam : undefined,
+          branchParam: branchParamExplicitlyPassed
+            ? typeof argv.branchParam === "string"
+              ? argv.branchParam
+              : undefined
+            : env.branchParamDefault,
           defaultBranch: Boolean(argv.defaultBranch),
           nonInteractive: Boolean(argv.nonInteractive),
         });
@@ -154,7 +200,7 @@ async function main(): Promise<void> {
     --search   Search jobs by name or description
     --refresh  Refresh the job cache from Jenkins
 
-  build:
+  build / deploy:
     --job             Job name or description
     --job-url         Full Jenkins job URL
     --branch          Branch name to build
@@ -164,6 +210,14 @@ async function main(): Promise<void> {
   status:
     --job      Job name or description
     --job-url  Full Jenkins job URL
+
+  login:
+    --url           Jenkins base URL
+    --user          Jenkins username
+    --token         Jenkins API token
+    --branch-param  Branch parameter name
+
+Cache file: ${getJobCachePath()}
 
 Run "$0 <command> --help" for full details.`,
     )

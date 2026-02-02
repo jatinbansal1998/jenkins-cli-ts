@@ -1,12 +1,13 @@
 /**
  * Job caching and fuzzy matching.
- * Caches jobs locally in .jenkins-cli/jobs.json and provides
+ * Caches jobs locally in an OS-specific cache directory and provides
  * natural language search with scoring for job lookups.
  */
 import { mkdir, readFile, writeFile } from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 import { CliError } from "./cli";
-import { MIN_SCORE, AMBIGUITY_GAP, MAX_OPTIONS } from "./config/fuzzy";
+import { MIN_SCORE, AMBIGUITY_GAP, MAX_OPTIONS, SCORES } from "./config/fuzzy";
 import type { EnvConfig } from "./env";
 import type { JenkinsClient, JenkinsJob } from "./jenkins/client";
 
@@ -23,8 +24,36 @@ export type JobCache = {
   recentJobs?: string[];
 };
 
-const CACHE_DIR = path.join(process.cwd(), ".jenkins-cli");
+const CACHE_DIR = resolveCacheDir();
 const CACHE_FILE = path.join(CACHE_DIR, "jobs.json");
+
+export function getJobCacheDir(): string {
+  return CACHE_DIR;
+}
+
+export function getJobCachePath(): string {
+  return CACHE_FILE;
+}
+
+function resolveCacheDir(): string {
+  const home = os.homedir();
+  if (process.platform === "darwin") {
+    return path.join(home, "Library", "Caches", "jenkins-cli");
+  }
+  if (process.platform === "win32") {
+    const localAppData = process.env.LOCALAPPDATA?.trim();
+    if (localAppData) {
+      return path.join(localAppData, "jenkins-cli");
+    }
+    return path.join(home, "AppData", "Local", "jenkins-cli");
+  }
+  const xdgCacheHome = process.env.XDG_CACHE_HOME?.trim();
+  const baseDir =
+    xdgCacheHome && xdgCacheHome.length > 0
+      ? xdgCacheHome
+      : path.join(home, ".cache");
+  return path.join(baseDir, "jenkins-cli");
+}
 
 /** Analyze all jobs to identify frequently-occurring (trivial) tokens.
  * Tokens appearing in >30% of jobs are considered trivial and weighted lower.
@@ -455,10 +484,10 @@ function scoreDirectMatch(
   candidate: string,
 ): number | null {
   if (candidate === normalizedQuery) {
-    return 100;
+    return SCORES.EXACT;
   }
   if (candidate.startsWith(normalizedQuery)) {
-    return 80;
+    return SCORES.PREFIX;
   }
   return null;
 }
@@ -474,17 +503,17 @@ function scoreSubstringMatch(
   }
   const queryTokenCount = normalizedQuery.split(" ").length;
   if (candidateTokenCount <= queryTokenCount) {
-    return 60;
+    return SCORES.SUBSTRING;
   }
   const extraTokens = candidateTokenCount - queryTokenCount;
   const isSingleTokenQuery = queryTokenCount === 1;
   if (hasExactOrPrefixMatch) {
     const penalty = extraTokens * (isSingleTokenQuery ? 10 : 20);
-    return Math.max(0, 60 - penalty);
+    return Math.max(0, SCORES.SUBSTRING - penalty);
   }
   const perTokenPenalty = isSingleTokenQuery ? 4 : 8;
   const penalty = extraTokens * perTokenPenalty;
-  return Math.max(25, 60 - penalty);
+  return Math.max(25, SCORES.SUBSTRING - penalty);
 }
 
 function scoreTokenOverlap(

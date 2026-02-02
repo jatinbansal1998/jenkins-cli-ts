@@ -8,26 +8,6 @@ print() {
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$script_dir"
 
-install_cli=true
-for arg in "$@"; do
-  case "$arg" in
-    --no-install)
-      install_cli=false
-      ;;
-    -h|--help)
-      print "Usage: bash setup.sh [--no-install]"
-      print ""
-      print "  --no-install  Skip Bun/dependency/global install; only save config."
-      exit 0
-      ;;
-    *)
-      print "ERROR: Unknown option: $arg"
-      print "Run: bash setup.sh --help"
-      exit 1
-      ;;
-  esac
-done
-
 ensure_bun() {
   if command -v bun >/dev/null 2>&1; then
     return 0
@@ -55,7 +35,9 @@ ensure_bun() {
   print "Bun installed."
 }
 
-confirm() {
+config_file="$HOME/.config/jenkins-cli/jenkins-cli-config.json"
+
+confirm_default_no() {
   local prompt="$1"
   local response=""
   printf '%s' "$prompt"
@@ -66,331 +48,114 @@ confirm() {
   esac
 }
 
-confirm_default_yes() {
-  local prompt="$1"
-  local response=""
-  printf '%s' "$prompt"
-  IFS= read -r response
-  case "$response" in
-    ""|y|Y|yes|YES) return 0 ;;
-    *) return 1 ;;
-  esac
-}
-
-mask_value() {
-  local value="$1"
-  if [ -z "$value" ]; then
-    printf '%s' ""
-    return
+config_has_credentials() {
+  if [ ! -f "$config_file" ]; then
+    return 1
   fi
-  local len=${#value}
-  if [ "$len" -le 4 ]; then
-    printf '****'
-    return
-  fi
-  local prefix=${value:0:2}
-  local suffix=${value:$((len-2))}
-  printf '%s****%s' "$prefix" "$suffix"
-}
 
-prompt_with_default() {
-  local label="$1"
-  local default_value="$2"
-  local __resultvar="$3"
-  local value=""
-  while [ -z "$value" ]; do
-    if [ -n "$default_value" ]; then
-      printf '%s [%s]: ' "$label" "$default_value"
-    else
-      printf '%s: ' "$label"
-    fi
-    IFS= read -r value
-    if [ -z "$value" ] && [ -n "$default_value" ]; then
-      value="$default_value"
-    fi
-    if [ -z "$value" ]; then
-      print "Value required."
-    fi
-  done
-  printf -v "$__resultvar" '%s' "$value"
-}
-
-prompt_secret_with_default() {
-  local label="$1"
-  local default_value="$2"
-  local __resultvar="$3"
-  local value=""
-  while [ -z "$value" ]; do
-    if [ -n "$default_value" ]; then
-      printf '%s (press Enter to keep existing): ' "$label"
-    else
-      printf '%s: ' "$label"
-    fi
-    IFS= read -r -s value
-    printf '\n'
-    if [ -z "$value" ] && [ -n "$default_value" ]; then
-      value="$default_value"
-    fi
-    if [ -z "$value" ]; then
-      print "Value required."
-    fi
-  done
-  printf -v "$__resultvar" '%s' "$value"
-}
-
-prompt_non_empty() {
-  local label="$1"
-  local __resultvar="$2"
-  local value=""
-  while [ -z "$value" ]; do
-    printf '%s: ' "$label"
-    IFS= read -r value
-    if [ -z "$value" ]; then
-      print "Value required."
-    fi
-  done
-  printf -v "$__resultvar" '%s' "$value"
-}
-
-prompt_secret() {
-  local label="$1"
-  local __resultvar="$2"
-  local value=""
-  while [ -z "$value" ]; do
-    printf '%s: ' "$label"
-    IFS= read -r -s value
-    printf '\n'
-    if [ -z "$value" ]; then
-      print "Value required."
-    fi
-  done
-  printf -v "$__resultvar" '%s' "$value"
-}
-
-escape_json() {
-  printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g'
-}
-
-shell_quote() {
-  printf '%q' "$1"
-}
-
-write_config_file() {
-  local old_umask
-  old_umask=$(umask)
-  umask 077
-  mkdir -p "$config_dir"
-  cat > "$config_file" <<EOF
-{
-  "jenkinsUrl": "$(escape_json "$JENKINS_URL")",
-  "jenkinsUser": "$(escape_json "$JENKINS_USER")",
-  "jenkinsApiToken": "$(escape_json "$JENKINS_API_TOKEN")"
-}
-EOF
-  umask "$old_umask"
-  chmod 600 "$config_file" 2>/dev/null || true
-}
-
-config_dir="$HOME/.config/jenkins-cli"
-config_file="$config_dir/jenkins-cli-config.json"
-
-env_url="${JENKINS_URL:-}"
-env_user="${JENKINS_USER:-}"
-env_token="${JENKINS_API_TOKEN:-}"
-
-config_exists=false
-config_status="missing"
-config_url=""
-config_user=""
-config_token=""
-
-if [ -f "$config_file" ]; then
-  config_exists=true
   if command -v jq >/dev/null 2>&1; then
-    if jq -e '.' "$config_file" >/dev/null 2>&1; then
-      config_status="ok"
-      config_url=$(jq -r '.jenkinsUrl // .JENKINS_URL // empty' "$config_file" || true)
-      config_user=$(jq -r '.jenkinsUser // .JENKINS_USER // empty' "$config_file" || true)
-      config_token=$(jq -r '.jenkinsApiToken // .JENKINS_API_TOKEN // empty' "$config_file" || true)
-    else
-      config_status="invalid"
+    if jq -e '((.jenkinsUrl // .JENKINS_URL // "") | length > 0) and ((.jenkinsUser // .JENKINS_USER // "") | length > 0) and ((.jenkinsApiToken // .JENKINS_API_TOKEN // "") | length > 0)' "$config_file" >/dev/null 2>&1; then
+      return 0
     fi
   elif command -v python3 >/dev/null 2>&1; then
-    if config_output=$(python3 - "$config_file" <<'PY'
-import json,sys
-path=sys.argv[1]
+    if python3 - "$config_file" <<'PY'
+import json, sys
+path = sys.argv[1]
 try:
     with open(path, "r") as f:
-        data=json.load(f)
-    def get(*keys):
-        for k in keys:
-            v=data.get(k)
-            if isinstance(v, str):
-                return v
-        return ""
-    print(get("jenkinsUrl", "JENKINS_URL"))
-    print(get("jenkinsUser", "JENKINS_USER"))
-    print(get("jenkinsApiToken", "JENKINS_API_TOKEN"))
+        data = json.load(f)
 except Exception:
     sys.exit(1)
+def pick(*keys):
+    for key in keys:
+        value = data.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    return ""
+url = pick("jenkinsUrl", "JENKINS_URL")
+user = pick("jenkinsUser", "JENKINS_USER")
+token = pick("jenkinsApiToken", "JENKINS_API_TOKEN")
+sys.exit(0 if url and user and token else 1)
 PY
-); then
-      config_status="ok"
-      config_url=$(printf '%s\n' "$config_output" | sed -n '1p')
-      config_user=$(printf '%s\n' "$config_output" | sed -n '2p')
-      config_token=$(printf '%s\n' "$config_output" | sed -n '3p')
-    else
-      config_status="invalid"
+    then
+      return 0
     fi
   else
-    config_status="no-parser"
-  fi
-fi
-
-has_env_values=false
-if [ -n "$env_url" ] || [ -n "$env_user" ] || [ -n "$env_token" ]; then
-  has_env_values=true
-fi
-
-has_config_values=false
-if [ "$config_status" = "ok" ] && { [ -n "$config_url" ] || [ -n "$config_user" ] || [ -n "$config_token" ]; }; then
-  has_config_values=true
-fi
-
-use_defaults=false
-if [ "$has_env_values" = true ] || [ "$config_exists" = true ]; then
-  print "Existing values detected:"
-  if [ "$has_env_values" = true ]; then
-    [ -n "$env_url" ] && print "  env:JENKINS_URL=$env_url"
-    [ -n "$env_user" ] && print "  env:JENKINS_USER=$env_user"
-    if [ -n "$env_token" ]; then
-      masked_env_token=$(mask_value "$env_token")
-      print "  env:JENKINS_API_TOKEN=$masked_env_token"
+    local has_url=false
+    local has_user=false
+    local has_token=false
+    if grep -Eq '"(jenkinsUrl|JENKINS_URL)"[[:space:]]*:[[:space:]]*"[^"]+"' "$config_file"; then
+      has_url=true
+    fi
+    if grep -Eq '"(jenkinsUser|JENKINS_USER)"[[:space:]]*:[[:space:]]*"[^"]+"' "$config_file"; then
+      has_user=true
+    fi
+    if grep -Eq '"(jenkinsApiToken|JENKINS_API_TOKEN)"[[:space:]]*:[[:space:]]*"[^"]+"' "$config_file"; then
+      has_token=true
+    fi
+    if [ "$has_url" = true ] && [ "$has_user" = true ] && [ "$has_token" = true ]; then
+      return 0
     fi
   fi
 
-  if [ "$config_exists" = true ]; then
-    case "$config_status" in
-      ok)
-        if [ "$has_config_values" = true ]; then
-          [ -n "$config_url" ] && print "  config:jenkinsUrl=$config_url"
-          [ -n "$config_user" ] && print "  config:jenkinsUser=$config_user"
-          if [ -n "$config_token" ]; then
-            masked_config_token=$(mask_value "$config_token")
-            print "  config:jenkinsApiToken=$masked_config_token"
-          fi
-        else
-          print "  config: no values found"
-        fi
-        ;;
-      invalid)
-        print "  config: unable to read (invalid JSON)"
-        ;;
-      no-parser)
-        print "  config: unable to read (install jq or python3 to parse)"
-        ;;
-      *)
-        print "  config: unable to read"
-        ;;
-    esac
-  fi
-
-  if [ "$has_env_values" = true ] || [ "$has_config_values" = true ]; then
-    if confirm_default_yes "Use existing values as defaults? [Y/n]: "; then
-      use_defaults=true
-    fi
-  fi
-fi
-
-default_url=""
-default_user=""
-default_token=""
-if [ "$use_defaults" = true ]; then
-  if [ -n "$env_url" ]; then
-    default_url="$env_url"
-  else
-    default_url="$config_url"
-  fi
-
-  if [ -n "$env_user" ]; then
-    default_user="$env_user"
-  else
-    default_user="$config_user"
-  fi
-
-  if [ -n "$env_token" ]; then
-    default_token="$env_token"
-  else
-    default_token="$config_token"
-  fi
-fi
+  return 1
+}
 
 print "Jenkins CLI setup"
-print "This will prompt for Jenkins credentials if any are missing."
+print "This will install Bun (if needed), dependencies, and the global CLI."
 print ""
 
-if [ "$install_cli" = true ]; then
-  ensure_bun
+ensure_bun
 
-  if [ ! -f "$script_dir/package.json" ]; then
-    print "ERROR: package.json not found. Run this script from the project root."
-    exit 1
+if [ ! -f "$script_dir/package.json" ]; then
+  print "ERROR: package.json not found. Run this script from the project root."
+  exit 1
+fi
+
+print "Installing dependencies..."
+bun install
+
+print "Installing Jenkins CLI globally..."
+bun run install:global
+
+if command -v jenkins-cli >/dev/null 2>&1; then
+  env_url="${JENKINS_URL:-}"
+  env_user="${JENKINS_USER:-}"
+  env_token="${JENKINS_API_TOKEN:-}"
+  has_env_credentials=false
+  if [ -n "$env_url" ] && [ -n "$env_user" ] && [ -n "$env_token" ]; then
+    has_env_credentials=true
   fi
 
-  print "Installing dependencies..."
-  bun install
+  has_config_credentials=false
+  if config_has_credentials; then
+    has_config_credentials=true
+  fi
 
-  print "Installing Jenkins CLI globally..."
-  bun run install:global
-else
-  print "Skipping install steps."
-fi
+  credentials_source=""
+  if [ "$has_env_credentials" = true ] && [ "$has_config_credentials" = true ]; then
+    credentials_source="environment and config file"
+  elif [ "$has_env_credentials" = true ]; then
+    credentials_source="environment"
+  elif [ "$has_config_credentials" = true ]; then
+    credentials_source="config file"
+  fi
 
-if [ "$use_defaults" = true ]; then
-  JENKINS_URL="$default_url"
-  JENKINS_USER="$default_user"
-  JENKINS_API_TOKEN="$default_token"
-fi
-
-if [ -z "${JENKINS_URL:-}" ]; then
-  prompt_with_default "Jenkins URL (e.g., https://jenkins.example.com)" "" JENKINS_URL
-fi
-if [ -z "${JENKINS_USER:-}" ]; then
-  prompt_with_default "Jenkins username" "" JENKINS_USER
-fi
-if [ -z "${JENKINS_API_TOKEN:-}" ]; then
-  prompt_secret_with_default "Jenkins API token" "" JENKINS_API_TOKEN
-fi
-
-saved_config=false
-if confirm "Save values to $config_file? [y/N]: "; then
-  if [ -f "$config_file" ]; then
-    if confirm "Config already exists at $config_file. Overwrite? [y/N]: "; then
-      write_config_file
-      saved_config=true
-      print "Saved config to $config_file."
+  print ""
+  if [ -n "$credentials_source" ]; then
+    if confirm_default_no "Credentials detected in $credentials_source. Run login anyway? [y/N]: "; then
+      print "Starting Jenkins CLI login..."
+      jenkins-cli login
     else
-      print "Skipped writing config."
+      print "Skipping login."
     fi
   else
-    write_config_file
-    saved_config=true
-    print "Saved config to $config_file."
+    print "Starting Jenkins CLI login..."
+    jenkins-cli login
   fi
 else
-  print "Config not saved."
+  print ""
+  print "jenkins-cli not found on PATH. Run 'jenkins-cli login' manually."
 fi
 
-print ""
-print "To set env vars in your current shell, run:"
-quoted_url=$(shell_quote "$JENKINS_URL")
-quoted_user=$(shell_quote "$JENKINS_USER")
-quoted_token=$(shell_quote "$JENKINS_API_TOKEN")
-print "  export JENKINS_URL=$quoted_url"
-print "  export JENKINS_USER=$quoted_user"
-print "  export JENKINS_API_TOKEN=$quoted_token"
-print ""
-print "To persist them, add the exports to your shell profile manually."
-if [ "$saved_config" = true ]; then
-  print "The CLI will also read $config_file directly."
-fi
+print "Done."

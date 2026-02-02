@@ -209,7 +209,6 @@ function formatStatusDetails(
     lastBuildEstimatedDurationMs?: number;
     queueTimeMs?: number;
     parameters?: { name: string; value: string }[];
-    branch?: string;
     stage?: { name?: string; status?: string };
   },
   url: string,
@@ -245,9 +244,6 @@ function formatStatusDetails(
   if (status.stage?.name) {
     const stageStatus = status.stage.status ? ` (${status.stage.status})` : "";
     stageBranchParts.push(`Stage: ${status.stage.name}${stageStatus}`);
-  }
-  if (status.branch) {
-    stageBranchParts.push(`Branch: ${status.branch}`);
   }
   if (stageBranchParts.length > 0) {
     lines.push(stageBranchParts.join(" | "));
