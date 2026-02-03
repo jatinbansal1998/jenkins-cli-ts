@@ -3,7 +3,7 @@
  * Triggers a Jenkins build for a specified job with branch parameter support.
  */
 import { confirm, isCancel, select, text } from "@clack/prompts";
-import { CliError, printOk } from "../cli";
+import { CliError, printError, printHint, printOk } from "../cli";
 import {
   loadCachedBranchHistory,
   loadCachedBranches,
@@ -26,6 +26,15 @@ type BuildOptions = {
   defaultBranch?: boolean;
   nonInteractive: boolean;
 };
+
+type JobSelectionResult = { kind: "job"; job: JenkinsJob } | { kind: "search" };
+
+class SearchAgainError extends Error {
+  constructor() {
+    super("Search again");
+    this.name = "SearchAgainError";
+  }
+}
 
 export async function runBuild(options: BuildOptions): Promise<void> {
   validateBuildOptions(options);
@@ -176,11 +185,10 @@ async function resolveJobTarget(options: {
     };
   }
 
-  const selectedJob = await resolveJobMatch({
-    query: selection.query,
+  const selectedJob = await resolveJobSearch({
+    initialQuery: selection.query,
     jobs,
     nonInteractive: options.nonInteractive,
-    selectFromOptions: async (candidates) => promptForJobSelection(candidates),
   });
 
   return {
@@ -217,6 +225,63 @@ async function resolveJobSelection(options: {
   return { kind: "query", query: await promptForJobSearch() };
 }
 
+async function resolveJobSearch(options: {
+  initialQuery: string;
+  jobs: JenkinsJob[];
+  nonInteractive: boolean;
+}): Promise<JenkinsJob> {
+  if (options.nonInteractive) {
+    return resolveJobMatch({
+      query: options.initialQuery,
+      jobs: options.jobs,
+      nonInteractive: options.nonInteractive,
+    });
+  }
+
+  let query = options.initialQuery.trim();
+  while (true) {
+    if (!query) {
+      query = await promptForJobSearch();
+    }
+
+    try {
+      return await resolveJobMatch({
+        query,
+        jobs: options.jobs,
+        nonInteractive: false,
+        selectFromOptions: async (candidates) => {
+          const selection = await promptForJobSelection(candidates);
+          if (selection.kind === "search") {
+            throw new SearchAgainError();
+          }
+          return selection.job;
+        },
+      });
+    } catch (err) {
+      if (err instanceof SearchAgainError) {
+        query = await promptForJobSearch();
+        continue;
+      }
+      if (err instanceof CliError && shouldRetryJobSearch(err)) {
+        printError(err.message);
+        for (const hint of err.hints) {
+          printHint(hint);
+        }
+        query = await promptForJobSearch();
+        continue;
+      }
+      throw err;
+    }
+  }
+}
+
+function shouldRetryJobSearch(error: CliError): boolean {
+  if (error.message === "Job name is required.") {
+    return true;
+  }
+  return error.message.startsWith("No jobs match ");
+}
+
 async function resolveBranchValue(options: {
   env: EnvConfig;
   jobUrl: string;
@@ -249,9 +314,9 @@ async function resolveBranchValue(options: {
 
 async function promptForJobSelection(
   candidates: JenkinsJob[],
-): Promise<JenkinsJob> {
+): Promise<JobSelectionResult> {
   const response = await select({
-    message: "Select a job",
+    message: "Select a job (press Esc to search again)",
     options: candidates.map((job) => ({
       value: job.url,
       label: getJobDisplayName(job),
@@ -259,7 +324,7 @@ async function promptForJobSelection(
   });
 
   if (isCancel(response)) {
-    throw new CliError("Operation cancelled.");
+    return { kind: "search" };
   }
 
   const selected = candidates.find((job) => job.url === response);
@@ -269,7 +334,7 @@ async function promptForJobSelection(
     ]);
   }
 
-  return selected;
+  return { kind: "job", job: selected };
 }
 
 async function promptForRecentJobSelection(
