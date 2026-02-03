@@ -268,9 +268,36 @@ export async function resolveJobMatch(options: {
     ]);
   }
 
-  const ranked = rankJobs(trimmedQuery, options.jobs);
-  const topMatch = ranked[0];
+  const optionsList = resolveJobCandidates(trimmedQuery, options.jobs);
+  const firstMatch = optionsList[0];
+  if (optionsList.length === 1 && firstMatch) {
+    return firstMatch;
+  }
 
+  if (options.nonInteractive || !options.selectFromOptions) {
+    const optionNames = optionsList.map(getJobDisplayName).join(", ");
+    throw new CliError(`Job name is ambiguous for "${trimmedQuery}".`, [
+      `Options: ${optionNames}`,
+      "Pass `--job <exact name>` or `--job-url <url>`.",
+    ]);
+  }
+
+  return options.selectFromOptions(optionsList);
+}
+
+export function resolveJobCandidates(
+  query: string,
+  jobs: JenkinsJob[],
+): JenkinsJob[] {
+  const trimmedQuery = query.trim();
+  if (!trimmedQuery) {
+    throw new CliError("Job name is required.", [
+      "Pass --job <name> or use --job-url <url>.",
+    ]);
+  }
+
+  const ranked = rankJobs(trimmedQuery, jobs);
+  const topMatch = ranked[0];
   if (!topMatch || topMatch.score < MIN_SCORE) {
     throw new CliError(`No jobs match "${trimmedQuery}".`, [
       "Try a different description or run `jenkins-cli list --refresh`.",
@@ -283,24 +310,7 @@ export async function resolveJobMatch(options: {
     (match) =>
       match.score >= MIN_SCORE && topScore - match.score <= AMBIGUITY_GAP,
   );
-
-  const firstMatch = closeMatches[0];
-  if (closeMatches.length === 1 && firstMatch) {
-    return firstMatch.job;
-  }
-
-  const optionsList = closeMatches
-    .slice(0, MAX_OPTIONS)
-    .map((match) => match.job);
-  if (options.nonInteractive || !options.selectFromOptions) {
-    const optionNames = optionsList.map(getJobDisplayName).join(", ");
-    throw new CliError(`Job name is ambiguous for "${trimmedQuery}".`, [
-      `Options: ${optionNames}`,
-      "Pass `--job <exact name>` or `--job-url <url>`.",
-    ]);
-  }
-
-  return options.selectFromOptions(optionsList);
+  return closeMatches.slice(0, MAX_OPTIONS).map((match) => match.job);
 }
 
 /**

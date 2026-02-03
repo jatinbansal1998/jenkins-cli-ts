@@ -2,11 +2,16 @@
  * Status command implementation.
  * Shows the last build status (number, result, URL) for a job.
  */
-import { confirm, isCancel, select, text } from "@clack/prompts";
-import { CliError, printOk } from "../cli";
+import { confirm, isCancel, select, text, multiselect } from "@clack/prompts";
+import { CliError, printError, printHint, printOk } from "../cli";
 import type { EnvConfig } from "../env";
 import type { JenkinsClient, JenkinsJob } from "../jenkins/client";
-import { getJobDisplayName, loadJobs, resolveJobMatch } from "../jobs";
+import {
+  getJobDisplayName,
+  loadJobs,
+  resolveJobCandidates,
+  resolveJobMatch,
+} from "../jobs";
 import { loadRecentJobs, recordRecentJob } from "../recent-jobs";
 
 /** Options for the status command. */
@@ -18,6 +23,17 @@ type StatusOptions = {
   nonInteractive: boolean;
 };
 
+type StatusSelectionResult =
+  | { kind: "jobs"; jobs: JenkinsJob[] }
+  | { kind: "search" };
+
+class SearchAgainError extends Error {
+  constructor() {
+    super("Search again");
+    this.name = "SearchAgainError";
+  }
+}
+
 export async function runStatus(options: StatusOptions): Promise<void> {
   if (options.job && options.jobUrl) {
     throw new CliError("Provide either --job or --job-url, not both.", [
@@ -25,26 +41,115 @@ export async function runStatus(options: StatusOptions): Promise<void> {
     ]);
   }
 
+  if (options.nonInteractive) {
+    await runStatusOnce(options);
+    return;
+  }
+
+  let jobUrl = options.jobUrl?.trim() ?? "";
+  let jobQuery = options.job?.trim() ?? "";
+  let jobs: JenkinsJob[] | null = null;
+
+  while (true) {
+    let targets: { jobUrl: string; jobLabel: string }[] = [];
+
+    if (jobUrl) {
+      ensureValidUrl(jobUrl, "job-url");
+      targets = [{ jobUrl, jobLabel: jobUrl }];
+    } else {
+      if (!jobs) {
+        jobs = await loadJobsForStatus({
+          client: options.client,
+          env: options.env,
+          nonInteractive: false,
+        });
+      }
+
+      if (jobs.length === 0) {
+        throw new CliError("No jobs found in cache.", [
+          "Run `jenkins-cli list --refresh` to fetch jobs from Jenkins.",
+        ]);
+      }
+
+      const selection = await resolveJobSelection({
+        env: options.env,
+        job: jobQuery,
+        nonInteractive: false,
+      });
+
+      if (selection.kind === "recent") {
+        const selectedJob = jobs.find((job) => job.url === selection.jobUrl);
+        targets = [
+          {
+            jobUrl: selection.jobUrl,
+            jobLabel: selectedJob
+              ? getJobDisplayName(selectedJob)
+              : selection.label,
+          },
+        ];
+      } else {
+        const selectedJobs = await resolveJobSearch({
+          initialQuery: selection.query,
+          jobs,
+          nonInteractive: false,
+        });
+        targets = selectedJobs.map((job) => ({
+          jobUrl: job.url,
+          jobLabel: getJobDisplayName(job),
+        }));
+      }
+    }
+
+    for (const target of targets) {
+      try {
+        await recordRecentJob({
+          env: options.env,
+          jobUrl: target.jobUrl,
+        });
+      } catch {
+        // Ignore cache write failures for status output.
+      }
+
+      const status = await options.client.getJobStatus(target.jobUrl);
+      if (!status.lastBuildNumber) {
+        printOk(`No builds found for ${target.jobLabel || target.jobUrl}.`);
+        continue;
+      }
+
+      const result = status.building ? "RUNNING" : status.result || "UNKNOWN";
+      const url = status.lastBuildUrl || target.jobUrl;
+      const summary = `Last build for ${target.jobLabel || target.jobUrl}: #${status.lastBuildNumber} ${result}`;
+      const details = formatStatusDetails(status, url);
+      printOk(details ? `${summary}\n${details}` : summary);
+    }
+
+    const runAgain = await confirm({
+      message: "Check another job?",
+      initialValue: false,
+    });
+    if (isCancel(runAgain)) {
+      throw new CliError("Operation cancelled.");
+    }
+    if (!runAgain) {
+      return;
+    }
+
+    jobUrl = "";
+    jobQuery = "";
+  }
+}
+
+async function runStatusOnce(options: StatusOptions): Promise<void> {
   let jobUrl = options.jobUrl?.trim() ?? "";
   let jobLabel = jobUrl;
 
   if (jobUrl) {
     ensureValidUrl(jobUrl, "job-url");
   } else {
-    const jobs = await loadJobs({
+    const jobs = await loadJobsForStatus({
       client: options.client,
       env: options.env,
       nonInteractive: options.nonInteractive,
-      confirmRefresh: async (reason) => {
-        const response = await confirm({
-          message: `${reason} Refresh now?`,
-          initialValue: true,
-        });
-        if (isCancel(response)) {
-          throw new CliError("Operation cancelled.");
-        }
-        return response;
-      },
     });
 
     if (jobs.length === 0) {
@@ -68,8 +173,6 @@ export async function runStatus(options: StatusOptions): Promise<void> {
         query: selection.query,
         jobs,
         nonInteractive: options.nonInteractive,
-        selectFromOptions: async (candidates) =>
-          promptForJobSelection(candidates),
       });
 
       jobUrl = selectedJob.url;
@@ -101,9 +204,9 @@ export async function runStatus(options: StatusOptions): Promise<void> {
 
 async function promptForJobSelection(
   candidates: JenkinsJob[],
-): Promise<JenkinsJob> {
-  const response = await select({
-    message: "Select a job",
+): Promise<StatusSelectionResult> {
+  const response = await multiselect({
+    message: "Select jobs (press Esc to search again)",
     options: candidates.map((job) => ({
       value: job.url,
       label: getJobDisplayName(job),
@@ -111,17 +214,18 @@ async function promptForJobSelection(
   });
 
   if (isCancel(response)) {
-    throw new CliError("Operation cancelled.");
+    return { kind: "search" };
   }
 
-  const selected = candidates.find((job) => job.url === response);
-  if (!selected) {
-    throw new CliError("Selected job is no longer available.", [
-      "Run `jenkins-cli list --refresh` to update the cache.",
-    ]);
+  const selectedValues = new Set(
+    Array.isArray(response) ? response.map(String) : [],
+  );
+  const selected = candidates.filter((job) => selectedValues.has(job.url));
+  if (selected.length === 0) {
+    return { kind: "search" };
   }
 
-  return selected;
+  return { kind: "jobs", jobs: selected };
 }
 
 async function resolveJobSelection(options: {
@@ -189,6 +293,84 @@ async function promptForJobSearch(): Promise<string> {
     throw new CliError("Operation cancelled.");
   }
   return String(response).trim();
+}
+
+async function loadJobsForStatus(options: {
+  client: JenkinsClient;
+  env: EnvConfig;
+  nonInteractive: boolean;
+}): Promise<JenkinsJob[]> {
+  return loadJobs({
+    client: options.client,
+    env: options.env,
+    nonInteractive: options.nonInteractive,
+    confirmRefresh: async (reason) => {
+      const response = await confirm({
+        message: `${reason} Refresh now?`,
+        initialValue: true,
+      });
+      if (isCancel(response)) {
+        throw new CliError("Operation cancelled.");
+      }
+      return response;
+    },
+  });
+}
+
+async function resolveJobSearch(options: {
+  initialQuery: string;
+  jobs: JenkinsJob[];
+  nonInteractive: boolean;
+}): Promise<JenkinsJob[]> {
+  if (options.nonInteractive) {
+    const job = await resolveJobMatch({
+      query: options.initialQuery,
+      jobs: options.jobs,
+      nonInteractive: options.nonInteractive,
+    });
+    return [job];
+  }
+
+  let query = options.initialQuery.trim();
+  while (true) {
+    if (!query) {
+      query = await promptForJobSearch();
+    }
+
+    try {
+      const candidates = resolveJobCandidates(query, options.jobs);
+      if (candidates.length === 1) {
+        return candidates;
+      }
+
+      const selection = await promptForJobSelection(candidates);
+      if (selection.kind === "search") {
+        throw new SearchAgainError();
+      }
+      return selection.jobs;
+    } catch (err) {
+      if (err instanceof SearchAgainError) {
+        query = await promptForJobSearch();
+        continue;
+      }
+      if (err instanceof CliError && shouldRetryJobSearch(err)) {
+        printError(err.message);
+        for (const hint of err.hints) {
+          printHint(hint);
+        }
+        query = await promptForJobSearch();
+        continue;
+      }
+      throw err;
+    }
+  }
+}
+
+function shouldRetryJobSearch(error: CliError): boolean {
+  if (error.message === "Job name is required.") {
+    return true;
+  }
+  return error.message.startsWith("No jobs match ");
 }
 
 function ensureValidUrl(value: string, label: string): void {

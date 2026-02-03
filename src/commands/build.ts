@@ -13,7 +13,12 @@ import {
 import { loadRecentJobs, recordRecentJob } from "../recent-jobs.ts";
 import type { EnvConfig } from "../env";
 import type { JenkinsClient, JenkinsJob } from "../jenkins/client";
-import { getJobDisplayName, loadJobs, resolveJobMatch } from "../jobs";
+import {
+  getJobDisplayName,
+  loadJobs,
+  resolveJobCandidates,
+  resolveJobMatch,
+} from "../jobs";
 
 /** Options for the build command. */
 type BuildOptions = {
@@ -40,12 +45,121 @@ export async function runBuild(options: BuildOptions): Promise<void> {
   validateBuildOptions(options);
   const branchParam = normalizeBranchParam(options.branchParam);
 
+  if (options.nonInteractive) {
+    await runBuildOnce({
+      client: options.client,
+      env: options.env,
+      job: options.job,
+      jobUrl: options.jobUrl,
+      branch: options.branch,
+      defaultBranch: options.defaultBranch ?? false,
+      branchParam,
+    });
+    return;
+  }
+
+  let job = options.job;
+  let jobUrl = options.jobUrl;
+  let branch = options.branch;
+  let defaultBranch = options.defaultBranch ?? false;
+
+  while (true) {
+    const {
+      jobUrl: resolvedJobUrl,
+      jobLabel,
+      matchedFromSearch,
+    } = await resolveJobTarget({
+      client: options.client,
+      env: options.env,
+      job,
+      jobUrl,
+      nonInteractive: false,
+    });
+
+    if (matchedFromSearch) {
+      printOk(`Selected job: ${jobLabel || resolvedJobUrl}.`);
+    }
+
+    const resolvedBranch = await resolveBranchValue({
+      env: options.env,
+      jobUrl: resolvedJobUrl,
+      branch,
+      defaultBranch,
+    });
+
+    if (!defaultBranch && !resolvedBranch) {
+      throw new CliError("Branch is required to trigger a build.", [
+        "Pass --branch <name> or use --default-branch to use the job default.",
+      ]);
+    }
+
+    const params = defaultBranch ? {} : { [branchParam]: resolvedBranch };
+    const result = await options.client.triggerBuild(resolvedJobUrl, params);
+
+    if (!defaultBranch && resolvedBranch) {
+      try {
+        await recordBranchSelection({
+          env: options.env,
+          jobUrl: resolvedJobUrl,
+          branch: resolvedBranch,
+        });
+      } catch {
+        // Ignore cache write failures for build success.
+      }
+    }
+
+    try {
+      await recordRecentJob({
+        env: options.env,
+        jobUrl: resolvedJobUrl,
+      });
+    } catch {
+      // Ignore cache write failures for build success.
+    }
+
+    const displayJob = jobLabel || resolvedJobUrl;
+    if (result.buildUrl) {
+      printOk(`Build started at ${result.buildUrl}.`);
+    } else if (result.queueUrl) {
+      const trackingUrl = result.jobUrl || resolvedJobUrl;
+      printOk(`Build queued for ${displayJob}. Track at ${trackingUrl}.`);
+    } else {
+      printOk(`Build triggered for ${displayJob}.`);
+    }
+
+    const runAgain = await confirm({
+      message: "Trigger another build?",
+      initialValue: false,
+    });
+    if (isCancel(runAgain)) {
+      throw new CliError("Operation cancelled.");
+    }
+    if (!runAgain) {
+      return;
+    }
+
+    job = undefined;
+    jobUrl = undefined;
+    branch = undefined;
+    defaultBranch = false;
+  }
+}
+
+async function runBuildOnce(options: {
+  client: JenkinsClient;
+  env: EnvConfig;
+  job?: string;
+  jobUrl?: string;
+  branch?: string;
+  defaultBranch: boolean;
+  branchParam: string;
+}): Promise<void> {
   const { jobUrl, jobLabel, matchedFromSearch } = await resolveJobTarget({
     client: options.client,
     env: options.env,
     job: options.job,
     jobUrl: options.jobUrl,
-    nonInteractive: options.nonInteractive,
+    nonInteractive: true,
   });
 
   if (matchedFromSearch) {
@@ -65,7 +179,7 @@ export async function runBuild(options: BuildOptions): Promise<void> {
     ]);
   }
 
-  const params = options.defaultBranch ? {} : { [branchParam]: branch };
+  const params = options.defaultBranch ? {} : { [options.branchParam]: branch };
   const result = await options.client.triggerBuild(jobUrl, params);
 
   if (!options.defaultBranch && branch) {
@@ -245,18 +359,16 @@ async function resolveJobSearch(options: {
     }
 
     try {
-      return await resolveJobMatch({
-        query,
-        jobs: options.jobs,
-        nonInteractive: false,
-        selectFromOptions: async (candidates) => {
-          const selection = await promptForJobSelection(candidates);
-          if (selection.kind === "search") {
-            throw new SearchAgainError();
-          }
-          return selection.job;
-        },
-      });
+      const candidates = resolveJobCandidates(query, options.jobs);
+      if (candidates.length === 1) {
+        return candidates[0];
+      }
+
+      const selection = await promptForJobSelection(candidates);
+      if (selection.kind === "search") {
+        throw new SearchAgainError();
+      }
+      return selection.job;
     } catch (err) {
       if (err instanceof SearchAgainError) {
         query = await promptForJobSearch();
