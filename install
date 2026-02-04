@@ -1,0 +1,100 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+print() {
+  printf '%s\n' "$*"
+}
+
+ensure_bun() {
+  if command -v bun >/dev/null 2>&1; then
+    return 0
+  fi
+
+  print "Bun not found. Installing..."
+  if command -v curl >/dev/null 2>&1; then
+    curl -fsSL https://bun.sh/install | bash
+  elif command -v wget >/dev/null 2>&1; then
+    wget -qO- https://bun.sh/install | bash
+  else
+    print "ERROR: curl or wget is required to install Bun."
+    exit 1
+  fi
+
+  export BUN_INSTALL="${BUN_INSTALL:-$HOME/.bun}"
+  export PATH="$BUN_INSTALL/bin:$PATH"
+
+  if ! command -v bun >/dev/null 2>&1; then
+    print "ERROR: Bun installed but not on PATH."
+    print "Open a new terminal or run: export PATH=\"$HOME/.bun/bin:$PATH\""
+    exit 1
+  fi
+
+  print "Bun installed."
+}
+
+ensure_downloader() {
+  if command -v curl >/dev/null 2>&1; then
+    return 0
+  fi
+  if command -v wget >/dev/null 2>&1; then
+    return 0
+  fi
+  print "ERROR: curl or wget is required to download Jenkins CLI."
+  exit 1
+}
+
+download_asset() {
+  local url="$1"
+  local out="$2"
+
+  if command -v curl >/dev/null 2>&1; then
+    curl -fsSL "$url" -o "$out"
+    return $?
+  fi
+
+  wget -qO "$out" "$url"
+}
+
+print "Jenkins CLI installer"
+
+ensure_bun
+ensure_downloader
+
+version="${JENKINS_CLI_VERSION:-}"
+if [ -n "$version" ] && [ "${version#v}" = "$version" ]; then
+  version="v$version"
+fi
+
+base_url="https://github.com/jatinbansal1998/jenkins-cli-ts/releases/latest/download"
+if [ -n "$version" ]; then
+  base_url="https://github.com/jatinbansal1998/jenkins-cli-ts/releases/download/$version"
+fi
+
+tmp_dir="$(mktemp -d)"
+trap 'rm -rf "$tmp_dir"' EXIT
+
+tmp_file="$tmp_dir/jenkins-cli"
+url="$base_url/jenkins-cli"
+if ! download_asset "$url" "$tmp_file"; then
+  print "ERROR: Failed to download Jenkins CLI from $url"
+  print "HINT: Set JENKINS_CLI_VERSION to a valid tag."
+  exit 1
+fi
+
+default_install_dir="${BUN_INSTALL:-$HOME/.bun}/bin"
+install_dir="${JENKINS_CLI_INSTALL_DIR:-$default_install_dir}"
+mkdir -p "$install_dir"
+chmod +x "$tmp_file"
+mv -f "$tmp_file" "$install_dir/jenkins-cli"
+
+print "Installed to $install_dir/jenkins-cli"
+
+case ":$PATH:" in
+  *":$install_dir:"*) ;;
+  *)
+    print "HINT: Add this to your shell config:"
+    print "export PATH=\"$install_dir:\$PATH\""
+    ;;
+esac
+
+print "Run: jenkins-cli login"

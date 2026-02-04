@@ -41,6 +41,34 @@ Optional branch parameter name (for jobs that don’t use `BRANCH`):
 - `JENKINS_BRANCH_PARAM` (env var), or
 - `"branchParam"` / `"jenkinsBranchParam"` / `"JENKINS_BRANCH_PARAM"` in the config file
 
+## Install (one-liner)
+
+This installer downloads the latest release and installs `jenkins-cli` to your PATH
+(defaults to `$HOME/.bun/bin`). It will install Bun if it is missing.
+
+```bash
+curl -fsSL https://<your-domain>/install | bash
+```
+
+Direct GitHub URL (use this until you set up your redirect):
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/jatinbansal1998/jenkins-cli-ts/main/install | bash
+```
+
+Optional overrides:
+
+```bash
+JENKINS_CLI_VERSION=vX.Y.Z curl -fsSL https://<your-domain>/install | bash
+JENKINS_CLI_INSTALL_DIR="$HOME/.local/bin" curl -fsSL https://<your-domain>/install | bash
+```
+
+After install, run:
+
+```bash
+jenkins-cli login
+```
+
 ## Setup script
 
 Run the helper script to install Bun (if needed), dependencies, and the global CLI:
