@@ -34,6 +34,35 @@ class SearchAgainError extends Error {
   }
 }
 
+class BackToRecentMenuError extends Error {
+  constructor() {
+    super("Back to recent menu");
+    this.name = "BackToRecentMenuError";
+  }
+}
+
+const ANSI_BOLD = "\u001b[1m";
+const ANSI_RESET = "\u001b[0m";
+const SEPARATOR_LINE = "-".repeat(60);
+
+function bold(value: string): string {
+  return `${ANSI_BOLD}${value}${ANSI_RESET}`;
+}
+
+function formatLabelValue(label: string, value: string): string {
+  return `${bold(label)} ${value}`;
+}
+
+function formatStatusSummary(options: {
+  jobLabel: string;
+  buildNumber: number;
+  result: string;
+}): string {
+  return `Last build for ${options.jobLabel}: #${options.buildNumber} ${bold(
+    options.result,
+  )}`;
+}
+
 export async function runStatus(options: StatusOptions): Promise<void> {
   if (options.job && options.jobUrl) {
     throw new CliError("Provide either --job or --job-url, not both.", [
@@ -78,29 +107,47 @@ export async function runStatus(options: StatusOptions): Promise<void> {
       });
 
       if (selection.kind === "recent") {
-        const selectedJob = jobs.find((job) => job.url === selection.jobUrl);
-        targets = [
-          {
-            jobUrl: selection.jobUrl,
+        targets = selection.jobs.map((recentJob) => {
+          const selectedJob = jobs.find((job) => job.url === recentJob.jobUrl);
+          return {
+            jobUrl: recentJob.jobUrl,
             jobLabel: selectedJob
               ? getJobDisplayName(selectedJob)
-              : selection.label,
-          },
-        ];
-      } else {
-        const selectedJobs = await resolveJobSearch({
-          initialQuery: selection.query,
-          jobs,
-          nonInteractive: false,
+              : recentJob.label,
+          };
         });
-        targets = selectedJobs.map((job) => ({
-          jobUrl: job.url,
-          jobLabel: getJobDisplayName(job),
-        }));
+      } else {
+        try {
+          const selectedJobs = await resolveJobSearch({
+            initialQuery: selection.query,
+            jobs,
+            nonInteractive: false,
+            allowBackToRecent: selection.allowBackToRecent,
+          });
+          targets = selectedJobs.map((job) => ({
+            jobUrl: job.url,
+            jobLabel: getJobDisplayName(job),
+          }));
+        } catch (err) {
+          if (
+            err instanceof BackToRecentMenuError &&
+            selection.allowBackToRecent
+          ) {
+            jobQuery = "";
+            continue;
+          }
+          throw err;
+        }
       }
     }
 
-    for (const target of targets) {
+    const showSeparators = targets.length > 1;
+    for (let index = 0; index < targets.length; index += 1) {
+      const target = targets[index];
+      if (showSeparators && index > 0) {
+        console.log("");
+        console.log(SEPARATOR_LINE);
+      }
       try {
         await recordRecentJob({
           env: options.env,
@@ -118,7 +165,11 @@ export async function runStatus(options: StatusOptions): Promise<void> {
 
       const result = status.building ? "RUNNING" : status.result || "UNKNOWN";
       const url = status.lastBuildUrl || target.jobUrl;
-      const summary = `Last build for ${target.jobLabel || target.jobUrl}: #${status.lastBuildNumber} ${result}`;
+      const summary = formatStatusSummary({
+        jobLabel: target.jobLabel || target.jobUrl,
+        buildNumber: status.lastBuildNumber,
+        result,
+      });
       const details = formatStatusDetails(status, url);
       printOk(details ? `${summary}\n${details}` : summary);
     }
@@ -165,9 +216,15 @@ async function runStatusOnce(options: StatusOptions): Promise<void> {
     });
 
     if (selection.kind === "recent") {
-      const selectedJob = jobs.find((job) => job.url === selection.jobUrl);
-      jobUrl = selection.jobUrl;
-      jobLabel = selectedJob ? getJobDisplayName(selectedJob) : selection.label;
+      const recentJob = selection.jobs[0];
+      if (!recentJob) {
+        throw new CliError("No jobs selected.", [
+          "Choose at least one job and try again.",
+        ]);
+      }
+      const selectedJob = jobs.find((job) => job.url === recentJob.jobUrl);
+      jobUrl = recentJob.jobUrl;
+      jobLabel = selectedJob ? getJobDisplayName(selectedJob) : recentJob.label;
     } else {
       const selectedJob = await resolveJobMatch({
         query: selection.query,
@@ -197,7 +254,11 @@ async function runStatusOnce(options: StatusOptions): Promise<void> {
 
   const result = status.building ? "RUNNING" : status.result || "UNKNOWN";
   const url = status.lastBuildUrl || jobUrl;
-  const summary = `Last build for ${jobLabel || jobUrl}: #${status.lastBuildNumber} ${result}`;
+  const summary = formatStatusSummary({
+    jobLabel: jobLabel || jobUrl,
+    buildNumber: status.lastBuildNumber,
+    result,
+  });
   const details = formatStatusDetails(status, url);
   printOk(details ? `${summary}\n${details}` : summary);
 }
@@ -233,12 +294,12 @@ async function resolveJobSelection(options: {
   job?: string;
   nonInteractive: boolean;
 }): Promise<
-  | { kind: "query"; query: string }
-  | { kind: "recent"; jobUrl: string; label: string }
+  | { kind: "query"; query: string; allowBackToRecent: boolean }
+  | { kind: "recent"; jobs: { jobUrl: string; label: string }[] }
 > {
   const query = options.job?.trim() ?? "";
   if (query) {
-    return { kind: "query", query };
+    return { kind: "query", query, allowBackToRecent: false };
   }
   if (options.nonInteractive) {
     throw new CliError("Missing required --job.", [
@@ -246,50 +307,88 @@ async function resolveJobSelection(options: {
     ]);
   }
   const recentJobs = await loadRecentJobs({ env: options.env });
-  if (recentJobs.length > 0) {
-    const selection = await promptForRecentJobSelection(recentJobs);
-    if (selection.kind === "recent") {
-      return selection;
+  const allowBackToRecent = recentJobs.length > 0;
+  while (true) {
+    if (allowBackToRecent) {
+      const selection = await promptForRecentJobSelection(recentJobs);
+      if (selection.kind === "recent") {
+        return selection;
+      }
+    }
+    try {
+      return {
+        kind: "query",
+        query: await promptForJobSearch({ allowBack: allowBackToRecent }),
+        allowBackToRecent,
+      };
+    } catch (err) {
+      if (err instanceof BackToRecentMenuError && allowBackToRecent) {
+        continue;
+      }
+      throw err;
     }
   }
-  return { kind: "query", query: await promptForJobSearch() };
 }
 
 async function promptForRecentJobSelection(
   recentJobs: { url: string; label: string }[],
 ): Promise<
-  { kind: "recent"; jobUrl: string; label: string } | { kind: "search" }
+  | { kind: "recent"; jobs: { jobUrl: string; label: string }[] }
+  | { kind: "search" }
 > {
-  const searchAction = "__jenkins_cli_search_all__";
-  const options = [
-    { value: searchAction, label: "Search all jobs" },
-    ...recentJobs.map((job) => ({ value: job.url, label: job.label })),
-  ];
-  const response = await select({
-    message: "Recent jobs",
-    options,
-  });
-  if (isCancel(response)) {
-    throw new CliError("Operation cancelled.");
+  while (true) {
+    const mode = await select({
+      message: "Recent jobs",
+      options: [
+        { value: "recent", label: "Select from recent jobs" },
+        { value: "search", label: "Search all jobs" },
+      ],
+    });
+    if (isCancel(mode)) {
+      throw new CliError("Operation cancelled.");
+    }
+    if (mode === "search") {
+      return { kind: "search" };
+    }
+
+    const response = await multiselect({
+      message: "Select recent jobs",
+      options: recentJobs.map((job) => ({
+        value: job.url,
+        label: job.label,
+      })),
+    });
+    if (isCancel(response)) {
+      continue;
+    }
+    const selectedValues = new Set(
+      Array.isArray(response) ? response.map(String) : [],
+    );
+    if (selectedValues.size === 0) {
+      return { kind: "search" };
+    }
+    const selected = recentJobs.filter((job) => selectedValues.has(job.url));
+    if (selected.length === 0) {
+      return { kind: "search" };
+    }
+    return {
+      kind: "recent",
+      jobs: selected.map((job) => ({ jobUrl: job.url, label: job.label })),
+    };
   }
-  if (response === searchAction) {
-    return { kind: "search" };
-  }
-  const selected = recentJobs.find((job) => job.url === response);
-  if (!selected) {
-    throw new CliError("Selected job is no longer available.", [
-      "Run `jenkins-cli list --refresh` to update the cache.",
-    ]);
-  }
-  return { kind: "recent", jobUrl: selected.url, label: selected.label };
 }
 
-async function promptForJobSearch(): Promise<string> {
+async function promptForJobSearch(options?: {
+  allowBack?: boolean;
+}): Promise<string> {
   const response = await text({
     message: "Job name or description",
     placeholder: "e.g. api prod deploy",
   });
   if (isCancel(response)) {
+    if (options?.allowBack) {
+      throw new BackToRecentMenuError();
+    }
     throw new CliError("Operation cancelled.");
   }
   return String(response).trim();
@@ -321,6 +420,7 @@ async function resolveJobSearch(options: {
   initialQuery: string;
   jobs: JenkinsJob[];
   nonInteractive: boolean;
+  allowBackToRecent: boolean;
 }): Promise<JenkinsJob[]> {
   if (options.nonInteractive) {
     const job = await resolveJobMatch({
@@ -334,7 +434,9 @@ async function resolveJobSearch(options: {
   let query = options.initialQuery.trim();
   while (true) {
     if (!query) {
-      query = await promptForJobSearch();
+      query = await promptForJobSearch({
+        allowBack: options.allowBackToRecent,
+      });
     }
 
     try {
@@ -350,7 +452,9 @@ async function resolveJobSearch(options: {
       return selection.jobs;
     } catch (err) {
       if (err instanceof SearchAgainError) {
-        query = await promptForJobSearch();
+        query = await promptForJobSearch({
+          allowBack: options.allowBackToRecent,
+        });
         continue;
       }
       if (err instanceof CliError && shouldRetryJobSearch(err)) {
@@ -358,7 +462,9 @@ async function resolveJobSearch(options: {
         for (const hint of err.hints) {
           printHint(hint);
         }
-        query = await promptForJobSearch();
+        query = await promptForJobSearch({
+          allowBack: options.allowBackToRecent,
+        });
         continue;
       }
       throw err;
@@ -396,27 +502,31 @@ function formatStatusDetails(
   url: string,
 ): string {
   const lines: string[] = [];
-  lines.push(`URL: ${url}`);
+  lines.push(formatLabelValue("URL:", url));
 
   const timingParts: string[] = [];
   if (typeof status.lastBuildTimestamp === "number") {
-    timingParts.push(`Started: ${formatLocalTime(status.lastBuildTimestamp)}`);
+    timingParts.push(
+      formatLabelValue("Started:", formatLocalTime(status.lastBuildTimestamp)),
+    );
   }
   if (typeof status.queueTimeMs === "number" && status.queueTimeMs > 0) {
-    timingParts.push(`Queue: ${formatDuration(status.queueTimeMs)}`);
+    timingParts.push(
+      formatLabelValue("Queue:", formatDuration(status.queueTimeMs)),
+    );
   }
   const duration = resolveDurationMs(status);
   if (duration > 0) {
     const label = status.building ? "Elapsed" : "Duration";
-    let segment = `${label}: ${formatDuration(duration)}`;
+    let durationValue = formatDuration(duration);
     if (
       status.building &&
       typeof status.lastBuildEstimatedDurationMs === "number" &&
       status.lastBuildEstimatedDurationMs > 0
     ) {
-      segment += ` (est ${formatDuration(status.lastBuildEstimatedDurationMs)})`;
+      durationValue += ` (est ${formatDuration(status.lastBuildEstimatedDurationMs)})`;
     }
-    timingParts.push(segment);
+    timingParts.push(formatLabelValue(`${label}:`, durationValue));
   }
   if (timingParts.length > 0) {
     lines.push(timingParts.join(" | "));
@@ -425,7 +535,9 @@ function formatStatusDetails(
   const stageBranchParts: string[] = [];
   if (status.stage?.name) {
     const stageStatus = status.stage.status ? ` (${status.stage.status})` : "";
-    stageBranchParts.push(`Stage: ${status.stage.name}${stageStatus}`);
+    stageBranchParts.push(
+      formatLabelValue("Stage:", `${status.stage.name}${stageStatus}`),
+    );
   }
   if (stageBranchParts.length > 0) {
     lines.push(stageBranchParts.join(" | "));
@@ -473,8 +585,9 @@ function formatParams(
   if (entries.length === 0) {
     return [];
   }
-  const prefix = "Params: ";
-  const indent = " ".repeat(prefix.length);
+  const prefixLabel = "Params:";
+  const prefix = `${bold(prefixLabel)} `;
+  const indent = " ".repeat(prefixLabel.length + 1);
   const chunks = chunkEntries(entries, 4);
   return chunks.map((chunk, index) => {
     const label = index === 0 ? prefix : indent;
