@@ -27,11 +27,14 @@ jobs:
       - name: Build
         run: bun run build
 
+      - name: Ensure executable bit
+        run: chmod +x dist/jenkins-cli
+
       - name: Create Release
         uses: softprops/action-gh-release@v1
         with:
           files: |
-            dist/index.js
+            dist/jenkins-cli
           generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
