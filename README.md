@@ -1,18 +1,40 @@
-# Jenkins CLI (MVP)
+# Jenkins CLI
 
-Minimal Jenkins CLI with `list`, `build`/`deploy`, and `status` commands. Designed for
-interactive use and AI-agent automation with clear, English error messages.
+Minimal Jenkins CLI for listing jobs, triggering builds, and checking status. Built
+for interactive use and automation with clear, parseable output.
+
+## Install
+
+Installs `jenkins-cli` to your PATH (defaults to `$HOME/.bun/bin`). It will install
+Bun if it is missing.
+
+```bash
+curl -fsSL http://jatinbansal.com/jenkins-cli/install/ | bash
+```
+
+Direct GitHub URL:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/jatinbansal1998/jenkins-cli-ts/main/install | bash
+```
+
+Optional overrides:
+
+```bash
+JENKINS_CLI_VERSION=vX.Y.Z curl -fsSL http://jatinbansal.com/jenkins-cli/install/ | bash
+JENKINS_CLI_INSTALL_DIR="$HOME/.local/bin" curl -fsSL http://jatinbansal.com/jenkins-cli/install/ | bash
+```
 
 ## Setup
 
-Set required environment variables:
+Required environment variables:
 
 - `JENKINS_URL` (e.g., `https://jenkins.example.com`)
 - `JENKINS_USER`
 - `JENKINS_API_TOKEN`
 
-The CLI also reads these values from `~/.config/jenkins-cli/jenkins-cli-config.json`
-(JSON) if the env vars are not set:
+Config file (used when env vars are not set):
+`~/.config/jenkins-cli/jenkins-cli-config.json`
 
 ```json
 {
@@ -25,122 +47,35 @@ The CLI also reads these values from `~/.config/jenkins-cli/jenkins-cli-config.j
 
 Environment variables always take precedence.
 
-You can also use the interactive login command to save config and print export
-commands:
+Login and save credentials:
 
 ```bash
 jenkins-cli login
 ```
 
-If you want to set a custom branch parameter name, pass `--branch-param`.
-When omitted, the login flow defaults to `JENKINS_BRANCH_PARAM` from env/config,
-or `"BRANCH"` if nothing is set.
+Example output:
 
-Optional branch parameter name (for jobs that don’t use `BRANCH`):
-
-- `JENKINS_BRANCH_PARAM` (env var), or
-- `"branchParam"` / `"jenkinsBranchParam"` / `"JENKINS_BRANCH_PARAM"` in the config file
-
-## Install (one-liner)
-
-This installer downloads the latest release and installs `jenkins-cli` to your PATH
-(defaults to `$HOME/.bun/bin`). It will install Bun if it is missing.
-
-```bash
-curl -fsSL https://<your-domain>/install | bash
+```text
+OK: Saved credentials to ~/.config/jenkins-cli/jenkins-cli-config.json
+HINT: Run: export JENKINS_URL=... JENKINS_USER=... JENKINS_API_TOKEN=...
 ```
 
-Direct GitHub URL (use this until you set up your redirect):
+Custom branch parameter name:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/jatinbansal1998/jenkins-cli-ts/main/install | bash
+jenkins-cli login --branch-param BRANCH_TAG
 ```
 
-Optional overrides:
+Example output:
 
-```bash
-JENKINS_CLI_VERSION=vX.Y.Z curl -fsSL https://<your-domain>/install | bash
-JENKINS_CLI_INSTALL_DIR="$HOME/.local/bin" curl -fsSL https://<your-domain>/install | bash
-```
-
-After install, run:
-
-```bash
-jenkins-cli login
-```
-
-## Setup script
-
-Run the helper script to install Bun (if needed), dependencies, and the global CLI:
-
-```bash
-bash setup.sh
-```
-
-If you prefer executing directly:
-
-```bash
-chmod +x ./setup.sh
-./setup.sh
-```
-
-After install, it runs `jenkins-cli login` unless credentials are already found
-in the environment or config file (then you can choose to skip).
-
-Install dependencies:
-
-```bash
-bun install
-```
-
-Lint:
-
-```bash
-bun run lint
-```
-
-Apply fixes:
-
-```bash
-bun run lint:fix
-```
-
-## Global CLI
-
-Build and install once:
-
-```bash
-bun run install:global
-```
-
-This uses `bun link` to symlink the CLI, so updates are simple.
-
-### Updating an Existing Installation
-
-After pulling new changes or making edits, just rebuild:
-
-```bash
-bun run build
-```
-
-The global `jenkins-cli` command automatically uses the updated build since it's symlinked.
-
-To check your current version:
-
-```bash
-jenkins-cli --version
-```
-
-### Uninstalling
-
-```bash
-bun unlink jenkins-cli-ts
+```text
+OK: Saved branchParam=BRANCH_TAG
 ```
 
 ## Usage
 
 If you have not installed the global CLI, replace `jenkins-cli` with
-`bun run src/index.ts` in the commands below.
+`bun run src/index.ts`.
 
 List jobs (uses local cache by default):
 
@@ -148,16 +83,10 @@ List jobs (uses local cache by default):
 jenkins-cli list
 ```
 
-Login and save credentials to config:
+Example output:
 
-```bash
-jenkins-cli login
-```
-
-Login with a custom branch parameter name:
-
-```bash
-jenkins-cli login --branch-param BRANCH_TAG
+```text
+OK: Loaded cached jobs (42)
 ```
 
 Refresh the cache from Jenkins:
@@ -166,20 +95,35 @@ Refresh the cache from Jenkins:
 jenkins-cli list --refresh
 ```
 
+Example output:
+
+```text
+OK: Fetched jobs from Jenkins (42)
+```
+
 Search with natural language:
 
 ```bash
 jenkins-cli list --search "api prod deploy"
 ```
 
-Trigger a build (or deploy) with a branch:
+Example output:
+
+```text
+OK: Top matches: api-prod-deploy, api-prod-hotfix
+HINT: Re-run with --job to select one
+```
+
+Trigger a build with a branch:
 
 ```bash
 jenkins-cli build --job "api-prod" --branch main
 ```
 
-```bash
-jenkins-cli deploy --job "api-prod" --branch main
+Example output:
+
+```text
+OK: Triggered build for job "api-prod" (branch: main)
 ```
 
 Use the job's default branch explicitly:
@@ -188,10 +132,96 @@ Use the job's default branch explicitly:
 jenkins-cli build --job "api-prod" --default-branch
 ```
 
+Example output:
+
+```text
+OK: Triggered build for job "api-prod" (default branch)
+```
+
 Check status:
 
 ```bash
 jenkins-cli status --job "api-prod"
+```
+
+Example output:
+
+```text
+OK: Last build is SUCCESS (build #184)
+```
+
+## Development
+
+Install dependencies:
+
+```bash
+bun install
+```
+
+Example output:
+
+```text
+OK: Dependencies installed
+```
+
+Run lint:
+
+```bash
+bun run lint
+```
+
+Example output:
+
+```text
+OK: Lint passed
+```
+
+Apply fixes:
+
+```bash
+bun run lint:fix
+```
+
+Example output:
+
+```text
+OK: Lint fixes applied
+```
+
+Build and install the global CLI (symlinked):
+
+```bash
+bun run install:global
+```
+
+Example output:
+
+```text
+OK: Linked jenkins-cli to your PATH
+```
+
+Update after changes:
+
+```bash
+bun run build
+```
+
+Example output:
+
+```text
+OK: Build complete
+```
+
+Helper script (installs Bun if needed, deps, and global CLI):
+
+```bash
+bash setup.sh
+```
+
+Example output:
+
+```text
+OK: Setup complete
 ```
 
 ## Notes
@@ -201,9 +231,6 @@ jenkins-cli status --job "api-prod"
   `${XDG_CACHE_HOME:-~/.cache}/jenkins-cli/jobs.json`, Windows:
   `%LOCALAPPDATA%\jenkins-cli\jobs.json`.
 - `deploy` is an alias for `build`.
-- `build`/`deploy` always uses `buildWithParameters`. Branch is required unless you pass
+- `build`/`deploy` uses `buildWithParameters`; branch is required unless you pass
   `--default-branch`.
-- Natural language job matching is supported; ambiguous matches prompt for a
-  specific selection.
 - Use `--non-interactive` to disable prompts and fail fast.
-- Outputs use `OK:`, `ERROR:`, and `HINT:` prefixes for easy parsing.
