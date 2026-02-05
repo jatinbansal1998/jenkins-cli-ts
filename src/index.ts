@@ -3,31 +3,30 @@
  * CLI entry point for jenkins-cli.
  * Registers commands (list, build, status) and handles argument parsing via yargs.
  */
-import path from "node:path";
 import yargs from "yargs/yargs";
 import { hideBin } from "yargs/helpers";
-import { CliError, handleCliError } from "./cli";
+import { CliError, getScriptName, handleCliError } from "./cli";
 import { runBuild } from "./commands/build";
 import { runLogin } from "./commands/login";
 import { runList } from "./commands/list";
 import { runStatus } from "./commands/status";
+import { runUpdate } from "./commands/update";
 import { loadEnv, getDebugDefault } from "./env";
 import { JenkinsClient } from "./jenkins/client";
 import { getJobCachePath } from "./jobs";
 import { setDebugMode } from "./logger";
+import { kickOffAutoUpdate } from "./update";
 import packageJson from "../package.json";
 
 const VERSION = packageJson.version;
 
-const DEFAULT_SCRIPT_NAME = "jenkins-cli";
-const rawScriptName = process.argv[1]
-  ? path.basename(process.argv[1])
-  : DEFAULT_SCRIPT_NAME;
-const scriptName =
-  rawScriptName === "index.ts" ? DEFAULT_SCRIPT_NAME : rawScriptName;
+const scriptName = getScriptName();
 
 async function main(): Promise<void> {
-  const parser = yargs(hideBin(process.argv))
+  const rawArgs = hideBin(process.argv);
+  kickOffAutoUpdate(VERSION, rawArgs);
+
+  const parser = yargs(rawArgs)
     .scriptName(scriptName)
     .usage("Usage: $0 <command> [options]")
     .option("non-interactive", {
@@ -41,7 +40,6 @@ async function main(): Promise<void> {
     })
     .middleware((argv) => {
       // Check if --debug or --no-debug was explicitly passed
-      const rawArgs = hideBin(process.argv);
       const debugExplicitlyPassed = rawArgs.some(
         (arg) => arg === "--debug" || arg === "--no-debug",
       );
@@ -189,6 +187,58 @@ async function main(): Promise<void> {
         });
       },
     )
+    .command(
+      ["update [tag]", "upgrade [tag]"],
+      "Update the jenkins-cli binary (alias: upgrade)",
+      (yargsInstance) =>
+        yargsInstance
+          .positional("tag", {
+            type: "string",
+            describe: "Install a specific version tag (e.g. v0.2.4)",
+          })
+          .option("check", {
+            type: "boolean",
+            default: false,
+            describe: "Check for updates without installing",
+          })
+          .option("enable-auto", {
+            type: "boolean",
+            describe: "Enable daily update checks (notify only)",
+          })
+          .option("disable-auto", {
+            type: "boolean",
+            describe: "Disable daily update checks",
+          })
+          .option("enable-auto-install", {
+            type: "boolean",
+            describe: "Enable auto-install of updates",
+          })
+          .option("disable-auto-install", {
+            type: "boolean",
+            describe: "Disable auto-install of updates",
+          })
+          .conflicts("enable-auto", ["disable-auto", "check"])
+          .conflicts("disable-auto", ["enable-auto", "check"])
+          .conflicts("enable-auto-install", ["disable-auto-install", "check"])
+          .conflicts("disable-auto-install", ["enable-auto-install", "check"])
+          .conflicts("check", [
+            "enable-auto",
+            "disable-auto",
+            "enable-auto-install",
+            "disable-auto-install",
+          ]),
+      async (argv) => {
+        await runUpdate({
+          currentVersion: VERSION,
+          tag: typeof argv.tag === "string" ? argv.tag : undefined,
+          check: Boolean(argv.check),
+          enableAuto: Boolean(argv.enableAuto),
+          disableAuto: Boolean(argv.disableAuto),
+          enableAutoInstall: Boolean(argv.enableAutoInstall),
+          disableAutoInstall: Boolean(argv.disableAutoInstall),
+        });
+      },
+    )
     .version("version", `Show version (${VERSION})`, VERSION)
     .alias("version", "v")
     .demandCommand(1, "Missing command. Use --help to see usage.")
@@ -216,6 +266,14 @@ async function main(): Promise<void> {
     --user          Jenkins username
     --token         Jenkins API token
     --branch-param  Branch parameter name
+
+  update / upgrade:
+    [tag]          Install a specific version tag (e.g. v0.2.4)
+    --check        Check for updates without installing
+    --enable-auto  Enable daily update checks (notify only)
+    --disable-auto Disable daily update checks
+    --enable-auto-install  Enable auto-install of updates
+    --disable-auto-install Disable auto-install of updates
 
 Cache file: ${getJobCachePath()}
 

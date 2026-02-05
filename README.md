@@ -150,6 +150,48 @@ Example output:
 OK: Last build is SUCCESS (build #184)
 ```
 
+## Update
+
+Update to the latest release:
+
+```bash
+jenkins-cli update
+```
+
+Alias:
+
+```bash
+jenkins-cli upgrade
+```
+
+Install a specific version:
+
+```bash
+jenkins-cli update vX.Y.Z
+```
+
+Check for updates without installing:
+
+```bash
+jenkins-cli update --check
+```
+
+Auto-update checks (notify only):
+
+```bash
+jenkins-cli update --enable-auto
+jenkins-cli update --disable-auto
+```
+
+Auto-install updates:
+
+```bash
+jenkins-cli update --enable-auto-install
+jenkins-cli update --disable-auto-install
+```
+
+Auto-update checks are enabled by default (notify only). Auto-install is disabled by default.
+
 ## Development
 
 Install dependencies:

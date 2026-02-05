@@ -3,7 +3,13 @@
  * Triggers a Jenkins build for a specified job with branch parameter support.
  */
 import { confirm, isCancel, select, text } from "@clack/prompts";
-import { CliError, printError, printHint, printOk } from "../cli";
+import {
+  CliError,
+  getScriptName,
+  printError,
+  printHint,
+  printOk,
+} from "../cli";
 import {
   loadCachedBranchHistory,
   loadCachedBranches,
@@ -127,6 +133,16 @@ export async function runBuild(options: BuildOptions): Promise<void> {
       printOk(`Build triggered for ${displayJob}.`);
     }
 
+    const rerunCommand = formatNonInteractiveBuildCommand({
+      scriptName: getScriptName(),
+      jobUrl: resolvedJobUrl,
+      branch: resolvedBranch,
+      defaultBranch,
+      branchParam,
+    });
+    printOk("TIP: Non-interactive equivalent:");
+    console.log(rerunCommand);
+
     const runAgain = await confirm({
       message: "Trigger another build?",
       initialValue: false,
@@ -234,6 +250,46 @@ function validateBuildOptions(options: BuildOptions): void {
       "Pass --branch <name> or use --default-branch to use the job default.",
     ]);
   }
+}
+
+function formatNonInteractiveBuildCommand(options: {
+  scriptName: string;
+  jobUrl: string;
+  branch?: string;
+  defaultBranch: boolean;
+  branchParam: string;
+}): string {
+  const parts: string[] = [
+    options.scriptName,
+    "build",
+    "--non-interactive",
+    "--job-url",
+    shellEscape(options.jobUrl),
+  ];
+
+  if (options.defaultBranch) {
+    parts.push("--default-branch");
+    return parts.join(" ");
+  }
+
+  if (options.branch && options.branch.trim()) {
+    parts.push("--branch", shellEscape(options.branch.trim()));
+  }
+
+  if (options.branchParam && options.branchParam !== "BRANCH") {
+    parts.push("--branch-param", shellEscape(options.branchParam));
+  }
+
+  return parts.join(" ");
+}
+
+function shellEscape(value: string): string {
+  if (value === "") {
+    return "''";
+  }
+  const singleQuoteEscape = `'` + `"` + `'` + `"` + `'`;
+  const escaped = value.replace(/'/g, singleQuoteEscape);
+  return `'${escaped}'`;
 }
 
 function normalizeBranchParam(value?: string): string {

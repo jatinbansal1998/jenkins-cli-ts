@@ -2,6 +2,7 @@
  * CLI output utilities and error handling.
  * Provides standardized output prefixes (OK:, ERROR:, HINT:) for easy parsing.
  */
+import path from "node:path";
 
 /** Structured error with optional hints for user guidance. */
 export class CliError extends Error {
@@ -12,6 +13,15 @@ export class CliError extends Error {
     this.name = "CliError";
     this.hints = hints;
   }
+}
+
+const DEFAULT_SCRIPT_NAME = "jenkins-cli";
+
+export function getScriptName(): string {
+  const rawScriptName = process.argv[1]
+    ? path.basename(process.argv[1])
+    : DEFAULT_SCRIPT_NAME;
+  return rawScriptName === "index.ts" ? DEFAULT_SCRIPT_NAME : rawScriptName;
 }
 
 export function printOk(message: string): void {
