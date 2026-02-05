@@ -35,6 +35,23 @@ export type JobStatus = {
   };
 };
 
+export type BuildStatus = {
+  buildNumber?: number;
+  buildUrl?: string;
+  result?: string | null;
+  building?: boolean;
+  timestampMs?: number;
+  durationMs?: number;
+  estimatedDurationMs?: number;
+  queueTimeMs?: number;
+  parameters?: { name: string; value: string }[];
+  branch?: string;
+  stage?: {
+    name?: string;
+    status?: string;
+  };
+};
+
 type BuildAction = {
   parameters?: { name?: string; value?: unknown }[];
 };
@@ -158,6 +175,59 @@ export class JenkinsClient {
       parameters,
       branch,
       stage: pipeline?.stage,
+    };
+  }
+
+  async getBuildStatus(buildUrl: string): Promise<BuildStatus> {
+    const url = this.withJob(
+      buildUrl,
+      "api/json?tree=number,url,result,building,timestamp,duration,estimatedDuration,queueId,actions[parameters[name,value]]",
+    );
+    const buildDetails = await this.requestJson<BuildDetails>(
+      url,
+      "fetch build status",
+    );
+
+    const pipeline = await this.getPipelineInfo(buildUrl);
+    const queueTimeMs =
+      typeof pipeline?.queueDurationMs === "number" &&
+      pipeline.queueDurationMs >= 0
+        ? pipeline.queueDurationMs
+        : typeof buildDetails.queueId === "number" &&
+            typeof buildDetails.timestamp === "number"
+          ? await this.getQueueWaitTimeMs(
+              buildDetails.queueId,
+              buildDetails.timestamp,
+            )
+          : undefined;
+    const parameters = extractBuildParameters(buildDetails.actions);
+    const branch = extractBranchParam(parameters);
+
+    return {
+      buildNumber: buildDetails.number,
+      buildUrl: buildDetails.url ?? buildUrl,
+      result: buildDetails.result ?? null,
+      building: buildDetails.building ?? false,
+      timestampMs: buildDetails.timestamp,
+      durationMs: buildDetails.duration,
+      estimatedDurationMs: buildDetails.estimatedDuration,
+      queueTimeMs,
+      parameters,
+      branch,
+      stage: pipeline?.stage,
+    };
+  }
+
+  async getQueueBuild(
+    queueUrl: string,
+  ): Promise<{ buildUrl?: string; buildNumber?: number } | null> {
+    const queueItem = await this.getQueueItem(queueUrl);
+    if (!queueItem) {
+      return null;
+    }
+    return {
+      buildUrl: queueItem.executable?.url,
+      buildNumber: queueItem.executable?.number,
     };
   }
 

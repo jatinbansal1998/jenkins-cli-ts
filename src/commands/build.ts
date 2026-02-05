@@ -2,7 +2,7 @@
  * Build command implementation.
  * Triggers a Jenkins build for a specified job with branch parameter support.
  */
-import { confirm, isCancel, select, text } from "@clack/prompts";
+import { confirm, isCancel, select, spinner, text } from "@clack/prompts";
 import {
   CliError,
   getScriptName,
@@ -18,13 +18,25 @@ import {
 } from "../branches.ts";
 import { loadRecentJobs, recordRecentJob } from "../recent-jobs.ts";
 import type { EnvConfig } from "../env";
-import type { JenkinsClient, JenkinsJob } from "../jenkins/client";
+import type {
+  BuildStatus,
+  JenkinsClient,
+  JenkinsJob,
+  JobStatus,
+} from "../jenkins/client";
 import {
   getJobDisplayName,
   loadJobs,
   resolveJobCandidates,
   resolveJobMatch,
 } from "../jobs";
+import { notifyBuildComplete } from "../notify";
+import {
+  formatCompactStatus,
+  formatStatusDetails,
+  formatStatusSummary,
+  type StatusDetails,
+} from "../status-format";
 
 /** Options for the build command. */
 type BuildOptions = {
@@ -36,6 +48,7 @@ type BuildOptions = {
   branchParam?: string;
   defaultBranch?: boolean;
   nonInteractive: boolean;
+  watch?: boolean;
 };
 
 type JobSelectionResult = { kind: "job"; job: JenkinsJob } | { kind: "search" };
@@ -60,6 +73,7 @@ export async function runBuild(options: BuildOptions): Promise<void> {
       branch: options.branch,
       defaultBranch: options.defaultBranch ?? false,
       branchParam,
+      watch: options.watch,
     });
     return;
   }
@@ -68,6 +82,7 @@ export async function runBuild(options: BuildOptions): Promise<void> {
   let jobUrl = options.jobUrl;
   let branch = options.branch;
   let defaultBranch = options.defaultBranch ?? false;
+  const watchFixed = options.watch;
 
   while (true) {
     const {
@@ -133,12 +148,40 @@ export async function runBuild(options: BuildOptions): Promise<void> {
       printOk(`Build triggered for ${displayJob}.`);
     }
 
+    const shouldWatch = await resolveWatchDecision({
+      watch: watchFixed,
+      nonInteractive: false,
+    });
+    if (shouldWatch) {
+      const finalStatus = await watchBuildStatus({
+        client: options.client,
+        jobUrl: resolvedJobUrl,
+        jobLabel: displayJob,
+        buildUrl: result.buildUrl,
+        buildNumber: result.buildNumber,
+        queueUrl: result.queueUrl,
+      });
+      if (!finalStatus.cancelled) {
+        await notifyBuildComplete({
+          message: formatNotificationMessage({
+            jobLabel: displayJob,
+            buildNumber: finalStatus.buildNumber,
+            result: finalStatus.result,
+          }),
+        });
+        if (finalStatus.result !== "SUCCESS") {
+          process.exitCode = 1;
+        }
+      }
+    }
+
     const rerunCommand = formatNonInteractiveBuildCommand({
       scriptName: getScriptName(),
       jobUrl: resolvedJobUrl,
       branch: resolvedBranch,
       defaultBranch,
       branchParam,
+      watch: shouldWatch,
     });
     printOk("TIP: Non-interactive equivalent:");
     console.log(rerunCommand);
@@ -169,6 +212,7 @@ async function runBuildOnce(options: {
   branch?: string;
   defaultBranch: boolean;
   branchParam: string;
+  watch?: boolean;
 }): Promise<void> {
   const { jobUrl, jobLabel, matchedFromSearch } = await resolveJobTarget({
     client: options.client,
@@ -222,14 +266,39 @@ async function runBuildOnce(options: {
   const displayJob = jobLabel || jobUrl;
   if (result.buildUrl) {
     printOk(`Build started at ${result.buildUrl}.`);
-    return;
-  }
-  if (result.queueUrl) {
+  } else if (result.queueUrl) {
     const trackingUrl = result.jobUrl || jobUrl;
     printOk(`Build queued for ${displayJob}. Track at ${trackingUrl}.`);
-    return;
+  } else {
+    printOk(`Build triggered for ${displayJob}.`);
   }
-  printOk(`Build triggered for ${displayJob}.`);
+
+  const shouldWatch = await resolveWatchDecision({
+    watch: options.watch,
+    nonInteractive: true,
+  });
+  if (shouldWatch) {
+    const finalStatus = await watchBuildStatus({
+      client: options.client,
+      jobUrl,
+      jobLabel: displayJob,
+      buildUrl: result.buildUrl,
+      buildNumber: result.buildNumber,
+      queueUrl: result.queueUrl,
+    });
+    if (!finalStatus.cancelled) {
+      await notifyBuildComplete({
+        message: formatNotificationMessage({
+          jobLabel: displayJob,
+          buildNumber: finalStatus.buildNumber,
+          result: finalStatus.result,
+        }),
+      });
+      if (finalStatus.result !== "SUCCESS") {
+        process.exitCode = 1;
+      }
+    }
+  }
 }
 
 function validateBuildOptions(options: BuildOptions): void {
@@ -258,6 +327,7 @@ function formatNonInteractiveBuildCommand(options: {
   branch?: string;
   defaultBranch: boolean;
   branchParam: string;
+  watch?: boolean;
 }): string {
   const parts: string[] = [
     options.scriptName,
@@ -280,6 +350,10 @@ function formatNonInteractiveBuildCommand(options: {
     parts.push("--branch-param", shellEscape(options.branchParam));
   }
 
+  if (options.watch) {
+    parts.push("--watch");
+  }
+
   return parts.join(" ");
 }
 
@@ -300,6 +374,347 @@ function normalizeBranchParam(value?: string): string {
     ]);
   }
   return branchParam;
+}
+
+async function resolveWatchDecision(options: {
+  watch?: boolean;
+  nonInteractive: boolean;
+}): Promise<boolean> {
+  if (typeof options.watch === "boolean") {
+    return options.watch;
+  }
+  if (options.nonInteractive) {
+    return false;
+  }
+  const response = await confirm({
+    message: "Watch build status until completion?",
+    initialValue: true,
+  });
+  if (isCancel(response)) {
+    throw new CliError("Operation cancelled.");
+  }
+  return Boolean(response);
+}
+
+async function watchBuildStatus(options: {
+  client: JenkinsClient;
+  jobUrl: string;
+  jobLabel: string;
+  buildUrl?: string;
+  buildNumber?: number;
+  queueUrl?: string;
+}): Promise<{ result: string; buildNumber?: number; cancelled?: boolean }> {
+  const pollIntervalMs = 30_000;
+  const useSpinner = Boolean(process.stdout.isTTY);
+  const statusSpinner = useSpinner ? spinner() : null;
+  const cancelSignal = createWatchCancelSignal();
+  const watchStartMs = Date.now();
+  if (statusSpinner) {
+    const hint = cancelSignal ? " (press Esc to stop)" : "";
+    statusSpinner.start(`Watching ${options.jobLabel}${hint}`);
+  }
+
+  let buildUrl = options.buildUrl;
+  let buildNumber = options.buildNumber;
+  let queueUrl = options.queueUrl;
+
+  let baselineBuildNumber: number | undefined;
+  let targetBuildNumber: number | undefined;
+
+  if (!buildUrl && !queueUrl) {
+    const initialStatus = await options.client.getJobStatus(options.jobUrl);
+    baselineBuildNumber = initialStatus.lastBuildNumber;
+    if (initialStatus.lastBuildNumber && initialStatus.building) {
+      targetBuildNumber = initialStatus.lastBuildNumber;
+    }
+  }
+
+  try {
+    while (true) {
+      if (cancelSignal?.isCancelled()) {
+        if (statusSpinner) {
+          statusSpinner.stop("Watch stopped.");
+        }
+        return { result: "CANCELLED", buildNumber, cancelled: true };
+      }
+
+      if (buildUrl) {
+        const status = await options.client.getBuildStatus(buildUrl);
+        const result = status.building ? "RUNNING" : status.result || "UNKNOWN";
+        const details = toStatusDetailsFromBuild(status);
+        const message = formatWatchMessage({
+          jobLabel: options.jobLabel,
+          buildNumber: status.buildNumber ?? buildNumber,
+          result,
+          details,
+        });
+        emitWatchMessage({ spinner: statusSpinner, message });
+        if (!status.building) {
+          if (statusSpinner) {
+            statusSpinner.stop("Build completed.");
+          }
+          const summary = formatCompletionSummary({
+            jobLabel: options.jobLabel,
+            buildNumber: status.buildNumber ?? buildNumber,
+            result,
+          });
+          const url = status.buildUrl || buildUrl;
+          const detailsText = formatStatusDetails(details, url);
+          printOk(detailsText ? `${summary}\n${detailsText}` : summary);
+          return { result, buildNumber: status.buildNumber ?? buildNumber };
+        }
+      } else if (queueUrl) {
+        const queueItem = await options.client.getQueueBuild(queueUrl);
+        if (queueItem?.buildUrl) {
+          buildUrl = queueItem.buildUrl;
+          buildNumber = queueItem.buildNumber;
+          continue;
+        }
+        const elapsedMs = Date.now() - watchStartMs;
+        emitWatchMessage({
+          spinner: statusSpinner,
+          message: formatQueueMessage({
+            jobLabel: options.jobLabel,
+            elapsedMs,
+          }),
+        });
+      } else {
+        const status = await options.client.getJobStatus(options.jobUrl);
+        const currentNumber = status.lastBuildNumber;
+        if (
+          typeof currentNumber === "number" &&
+          targetBuildNumber === undefined
+        ) {
+          if (
+            baselineBuildNumber === undefined ||
+            currentNumber !== baselineBuildNumber ||
+            status.building
+          ) {
+            targetBuildNumber = currentNumber;
+          }
+        }
+
+        if (
+          typeof currentNumber === "number" &&
+          typeof targetBuildNumber === "number" &&
+          currentNumber === targetBuildNumber
+        ) {
+          const result = status.building
+            ? "RUNNING"
+            : status.result || "UNKNOWN";
+          const details = toStatusDetailsFromJob(status);
+          const message = formatWatchMessage({
+            jobLabel: options.jobLabel,
+            buildNumber: currentNumber,
+            result,
+            details,
+          });
+          emitWatchMessage({ spinner: statusSpinner, message });
+          if (!status.building) {
+            if (statusSpinner) {
+              statusSpinner.stop("Build completed.");
+            }
+            const summary = formatCompletionSummary({
+              jobLabel: options.jobLabel,
+              buildNumber: currentNumber,
+              result,
+            });
+            const url = status.lastBuildUrl || options.jobUrl;
+            const detailsText = formatStatusDetails(details, url);
+            printOk(detailsText ? `${summary}\n${detailsText}` : summary);
+            return { result, buildNumber: currentNumber };
+          }
+        } else {
+          const elapsedMs = Date.now() - watchStartMs;
+          emitWatchMessage({
+            spinner: statusSpinner,
+            message: formatPendingMessage({
+              jobLabel: options.jobLabel,
+              elapsedMs,
+            }),
+          });
+        }
+      }
+
+      if (cancelSignal) {
+        await Promise.race([Bun.sleep(pollIntervalMs), cancelSignal.wait]);
+      } else {
+        await Bun.sleep(pollIntervalMs);
+      }
+    }
+  } catch (error) {
+    if (statusSpinner) {
+      statusSpinner.error("Watch failed.");
+    }
+    throw error;
+  } finally {
+    cancelSignal?.cleanup();
+  }
+}
+
+function emitWatchMessage(options: {
+  spinner: ReturnType<typeof spinner> | null;
+  message: string;
+}): void {
+  if (options.spinner) {
+    options.spinner.message(options.message);
+    return;
+  }
+  printOk(options.message);
+}
+
+function formatWatchMessage(options: {
+  jobLabel: string;
+  buildNumber?: number;
+  result: string;
+  details: StatusDetails;
+}): string {
+  const compact = formatCompactStatus({
+    buildNumber: options.buildNumber,
+    result: options.result,
+    status: options.details,
+  });
+  return `${options.jobLabel}: ${compact}`;
+}
+
+function formatQueueMessage(options: {
+  jobLabel: string;
+  elapsedMs: number;
+}): string {
+  return `${options.jobLabel}: Queued | Waiting for executor | Elapsed: ${formatDuration(
+    options.elapsedMs,
+  )}`;
+}
+
+function formatPendingMessage(options: {
+  jobLabel: string;
+  elapsedMs: number;
+}): string {
+  return `${options.jobLabel}: Waiting for build to start | Elapsed: ${formatDuration(
+    options.elapsedMs,
+  )}`;
+}
+
+function formatCompletionSummary(options: {
+  jobLabel: string;
+  buildNumber?: number;
+  result: string;
+}): string {
+  if (typeof options.buildNumber === "number") {
+    return formatStatusSummary({
+      jobLabel: options.jobLabel,
+      buildNumber: options.buildNumber,
+      result: options.result,
+    });
+  }
+  return `Build for ${options.jobLabel} completed: ${options.result}`;
+}
+
+function formatNotificationMessage(options: {
+  jobLabel: string;
+  buildNumber?: number;
+  result: string;
+}): string {
+  const base =
+    typeof options.buildNumber === "number"
+      ? `Build #${options.buildNumber} ${options.result}`
+      : `Build ${options.result}`;
+  return options.jobLabel ? `${base} (${options.jobLabel})` : base;
+}
+
+function toStatusDetailsFromBuild(status: BuildStatus): StatusDetails {
+  return {
+    building: status.building,
+    timestampMs: status.timestampMs,
+    durationMs: status.durationMs,
+    estimatedDurationMs: status.estimatedDurationMs,
+    queueTimeMs: status.queueTimeMs,
+    parameters: status.parameters,
+    stage: status.stage,
+  };
+}
+
+function toStatusDetailsFromJob(status: JobStatus): StatusDetails {
+  return {
+    building: status.building,
+    timestampMs: status.lastBuildTimestamp,
+    durationMs: status.lastBuildDurationMs,
+    estimatedDurationMs: status.lastBuildEstimatedDurationMs,
+    queueTimeMs: status.queueTimeMs,
+    parameters: status.parameters,
+    stage: status.stage,
+  };
+}
+
+function formatDuration(durationMs: number): string {
+  if (durationMs < 1000) {
+    return `${Math.max(0, Math.round(durationMs))}ms`;
+  }
+  const totalSeconds = Math.max(0, Math.floor(durationMs / 1000));
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+  if (hours > 0) {
+    return `${hours}h ${minutes}m ${seconds}s`;
+  }
+  if (minutes > 0) {
+    return `${minutes}m ${seconds}s`;
+  }
+  return `${seconds}s`;
+}
+
+type WatchCancelSignal = {
+  isCancelled: () => boolean;
+  wait: Promise<void>;
+  cleanup: () => void;
+};
+
+function createWatchCancelSignal(): WatchCancelSignal | null {
+  if (!process.stdin.isTTY || !process.stdout.isTTY) {
+    return null;
+  }
+
+  let cancelled = false;
+  let resolveWait: (() => void) | null = null;
+  const wait = new Promise<void>((resolve) => {
+    resolveWait = resolve;
+  });
+  const stdin = process.stdin;
+  const wasRaw = stdin.isRaw;
+
+  const onData = (data: Buffer | string) => {
+    const text = data.toString();
+    if (text.includes("\u001b")) {
+      cancelled = true;
+      resolveWait?.();
+    }
+  };
+
+  try {
+    stdin.setRawMode(true);
+  } catch {
+    // Ignore raw mode failures; cancellation won't work.
+  }
+  stdin.on("data", onData);
+  stdin.resume();
+
+  const cleanup = () => {
+    stdin.off("data", onData);
+    if (stdin.isTTY) {
+      try {
+        stdin.setRawMode(Boolean(wasRaw));
+      } catch {
+        // Ignore cleanup failures.
+      }
+    }
+    stdin.pause();
+  };
+
+  return {
+    isCancelled: () => cancelled,
+    wait,
+    cleanup,
+  };
 }
 
 async function resolveJobTarget(options: {

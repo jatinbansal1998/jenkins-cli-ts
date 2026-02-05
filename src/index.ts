@@ -136,6 +136,11 @@ async function main(): Promise<void> {
             type: "boolean",
             default: false,
             describe: "Use the job's default branch",
+          })
+          .option("watch", {
+            type: "boolean",
+            default: false,
+            describe: "Watch build status until completion",
           }),
       async (argv) => {
         const { env, client } = createContext();
@@ -146,6 +151,13 @@ async function main(): Promise<void> {
             arg.startsWith("--branch-param=") ||
             arg === "--branchParam" ||
             arg.startsWith("--branchParam="),
+        );
+        const watchExplicitlyPassed = rawArgs.some(
+          (arg) =>
+            arg === "--watch" ||
+            arg === "--no-watch" ||
+            arg.startsWith("--watch=") ||
+            arg.startsWith("--no-watch="),
         );
         await runBuild({
           client,
@@ -160,6 +172,7 @@ async function main(): Promise<void> {
             : env.branchParamDefault,
           defaultBranch: Boolean(argv.defaultBranch),
           nonInteractive: Boolean(argv.nonInteractive),
+          watch: watchExplicitlyPassed ? Boolean(argv.watch) : undefined,
         });
       },
     )
@@ -256,6 +269,7 @@ async function main(): Promise<void> {
     --branch          Branch name to build
     --branch-param    Parameter name for the branch [default: "BRANCH"]
     --default-branch  Use the job's default branch
+    --watch           Watch build status until completion
 
   status:
     --job      Job name or description

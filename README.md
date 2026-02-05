@@ -8,13 +8,10 @@ for interactive use and automation with clear, parseable output.
 Installs `jenkins-cli` to your PATH (defaults to `$HOME/.bun/bin`). It will install
 Bun if it is missing.
 
+Install options:
+
 ```bash
 curl -fsSL http://jatinbansal.com/jenkins-cli/install/ | bash
-```
-
-Direct GitHub URL:
-
-```bash
 curl -fsSL https://raw.githubusercontent.com/jatinbansal1998/jenkins-cli-ts/main/install | bash
 ```
 
@@ -45,19 +42,10 @@ Config file (used when env vars are not set):
 }
 ```
 
-Environment variables always take precedence.
-
-Login and save credentials:
+Login and save credentials (saved to the config path above):
 
 ```bash
 jenkins-cli login
-```
-
-Example output:
-
-```text
-OK: Saved credentials to ~/.config/jenkins-cli/jenkins-cli-config.json
-HINT: Run: export JENKINS_URL=... JENKINS_USER=... JENKINS_API_TOKEN=...
 ```
 
 Custom branch parameter name:
@@ -66,27 +54,21 @@ Custom branch parameter name:
 jenkins-cli login --branch-param BRANCH_TAG
 ```
 
-Example output:
-
-```text
-OK: Saved branchParam=BRANCH_TAG
-```
+Environment variables always take precedence.
 
 ## Usage
 
 If you have not installed the global CLI, replace `jenkins-cli` with
 `bun run src/index.ts`.
 
+Output format notes:
+
+- Commands return parseable output prefixed with `OK:` and `HINT:` where relevant.
+
 List jobs (uses local cache by default):
 
 ```bash
 jenkins-cli list
-```
-
-Example output:
-
-```text
-OK: Loaded cached jobs (42)
 ```
 
 Refresh the cache from Jenkins:
@@ -95,23 +77,10 @@ Refresh the cache from Jenkins:
 jenkins-cli list --refresh
 ```
 
-Example output:
-
-```text
-OK: Fetched jobs from Jenkins (42)
-```
-
 Search with natural language:
 
 ```bash
 jenkins-cli list --search "api prod deploy"
-```
-
-Example output:
-
-```text
-OK: Top matches: api-prod-deploy, api-prod-hotfix
-HINT: Re-run with --job to select one
 ```
 
 Trigger a build with a branch:
@@ -120,22 +89,18 @@ Trigger a build with a branch:
 jenkins-cli build --job "api-prod" --branch main
 ```
 
-Example output:
+Watch a build until completion (macOS notification on completion):
 
-```text
-OK: Triggered build for job "api-prod" (branch: main)
+```bash
+jenkins-cli build --job "api-prod" --branch main --watch
 ```
+
+Press `Esc` to stop watching and return to the prompt.
 
 Use the job's default branch explicitly:
 
 ```bash
 jenkins-cli build --job "api-prod" --default-branch
-```
-
-Example output:
-
-```text
-OK: Triggered build for job "api-prod" (default branch)
 ```
 
 Check status:
@@ -144,23 +109,12 @@ Check status:
 jenkins-cli status --job "api-prod"
 ```
 
-Example output:
-
-```text
-OK: Last build is SUCCESS (build #184)
-```
-
 ## Update
 
-Update to the latest release:
+Update to the latest release (alias: `upgrade`):
 
 ```bash
 jenkins-cli update
-```
-
-Alias:
-
-```bash
 jenkins-cli upgrade
 ```
 
@@ -190,7 +144,10 @@ jenkins-cli update --enable-auto-install
 jenkins-cli update --disable-auto-install
 ```
 
-Auto-update checks are enabled by default (notify only). Auto-install is disabled by default.
+Auto-update defaults:
+
+- Notify-only checks are enabled by default.
+- Auto-install is disabled by default.
 
 ## Development
 
@@ -200,22 +157,10 @@ Install dependencies:
 bun install
 ```
 
-Example output:
-
-```text
-OK: Dependencies installed
-```
-
 Run lint:
 
 ```bash
 bun run lint
-```
-
-Example output:
-
-```text
-OK: Lint passed
 ```
 
 Apply fixes:
@@ -224,22 +169,10 @@ Apply fixes:
 bun run lint:fix
 ```
 
-Example output:
-
-```text
-OK: Lint fixes applied
-```
-
 Build and install the global CLI (symlinked):
 
 ```bash
 bun run install:global
-```
-
-Example output:
-
-```text
-OK: Linked jenkins-cli to your PATH
 ```
 
 Update after changes:
@@ -248,23 +181,13 @@ Update after changes:
 bun run build
 ```
 
-Example output:
-
-```text
-OK: Build complete
-```
-
 Helper script (installs Bun if needed, deps, and global CLI):
 
 ```bash
 bash setup.sh
 ```
 
-Example output:
-
-```text
-OK: Setup complete
-```
+Commands print `OK:` on success.
 
 ## Notes
 
