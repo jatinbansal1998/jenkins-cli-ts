@@ -3,6 +3,7 @@
  */
 import { CliError, printHint, printOk } from "../cli";
 import {
+  clearPendingUpdateState,
   compareVersions,
   downloadAndInstall,
   fetchLatestRelease,
@@ -11,6 +12,7 @@ import {
   readUpdateState,
   resolveAssetUrl,
   resolveExecutablePath,
+  withPendingUpdateState,
   writeUpdateState,
 } from "../update";
 
@@ -76,21 +78,34 @@ export async function runUpdate(options: UpdateOptions): Promise<void> {
     const autoUpdateEnabled = state.autoUpdate !== false;
     const autoInstallEnabled = state.autoInstall === true;
     const latest = await fetchLatestRelease();
+    const nowIso = new Date().toISOString();
     const comparison = compareVersions(latest.tag_name, options.currentVersion);
     if (comparison !== null && comparison <= 0) {
       printOk(`Already on latest version (${options.currentVersion}).`);
+      await writeUpdateState(
+        clearPendingUpdateState({
+          ...state,
+          lastCheckedAt: nowIso,
+        }),
+      );
     } else {
       printOk(`Latest version is ${latest.tag_name}.`);
       printHint("Run `jenkins-cli update` to install it.");
+      await writeUpdateState(
+        withPendingUpdateState(
+          {
+            ...state,
+            lastCheckedAt: nowIso,
+          },
+          latest.tag_name,
+          nowIso,
+        ),
+      );
     }
     printOk(
       `Auto-update checks: ${autoUpdateEnabled ? "enabled (notify only)" : "disabled"}.`,
     );
     printOk(`Auto-install: ${autoInstallEnabled ? "enabled" : "disabled"}.`);
-    await writeUpdateState({
-      ...state,
-      lastCheckedAt: new Date().toISOString(),
-    });
     return;
   }
 
@@ -121,7 +136,7 @@ export async function runUpdate(options: UpdateOptions): Promise<void> {
 async function recordSuccessfulUpdate(version: string): Promise<void> {
   const state = await readUpdateState();
   await writeUpdateState({
-    ...state,
+    ...clearPendingUpdateState(state),
     lastCheckedAt: new Date().toISOString(),
     lastNotifiedVersion: version,
   });

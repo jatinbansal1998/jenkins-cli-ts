@@ -2,10 +2,13 @@ import { describe, expect, test } from "bun:test";
 import path from "node:path";
 import { CliError } from "../src/cli";
 import {
+  clearPendingUpdateState,
   compareVersions,
+  getDeferredUpdatePromptVersion,
   normalizeVersionTag,
   resolveAssetUrl,
   resolveExecutablePath,
+  withPendingUpdateState,
 } from "../src/update";
 
 describe("update version helpers", () => {
@@ -72,5 +75,67 @@ describe("update helpers", () => {
     } finally {
       process.argv[1] = prevArgv;
     }
+  });
+});
+
+describe("deferred update state helpers", () => {
+  test("withPendingUpdateState sets pending version metadata", () => {
+    const nowIso = "2026-01-01T00:00:00.000Z";
+    const next = withPendingUpdateState({}, "v1.2.3", nowIso);
+    expect(next.pendingVersion).toBe("v1.2.3");
+    expect(next.pendingDetectedAt).toBe(nowIso);
+  });
+
+  test("withPendingUpdateState clears dismissal for a new version", () => {
+    const next = withPendingUpdateState(
+      {
+        pendingVersion: "v1.2.3",
+        pendingDetectedAt: "2026-01-01T00:00:00.000Z",
+        dismissedVersion: "v1.2.3",
+      },
+      "v1.2.4",
+      "2026-01-02T00:00:00.000Z",
+    );
+    expect(next.dismissedVersion).toBeUndefined();
+  });
+
+  test("clearPendingUpdateState removes pending and dismissed metadata", () => {
+    const cleared = clearPendingUpdateState({
+      pendingVersion: "v1.2.3",
+      pendingDetectedAt: "2026-01-01T00:00:00.000Z",
+      dismissedVersion: "v1.2.3",
+      autoUpdate: true,
+    });
+    expect(cleared.pendingVersion).toBeUndefined();
+    expect(cleared.pendingDetectedAt).toBeUndefined();
+    expect(cleared.dismissedVersion).toBeUndefined();
+    expect(cleared.autoUpdate).toBeTrue();
+  });
+
+  test("getDeferredUpdatePromptVersion returns pending newer version", () => {
+    const pending = getDeferredUpdatePromptVersion(
+      { pendingVersion: "v1.2.3" },
+      "v1.2.2",
+    );
+    expect(pending).toBe("v1.2.3");
+  });
+
+  test("getDeferredUpdatePromptVersion returns null for dismissed version", () => {
+    const pending = getDeferredUpdatePromptVersion(
+      {
+        pendingVersion: "v1.2.3",
+        dismissedVersion: "v1.2.3",
+      },
+      "v1.2.2",
+    );
+    expect(pending).toBeNull();
+  });
+
+  test("getDeferredUpdatePromptVersion returns null for non-newer version", () => {
+    const pending = getDeferredUpdatePromptVersion(
+      { pendingVersion: "v1.2.3" },
+      "v1.2.3",
+    );
+    expect(pending).toBeNull();
   });
 });

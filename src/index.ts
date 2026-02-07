@@ -5,7 +5,8 @@
  */
 import yargs from "yargs/yargs";
 import { hideBin } from "yargs/helpers";
-import { CliError, getScriptName, handleCliError } from "./cli";
+import { confirm, isCancel } from "@clack/prompts";
+import { CliError, getScriptName, handleCliError, printHint } from "./cli";
 import { runBuild } from "./commands/build";
 import { runCancel } from "./commands/cancel";
 import { runLogin } from "./commands/login";
@@ -19,7 +20,13 @@ import { loadEnv, getDebugDefault } from "./env";
 import { JenkinsClient } from "./jenkins/client";
 import { getJobCachePath } from "./jobs";
 import { setDebugMode } from "./logger";
-import { kickOffAutoUpdate } from "./update";
+import {
+  getDeferredUpdatePromptVersion,
+  kickOffAutoUpdate,
+  readUpdateState,
+  shouldPromptForDeferredUpdate,
+  writeUpdateState,
+} from "./update";
 import packageJson from "../package.json";
 
 const VERSION = packageJson.version;
@@ -28,6 +35,7 @@ const scriptName = getScriptName();
 
 async function main(): Promise<void> {
   const rawArgs = hideBin(process.argv);
+  await promptForDeferredUpdate(VERSION, rawArgs);
   kickOffAutoUpdate(VERSION, rawArgs);
 
   const parser = yargs(rawArgs)
@@ -500,6 +508,41 @@ Run "$0 <command> --help" for full details.`,
     });
 
   await parser.parseAsync();
+}
+
+async function promptForDeferredUpdate(
+  currentVersion: string,
+  rawArgs: string[],
+): Promise<void> {
+  if (!shouldPromptForDeferredUpdate(rawArgs)) {
+    return;
+  }
+
+  const state = await readUpdateState();
+  const pendingVersion = getDeferredUpdatePromptVersion(state, currentVersion);
+  if (!pendingVersion) {
+    return;
+  }
+
+  const response = await confirm({
+    message: `A new jenkins-cli version (${pendingVersion}) is available. Update now?`,
+    initialValue: true,
+  });
+
+  if (isCancel(response) || !response) {
+    await writeUpdateState({
+      ...state,
+      dismissedVersion: pendingVersion,
+    });
+    return;
+  }
+
+  try {
+    await runUpdate({ currentVersion });
+  } catch (error) {
+    handleCliError(error);
+    printHint("Continuing with the requested command.");
+  }
 }
 
 function createContext(): {

@@ -20,12 +20,59 @@ type ReleaseInfo = {
   assets: ReleaseAsset[];
 };
 
-type UpdateState = {
+export type UpdateState = {
   autoUpdate?: boolean;
   autoInstall?: boolean;
   lastCheckedAt?: string;
   lastNotifiedVersion?: string;
+  pendingVersion?: string;
+  pendingDetectedAt?: string;
+  dismissedVersion?: string;
 };
+
+export function clearPendingUpdateState(state: UpdateState): UpdateState {
+  return {
+    ...state,
+    pendingVersion: undefined,
+    pendingDetectedAt: undefined,
+    dismissedVersion: undefined,
+  };
+}
+
+export function withPendingUpdateState(
+  state: UpdateState,
+  version: string,
+  detectedAt: string,
+): UpdateState {
+  const samePendingVersion = state.pendingVersion === version;
+  return {
+    ...state,
+    pendingVersion: version,
+    pendingDetectedAt: samePendingVersion
+      ? (state.pendingDetectedAt ?? detectedAt)
+      : detectedAt,
+    dismissedVersion:
+      state.dismissedVersion === version ? state.dismissedVersion : undefined,
+  };
+}
+
+export function getDeferredUpdatePromptVersion(
+  state: UpdateState,
+  currentVersion: string,
+): string | null {
+  const pendingVersion = state.pendingVersion?.trim();
+  if (!pendingVersion) {
+    return null;
+  }
+  const comparison = compareVersions(pendingVersion, currentVersion);
+  if (comparison === null || comparison <= 0) {
+    return null;
+  }
+  if (state.dismissedVersion === pendingVersion) {
+    return null;
+  }
+  return pendingVersion;
+}
 
 export function normalizeVersionTag(input: string): string {
   const trimmed = input.trim();
@@ -258,6 +305,13 @@ function shouldSkipAutoUpdate(rawArgs: string[]): boolean {
   return false;
 }
 
+export function shouldPromptForDeferredUpdate(rawArgs: string[]): boolean {
+  if (!process.stdin.isTTY || !process.stdout.isTTY) {
+    return false;
+  }
+  return !shouldSkipAutoUpdate(rawArgs);
+}
+
 export function kickOffAutoUpdate(
   currentVersion: string,
   rawArgs: string[],
@@ -295,11 +349,16 @@ async function runAutoUpdate(currentVersion: string): Promise<void> {
 
     const comparison = compareVersions(release.tag_name, currentVersion);
     if (comparison !== null && comparison <= 0) {
-      await writeUpdateState(nextState);
+      await writeUpdateState(clearPendingUpdateState(nextState));
       return;
     }
+    const pendingState = withPendingUpdateState(
+      nextState,
+      release.tag_name,
+      nowIso,
+    );
     if (state.lastNotifiedVersion === release.tag_name) {
-      await writeUpdateState(nextState);
+      await writeUpdateState(pendingState);
       return;
     }
     if (autoInstallEnabled) {
@@ -309,11 +368,11 @@ async function runAutoUpdate(currentVersion: string): Promise<void> {
         await downloadAndInstall(assetUrl, targetPath);
         printHint(`Auto-updated jenkins-cli to ${release.tag_name}.`);
         await writeUpdateState({
-          ...nextState,
+          ...clearPendingUpdateState(pendingState),
           lastNotifiedVersion: release.tag_name,
         });
       } catch {
-        await writeUpdateState(nextState);
+        await writeUpdateState(pendingState);
       }
       return;
     }
@@ -323,7 +382,7 @@ async function runAutoUpdate(currentVersion: string): Promise<void> {
     );
 
     await writeUpdateState({
-      ...nextState,
+      ...pendingState,
       lastNotifiedVersion: release.tag_name,
     });
   } catch {
