@@ -261,12 +261,7 @@ export async function resolveJobMatch(options: {
   nonInteractive: boolean;
   selectFromOptions?: (options: JenkinsJob[]) => Promise<JenkinsJob>;
 }): Promise<JenkinsJob> {
-  const trimmedQuery = options.query.trim();
-  if (!trimmedQuery) {
-    throw new CliError("Job name is required.", [
-      "Pass --job <name> or use --job-url <url>.",
-    ]);
-  }
+  const trimmedQuery = ensureNonEmptyJobQuery(options.query);
 
   const optionsList = resolveJobCandidates(trimmedQuery, options.jobs);
   const firstMatch = optionsList[0];
@@ -289,12 +284,7 @@ export function resolveJobCandidates(
   query: string,
   jobs: JenkinsJob[],
 ): JenkinsJob[] {
-  const trimmedQuery = query.trim();
-  if (!trimmedQuery) {
-    throw new CliError("Job name is required.", [
-      "Pass --job <name> or use --job-url <url>.",
-    ]);
-  }
+  const trimmedQuery = ensureNonEmptyJobQuery(query);
 
   const ranked = rankJobs(trimmedQuery, jobs);
   const topMatch = ranked[0];
@@ -311,6 +301,16 @@ export function resolveJobCandidates(
       match.score >= MIN_SCORE && topScore - match.score <= AMBIGUITY_GAP,
   );
   return closeMatches.slice(0, MAX_OPTIONS).map((match) => match.job);
+}
+
+function ensureNonEmptyJobQuery(query: string): string {
+  const trimmedQuery = query.trim();
+  if (!trimmedQuery) {
+    throw new CliError("Job name is required.", [
+      "Pass --job <name> or use --job-url <url>.",
+    ]);
+  }
+  return trimmedQuery;
 }
 
 /**

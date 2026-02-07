@@ -372,22 +372,38 @@ export class JenkinsClient {
     params: Record<string, string>,
   ): Promise<TriggerBuildResult> {
     const crumb = await this.getCrumb();
-    const buildUrl = this.withJob(jobUrl, "buildWithParameters");
+    const filteredParams = new URLSearchParams();
+    for (const [key, value] of Object.entries(params)) {
+      const normalizedKey = key.trim();
+      if (!normalizedKey) {
+        continue;
+      }
+      filteredParams.set(normalizedKey, value);
+    }
+    const hasParams = Array.from(filteredParams.keys()).length > 0;
+    const triggerPath = hasParams ? "buildWithParameters" : "build";
+    const buildUrl = this.withJob(jobUrl, triggerPath);
     const url = new URL(buildUrl);
     url.searchParams.set("delay", "0sec");
-    const body = new URLSearchParams(params).toString();
+    const body = hasParams ? filteredParams.toString() : undefined;
 
     const headers: Record<string, string> = {
       Authorization: this.authHeader,
-      "Content-Type": "application/x-www-form-urlencoded",
     };
+    if (hasParams) {
+      headers["Content-Type"] = "application/x-www-form-urlencoded";
+    }
     if (crumb) {
       headers[crumb.field] = crumb.value;
     }
 
     const response = await this.fetchWithTimeout(
       url.toString(),
-      { method: "POST", headers, body },
+      {
+        method: "POST",
+        headers,
+        ...(body ? { body } : {}),
+      },
       1,
       "trigger build",
     );
