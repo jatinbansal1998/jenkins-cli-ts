@@ -3,7 +3,12 @@ import { CliError, printError, printHint, printOk } from "../cli";
 import type { EnvConfig } from "../env";
 import type { JenkinsClient } from "../jenkins/client";
 import type { BuildStatus, JobStatus } from "../types/jenkins";
-import { formatCompactStatus, formatStatusDetails } from "../status-format";
+import {
+  formatCompactStatus,
+  formatStatusDetails,
+  toStatusDetailsFromBuild,
+  toStatusDetailsFromJob,
+} from "../status-format";
 import {
   ensureValidUrl,
   parseOptionalDurationMs,
@@ -372,15 +377,7 @@ function formatBuildProgress(
   return `${jobLabel}: ${formatCompactStatus({
     buildNumber,
     result,
-    status: {
-      building: status.building,
-      timestampMs: status.timestampMs,
-      durationMs: status.durationMs,
-      estimatedDurationMs: status.estimatedDurationMs,
-      queueTimeMs: status.queueTimeMs,
-      parameters: status.parameters,
-      stage: status.stage,
-    },
+    status: toStatusDetailsFromBuild(status),
   })}`;
 }
 
@@ -393,15 +390,7 @@ function formatJobProgress(
   return `${jobLabel}: ${formatCompactStatus({
     buildNumber,
     result,
-    status: {
-      building: status.building,
-      timestampMs: status.lastBuildTimestamp,
-      durationMs: status.lastBuildDurationMs,
-      estimatedDurationMs: status.lastBuildEstimatedDurationMs,
-      queueTimeMs: status.queueTimeMs,
-      parameters: status.parameters,
-      stage: status.stage,
-    },
+    status: toStatusDetailsFromJob(status),
   })}`;
 }
 
@@ -415,15 +404,7 @@ function printFinalStatus(
     typeof status.buildNumber === "number" ? ` #${status.buildNumber}` : "";
   const summary = `Build for ${jobLabel}${buildNumberText}: ${result}`;
   const details = formatStatusDetails(
-    {
-      building: status.building,
-      timestampMs: status.timestampMs,
-      durationMs: status.durationMs,
-      estimatedDurationMs: status.estimatedDurationMs,
-      queueTimeMs: status.queueTimeMs,
-      parameters: status.parameters,
-      stage: status.stage,
-    },
+    toStatusDetailsFromBuild(status),
     buildUrl,
   );
   printOk(details ? `${summary}\n${details}` : summary);
@@ -437,18 +418,7 @@ function printFinalJobStatus(
 ): void {
   const result = status.result || "UNKNOWN";
   const summary = `Build for ${jobLabel} #${buildNumber}: ${result}`;
-  const details = formatStatusDetails(
-    {
-      building: status.building,
-      timestampMs: status.lastBuildTimestamp,
-      durationMs: status.lastBuildDurationMs,
-      estimatedDurationMs: status.lastBuildEstimatedDurationMs,
-      queueTimeMs: status.queueTimeMs,
-      parameters: status.parameters,
-      stage: status.stage,
-    },
-    buildUrl,
-  );
+  const details = formatStatusDetails(toStatusDetailsFromJob(status), buildUrl);
   printOk(details ? `${summary}\n${details}` : summary);
 }
 

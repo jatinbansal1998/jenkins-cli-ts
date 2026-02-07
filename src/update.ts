@@ -91,7 +91,10 @@ function parseVersionParts(input: string): number[] | null {
   if (!cleaned) {
     return null;
   }
-  const main = cleaned.split("-")[0];
+  const [main] = cleaned.split("-");
+  if (!main) {
+    return null;
+  }
   const parts = main.split(".");
   if (parts.length === 0) {
     return null;
@@ -299,10 +302,7 @@ function shouldSkipAutoUpdate(rawArgs: string[]): boolean {
   if (rawArgs.some((arg) => skipFlags.has(arg))) {
     return true;
   }
-  if (rawArgs.some((arg) => arg === "update" || arg === "upgrade")) {
-    return true;
-  }
-  return false;
+  return rawArgs.some((arg) => arg === "update" || arg === "upgrade");
 }
 
 export function shouldPromptForDeferredUpdate(rawArgs: string[]): boolean {

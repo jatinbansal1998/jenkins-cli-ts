@@ -52,12 +52,11 @@ type BuildOptions = {
 
 type JobSelectionResult = { kind: "job"; job: JenkinsJob } | { kind: "search" };
 
-class SearchAgainError extends Error {
-  constructor() {
-    super("Search again");
-    this.name = "SearchAgainError";
-  }
-}
+type ActiveBuild = {
+  buildUrl: string | undefined;
+  buildNumber: number | undefined;
+  queueUrl: string | undefined;
+};
 
 export async function runBuild(options: BuildOptions): Promise<void> {
   validateBuildOptions(options);
@@ -168,7 +167,7 @@ export async function runBuild(options: BuildOptions): Promise<void> {
       branchParam,
       watch: shouldWatch,
     });
-    let activeBuild = {
+    let activeBuild: ActiveBuild = {
       buildUrl: result.buildUrl,
       buildNumber: result.buildNumber,
       queueUrl: result.queueUrl,
@@ -200,7 +199,7 @@ export async function runBuild(options: BuildOptions): Promise<void> {
       }
     }
 
-    activeBuild = await runPostBuildActionMenu({
+    await runPostBuildActionMenu({
       client: options.client,
       env: options.env,
       jobUrl: resolvedJobUrl,
@@ -239,16 +238,8 @@ async function runPostBuildActionMenu(options: {
   jobLabel: string;
   branchParam: string;
   params: Record<string, string>;
-  activeBuild: {
-    buildUrl?: string;
-    buildNumber?: number;
-    queueUrl?: string;
-  };
-}): Promise<{
-  buildUrl?: string;
-  buildNumber?: number;
-  queueUrl?: string;
-}> {
+  activeBuild: ActiveBuild;
+}): Promise<ActiveBuild> {
   let activeBuild = options.activeBuild;
 
   while (true) {
@@ -377,7 +368,6 @@ async function runPostBuildActionMenu(options: {
         defaultBranch: !branchValue,
         branchParam: options.branchParam,
       });
-      continue;
     }
   }
 }
@@ -577,8 +567,9 @@ function formatNonInteractiveBuildCommand(options: {
     return parts.join(" ");
   }
 
-  if (options.branch && options.branch.trim()) {
-    parts.push("--branch", shellEscape(options.branch.trim()));
+  const trimmedBranch = options.branch?.trim();
+  if (trimmedBranch) {
+    parts.push("--branch", shellEscape(trimmedBranch));
   }
 
   if (options.branchParam && options.branchParam !== "BRANCH") {
@@ -597,7 +588,7 @@ function shellEscape(value: string): string {
     return "''";
   }
   const singleQuoteEscape = `'` + `"` + `'` + `"` + `'`;
-  const escaped = value.replace(/'/g, singleQuoteEscape);
+  const escaped = value.replaceAll("'", singleQuoteEscape);
   return `'${escaped}'`;
 }
 
@@ -1093,19 +1084,19 @@ async function resolveJobSearch(options: {
     try {
       const candidates = resolveJobCandidates(query, options.jobs);
       if (candidates.length === 1) {
-        return candidates[0];
+        const onlyCandidate = candidates[0];
+        if (onlyCandidate) {
+          return onlyCandidate;
+        }
       }
 
       const selection = await promptForJobSelection(candidates);
       if (selection.kind === "search") {
-        throw new SearchAgainError();
-      }
-      return selection.job;
-    } catch (err) {
-      if (err instanceof SearchAgainError) {
         query = await promptForJobSearch();
         continue;
       }
+      return selection.job;
+    } catch (err) {
       if (err instanceof CliError && shouldRetryJobSearch(err)) {
         printError(err.message);
         for (const hint of err.hints) {

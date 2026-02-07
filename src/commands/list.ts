@@ -255,7 +255,7 @@ async function runJobActionMenu(options: {
   }
 }
 
-async function runMenuAction(action: () => Promise<void>): Promise<void> {
+async function runMenuAction<T>(action: () => Promise<T>): Promise<void> {
   try {
     await action();
   } catch (error) {

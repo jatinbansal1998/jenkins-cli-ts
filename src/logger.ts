@@ -10,6 +10,11 @@ import path from "node:path";
 const CONFIG_DIR = path.join(os.homedir(), ".config", "jenkins-cli");
 const LOG_FILE = path.join(CONFIG_DIR, "api.log");
 
+type LogHeaders =
+  | Headers
+  | string[][]
+  | Record<string, string | readonly string[]>;
+
 /** Whether debug mode is enabled (kept for backward compatibility). */
 let debugMode = false;
 
@@ -46,7 +51,7 @@ function safeAppendLine(line: string): void {
   }
 }
 
-function normalizeHeaders(headers?: HeadersInit): Array<[string, string]> {
+function normalizeHeaders(headers?: LogHeaders): Array<[string, string]> {
   if (!headers) {
     return [];
   }
@@ -56,9 +61,22 @@ function normalizeHeaders(headers?: HeadersInit): Array<[string, string]> {
     return entries;
   }
   if (Array.isArray(headers)) {
-    return headers.map(([key, value]) => [key, value]);
+    const entries: Array<[string, string]> = [];
+    for (const header of headers) {
+      const [key = "", value = ""] = header;
+      entries.push([key, value]);
+    }
+    return entries;
   }
-  return Object.entries(headers);
+  const entries: Array<[string, string]> = [];
+  for (const [key, value] of Object.entries(headers)) {
+    if (typeof value === "string") {
+      entries.push([key, value]);
+      continue;
+    }
+    entries.push([key, value.join(",")]);
+  }
+  return entries;
 }
 
 function indentLines(text: string, indent: string): string {
@@ -68,7 +86,7 @@ function indentLines(text: string, indent: string): string {
     .join("\n");
 }
 
-function formatHeadersBlock(headers?: HeadersInit): string | null {
+function formatHeadersBlock(headers?: LogHeaders): string | null {
   const entries = normalizeHeaders(headers);
   if (entries.length === 0) {
     return null;
@@ -99,7 +117,7 @@ function logBlock(lines: Array<string | null>): void {
 export function logApiRequest(
   method: string,
   url: string,
-  headers?: HeadersInit,
+  headers?: LogHeaders,
   body?: string | null,
 ): void {
   logBlock([
@@ -116,7 +134,7 @@ export function logApiResponse(
   method: string,
   url: string,
   status: number,
-  headers?: HeadersInit,
+  headers?: LogHeaders,
   body?: string | null,
 ): void {
   logBlock([
@@ -133,7 +151,7 @@ export function logApiError(
   method: string,
   url: string,
   status: number,
-  headers?: HeadersInit,
+  headers?: LogHeaders,
   body?: string | null,
 ): void {
   logBlock([

@@ -12,7 +12,7 @@ import { runWait } from "./wait";
 import {
   formatStatusDetails,
   formatStatusSummary,
-  type StatusDetails,
+  toStatusDetailsFromJob,
 } from "../status-format";
 import type { EnvConfig } from "../env";
 import type { JenkinsClient } from "../jenkins/client";
@@ -38,13 +38,6 @@ type StatusOptions = {
 type StatusSelectionResult =
   | { kind: "jobs"; jobs: JenkinsJob[] }
   | { kind: "search" };
-
-class SearchAgainError extends Error {
-  constructor() {
-    super("Search again");
-    this.name = "SearchAgainError";
-  }
-}
 
 class BackToRecentMenuError extends Error {
   constructor() {
@@ -78,15 +71,13 @@ export async function runStatus(options: StatusOptions): Promise<void> {
       ensureValidUrl(jobUrl, "job-url");
       targets = [{ jobUrl, jobLabel: jobUrl }];
     } else {
-      if (!jobs) {
-        jobs = await loadJobsForStatus({
-          client: options.client,
-          env: options.env,
-          nonInteractive: false,
-        });
-      }
+      const loadedJobs = (jobs ??= await loadJobsForStatus({
+        client: options.client,
+        env: options.env,
+        nonInteractive: false,
+      }));
 
-      if (jobs.length === 0) {
+      if (loadedJobs.length === 0) {
         throw new CliError("No jobs found in cache.", [
           "Run `jenkins-cli list --refresh` to fetch jobs from Jenkins.",
         ]);
@@ -100,7 +91,9 @@ export async function runStatus(options: StatusOptions): Promise<void> {
 
       if (selection.kind === "recent") {
         targets = selection.jobs.map((recentJob) => {
-          const selectedJob = jobs.find((job) => job.url === recentJob.jobUrl);
+          const selectedJob = loadedJobs.find(
+            (job) => job.url === recentJob.jobUrl,
+          );
           return {
             jobUrl: recentJob.jobUrl,
             jobLabel: selectedJob
@@ -112,7 +105,7 @@ export async function runStatus(options: StatusOptions): Promise<void> {
         try {
           const selectedJobs = await resolveJobSearch({
             initialQuery: selection.query,
-            jobs,
+            jobs: loadedJobs,
             nonInteractive: false,
             allowBackToRecent: selection.allowBackToRecent,
           });
@@ -134,8 +127,7 @@ export async function runStatus(options: StatusOptions): Promise<void> {
     }
 
     const showSeparators = targets.length > 1;
-    for (let index = 0; index < targets.length; index += 1) {
-      const target = targets[index];
+    for (const [index, target] of targets.entries()) {
       if (showSeparators && index > 0) {
         console.log("");
         console.log(SEPARATOR_LINE);
@@ -162,7 +154,7 @@ export async function runStatus(options: StatusOptions): Promise<void> {
         buildNumber: status.lastBuildNumber,
         result,
       });
-      const details = formatStatusDetails(toStatusDetails(status), url);
+      const details = formatStatusDetails(toStatusDetailsFromJob(status), url);
       printOk(details ? `${summary}\n${details}` : summary);
 
       if (options.watch) {
@@ -272,7 +264,7 @@ async function runStatusOnce(options: StatusOptions): Promise<void> {
     buildNumber: status.lastBuildNumber,
     result,
   });
-  const details = formatStatusDetails(toStatusDetails(status), url);
+  const details = formatStatusDetails(toStatusDetailsFromJob(status), url);
   printOk(details ? `${summary}\n${details}` : summary);
 
   if (options.watch) {
@@ -470,16 +462,13 @@ async function resolveJobSearch(options: {
 
       const selection = await promptForJobSelection(candidates);
       if (selection.kind === "search") {
-        throw new SearchAgainError();
-      }
-      return selection.jobs;
-    } catch (err) {
-      if (err instanceof SearchAgainError) {
         query = await promptForJobSearch({
           allowBack: options.allowBackToRecent,
         });
         continue;
       }
+      return selection.jobs;
+    } catch (err) {
       if (err instanceof CliError && shouldRetryJobSearch(err)) {
         printError(err.message);
         for (const hint of err.hints) {
@@ -581,12 +570,11 @@ async function runStatusActionMenu(options: {
           returnToCaller: true,
         }),
       );
-      continue;
     }
   }
 }
 
-async function runMenuAction(action: () => Promise<void>): Promise<void> {
+async function runMenuAction<T>(action: () => Promise<T>): Promise<void> {
   try {
     await action();
   } catch (error) {
@@ -609,24 +597,4 @@ function ensureValidUrl(value: string, label: string): void {
       `Provide a full URL like https://jenkins.example.com/job/example/.`,
     ]);
   }
-}
-
-function toStatusDetails(status: {
-  building?: boolean;
-  lastBuildTimestamp?: number;
-  lastBuildDurationMs?: number;
-  lastBuildEstimatedDurationMs?: number;
-  queueTimeMs?: number;
-  parameters?: { name: string; value: string }[];
-  stage?: { name?: string; status?: string };
-}): StatusDetails {
-  return {
-    building: status.building,
-    timestampMs: status.lastBuildTimestamp,
-    durationMs: status.lastBuildDurationMs,
-    estimatedDurationMs: status.lastBuildEstimatedDurationMs,
-    queueTimeMs: status.queueTimeMs,
-    parameters: status.parameters,
-    stage: status.stage,
-  };
 }

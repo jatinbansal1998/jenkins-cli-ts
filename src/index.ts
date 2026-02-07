@@ -178,9 +178,7 @@ async function main(): Promise<void> {
           jobUrl: typeof argv.jobUrl === "string" ? argv.jobUrl : undefined,
           branch: typeof argv.branch === "string" ? argv.branch : undefined,
           branchParam: branchParamExplicitlyPassed
-            ? typeof argv.branchParam === "string"
-              ? argv.branchParam
-              : undefined
+            ? argv.branchParam
             : env.branchParamDefault,
           defaultBranch: Boolean(argv.defaultBranch),
           nonInteractive: Boolean(argv.nonInteractive),
@@ -488,6 +486,9 @@ async function main(): Promise<void> {
     --token         Jenkins API token
     --branch-param  Branch parameter name
 
+  config/env:
+    JENKINS_USE_CRUMB / useCrumb  Enable Jenkins CSRF crumb usage [default: disabled]
+
   update / upgrade:
     [tag]          Install a specific version tag (e.g. v0.2.4)
     --check        Check for updates without installing
@@ -554,6 +555,7 @@ function createContext(): {
     baseUrl: env.jenkinsUrl,
     user: env.jenkinsUser,
     apiToken: env.jenkinsApiToken,
+    useCrumb: env.useCrumb,
   });
   return { env, client };
 }

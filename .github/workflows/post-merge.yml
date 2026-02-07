@@ -166,6 +166,10 @@ jobs:
             } >> "$GITHUB_OUTPUT"
           fi
           
+          # Re-run auto-fixes after potential version updates.
+          bun run lint:fix
+          bun run format
+
           # Configure git
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"

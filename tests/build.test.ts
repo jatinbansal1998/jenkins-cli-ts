@@ -20,7 +20,7 @@ const spinnerMock = mock(() => ({
   message: () => undefined,
 }));
 
-const runCancelMock = mock(async () => undefined);
+const runCancelMock = mock(async (..._args: unknown[]) => undefined);
 const runLogsMock = mock(async () => undefined);
 const notifyBuildCompleteMock = mock(async () => undefined);
 
@@ -126,10 +126,13 @@ describe("build command", () => {
     });
 
     expect(runCancelMock).toHaveBeenCalledTimes(1);
-    const cancelCall = runCancelMock.mock.calls[0]?.[0];
-    expect(cancelCall?.buildUrl).toBe(BUILD_URL);
-    expect(cancelCall?.queueUrl).toBeUndefined();
-    expect(cancelCall?.jobUrl).toBeUndefined();
+    expect(runCancelMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        buildUrl: BUILD_URL,
+        queueUrl: undefined,
+        jobUrl: undefined,
+      }),
+    );
   });
 
   test("prints non-interactive command when build is triggered in return-to-caller flow", async () => {

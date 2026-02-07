@@ -63,7 +63,11 @@ describe("update helpers", () => {
     try {
       expect(() => resolveExecutablePath()).toThrow(CliError);
     } finally {
-      process.argv[1] = prevArgv;
+      if (prevArgv === undefined) {
+        process.argv.splice(1, 1);
+      } else {
+        process.argv[1] = prevArgv;
+      }
     }
   });
 
@@ -73,7 +77,11 @@ describe("update helpers", () => {
     try {
       expect(resolveExecutablePath()).toBe(path.resolve("/tmp/jenkins-cli"));
     } finally {
-      process.argv[1] = prevArgv;
+      if (prevArgv === undefined) {
+        process.argv.splice(1, 1);
+      } else {
+        process.argv[1] = prevArgv;
+      }
     }
   });
 });

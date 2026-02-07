@@ -25,7 +25,7 @@ const textMock = mock(async () => "q");
 
 const runBuildMock = mock(async () => undefined);
 const runStatusMock = mock(async () => undefined);
-const runWaitMock = mock(async () => undefined);
+const runWaitMock = mock(async (..._args: unknown[]) => undefined);
 const runLogsMock = mock(async () => undefined);
 const runCancelMock = mock(async () => undefined);
 const runRerunMock = mock(async () => undefined);
@@ -145,9 +145,11 @@ describe("runList", () => {
     });
 
     expect(runWaitMock).toHaveBeenCalledTimes(1);
-    expect(runWaitMock.mock.calls[0]?.[0]).toMatchObject({
-      jobUrl: "https://jenkins.example.com/job/alpha",
-    });
+    expect(runWaitMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        jobUrl: "https://jenkins.example.com/job/alpha",
+      }),
+    );
     expect(logSpy).toHaveBeenCalledWith(
       "alpha  https://jenkins.example.com/job/alpha",
     );

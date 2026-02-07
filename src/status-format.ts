@@ -1,3 +1,5 @@
+import type { BuildStatus, JobStatus } from "./types/jenkins";
+
 const ANSI_BOLD = "\u001b[1m";
 const ANSI_RESET = "\u001b[0m";
 
@@ -10,6 +12,30 @@ export type StatusDetails = {
   parameters?: { name: string; value: string }[];
   stage?: { name?: string; status?: string };
 };
+
+export function toStatusDetailsFromBuild(status: BuildStatus): StatusDetails {
+  return {
+    building: status.building,
+    timestampMs: status.timestampMs,
+    durationMs: status.durationMs,
+    estimatedDurationMs: status.estimatedDurationMs,
+    queueTimeMs: status.queueTimeMs,
+    parameters: status.parameters,
+    stage: status.stage,
+  };
+}
+
+export function toStatusDetailsFromJob(status: JobStatus): StatusDetails {
+  return {
+    building: status.building,
+    timestampMs: status.lastBuildTimestamp,
+    durationMs: status.lastBuildDurationMs,
+    estimatedDurationMs: status.lastBuildEstimatedDurationMs,
+    queueTimeMs: status.queueTimeMs,
+    parameters: status.parameters,
+    stage: status.stage,
+  };
+}
 
 type StatusSummaryInput = {
   jobLabel: string;

@@ -13,6 +13,8 @@
     "install:global": "bun run build && bun link",
     "lint": "oxlint",
     "lint:fix": "oxlint --fix",
+    "typecheck": "tsc --noEmit",
+    "check": "bun run lint:fix && bun run format && bun run typecheck",
     "test": "bun test",
     "format": "prettier . --write",
     "format:check": "prettier . --check"

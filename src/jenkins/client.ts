@@ -53,6 +53,7 @@ export class JenkinsClient {
   private readonly baseUrl: string;
   private readonly authHeader: string;
   private readonly timeoutMs: number;
+  private readonly useCrumb: boolean;
   private crumbCache?: Crumb;
 
   constructor(options: JenkinsClientOptions) {
@@ -62,6 +63,7 @@ export class JenkinsClient {
     );
     this.authHeader = `Basic ${token}`;
     this.timeoutMs = options.timeoutMs ?? 10_000;
+    this.useCrumb = options.useCrumb === true;
   }
 
   async listJobs(): Promise<JenkinsJob[]> {
@@ -310,7 +312,6 @@ export class JenkinsClient {
     jobUrl: string,
     params: TriggerBuildParams,
   ): Promise<TriggerBuildResult> {
-    const crumb = await this.getCrumb();
     const filteredParams = new URLSearchParams();
     for (const [key, value] of Object.entries(params)) {
       const normalizedKey = key.trim();
@@ -325,27 +326,11 @@ export class JenkinsClient {
     const url = new URL(buildUrl);
     url.searchParams.set("delay", "0sec");
     const body = hasParams ? filteredParams.toString() : undefined;
-
-    const headers: Record<string, string> = {
-      Authorization: this.authHeader,
-    };
-    if (hasParams) {
-      headers["Content-Type"] = "application/x-www-form-urlencoded";
-    }
-    if (crumb) {
-      headers[crumb.field] = crumb.value;
-    }
-
-    const response = await this.fetchWithTimeout(
-      url.toString(),
-      {
-        method: "POST",
-        headers,
-        ...(body ? { body } : {}),
-      },
-      1,
-      "trigger build",
-    );
+    const response = await this.sendPostWithCrumbRetry({
+      url: url.toString(),
+      context: "trigger build",
+      body,
+    });
 
     if (!response.ok) {
       await this.raiseHttpError(response, "trigger build");
@@ -369,29 +354,68 @@ export class JenkinsClient {
     context: string,
     body?: string,
   ): Promise<void> {
-    const crumb = await this.getCrumb();
-    const headers: Record<string, string> = {
-      Authorization: this.authHeader,
-    };
-    if (body !== undefined) {
-      headers["Content-Type"] = "application/x-www-form-urlencoded";
-    }
-    if (crumb) {
-      headers[crumb.field] = crumb.value;
-    }
-    const response = await this.fetchWithTimeout(
-      url,
-      {
-        method: "POST",
-        headers,
-        ...(body !== undefined ? { body } : {}),
-      },
-      1,
-      context,
-    );
+    const response = await this.sendPostWithCrumbRetry({ url, context, body });
     if (!response.ok) {
       await this.raiseHttpError(response, context);
     }
+  }
+
+  private async sendPostWithCrumbRetry(options: {
+    url: string;
+    context: string;
+    body?: string;
+  }): Promise<Response> {
+    if (!this.useCrumb) {
+      const headers: Record<string, string> = {
+        Authorization: this.authHeader,
+      };
+      if (options.body !== undefined) {
+        headers["Content-Type"] = "application/x-www-form-urlencoded";
+      }
+      return await this.fetchWithTimeout(
+        options.url,
+        {
+          method: "POST",
+          headers,
+          ...(options.body !== undefined ? { body: options.body } : {}),
+        },
+        1,
+        options.context,
+      );
+    }
+
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      const crumb = await this.getCrumb();
+      const headers: Record<string, string> = {
+        Authorization: this.authHeader,
+      };
+      if (options.body !== undefined) {
+        headers["Content-Type"] = "application/x-www-form-urlencoded";
+      }
+      if (crumb) {
+        headers[crumb.field] = crumb.value;
+      }
+      const response = await this.fetchWithTimeout(
+        options.url,
+        {
+          method: "POST",
+          headers,
+          ...(options.body !== undefined ? { body: options.body } : {}),
+        },
+        1,
+        options.context,
+      );
+      if (response.status === 403 && attempt === 0) {
+        this.crumbCache = undefined;
+        continue;
+      }
+      return response;
+    }
+
+    throw new CliError(
+      `Unable to complete request while trying to ${options.context}.`,
+      ["Try again, or check the Jenkins server logs."],
+    );
   }
 
   private async getCrumb(): Promise<Crumb | null> {
@@ -561,6 +585,7 @@ export class JenkinsClient {
         [
           "Check JENKINS_USER and JENKINS_API_TOKEN.",
           `Confirm you can access ${this.baseUrl} in a browser.`,
+          "If your Jenkins requires CSRF crumbs, set JENKINS_USE_CRUMB=true or useCrumb: true in config.",
         ],
       );
     }

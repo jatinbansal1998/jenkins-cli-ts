@@ -30,6 +30,10 @@ Required environment variables:
 - `JENKINS_USER`
 - `JENKINS_API_TOKEN`
 
+Optional environment variables:
+
+- `JENKINS_USE_CRUMB` (`true` to enable; default: disabled)
+
 Config file (used when env vars are not set):
 `~/.config/jenkins-cli/jenkins-cli-config.json`
 
@@ -38,7 +42,8 @@ Config file (used when env vars are not set):
   "jenkinsUrl": "https://jenkins.example.com",
   "jenkinsUser": "your-username",
   "jenkinsApiToken": "your-token",
-  "branchParam": "BRANCH"
+  "branchParam": "BRANCH",
+  "useCrumb": false
 }
 ```
 
@@ -238,6 +243,8 @@ Commands print `OK:` on success.
 - `deploy` is an alias for `build`.
 - `build`/`deploy` uses `buildWithParameters`; branch is required unless you pass
   `--default-branch`.
+- CSRF crumb usage is disabled by default. Enable it with
+  `JENKINS_USE_CRUMB=true` or `useCrumb: true` in config when required by your Jenkins.
 - Use `--non-interactive` to disable prompts and fail fast.
 - `wait` exit codes: `0` success, `1` non-success, `124` timeout, `130`
   interrupted.

@@ -59,7 +59,7 @@ async function resolveUrl(options: LoginOptions): Promise<string> {
   const response = await text({
     message: "Jenkins URL",
     placeholder: "https://jenkins.example.com",
-    validate: (value) => (value.trim() ? undefined : "Value required."),
+    validate: (value) => (value?.trim() ? undefined : "Value required."),
   });
   if (isCancel(response)) {
     throw new CliError("Operation cancelled.");
@@ -80,7 +80,7 @@ async function resolveUser(options: LoginOptions): Promise<string> {
   const response = await text({
     message: "Jenkins username",
     placeholder: "e.g. your-username",
-    validate: (value) => (value.trim() ? undefined : "Value required."),
+    validate: (value) => (value?.trim() ? undefined : "Value required."),
   });
   if (isCancel(response)) {
     throw new CliError("Operation cancelled.");
@@ -100,7 +100,7 @@ async function resolveApiToken(options: LoginOptions): Promise<string> {
   }
   const response = await password({
     message: "Jenkins API token",
-    validate: (value) => (value.trim() ? undefined : "Value required."),
+    validate: (value) => (value?.trim() ? undefined : "Value required."),
   });
   if (isCancel(response)) {
     throw new CliError("Operation cancelled.");

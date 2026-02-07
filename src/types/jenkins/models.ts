@@ -98,4 +98,5 @@ export type JenkinsClientOptions = {
   user: string;
   apiToken: string;
   timeoutMs?: number;
+  useCrumb?: boolean;
 };

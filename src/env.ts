@@ -12,6 +12,7 @@ type RawEnv = {
   JENKINS_API_TOKEN?: string;
   JENKINS_BRANCH_PARAM?: string;
   JENKINS_DEBUG?: string;
+  JENKINS_USE_CRUMB?: boolean;
 };
 
 type FileConfig = {
@@ -21,11 +22,14 @@ type FileConfig = {
   branchParam?: string;
   jenkinsBranchParam?: string;
   debug?: boolean;
+  useCrumb?: boolean;
+  jenkinsUseCrumb?: boolean;
   JENKINS_URL?: string;
   JENKINS_USER?: string;
   JENKINS_API_TOKEN?: string;
   JENKINS_BRANCH_PARAM?: string;
   JENKINS_DEBUG?: string | boolean;
+  JENKINS_USE_CRUMB?: boolean;
 };
 
 /** Jenkins connection configuration. */
@@ -38,6 +42,8 @@ export type EnvConfig = {
    * Can be overridden per-invocation via `--branch-param`.
    */
   branchParamDefault: string;
+  /** Whether Jenkins CSRF crumb should be used for POST requests. */
+  useCrumb: boolean;
 };
 
 export function normalizeUrl(rawUrl: string): string {
@@ -57,8 +63,7 @@ export function normalizeUrl(rawUrl: string): string {
     ]);
   }
 
-  const normalized = url.toString().replace(/\/+$/, "");
-  return normalized;
+  return url.toString().replace(/\/+$/, "");
 }
 
 function parseConfigFile(contents: string, configPath: string): RawEnv {
@@ -106,6 +111,11 @@ function parseConfigFile(contents: string, configPath: string): RawEnv {
         : typeof record.JENKINS_BRANCH_PARAM === "string"
           ? record.JENKINS_BRANCH_PARAM
           : undefined;
+  const useCrumb = firstBoolean(record, [
+    "useCrumb",
+    "jenkinsUseCrumb",
+    "JENKINS_USE_CRUMB",
+  ]);
 
   if (url) {
     result.JENKINS_URL = url;
@@ -119,13 +129,16 @@ function parseConfigFile(contents: string, configPath: string): RawEnv {
   if (branchParam) {
     result.JENKINS_BRANCH_PARAM = branchParam;
   }
+  if (useCrumb !== undefined) {
+    result.JENKINS_USE_CRUMB = useCrumb;
+  }
 
   // Parse debug setting (supports boolean or string "true"/"false")
   const debugValue = record.debug ?? record.JENKINS_DEBUG;
   if (debugValue !== undefined) {
     if (typeof debugValue === "boolean") {
       result.JENKINS_DEBUG = debugValue ? "true" : "false";
-    } else if (typeof debugValue === "string") {
+    } else {
       result.JENKINS_DEBUG = debugValue;
     }
   }
@@ -157,6 +170,7 @@ export function loadEnv(): EnvConfig {
   const rawToken = process.env.JENKINS_API_TOKEN ?? config.JENKINS_API_TOKEN;
   const rawBranchParam =
     process.env.JENKINS_BRANCH_PARAM ?? config.JENKINS_BRANCH_PARAM;
+  const rawUseCrumb = process.env.JENKINS_USE_CRUMB ?? config.JENKINS_USE_CRUMB;
 
   if (!rawUrl || rawUrl.trim() === "") {
     throw new CliError("Missing JENKINS_URL.", [
@@ -187,6 +201,7 @@ export function loadEnv(): EnvConfig {
     jenkinsUser: rawUser.trim(),
     jenkinsApiToken: rawToken.trim(),
     branchParamDefault,
+    useCrumb: parseUseCrumbValue(rawUseCrumb),
   };
 }
 
@@ -198,11 +213,33 @@ export function loadEnv(): EnvConfig {
 export function getDebugDefault(): boolean {
   const config = readConfigFile();
   const rawDebug = process.env.JENKINS_DEBUG ?? config.JENKINS_DEBUG;
-
   if (!rawDebug) {
     return false;
   }
-
   const normalized = rawDebug.trim().toLowerCase();
   return normalized === "true" || normalized === "1";
+}
+
+function firstBoolean(
+  record: Record<string, unknown>,
+  keys: string[],
+): boolean | undefined {
+  for (const key of keys) {
+    const value = record[key];
+    if (typeof value === "boolean") {
+      return value;
+    }
+  }
+  return undefined;
+}
+
+function parseUseCrumbValue(value: string | boolean | undefined): boolean {
+  if (typeof value === "boolean") {
+    return value;
+  }
+  if (typeof value !== "string") {
+    return false;
+  }
+  const normalized = value.trim().toLowerCase();
+  return normalized === "true";
 }
