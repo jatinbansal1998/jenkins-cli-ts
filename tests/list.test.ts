@@ -9,7 +9,8 @@ import {
 } from "bun:test";
 import { CliError } from "../src/cli";
 import type { EnvConfig } from "../src/env";
-import type { JenkinsClient, JenkinsJob } from "../src/jenkins/client";
+import type { JenkinsClient } from "../src/jenkins/client";
+import type { JenkinsJob } from "../src/types/jenkins";
 
 const jobs: JenkinsJob[] = [
   { name: "beta", url: "https://jenkins.example.com/job/beta" },

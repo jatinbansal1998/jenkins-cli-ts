@@ -10,125 +10,44 @@ import {
   logApiError,
   logNetworkError,
 } from "../logger";
+import type {
+  BuildStatus,
+  ConsoleChunk,
+  Crumb,
+  JenkinsApiBuild,
+  JenkinsApiBuildAction,
+  JenkinsApiJob,
+  JenkinsApiQueueItem,
+  JenkinsBuildParameter,
+  JenkinsClientOptions,
+  JenkinsCrumbResponse,
+  JenkinsJob,
+  JenkinsJobsResponse,
+  JenkinsJobStatusResponse,
+  JenkinsLastFailedBuildResponse,
+  JenkinsPipelineDescribeResponse,
+  JenkinsQueueItemsResponse,
+  JenkinsQueueWaitTimeResponse,
+  JobStatus,
+  LastFailedBuildReference,
+  PipelineInfo,
+  QueueBuildReference,
+  QueueItemSummary,
+  TriggerBuildParams,
+  TriggerBuildResult,
+} from "../types/jenkins";
 
-/** Jenkins job metadata. */
-export type JenkinsJob = {
-  name: string;
-  fullName?: string;
-  url: string;
-};
-
-export type JobStatus = {
-  lastBuildNumber?: number;
-  lastBuildUrl?: string;
-  result?: string | null;
-  building?: boolean;
-  lastBuildTimestamp?: number;
-  lastBuildDurationMs?: number;
-  lastBuildEstimatedDurationMs?: number;
-  queueTimeMs?: number;
-  parameters?: { name: string; value: string }[];
-  branch?: string;
-  stage?: {
-    name?: string;
-    status?: string;
-  };
-};
-
-export type BuildStatus = {
-  buildNumber?: number;
-  buildUrl?: string;
-  result?: string | null;
-  building?: boolean;
-  timestampMs?: number;
-  durationMs?: number;
-  estimatedDurationMs?: number;
-  queueTimeMs?: number;
-  parameters?: { name: string; value: string }[];
-  branch?: string;
-  stage?: {
-    name?: string;
-    status?: string;
-  };
-};
-
-export type QueueItemSummary = {
-  id: number;
-  queueUrl: string;
-  jobName?: string;
-  jobUrl?: string;
-  reason?: string;
-  inQueueSince?: number;
-  blocked?: boolean;
-  buildable?: boolean;
-  stuck?: boolean;
-};
-
-export type ConsoleChunk = {
-  text: string;
-  nextStart: number;
-  hasMore: boolean;
-};
-
-type BuildAction = {
-  parameters?: { name?: string; value?: unknown }[];
-};
-
-type BuildDetails = {
-  number?: number;
-  url?: string;
-  result?: string | null;
-  building?: boolean;
-  timestamp?: number;
-  duration?: number;
-  estimatedDuration?: number;
-  queueId?: number;
-  actions?: BuildAction[];
-};
-
-type QueueItem = {
-  id?: number;
-  url?: string;
-  why?: string;
-  inQueueSince?: number;
-  blocked?: boolean;
-  buildable?: boolean;
-  stuck?: boolean;
-  cancelled?: boolean;
-  task?: {
-    name?: string;
-    url?: string;
-  };
-  executable?: {
-    number?: number;
-    url?: string;
-  };
-};
-
-type TriggerBuildResult = {
-  queueUrl?: string;
-  queueId?: number;
-  jobUrl?: string;
-  buildUrl?: string;
-  buildNumber?: number;
-};
-
-type PipelineInfo = {
-  stage?: { name?: string; status?: string };
-  queueDurationMs?: number;
-};
-
-type Crumb = {
-  field: string;
-  value: string;
-};
-
-type JenkinsClientOptions = {
-  baseUrl: string;
-  user: string;
-  apiToken: string;
-  timeoutMs?: number;
-};
+export type {
+  BuildStatus,
+  ConsoleChunk,
+  JenkinsClientOptions,
+  JenkinsJob,
+  JobStatus,
+  QueueBuildReference,
+  QueueItemSummary,
+  TriggerBuildParams,
+  TriggerBuildResult,
+} from "../types/jenkins";
 
 export class JenkinsClient {
   private readonly baseUrl: string;
@@ -147,16 +66,25 @@ export class JenkinsClient {
 
   async listJobs(): Promise<JenkinsJob[]> {
     const url = this.withBase("api/json?tree=jobs[name,fullName,url]");
-    const data = await this.requestJson<{ jobs?: JenkinsJob[] }>(
-      url,
-      "list jobs",
-    );
+    const data = await this.requestJson<JenkinsJobsResponse>(url, "list jobs");
     if (!Array.isArray(data.jobs)) {
       throw new CliError("Unexpected Jenkins response when listing jobs.", [
         "Try `jenkins-cli list --refresh` again.",
       ]);
     }
-    return data.jobs;
+
+    const jobs: JenkinsJob[] = [];
+    for (const item of data.jobs) {
+      const normalized = normalizeJob(item);
+      if (!normalized) {
+        throw new CliError("Unexpected Jenkins response when listing jobs.", [
+          "Try `jenkins-cli list --refresh` again.",
+        ]);
+      }
+      jobs.push(normalized);
+    }
+
+    return jobs;
   }
 
   async getJobStatus(jobUrl: string): Promise<JobStatus> {
@@ -164,9 +92,10 @@ export class JenkinsClient {
       jobUrl,
       "api/json?tree=lastBuild[number,url,result,building,timestamp,duration,estimatedDuration]",
     );
-    const data = await this.requestJson<{
-      lastBuild?: BuildDetails;
-    }>(url, "job status");
+    const data = await this.requestJson<JenkinsJobStatusResponse>(
+      url,
+      "job status",
+    );
 
     const lastBuild = data.lastBuild;
     if (!lastBuild) {
@@ -209,7 +138,7 @@ export class JenkinsClient {
       buildUrl,
       "api/json?tree=number,url,result,building,timestamp,duration,estimatedDuration,queueId,actions[parameters[name,value]]",
     );
-    const buildDetails = await this.requestJson<BuildDetails>(
+    const buildDetails = await this.requestJson<JenkinsApiBuild>(
       url,
       "fetch build status",
     );
@@ -244,9 +173,7 @@ export class JenkinsClient {
     };
   }
 
-  async getQueueBuild(
-    queueUrl: string,
-  ): Promise<{ buildUrl?: string; buildNumber?: number } | null> {
+  async getQueueBuild(queueUrl: string): Promise<QueueBuildReference | null> {
     const queueItem = await this.getQueueItem(queueUrl);
     if (!queueItem) {
       return null;
@@ -261,7 +188,7 @@ export class JenkinsClient {
     const url = this.withBase(
       "queue/api/json?tree=items[id,url,why,inQueueSince,blocked,buildable,stuck,cancelled,task[name,url]]",
     );
-    const payload = await this.requestJson<{ items?: QueueItem[] }>(
+    const payload = await this.requestJson<JenkinsQueueItemsResponse>(
       url,
       "list queue items",
     );
@@ -271,7 +198,7 @@ export class JenkinsClient {
 
     return payload.items
       .filter(
-        (item): item is QueueItem & { id: number } =>
+        (item): item is JenkinsApiQueueItem & { id: number } =>
           typeof item.id === "number" && Number.isFinite(item.id),
       )
       .filter((item) => !item.cancelled)
@@ -349,14 +276,15 @@ export class JenkinsClient {
 
   async getLastFailedBuild(
     jobUrl: string,
-  ): Promise<{ buildUrl: string; buildNumber?: number } | null> {
+  ): Promise<LastFailedBuildReference | null> {
     const url = this.withJob(
       jobUrl,
       "api/json?tree=lastFailedBuild[url,number]",
     );
-    const payload = await this.requestJson<{
-      lastFailedBuild?: { url?: string; number?: number };
-    }>(url, "fetch last failed build");
+    const payload = await this.requestJson<JenkinsLastFailedBuildResponse>(
+      url,
+      "fetch last failed build",
+    );
     const build = payload.lastFailedBuild;
     if (!build?.url) {
       return null;
@@ -369,7 +297,7 @@ export class JenkinsClient {
 
   async triggerBuild(
     jobUrl: string,
-    params: Record<string, string>,
+    params: TriggerBuildParams,
   ): Promise<TriggerBuildResult> {
     const crumb = await this.getCrumb();
     const filteredParams = new URLSearchParams();
@@ -475,10 +403,7 @@ export class JenkinsClient {
       await this.raiseHttpError(response, "fetch crumb");
     }
 
-    const data = (await response.json()) as {
-      crumbRequestField?: string;
-      crumb?: string;
-    };
+    const data = (await response.json()) as JenkinsCrumbResponse;
 
     if (!data.crumbRequestField || !data.crumb) {
       return null;
@@ -661,7 +586,7 @@ export class JenkinsClient {
 
   private async getBuildDetails(
     buildUrl: string,
-  ): Promise<BuildDetails | null> {
+  ): Promise<JenkinsApiBuild | null> {
     const url = this.withJob(
       buildUrl,
       "api/json?tree=number,url,result,building,timestamp,duration,estimatedDuration,queueId,actions[parameters[name,value]]",
@@ -676,7 +601,7 @@ export class JenkinsClient {
       if (!response.ok) {
         return null;
       }
-      return (await response.json()) as BuildDetails;
+      return (await response.json()) as JenkinsApiBuild;
     } catch {
       return null;
     }
@@ -700,7 +625,7 @@ export class JenkinsClient {
       if (!response.ok) {
         return undefined;
       }
-      const data = (await response.json()) as { inQueueSince?: number };
+      const data = (await response.json()) as JenkinsQueueWaitTimeResponse;
       if (typeof data.inQueueSince !== "number") {
         return undefined;
       }
@@ -711,7 +636,9 @@ export class JenkinsClient {
     }
   }
 
-  private async getQueueItem(queueUrl: string): Promise<QueueItem | null> {
+  private async getQueueItem(
+    queueUrl: string,
+  ): Promise<JenkinsApiQueueItem | null> {
     const url = this.withJob(
       queueUrl,
       "api/json?tree=id,task[url],executable[number,url]",
@@ -726,7 +653,7 @@ export class JenkinsClient {
       if (!response.ok) {
         return null;
       }
-      return (await response.json()) as QueueItem;
+      return (await response.json()) as JenkinsApiQueueItem;
     } catch {
       return null;
     }
@@ -747,10 +674,7 @@ export class JenkinsClient {
       if (!response.ok) {
         return null;
       }
-      const data = (await response.json()) as {
-        stages?: { name?: string; status?: string }[];
-        queueDurationMillis?: number;
-      };
+      const data = (await response.json()) as JenkinsPipelineDescribeResponse;
       const stages = Array.isArray(data.stages) ? data.stages : [];
       const activeStage = stages.find(
         (stage) =>
@@ -769,12 +693,12 @@ export class JenkinsClient {
 }
 
 function extractBuildParameters(
-  actions?: BuildAction[],
-): { name: string; value: string }[] | undefined {
+  actions?: JenkinsApiBuildAction[],
+): JenkinsBuildParameter[] | undefined {
   if (!Array.isArray(actions)) {
     return undefined;
   }
-  const params: { name: string; value: string }[] = [];
+  const params: JenkinsBuildParameter[] = [];
   for (const action of actions) {
     if (!action || !Array.isArray(action.parameters)) {
       continue;
@@ -794,7 +718,7 @@ function extractBuildParameters(
 }
 
 function extractBranchParam(
-  params: { name: string; value: string }[] | undefined,
+  params: JenkinsBuildParameter[] | undefined,
 ): string | undefined {
   if (!params || params.length === 0) {
     return undefined;
@@ -817,4 +741,15 @@ function extractBranchParam(
     (param) => param.name.toLowerCase().includes("branch") && param.value,
   );
   return fallback?.value;
+}
+
+function normalizeJob(job: JenkinsApiJob): JenkinsJob | null {
+  if (typeof job.name !== "string" || typeof job.url !== "string") {
+    return null;
+  }
+  return {
+    name: job.name,
+    fullName: typeof job.fullName === "string" ? job.fullName : undefined,
+    url: job.url,
+  };
 }

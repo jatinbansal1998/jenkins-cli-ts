@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { rankJobs } from "../src/jobs";
 import { MIN_SCORE } from "../src/config/fuzzy";
-import type { JenkinsJob } from "../src/jenkins/client";
+import type { JenkinsJob } from "../src/types/jenkins";
 
 /** Helper to create job objects from names */
 function createJob(name: string): JenkinsJob {

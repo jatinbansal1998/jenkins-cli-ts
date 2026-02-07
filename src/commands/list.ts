@@ -4,7 +4,8 @@
  */
 import { CliError, printError, printHint, printOk } from "../cli";
 import type { EnvConfig } from "../env";
-import type { JenkinsClient, JenkinsJob } from "../jenkins/client";
+import type { JenkinsClient } from "../jenkins/client";
+import type { JenkinsJob } from "../types/jenkins";
 import { MIN_SCORE } from "../config/fuzzy";
 import { listDeps } from "./list-deps";
 

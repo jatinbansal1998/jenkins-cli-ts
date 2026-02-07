@@ -18,12 +18,8 @@ import {
 } from "../branches.ts";
 import { loadRecentJobs, recordRecentJob } from "../recent-jobs.ts";
 import type { EnvConfig } from "../env";
-import type {
-  BuildStatus,
-  JenkinsClient,
-  JenkinsJob,
-  JobStatus,
-} from "../jenkins/client";
+import type { JenkinsClient } from "../jenkins/client";
+import type { BuildStatus, JenkinsJob, JobStatus } from "../types/jenkins";
 import {
   getJobDisplayName,
   loadJobs,

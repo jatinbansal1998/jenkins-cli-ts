@@ -1,7 +1,8 @@
 import { confirm, isCancel } from "@clack/prompts";
 import { CliError, printOk } from "../cli";
 import type { EnvConfig } from "../env";
-import type { JenkinsClient, QueueItemSummary } from "../jenkins/client";
+import type { JenkinsClient } from "../jenkins/client";
+import type { QueueItemSummary } from "../types/jenkins";
 import { ensureValidUrl, resolveJobTarget } from "./ops-helpers";
 
 type CancelOptions = {

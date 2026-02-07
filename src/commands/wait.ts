@@ -1,7 +1,8 @@
 import { spinner } from "@clack/prompts";
 import { CliError, printError, printHint, printOk } from "../cli";
 import type { EnvConfig } from "../env";
-import type { BuildStatus, JenkinsClient, JobStatus } from "../jenkins/client";
+import type { JenkinsClient } from "../jenkins/client";
+import type { BuildStatus, JobStatus } from "../types/jenkins";
 import { formatCompactStatus, formatStatusDetails } from "../status-format";
 import {
   ensureValidUrl,

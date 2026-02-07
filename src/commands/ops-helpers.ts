@@ -1,7 +1,8 @@
 import { confirm, isCancel, select, text } from "@clack/prompts";
 import { CliError, printError, printHint } from "../cli";
 import type { EnvConfig } from "../env";
-import type { JenkinsClient, JenkinsJob } from "../jenkins/client";
+import type { JenkinsClient } from "../jenkins/client";
+import type { JenkinsJob } from "../types/jenkins";
 import {
   getJobDisplayName,
   loadJobs,

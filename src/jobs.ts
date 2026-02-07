@@ -9,7 +9,8 @@ import path from "node:path";
 import { CliError } from "./cli";
 import { MIN_SCORE, AMBIGUITY_GAP, MAX_OPTIONS, SCORES } from "./config/fuzzy";
 import type { EnvConfig } from "./env";
-import type { JenkinsClient, JenkinsJob } from "./jenkins/client";
+import type { JenkinsClient } from "./jenkins/client";
+import type { JenkinsJob } from "./types/jenkins";
 
 /** Cached job data with metadata. */
 export type CachedJob = JenkinsJob & {
