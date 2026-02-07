@@ -3,7 +3,7 @@
  * Displays all cached Jenkins jobs with optional search filtering.
  */
 import { confirm, isCancel, select, text } from "@clack/prompts";
-import { CliError, printOk } from "../cli";
+import { CliError, printError, printHint, printOk } from "../cli";
 import { runBuild } from "./build";
 import { runCancel } from "./cancel";
 import { runLogs } from "./logs";
@@ -184,62 +184,89 @@ async function runJobActionMenu(options: {
     }
 
     if (action === "build") {
-      await runBuild({
-        client: options.client,
-        env: options.env,
-        jobUrl: options.job.url,
-        branchParam: options.env.branchParamDefault,
-        nonInteractive: false,
-        returnToCaller: true,
-      });
+      await runMenuAction(async () =>
+        runBuild({
+          client: options.client,
+          env: options.env,
+          jobUrl: options.job.url,
+          branchParam: options.env.branchParamDefault,
+          nonInteractive: false,
+          returnToCaller: true,
+        }),
+      );
       continue;
     }
     if (action === "status") {
-      await runStatus({
-        client: options.client,
-        env: options.env,
-        jobUrl: options.job.url,
-        nonInteractive: true,
-      });
+      await runMenuAction(async () =>
+        runStatus({
+          client: options.client,
+          env: options.env,
+          jobUrl: options.job.url,
+          nonInteractive: true,
+        }),
+      );
       continue;
     }
     if (action === "watch") {
-      await runWait({
-        client: options.client,
-        env: options.env,
-        jobUrl: options.job.url,
-        nonInteractive: false,
-        suppressExitCode: true,
-      });
+      await runMenuAction(async () =>
+        runWait({
+          client: options.client,
+          env: options.env,
+          jobUrl: options.job.url,
+          nonInteractive: false,
+          suppressExitCode: true,
+        }),
+      );
       continue;
     }
     if (action === "logs") {
-      await runLogs({
-        client: options.client,
-        env: options.env,
-        jobUrl: options.job.url,
-        follow: true,
-        nonInteractive: false,
-      });
+      await runMenuAction(async () =>
+        runLogs({
+          client: options.client,
+          env: options.env,
+          jobUrl: options.job.url,
+          follow: true,
+          nonInteractive: false,
+        }),
+      );
       continue;
     }
     if (action === "cancel") {
-      await runCancel({
-        client: options.client,
-        env: options.env,
-        jobUrl: options.job.url,
-        nonInteractive: false,
-      });
+      await runMenuAction(async () =>
+        runCancel({
+          client: options.client,
+          env: options.env,
+          jobUrl: options.job.url,
+          nonInteractive: false,
+        }),
+      );
       continue;
     }
     if (action === "rerun") {
-      await runRerun({
-        client: options.client,
-        env: options.env,
-        jobUrl: options.job.url,
-        nonInteractive: false,
-      });
+      await runMenuAction(async () =>
+        runRerun({
+          client: options.client,
+          env: options.env,
+          jobUrl: options.job.url,
+          nonInteractive: false,
+        }),
+      );
       continue;
     }
+  }
+}
+
+async function runMenuAction(action: () => Promise<void>): Promise<void> {
+  try {
+    await action();
+  } catch (error) {
+    if (error instanceof CliError) {
+      printError(error.message);
+      for (const hint of error.hints) {
+        printHint(hint);
+      }
+      return;
+    }
+    throw error;
   }
 }

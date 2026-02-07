@@ -523,55 +523,80 @@ async function runStatusActionMenu(options: {
     }
 
     if (action === "watch") {
-      await runWait({
-        client: options.client,
-        env: options.env,
-        jobUrl: options.target.jobUrl,
-        nonInteractive: false,
-        suppressExitCode: true,
-      });
+      await runMenuAction(async () =>
+        runWait({
+          client: options.client,
+          env: options.env,
+          jobUrl: options.target.jobUrl,
+          nonInteractive: false,
+          suppressExitCode: true,
+        }),
+      );
       continue;
     }
     if (action === "logs") {
-      await runLogs({
-        client: options.client,
-        env: options.env,
-        jobUrl: options.target.jobUrl,
-        follow: true,
-        nonInteractive: false,
-      });
+      await runMenuAction(async () =>
+        runLogs({
+          client: options.client,
+          env: options.env,
+          jobUrl: options.target.jobUrl,
+          follow: true,
+          nonInteractive: false,
+        }),
+      );
       continue;
     }
     if (action === "cancel") {
-      await runCancel({
-        client: options.client,
-        env: options.env,
-        jobUrl: options.target.jobUrl,
-        nonInteractive: false,
-      });
+      await runMenuAction(async () =>
+        runCancel({
+          client: options.client,
+          env: options.env,
+          jobUrl: options.target.jobUrl,
+          nonInteractive: false,
+        }),
+      );
       continue;
     }
     if (action === "rerun") {
-      await runRerun({
-        client: options.client,
-        env: options.env,
-        jobUrl: options.target.jobUrl,
-        nonInteractive: false,
-      });
+      await runMenuAction(async () =>
+        runRerun({
+          client: options.client,
+          env: options.env,
+          jobUrl: options.target.jobUrl,
+          nonInteractive: false,
+        }),
+      );
       continue;
     }
     if (action === "build") {
-      await runBuild({
-        client: options.client,
-        env: options.env,
-        jobUrl: options.target.jobUrl,
-        branchParam: options.env.branchParamDefault,
-        defaultBranch: false,
-        nonInteractive: false,
-        returnToCaller: true,
-      });
+      await runMenuAction(async () =>
+        runBuild({
+          client: options.client,
+          env: options.env,
+          jobUrl: options.target.jobUrl,
+          branchParam: options.env.branchParamDefault,
+          defaultBranch: false,
+          nonInteractive: false,
+          returnToCaller: true,
+        }),
+      );
       continue;
     }
+  }
+}
+
+async function runMenuAction(action: () => Promise<void>): Promise<void> {
+  try {
+    await action();
+  } catch (error) {
+    if (error instanceof CliError) {
+      printError(error.message);
+      for (const hint of error.hints) {
+        printHint(hint);
+      }
+      return;
+    }
+    throw error;
   }
 }
 

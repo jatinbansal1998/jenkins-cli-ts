@@ -274,14 +274,19 @@ async function runPostBuildActionMenu(options: {
     }
 
     if (action === "watch") {
-      const finalStatus = await watchBuildStatus({
-        client: options.client,
-        jobUrl: options.jobUrl,
-        jobLabel: options.jobLabel,
-        buildUrl: activeBuild.buildUrl,
-        buildNumber: activeBuild.buildNumber,
-        queueUrl: activeBuild.queueUrl,
-      });
+      const finalStatus = await runMenuAction(async () =>
+        watchBuildStatus({
+          client: options.client,
+          jobUrl: options.jobUrl,
+          jobLabel: options.jobLabel,
+          buildUrl: activeBuild.buildUrl,
+          buildNumber: activeBuild.buildNumber,
+          queueUrl: activeBuild.queueUrl,
+        }),
+      );
+      if (!finalStatus) {
+        continue;
+      }
       if (!finalStatus.cancelled) {
         await notifyBuildComplete({
           message: formatNotificationMessage({
@@ -298,33 +303,37 @@ async function runPostBuildActionMenu(options: {
     }
 
     if (action === "logs") {
-      await runLogs({
-        client: options.client,
-        env: options.env,
-        buildUrl: activeBuild.buildUrl,
-        queueUrl: activeBuild.queueUrl,
-        jobUrl:
-          !activeBuild.buildUrl && !activeBuild.queueUrl
-            ? options.jobUrl
-            : undefined,
-        follow: true,
-        nonInteractive: false,
-      });
+      await runMenuAction(async () =>
+        runLogs({
+          client: options.client,
+          env: options.env,
+          buildUrl: activeBuild.buildUrl,
+          queueUrl: activeBuild.queueUrl,
+          jobUrl:
+            !activeBuild.buildUrl && !activeBuild.queueUrl
+              ? options.jobUrl
+              : undefined,
+          follow: true,
+          nonInteractive: false,
+        }),
+      );
       continue;
     }
 
     if (action === "cancel") {
-      await runCancel({
-        client: options.client,
-        env: options.env,
-        buildUrl: activeBuild.buildUrl,
-        queueUrl: activeBuild.queueUrl,
-        jobUrl:
-          !activeBuild.buildUrl && !activeBuild.queueUrl
-            ? options.jobUrl
-            : undefined,
-        nonInteractive: false,
-      });
+      await runMenuAction(async () =>
+        runCancel({
+          client: options.client,
+          env: options.env,
+          buildUrl: activeBuild.buildUrl,
+          queueUrl: activeBuild.queueUrl,
+          jobUrl:
+            !activeBuild.buildUrl && !activeBuild.queueUrl
+              ? options.jobUrl
+              : undefined,
+          nonInteractive: false,
+        }),
+      );
       continue;
     }
 
@@ -369,6 +378,23 @@ async function runPostBuildActionMenu(options: {
       }
       continue;
     }
+  }
+}
+
+async function runMenuAction<T>(
+  action: () => Promise<T>,
+): Promise<T | undefined> {
+  try {
+    return await action();
+  } catch (error) {
+    if (error instanceof CliError) {
+      printError(error.message);
+      for (const hint of error.hints) {
+        printHint(hint);
+      }
+      return undefined;
+    }
+    throw error;
   }
 }
 

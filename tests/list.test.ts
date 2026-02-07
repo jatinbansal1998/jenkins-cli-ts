@@ -7,6 +7,7 @@ import {
   spyOn,
   test,
 } from "bun:test";
+import { CliError } from "../src/cli";
 import type { EnvConfig } from "../src/env";
 import type { JenkinsClient, JenkinsJob } from "../src/jenkins/client";
 
@@ -162,6 +163,41 @@ describe("runList", () => {
     });
     expect(logSpy).toHaveBeenCalledWith(
       "alpha  https://jenkins.example.com/job/alpha",
+    );
+  });
+
+  test("interactive action errors are shown and menu continues", async () => {
+    const errorSpy = spyOn(console, "error");
+
+    textMock
+      .mockImplementationOnce(async () => "alpha")
+      .mockImplementationOnce(async () => "q");
+    selectMock
+      .mockImplementationOnce(
+        async () => "https://jenkins.example.com/job/alpha",
+      )
+      .mockImplementationOnce(async () => "cancel")
+      .mockImplementationOnce(async () => "search");
+
+    runCancelMock.mockImplementationOnce(async () => {
+      throw new CliError("No running or queued build found.", [
+        "Trigger a build first, then try cancelling again.",
+      ]);
+    });
+
+    await runList({
+      client: {} as JenkinsClient,
+      env: { branchParamDefault: "BRANCH" } as EnvConfig,
+      refresh: false,
+      nonInteractive: false,
+    });
+
+    expect(runCancelMock).toHaveBeenCalledTimes(1);
+    expect(errorSpy).toHaveBeenCalledWith(
+      "ERROR: No running or queued build found.",
+    );
+    expect(errorSpy).toHaveBeenCalledWith(
+      "HINT: Trigger a build first, then try cancelling again.",
     );
   });
 });
