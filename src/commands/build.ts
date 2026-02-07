@@ -35,6 +35,7 @@ import {
   formatStatusSummary,
   type StatusDetails,
 } from "../status-format";
+import { waitForPollIntervalOrCancel } from "./watch-utils";
 
 /** Options for the build command. */
 type BuildOptions = {
@@ -645,15 +646,15 @@ async function watchBuildStatus(options: {
   let baselineBuildNumber = options.baselineBuildNumber;
   let targetBuildNumber: number | undefined;
 
-  if (!buildUrl && baselineBuildNumber === undefined) {
-    const initialStatus = await options.client.getJobStatus(options.jobUrl);
-    baselineBuildNumber = initialStatus.lastBuildNumber;
-    if (initialStatus.lastBuildNumber && initialStatus.building) {
-      targetBuildNumber = initialStatus.lastBuildNumber;
-    }
-  }
-
   try {
+    if (!buildUrl && baselineBuildNumber === undefined) {
+      const initialStatus = await options.client.getJobStatus(options.jobUrl);
+      baselineBuildNumber = initialStatus.lastBuildNumber;
+      if (initialStatus.lastBuildNumber && initialStatus.building) {
+        targetBuildNumber = initialStatus.lastBuildNumber;
+      }
+    }
+
     while (true) {
       if (cancelSignal?.isCancelled()) {
         if (statusSpinner) {
@@ -785,11 +786,7 @@ async function watchBuildStatus(options: {
         }
       }
 
-      if (cancelSignal) {
-        await Promise.race([Bun.sleep(pollIntervalMs), cancelSignal.wait]);
-      } else {
-        await Bun.sleep(pollIntervalMs);
-      }
+      await waitForPollIntervalOrCancel(pollIntervalMs, cancelSignal);
     }
   } catch (error) {
     if (statusSpinner) {

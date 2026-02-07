@@ -14,6 +14,7 @@ import {
   parseOptionalDurationMs,
   resolveJobTarget,
 } from "./ops-helpers";
+import { waitForPollIntervalOrCancel } from "./watch-utils";
 
 type WaitOptions = {
   client: JenkinsClient;
@@ -168,32 +169,32 @@ export async function waitForBuild(options: {
   let baselineBuildNumber: number | undefined;
   let targetBuildNumber: number | undefined;
 
-  if (!buildUrl && !queueUrl && options.jobUrl) {
-    const initialStatus = await options.client.getJobStatus(options.jobUrl);
-    baselineBuildNumber = initialStatus.lastBuildNumber;
-    if (initialStatus.lastBuildNumber && !initialStatus.building) {
-      if (statusSpinner) {
-        statusSpinner.stop("Build already completed.");
-      }
-      const finalBuildUrl = initialStatus.lastBuildUrl || options.jobUrl;
-      printFinalJobStatus(
-        options.jobLabel,
-        initialStatus.lastBuildNumber,
-        initialStatus,
-        finalBuildUrl,
-      );
-      return {
-        result: initialStatus.result || "UNKNOWN",
-        buildNumber: initialStatus.lastBuildNumber,
-        buildUrl: finalBuildUrl,
-      };
-    }
-    if (initialStatus.building && initialStatus.lastBuildNumber) {
-      targetBuildNumber = initialStatus.lastBuildNumber;
-    }
-  }
-
   try {
+    if (!buildUrl && !queueUrl && options.jobUrl) {
+      const initialStatus = await options.client.getJobStatus(options.jobUrl);
+      baselineBuildNumber = initialStatus.lastBuildNumber;
+      if (initialStatus.lastBuildNumber && !initialStatus.building) {
+        if (statusSpinner) {
+          statusSpinner.stop("Build already completed.");
+        }
+        const finalBuildUrl = initialStatus.lastBuildUrl || options.jobUrl;
+        printFinalJobStatus(
+          options.jobLabel,
+          initialStatus.lastBuildNumber,
+          initialStatus,
+          finalBuildUrl,
+        );
+        return {
+          result: initialStatus.result || "UNKNOWN",
+          buildNumber: initialStatus.lastBuildNumber,
+          buildUrl: finalBuildUrl,
+        };
+      }
+      if (initialStatus.building && initialStatus.lastBuildNumber) {
+        targetBuildNumber = initialStatus.lastBuildNumber;
+      }
+    }
+
     while (true) {
       const elapsedMs = Date.now() - startedAt;
       if (options.timeoutMs !== undefined && elapsedMs >= options.timeoutMs) {
@@ -346,11 +347,7 @@ export async function waitForBuild(options: {
         ]);
       }
 
-      if (cancelSignal) {
-        await Promise.race([Bun.sleep(options.intervalMs), cancelSignal.wait]);
-      } else {
-        await Bun.sleep(options.intervalMs);
-      }
+      await waitForPollIntervalOrCancel(options.intervalMs, cancelSignal);
     }
   } finally {
     cancelSignal?.cleanup();
