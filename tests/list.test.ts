@@ -25,6 +25,7 @@ const textMock = mock(async () => "q");
 const runBuildMock = mock(async () => undefined);
 const runStatusMock = mock(async () => undefined);
 const runWaitMock = mock(async () => undefined);
+const waitForBuildMock = mock(async () => undefined);
 const runLogsMock = mock(async () => undefined);
 const runCancelMock = mock(async () => undefined);
 const runRerunMock = mock(async () => undefined);
@@ -54,6 +55,7 @@ mock.module("../src/commands/status", () => ({
 }));
 mock.module("../src/commands/wait", () => ({
   runWait: runWaitMock,
+  waitForBuild: waitForBuildMock,
 }));
 mock.module("../src/commands/logs", () => ({
   runLogs: runLogsMock,
@@ -87,6 +89,8 @@ describe("runList", () => {
     runStatusMock.mockImplementation(async () => undefined);
     runWaitMock.mockReset();
     runWaitMock.mockImplementation(async () => undefined);
+    waitForBuildMock.mockReset();
+    waitForBuildMock.mockImplementation(async () => undefined);
     runLogsMock.mockReset();
     runLogsMock.mockImplementation(async () => undefined);
     runCancelMock.mockReset();
