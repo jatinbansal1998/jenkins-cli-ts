@@ -22,43 +22,13 @@ import {
 } from "./constants";
 
 type SelectEvent = `select:${string}`;
-type ConfirmEvent = "confirm:yes" | "confirm:no";
-
-type ListSelectJobEvent = "select:search_again" | "select:exit" | "select:job";
-type ListSelectActionEvent = "done" | SelectEvent;
-
-type BuildSelectActionEvent = "done" | SelectEvent;
-type BuildAfterMenuEvent = "return_to_caller" | "ask_repeat";
-type BuildAfterRootEvent = "return_to_caller_root" | "ask_repeat";
-
-type BuildPreEntryEvent = "show_recent" | "search_direct";
-type BuildPreSelectRecentJobEvent = "select:search_all" | "select:recent";
-type BuildPreSubmitSearchEvent =
-  | "search:retry"
-  | "search:candidates"
-  | "search:auto";
-type BuildPreSelectSearchCandidateEvent = "select:search_again" | "select:job";
-type BuildPrePrepareBranchEvent =
-  | "branch:ready"
-  | "branch:select"
-  | "branch:entry"
-  | "branch:error";
-type BuildPreSelectBranchEvent =
-  | "branch:remove"
-  | "branch:entry"
-  | "branch:selected";
-type BuildPreSelectBranchToRemoveEvent = "remove:selected";
-type BuildPreRemoveBranchEvent = "remove:done";
-type BuildPreSubmitBranchEvent = "branch:retry" | "branch:selected";
-
-type StatusSelectActionEvent = "done" | SelectEvent;
 
 function resolveSelectEvent<T extends string>(input: T): `select:${T}` {
   return `select:${input}`;
 }
 
 export const listFlowHandlers = {
-  "list.selectJob": ({ context, input }): ListSelectJobEvent => {
+  "list.selectJob": ({ context, input }) => {
     const value = String(input);
     if (value === SEARCH_AGAIN_VALUE) {
       return "select:search_again";
@@ -73,7 +43,7 @@ export const listFlowHandlers = {
     context.selectedJob = selectedJob;
     return "select:job";
   },
-  "list.selectAction": ({ context, input }): ListSelectActionEvent => {
+  "list.selectAction": ({ context, input }) => {
     const value = String(input);
     if (value === "done") {
       return "done";
@@ -93,7 +63,7 @@ export const listFlowHandlers = {
 } satisfies FlowHandlerRegistry<ListInteractiveContext>;
 
 export const buildFlowHandlers = {
-  "build.selectAction": ({ context, input }): BuildSelectActionEvent => {
+  "build.selectAction": ({ context, input }) => {
     const value = String(input);
     if (value === "done") {
       return "done";
@@ -107,21 +77,21 @@ export const buildFlowHandlers = {
     }
     return await context.performAction(context.selectedAction);
   },
-  "build.afterMenu": ({ context }): BuildAfterMenuEvent =>
+  "build.afterMenu": ({ context }) =>
     context.returnToCaller ? "return_to_caller" : "ask_repeat",
-  "build.afterRoot": ({ context }): BuildAfterRootEvent =>
+  "build.afterRoot": ({ context }) =>
     context.returnToCaller ? "return_to_caller_root" : "ask_repeat",
-  "build.repeatConfirm": ({ input }): ConfirmEvent =>
+  "build.repeatConfirm": ({ input }) =>
     input ? "confirm:yes" : "confirm:no",
 } satisfies FlowHandlerRegistry<BuildPostContext>;
 
 export const buildPreFlowHandlers = {
-  "buildPre.entry": ({ context }): BuildPreEntryEvent =>
+  "buildPre.entry": ({ context }) =>
     context.recentJobs.length > 0 ? "show_recent" : "search_direct",
   "buildPre.selectRecentJob": ({
     context,
     input,
-  }): BuildPreSelectRecentJobEvent => {
+  }) => {
     const value = String(input);
     if (value === SEARCH_ALL_JOBS_VALUE) {
       return "select:search_all";
@@ -139,7 +109,7 @@ export const buildPreFlowHandlers = {
     context.searchCandidates = [];
     return "select:recent";
   },
-  "buildPre.submitSearch": ({ context, input }): BuildPreSubmitSearchEvent => {
+  "buildPre.submitSearch": ({ context, input }) => {
     const query = String(input ?? "").trim();
     context.searchQuery = query;
     if (!query) {
@@ -172,7 +142,7 @@ export const buildPreFlowHandlers = {
   "buildPre.selectSearchCandidate": ({
     context,
     input,
-  }): BuildPreSelectSearchCandidateEvent => {
+  }) => {
     const value = String(input);
     const selected = context.searchCandidates.find((job) => job.url === value);
     if (!selected) {
@@ -185,7 +155,7 @@ export const buildPreFlowHandlers = {
   },
   "buildPre.prepareBranch": async ({
     context,
-  }): Promise<BuildPrePrepareBranchEvent> => {
+  }) => {
     const branch = context.branch?.trim() ?? "";
     if (context.defaultBranch || branch) {
       context.branch = branch;
@@ -215,7 +185,7 @@ export const buildPreFlowHandlers = {
 
     return choices.length > 0 ? "branch:select" : "branch:entry";
   },
-  "buildPre.selectBranch": ({ context, input }): BuildPreSelectBranchEvent => {
+  "buildPre.selectBranch": ({ context, input }) => {
     const value = String(input);
     if (value === BRANCH_REMOVE_VALUE && context.removableBranches.length > 0) {
       return "branch:remove";
@@ -233,7 +203,7 @@ export const buildPreFlowHandlers = {
   "buildPre.selectBranchToRemove": ({
     context,
     input,
-  }): BuildPreSelectBranchToRemoveEvent => {
+  }) => {
     const branch = String(input).trim();
     if (!branch) {
       return "remove:selected";
@@ -243,7 +213,7 @@ export const buildPreFlowHandlers = {
   },
   "buildPre.removeBranch": async ({
     context,
-  }): Promise<BuildPreRemoveBranchEvent> => {
+  }) => {
     const jobUrl = context.selectedJobUrl?.trim() ?? "";
     const branch = context.pendingBranchRemoval?.trim() ?? "";
     context.pendingBranchRemoval = undefined;
@@ -266,7 +236,7 @@ export const buildPreFlowHandlers = {
     }
     return "remove:done";
   },
-  "buildPre.submitBranch": ({ context, input }): BuildPreSubmitBranchEvent => {
+  "buildPre.submitBranch": ({ context, input }) => {
     const branch = String(input ?? "").trim();
     if (!branch) {
       printError("Branch is required to trigger a build.");
@@ -279,7 +249,7 @@ export const buildPreFlowHandlers = {
 } satisfies FlowHandlerRegistry<BuildPreContext>;
 
 export const statusFlowHandlers = {
-  "status.selectAction": ({ context, input }): StatusSelectActionEvent => {
+  "status.selectAction": ({ context, input }) => {
     const value = String(input);
     if (value === "done") {
       return "done";
@@ -293,7 +263,7 @@ export const statusFlowHandlers = {
     }
     return await context.performAction(context.selectedAction);
   },
-  "status.repeatConfirm": ({ input }): ConfirmEvent =>
+  "status.repeatConfirm": ({ input }) =>
     input ? "confirm:yes" : "confirm:no",
 } satisfies FlowHandlerRegistry<StatusPostContext>;
 
