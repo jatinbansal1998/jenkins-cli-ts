@@ -486,7 +486,6 @@ function validateBuildOptions(options: BuildOptions): void {
       "Remove one of the flags and try again.",
     ]);
   }
-
 }
 
 function resolveCancelTarget(activeBuild: {
@@ -533,18 +532,14 @@ function formatNonInteractiveBuildCommand(options: {
     shellEscape(options.jobUrl),
   ];
 
-  if (options.defaultBranch || !options.branch?.trim()) {
-    parts.push("--without-params");
-    return parts.join(" ");
-  }
-
   const trimmedBranch = options.branch?.trim();
-  if (trimmedBranch) {
+  if (options.defaultBranch || !trimmedBranch) {
+    parts.push("--without-params");
+  } else {
     parts.push("--branch", shellEscape(trimmedBranch));
-  }
-
-  if (options.branchParam && options.branchParam !== "BRANCH") {
-    parts.push("--branch-param", shellEscape(options.branchParam));
+    if (options.branchParam && options.branchParam !== "BRANCH") {
+      parts.push("--branch-param", shellEscape(options.branchParam));
+    }
   }
 
   if (options.watch) {
