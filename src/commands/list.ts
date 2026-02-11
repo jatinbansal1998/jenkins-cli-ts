@@ -11,6 +11,7 @@ import { listDeps } from "./list-deps";
 import { runFlow } from "../flows/runner";
 import { flows } from "../flows/definition";
 import { listFlowHandlers } from "../flows/handlers";
+import { withPromptTarget } from "../tui-target";
 import type {
   ActionEffectResult,
   ListInteractiveContext,
@@ -43,7 +44,7 @@ export async function runList(options: ListOptions): Promise<void> {
     env: options.env,
     refresh: options.refresh,
     nonInteractive: options.nonInteractive,
-    confirmRefresh,
+    confirmRefresh: (reason) => confirmRefresh(reason, options.env),
   });
 
   if (options.nonInteractive) {
@@ -54,7 +55,7 @@ export async function runList(options: ListOptions): Promise<void> {
 
   let pendingSearch = options.search?.trim() ?? "";
   while (true) {
-    const search = await promptSearch(pendingSearch);
+    const search = await promptSearch(pendingSearch, options.env);
     pendingSearch = "";
     if (isExitToken(search)) {
       return;
@@ -94,12 +95,15 @@ function getFilteredJobs(jobs: JenkinsJob[], search: string): JenkinsJob[] {
     .map((match) => match.job);
 }
 
-async function promptSearch(initialSearch: string): Promise<string> {
+async function promptSearch(
+  initialSearch: string,
+  env: EnvConfig,
+): Promise<string> {
   if (initialSearch) {
     return initialSearch;
   }
   const response = await listDeps.text({
-    message: "Search jobs (optional, q to exit)",
+    message: withPromptTarget("Search jobs (optional, q to exit)", env),
     placeholder: "e.g. api prod",
   });
   if (listDeps.isCancel(response)) {
@@ -112,6 +116,7 @@ async function runListActionMenu(
   options: ListActionMenuOptions,
 ): Promise<"search" | "exit"> {
   const context: ListInteractiveContext = {
+    env: options.env,
     jobs: options.jobs,
     performAction: (action, selectedJob) =>
       performListAction(options, action, selectedJob),
@@ -135,9 +140,12 @@ async function runListActionMenu(
   return "search";
 }
 
-async function confirmRefresh(reason: string): Promise<boolean> {
+async function confirmRefresh(
+  reason: string,
+  env: EnvConfig,
+): Promise<boolean> {
   const response = await listDeps.confirm({
-    message: `${reason} Refresh now?`,
+    message: withPromptTarget(`${reason} Refresh now?`, env),
     initialValue: true,
   });
   if (listDeps.isCancel(response)) {

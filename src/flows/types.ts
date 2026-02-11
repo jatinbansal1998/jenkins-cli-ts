@@ -120,6 +120,7 @@ export type ActionEffectResult =
 
 /** Runtime context for `listInteractive` flow. */
 export type ListInteractiveContext = {
+  env: EnvConfig;
   jobs: JenkinsJob[];
   selectedJob?: JenkinsJob;
   selectedAction?: string;
@@ -131,6 +132,7 @@ export type ListInteractiveContext = {
 
 /** Runtime context for `buildPost` flow. */
 export type BuildPostContext = {
+  env: EnvConfig;
   jobLabel: string;
   returnToCaller: boolean;
   selectedAction?: string;
@@ -156,6 +158,7 @@ export type BuildPreContext = {
 
 /** Runtime context for `statusPost` flow. */
 export type StatusPostContext = {
+  env: EnvConfig;
   targetLabel: string;
   selectedAction?: string;
   performAction: (action: string) => Promise<ActionEffectResult>;

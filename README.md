@@ -24,42 +24,55 @@ JENKINS_CLI_INSTALL_DIR="$HOME/.local/bin" curl -fsSL http://jatinbansal.com/jen
 
 ## Setup
 
-Required environment variables:
-
-- `JENKINS_URL` (e.g., `https://jenkins.example.com`)
-- `JENKINS_USER`
-- `JENKINS_API_TOKEN`
-
-Optional environment variables:
-
-- `JENKINS_USE_CRUMB` (`true` to enable; default: disabled)
-
-Config file (used when env vars are not set):
+Config file:
 `~/.config/jenkins-cli/jenkins-cli-config.json`
 
 ```json
 {
-  "jenkinsUrl": "https://jenkins.example.com",
-  "jenkinsUser": "your-username",
-  "jenkinsApiToken": "your-token",
-  "branchParam": "BRANCH",
-  "useCrumb": false
+  "version": 2,
+  "defaultProfile": "work",
+  "profiles": {
+    "work": {
+      "jenkinsUrl": "https://jenkins.example.com",
+      "jenkinsUser": "your-username",
+      "jenkinsApiToken": "your-token",
+      "branchParam": "BRANCH",
+      "useCrumb": false
+    }
+  },
+  "debug": false
 }
 ```
 
-Login and save credentials (saved to the config path above):
+Add credentials:
 
 ```bash
 jenkins-cli login
+jenkins-cli login --profile work
+jenkins-cli login --profile prod --url https://jenkins-prod.example.com --user ci --token <token>
 ```
 
-Custom branch parameter name:
+Manage profiles:
 
 ```bash
-jenkins-cli login --branch-param BRANCH_TAG
+jenkins-cli profile list
+jenkins-cli profile use prod
+jenkins-cli profile delete work
 ```
 
-Environment variables always take precedence.
+Selection behavior:
+
+- If you pass `--url --user --token`, those one-off credentials are used for that command.
+- Else if you pass `--profile`, that profile is used and env credentials are ignored.
+- Else the CLI uses `defaultProfile`.
+- If no profiles exist, the CLI falls back to environment variables.
+
+Environment variable fallback (single account only):
+
+- `JENKINS_URL` (e.g., `https://jenkins.example.com`)
+- `JENKINS_USER`
+- `JENKINS_API_TOKEN`
+- Optional: `JENKINS_USE_CRUMB` (`true` to enable; default: disabled)
 
 ## Usage
 
@@ -92,6 +105,18 @@ Search with natural language:
 
 ```bash
 jenkins-cli list --search "api prod deploy"
+```
+
+Run any command against a specific profile:
+
+```bash
+jenkins-cli list --profile prod
+```
+
+Run any command with direct one-off credentials:
+
+```bash
+jenkins-cli list --url https://jenkins.example.com --user ci-user --token <token>
 ```
 
 Trigger a build with a branch:
@@ -246,10 +271,13 @@ Commands print `OK:` on success.
 
 ## Notes
 
-- Job lists are cached in the OS cache directory. Use `--refresh` to update.
-  macOS: `~/Library/Caches/jenkins-cli/jobs.json`, Linux:
-  `${XDG_CACHE_HOME:-~/.cache}/jenkins-cli/jobs.json`, Windows:
-  `%LOCALAPPDATA%\jenkins-cli\jobs.json`.
+- Job lists are cached in the OS cache directory and separated by Jenkins URL
+  (for example `jobs-<host>-<hash>.json`). Use `--refresh` to update.
+  macOS: `~/Library/Caches/jenkins-cli/`, Linux:
+  `${XDG_CACHE_HOME:-~/.cache}/jenkins-cli/`, Windows:
+  `%LOCALAPPDATA%\jenkins-cli\`.
+- The first profile added becomes the default profile.
+- Legacy single-profile config is migrated automatically when profile data is read/written.
 - `deploy` is an alias for `build`.
 - `build`/`deploy` uses `buildWithParameters` when a branch is provided; otherwise it
   triggers Jenkins with no parameters.

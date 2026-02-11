@@ -2,34 +2,19 @@
  * Environment configuration loader.
  * Validates and loads JENKINS_URL, JENKINS_USER, and JENKINS_API_TOKEN.
  */
-import fs from "node:fs";
 import { CliError } from "./cli";
-import { CONFIG_FILE } from "./config";
+import {
+  CONFIG_FILE,
+  migrateLegacyConfigSyncIfNeeded,
+  readConfigSync,
+  resolveDefaultProfileName,
+} from "./config";
 
-type RawEnv = {
-  JENKINS_URL?: string;
-  JENKINS_USER?: string;
-  JENKINS_API_TOKEN?: string;
-  JENKINS_BRANCH_PARAM?: string;
-  JENKINS_DEBUG?: string;
-  JENKINS_USE_CRUMB?: boolean;
-};
-
-type FileConfig = {
-  jenkinsUrl?: string;
-  jenkinsUser?: string;
-  jenkinsApiToken?: string;
-  branchParam?: string;
-  jenkinsBranchParam?: string;
-  debug?: boolean;
-  useCrumb?: boolean;
-  jenkinsUseCrumb?: boolean;
-  JENKINS_URL?: string;
-  JENKINS_USER?: string;
-  JENKINS_API_TOKEN?: string;
-  JENKINS_BRANCH_PARAM?: string;
-  JENKINS_DEBUG?: string | boolean;
-  JENKINS_USE_CRUMB?: boolean;
+export type LoadEnvOptions = {
+  profile?: string;
+  url?: string;
+  user?: string;
+  apiToken?: string;
 };
 
 /** Jenkins connection configuration. */
@@ -37,6 +22,7 @@ export type EnvConfig = {
   jenkinsUrl: string;
   jenkinsUser: string;
   jenkinsApiToken: string;
+  profileName?: string;
   /**
    * Default parameter name used by `buildWithParameters` to pass the branch/tag.
    * Can be overridden per-invocation via `--branch-param`.
@@ -66,112 +52,63 @@ export function normalizeUrl(rawUrl: string): string {
   return url.toString().replace(/\/+$/, "");
 }
 
-function parseConfigFile(contents: string, configPath: string): RawEnv {
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(contents);
-  } catch {
-    throw new CliError("Invalid config file JSON.", [
-      `Fix the JSON in ${configPath}.`,
+export function loadEnv(options: LoadEnvOptions = {}): EnvConfig {
+  const cliUrl = normalizeOptionalString(options.url);
+  const cliUser = normalizeOptionalString(options.user);
+  const cliToken = normalizeOptionalString(options.apiToken);
+  const profileName = normalizeOptionalString(options.profile);
+
+  const providedCliCredentialCount = [cliUrl, cliUser, cliToken].filter(
+    Boolean,
+  ).length;
+  if (
+    providedCliCredentialCount > 0 &&
+    providedCliCredentialCount < REQUIRED_CLI_CREDENTIAL_COUNT
+  ) {
+    throw new CliError("Incomplete Jenkins CLI credentials.", [
+      "Pass --url, --user, and --token together when using one-off credentials.",
     ]);
   }
 
-  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-    throw new CliError("Invalid config file format.", [
-      `Expected a JSON object in ${configPath}.`,
-    ]);
+  const loadedConfig = migrateLegacyConfigSyncIfNeeded() ?? readConfigSync();
+  const config = loadedConfig?.config;
+
+  if (
+    providedCliCredentialCount === REQUIRED_CLI_CREDENTIAL_COUNT &&
+    cliUrl &&
+    cliUser &&
+    cliToken
+  ) {
+    return {
+      jenkinsUrl: normalizeUrl(cliUrl),
+      jenkinsUser: cliUser,
+      jenkinsApiToken: cliToken,
+      branchParamDefault: resolveBranchParamDefault(),
+      useCrumb: parseUseCrumbValue(process.env.JENKINS_USE_CRUMB),
+    };
   }
 
-  const record = parsed as FileConfig;
-  const result: RawEnv = {};
-
-  const url =
-    typeof record.jenkinsUrl === "string"
-      ? record.jenkinsUrl
-      : typeof record.JENKINS_URL === "string"
-        ? record.JENKINS_URL
-        : undefined;
-  const user =
-    typeof record.jenkinsUser === "string"
-      ? record.jenkinsUser
-      : typeof record.JENKINS_USER === "string"
-        ? record.JENKINS_USER
-        : undefined;
-  const token =
-    typeof record.jenkinsApiToken === "string"
-      ? record.jenkinsApiToken
-      : typeof record.JENKINS_API_TOKEN === "string"
-        ? record.JENKINS_API_TOKEN
-        : undefined;
-  const branchParam =
-    typeof record.branchParam === "string"
-      ? record.branchParam
-      : typeof record.jenkinsBranchParam === "string"
-        ? record.jenkinsBranchParam
-        : typeof record.JENKINS_BRANCH_PARAM === "string"
-          ? record.JENKINS_BRANCH_PARAM
-          : undefined;
-  const useCrumb = firstBoolean(record, [
-    "useCrumb",
-    "jenkinsUseCrumb",
-    "JENKINS_USE_CRUMB",
-  ]);
-
-  if (url) {
-    result.JENKINS_URL = url;
-  }
-  if (user) {
-    result.JENKINS_USER = user;
-  }
-  if (token) {
-    result.JENKINS_API_TOKEN = token;
-  }
-  if (branchParam) {
-    result.JENKINS_BRANCH_PARAM = branchParam;
-  }
-  if (useCrumb !== undefined) {
-    result.JENKINS_USE_CRUMB = useCrumb;
+  const activeProfileName = resolveActiveProfileName(config, profileName);
+  const activeProfile =
+    activeProfileName && config
+      ? config.profiles[activeProfileName]
+      : undefined;
+  if (activeProfile) {
+    return {
+      jenkinsUrl: normalizeUrl(activeProfile.jenkinsUrl),
+      jenkinsUser: activeProfile.jenkinsUser,
+      jenkinsApiToken: activeProfile.jenkinsApiToken,
+      profileName: activeProfileName,
+      branchParamDefault: resolveBranchParamDefault(activeProfile.branchParam),
+      useCrumb: parseUseCrumbValue(
+        process.env.JENKINS_USE_CRUMB ?? activeProfile.useCrumb,
+      ),
+    };
   }
 
-  // Parse debug setting (supports boolean or string "true"/"false")
-  const debugValue = record.debug ?? record.JENKINS_DEBUG;
-  if (debugValue !== undefined) {
-    if (typeof debugValue === "boolean") {
-      result.JENKINS_DEBUG = debugValue ? "true" : "false";
-    } else {
-      result.JENKINS_DEBUG = debugValue;
-    }
-  }
-
-  return result;
-}
-
-function readConfigFile(): RawEnv {
-  if (!fs.existsSync(CONFIG_FILE)) {
-    return {};
-  }
-  try {
-    const contents = fs.readFileSync(CONFIG_FILE, "utf8");
-    return parseConfigFile(contents, CONFIG_FILE);
-  } catch (error) {
-    if (error instanceof CliError) {
-      throw error;
-    }
-    throw new CliError("Unable to read config file.", [
-      `Check permissions for ${CONFIG_FILE}.`,
-    ]);
-  }
-}
-
-export function loadEnv(): EnvConfig {
-  const config = readConfigFile();
-  const rawUrl = process.env.JENKINS_URL ?? config.JENKINS_URL;
-  const rawUser = process.env.JENKINS_USER ?? config.JENKINS_USER;
-  const rawToken = process.env.JENKINS_API_TOKEN ?? config.JENKINS_API_TOKEN;
-  const rawBranchParam =
-    process.env.JENKINS_BRANCH_PARAM ?? config.JENKINS_BRANCH_PARAM;
-  const rawUseCrumb = process.env.JENKINS_USE_CRUMB ?? config.JENKINS_USE_CRUMB;
-
+  const rawUrl = process.env.JENKINS_URL;
+  const rawUser = process.env.JENKINS_USER;
+  const rawToken = process.env.JENKINS_API_TOKEN;
   if (!rawUrl || rawUrl.trim() === "") {
     throw new CliError("Missing JENKINS_URL.", [
       "Set JENKINS_URL to your Jenkins base URL (e.g., https://jenkins.example.com).",
@@ -193,15 +130,12 @@ export function loadEnv(): EnvConfig {
     ]);
   }
 
-  const branchParamDefault =
-    rawBranchParam && rawBranchParam.trim() ? rawBranchParam.trim() : "BRANCH";
-
   return {
     jenkinsUrl: normalizeUrl(rawUrl),
     jenkinsUser: rawUser.trim(),
     jenkinsApiToken: rawToken.trim(),
-    branchParamDefault,
-    useCrumb: parseUseCrumbValue(rawUseCrumb),
+    branchParamDefault: resolveBranchParamDefault(),
+    useCrumb: parseUseCrumbValue(process.env.JENKINS_USE_CRUMB),
   };
 }
 
@@ -211,26 +145,52 @@ export function loadEnv(): EnvConfig {
  * This is used as the default value when --debug flag is not explicitly passed.
  */
 export function getDebugDefault(): boolean {
-  const config = readConfigFile();
-  const rawDebug = process.env.JENKINS_DEBUG ?? config.JENKINS_DEBUG;
-  if (!rawDebug) {
-    return false;
+  const rawDebug = normalizeOptionalString(process.env.JENKINS_DEBUG);
+  if (rawDebug) {
+    return parseBooleanFlag(rawDebug);
   }
-  const normalized = rawDebug.trim().toLowerCase();
-  return normalized === "true" || normalized === "1";
+
+  const loadedConfig = readConfigSync();
+  return Boolean(loadedConfig?.config.debug);
 }
 
-function firstBoolean(
-  record: Record<string, unknown>,
-  keys: string[],
-): boolean | undefined {
-  for (const key of keys) {
-    const value = record[key];
-    if (typeof value === "boolean") {
-      return value;
+const REQUIRED_CLI_CREDENTIAL_COUNT = 3;
+const DEFAULT_BRANCH_PARAM = "BRANCH";
+
+function resolveActiveProfileName(
+  config:
+    | {
+        profiles: Record<
+          string,
+          {
+            jenkinsUrl: string;
+            jenkinsUser: string;
+            jenkinsApiToken: string;
+            branchParam?: string;
+            useCrumb?: boolean;
+          }
+        >;
+        defaultProfile?: string;
+      }
+    | undefined,
+  requestedProfileName: string | undefined,
+): string | undefined {
+  if (!config) {
+    if (requestedProfileName) {
+      throw missingProfileError(requestedProfileName, []);
     }
+    return undefined;
   }
-  return undefined;
+
+  const availableProfiles = Object.keys(config.profiles);
+  if (requestedProfileName) {
+    if (!config.profiles[requestedProfileName]) {
+      throw missingProfileError(requestedProfileName, availableProfiles);
+    }
+    return requestedProfileName;
+  }
+
+  return resolveDefaultProfileName(config);
 }
 
 function parseUseCrumbValue(value: string | boolean | undefined): boolean {
@@ -242,4 +202,50 @@ function parseUseCrumbValue(value: string | boolean | undefined): boolean {
   }
   const normalized = value.trim().toLowerCase();
   return normalized === "true";
+}
+
+function resolveBranchParamDefault(profileBranchParam?: string): string {
+  const envBranchParam = normalizeOptionalString(
+    process.env.JENKINS_BRANCH_PARAM,
+  );
+  if (envBranchParam) {
+    return envBranchParam;
+  }
+  if (profileBranchParam) {
+    return profileBranchParam;
+  }
+  return DEFAULT_BRANCH_PARAM;
+}
+
+function parseBooleanFlag(value: string): boolean {
+  const normalized = value.trim().toLowerCase();
+  return normalized === "true" || normalized === "1";
+}
+
+function normalizeOptionalString(
+  value: string | undefined,
+): string | undefined {
+  if (typeof value !== "string") {
+    return undefined;
+  }
+  const trimmed = value.trim();
+  return trimmed ? trimmed : undefined;
+}
+
+function missingProfileError(
+  requestedProfileName: string,
+  availableProfiles: string[],
+): CliError {
+  const hints: string[] = ["Run `jenkins-cli profile list` to view profiles."];
+  if (availableProfiles.length > 0) {
+    hints.push(`Available profiles: ${availableProfiles.join(", ")}.`);
+  } else {
+    hints.push(
+      "No profiles are configured yet. Run `jenkins-cli login --profile <name>`.",
+    );
+  }
+  return new CliError(
+    `Profile "${requestedProfileName}" was not found.`,
+    hints,
+  );
 }

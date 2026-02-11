@@ -173,10 +173,14 @@ describe("build command navigation", () => {
       Array<unknown>
     >;
     expect(selectCalls[0]?.[0]).toEqual(
-      expect.objectContaining({ message: "Recent jobs" }),
+      expect.objectContaining({
+        message: expect.stringContaining("Recent jobs"),
+      }),
     );
     expect(selectCalls[1]?.[0]).toEqual(
-      expect.objectContaining({ message: "Recent jobs" }),
+      expect.objectContaining({
+        message: expect.stringContaining("Recent jobs"),
+      }),
     );
     expect(triggerBuild).toHaveBeenCalledTimes(1);
     expect(triggerBuild).toHaveBeenCalledWith(JOB_URL, {});
@@ -273,7 +277,9 @@ describe("build command navigation", () => {
       Array<unknown>
     >;
     expect(selectCalls[3]?.[0]).toEqual(
-      expect.objectContaining({ message: "Build mode" }),
+      expect.objectContaining({
+        message: expect.stringContaining("Build mode"),
+      }),
     );
   });
 });

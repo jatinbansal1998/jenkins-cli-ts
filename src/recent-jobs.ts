@@ -14,7 +14,7 @@ type RecentJob = {
 export async function loadRecentJobs(options: {
   env: EnvConfig;
 }): Promise<RecentJob[]> {
-  const cache = await readJobCache();
+  const cache = await readJobCache(options.env);
   if (!cache || !cacheMatchesEnv(cache, options.env)) {
     return [];
   }
@@ -36,7 +36,7 @@ export async function recordRecentJob(options: {
   if (!jobUrl) {
     return;
   }
-  const cache = await readJobCache();
+  const cache = await readJobCache(options.env);
   if (!cache || !cacheMatchesEnv(cache, options.env)) {
     return;
   }

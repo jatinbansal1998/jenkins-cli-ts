@@ -40,6 +40,7 @@ import type {
   BuildPostContext,
   BuildPreContext,
 } from "../flows/types";
+import { withPromptTarget } from "../tui-target";
 
 /** Options for the build command. */
 type BuildOptions = {
@@ -159,6 +160,7 @@ export async function runBuild(options: BuildOptions): Promise<BuildRunResult> {
 
     const shouldWatch = await resolveWatchDecision({
       watch: watchFixed,
+      env: options.env,
       nonInteractive: false,
     });
     printNonInteractiveBuildTip({
@@ -199,6 +201,7 @@ export async function runBuild(options: BuildOptions): Promise<BuildRunResult> {
     }
 
     const flowContext: BuildPostContext = {
+      env: options.env,
       jobLabel: displayJob,
       returnToCaller: Boolean(options.returnToCaller),
       performAction: async (action): Promise<ActionEffectResult> => {
@@ -444,6 +447,7 @@ async function runBuildOnce(options: {
 
   const shouldWatch = await resolveWatchDecision({
     watch: options.watch,
+    env: options.env,
     nonInteractive: true,
   });
   if (shouldWatch) {
@@ -570,6 +574,7 @@ function normalizeBranchParam(value?: string): string {
 
 async function resolveWatchDecision(options: {
   watch?: boolean;
+  env: EnvConfig;
   nonInteractive: boolean;
 }): Promise<boolean> {
   if (typeof options.watch === "boolean") {
@@ -579,7 +584,10 @@ async function resolveWatchDecision(options: {
     return false;
   }
   const response = await confirm({
-    message: "Watch build status until completion?",
+    message: withPromptTarget(
+      "Watch build status until completion?",
+      options.env,
+    ),
     initialValue: true,
   });
   if (isCancel(response)) {
@@ -962,7 +970,7 @@ async function resolveInteractiveBuildSelection(options: {
       nonInteractive: false,
       confirmRefresh: async (reason) => {
         const response = await confirm({
-          message: `${reason} Refresh now?`,
+          message: withPromptTarget(`${reason} Refresh now?`, options.env),
           initialValue: true,
         });
         if (isCancel(response)) {
@@ -1054,7 +1062,7 @@ async function resolveJobTarget(options: {
     nonInteractive: options.nonInteractive,
     confirmRefresh: async (reason) => {
       const response = await confirm({
-        message: `${reason} Refresh now?`,
+        message: withPromptTarget(`${reason} Refresh now?`, options.env),
         initialValue: true,
       });
       if (isCancel(response)) {
@@ -1121,7 +1129,7 @@ async function resolveBranchValue(options: {
     });
   }
 
-  return await promptForBranchEntry();
+  return await promptForBranchEntry(options.env);
 }
 
 async function promptForBranchSelection(options: {
@@ -1148,7 +1156,7 @@ async function promptForBranchSelection(options: {
       },
     ];
     const response = await select({
-      message: "Branch name",
+      message: withPromptTarget("Branch name", options.env),
       options: selectOptions,
     });
 
@@ -1157,7 +1165,10 @@ async function promptForBranchSelection(options: {
     }
 
     if (response === BRANCH_REMOVE_VALUE) {
-      const toRemove = await promptForBranchRemoval(removableBranches);
+      const toRemove = await promptForBranchRemoval(
+        removableBranches,
+        options.env,
+      );
       const removed = await removeCachedBranch({
         env: options.env,
         jobUrl: options.jobUrl,
@@ -1171,7 +1182,7 @@ async function promptForBranchSelection(options: {
     }
 
     if (response === BRANCH_CUSTOM_VALUE) {
-      return await promptForBranchEntry();
+      return await promptForBranchEntry(options.env);
     }
 
     return String(response).trim();
@@ -1180,9 +1191,10 @@ async function promptForBranchSelection(options: {
 
 async function promptForBranchRemoval(
   removableBranches: string[],
+  env: EnvConfig,
 ): Promise<string> {
   const response = await select({
-    message: "Remove cached branch",
+    message: withPromptTarget("Remove cached branch", env),
     options: removableBranches.map((branch) => ({
       value: branch,
       label: branch,
@@ -1213,9 +1225,9 @@ function removeBranch(entries: string[], target: string): string[] {
   return entries.filter((entry) => entry.toLowerCase() !== key);
 }
 
-async function promptForBranchEntry(): Promise<string> {
+async function promptForBranchEntry(env: EnvConfig): Promise<string> {
   const response = await text({
-    message: "Branch name",
+    message: withPromptTarget("Branch name", env),
     placeholder: "e.g. main",
   });
   if (isCancel(response)) {

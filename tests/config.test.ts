@@ -30,6 +30,9 @@ describe("writeConfigFile", () => {
   test("preserves useCrumb and debug from existing config", async () => {
     readFileMock.mockImplementation(async () =>
       JSON.stringify({
+        jenkinsUrl: "https://old-jenkins.example.com",
+        jenkinsUser: "old-user",
+        jenkinsApiToken: "old-token",
         useCrumb: true,
         debug: false,
       }),
@@ -49,17 +52,23 @@ describe("writeConfigFile", () => {
     }
     const payload = JSON.parse(String(writeCall[1]));
 
-    expect(payload.useCrumb).toBeTrue();
+    expect(payload.defaultProfile).toBe("default");
+    expect(payload.profiles.default.useCrumb).toBeTrue();
     expect(payload.debug).toBeFalse();
-    expect(payload.jenkinsUrl).toBe("https://jenkins.example.com");
-    expect(payload.jenkinsUser).toBe("user");
-    expect(payload.jenkinsApiToken).toBe("token");
-    expect(payload.branchParam).toBe("BRANCH");
+    expect(payload.profiles.default.jenkinsUrl).toBe(
+      "https://jenkins.example.com",
+    );
+    expect(payload.profiles.default.jenkinsUser).toBe("user");
+    expect(payload.profiles.default.jenkinsApiToken).toBe("token");
+    expect(payload.profiles.default.branchParam).toBe("BRANCH");
   });
 
   test("supports legacy key formats when preserving settings", async () => {
     readFileMock.mockImplementation(async () =>
       JSON.stringify({
+        JENKINS_URL: "https://old-jenkins.example.com",
+        JENKINS_USER: "old-user",
+        JENKINS_API_TOKEN: "old-token",
         JENKINS_USE_CRUMB: true,
         JENKINS_DEBUG: "true",
       }),
@@ -80,7 +89,7 @@ describe("writeConfigFile", () => {
     }
     const payload = JSON.parse(String(writeCall[1]));
 
-    expect(payload.useCrumb).toBeFalse();
+    expect(payload.profiles.default.useCrumb).toBeFalse();
     expect(payload.debug).toBeFalse();
   });
 });
