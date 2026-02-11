@@ -108,11 +108,15 @@ jenkins-cli build --job "api-prod" --branch main --watch
 
 Press `Esc` to stop watching and return to the prompt.
 
-Use the job's default branch explicitly:
+Trigger a build without passing branch parameters:
 
 ```bash
-jenkins-cli build --job "api-prod" --default-branch
+jenkins-cli build --job "api-prod" --without-params
+# useful for non-interactive usage too:
+jenkins-cli build --job-url "https://jenkins.example/job/api-prod/" --non-interactive --without-params
 ```
+
+In interactive mode, choose **Build without parameters** from the build mode prompt.
 
 Check status:
 
@@ -248,7 +252,7 @@ Commands print `OK:` on success.
   `%LOCALAPPDATA%\jenkins-cli\jobs.json`.
 - `deploy` is an alias for `build`.
 - `build`/`deploy` uses `buildWithParameters` when a branch is provided; otherwise it
-  triggers Jenkins with no parameters (default branch behavior).
+  triggers Jenkins with no parameters.
 - CSRF crumb usage is disabled by default. Enable it with
   `JENKINS_USE_CRUMB=true` or `useCrumb: true` in config when required by your Jenkins.
 - Use `--non-interactive` to disable prompts and fail fast.

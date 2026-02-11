@@ -1,6 +1,10 @@
 import { beforeEach, describe, expect, mock, test } from "bun:test";
 import type { EnvConfig } from "../src/env";
-import { SEARCH_ALL_JOBS_VALUE } from "../src/flows/constants";
+import {
+  BUILD_WITHOUT_PARAMS_VALUE,
+  BUILD_WITH_PARAMS_VALUE,
+  SEARCH_ALL_JOBS_VALUE,
+} from "../src/flows/constants";
 import type { JenkinsClient } from "../src/jenkins/client";
 
 const CANCEL = "__mock_cancel__";
@@ -83,7 +87,6 @@ function createClient(stubs: Partial<JenkinsClient>): JenkinsClient {
 
 describe("build command navigation", () => {
   beforeEach(() => {
-    mock.clearAllMocks();
 
     confirmMock.mockReset();
     confirmMock.mockImplementation(async () => false);
@@ -153,7 +156,8 @@ describe("build command navigation", () => {
 
     selectMock
       .mockImplementationOnce(async () => SEARCH_ALL_JOBS_VALUE)
-      .mockImplementationOnce(async () => JOB_URL);
+      .mockImplementationOnce(async () => JOB_URL)
+      .mockImplementationOnce(async () => BUILD_WITHOUT_PARAMS_VALUE);
     textMock.mockImplementationOnce(async () => CANCEL);
 
     await runBuild({
@@ -163,7 +167,6 @@ describe("build command navigation", () => {
       }),
       env: {} as EnvConfig,
       nonInteractive: false,
-      defaultBranch: true,
       watch: false,
     });
 
@@ -180,6 +183,67 @@ describe("build command navigation", () => {
     expect(triggerBuild).toHaveBeenCalledWith(JOB_URL, {});
   });
 
+
+  test("interactive branch selection supports using job without parameters", async () => {
+    const getJobStatus = mock(async () => ({ lastBuildNumber: 41 }));
+    const triggerBuild = mock(async () => ({
+      buildUrl: BUILD_URL,
+      buildNumber: 42,
+      queueUrl: QUEUE_URL,
+      jobUrl: JOB_URL,
+    }));
+
+    selectMock
+      .mockImplementationOnce(async () => JOB_URL)
+      .mockImplementationOnce(async () => BUILD_WITHOUT_PARAMS_VALUE);
+
+    await runBuild({
+      client: createClient({
+        getJobStatus,
+        triggerBuild,
+      }),
+      env: {} as EnvConfig,
+      nonInteractive: false,
+      watch: false,
+    });
+
+    expect(triggerBuild).toHaveBeenCalledTimes(1);
+    expect(triggerBuild).toHaveBeenCalledWith(JOB_URL, {});
+  });
+
+  test("interactive build with parameters retries on blank branch", async () => {
+    const getJobStatus = mock(async () => ({ lastBuildNumber: 41 }));
+    const triggerBuild = mock(async () => ({
+      buildUrl: BUILD_URL,
+      buildNumber: 42,
+      queueUrl: QUEUE_URL,
+      jobUrl: JOB_URL,
+    }));
+
+    loadCachedBranchesMock.mockImplementationOnce(async () => []);
+    selectMock
+      .mockImplementationOnce(async () => JOB_URL)
+      .mockImplementationOnce(async () => BUILD_WITH_PARAMS_VALUE);
+    textMock
+      .mockImplementationOnce(async () => "")
+      .mockImplementationOnce(async () => "development");
+
+    await runBuild({
+      client: createClient({
+        getJobStatus,
+        triggerBuild,
+      }),
+      env: {} as EnvConfig,
+      nonInteractive: false,
+      watch: false,
+    });
+
+    expect(triggerBuild).toHaveBeenCalledTimes(1);
+    expect(triggerBuild).toHaveBeenCalledWith(JOB_URL, {
+      BRANCH: "development",
+    });
+  });
+
   test("Esc in branch selection returns to recent job menu", async () => {
     const getJobStatus = mock(async () => ({ lastBuildNumber: 41 }));
     const triggerBuild = mock(async () => ({
@@ -191,8 +255,10 @@ describe("build command navigation", () => {
 
     selectMock
       .mockImplementationOnce(async () => JOB_URL)
+      .mockImplementationOnce(async () => BUILD_WITH_PARAMS_VALUE)
       .mockImplementationOnce(async () => CANCEL)
       .mockImplementationOnce(async () => JOB_URL)
+      .mockImplementationOnce(async () => BUILD_WITH_PARAMS_VALUE)
       .mockImplementationOnce(async () => "development");
 
     await runBuild({
@@ -212,10 +278,10 @@ describe("build command navigation", () => {
     const selectCalls = selectMock.mock.calls as unknown as Array<
       Array<unknown>
     >;
-    expect(selectCalls[2]?.[0]).toEqual(
+    expect(selectCalls[3]?.[0]).toEqual(
       expect.objectContaining({ message: "Recent jobs" }),
     );
-    expect(selectCalls[2]?.[0]).toEqual(
+    expect(selectCalls[3]?.[0]).toEqual(
       expect.objectContaining({
         options: expect.arrayContaining([
           expect.objectContaining({ label: "Search all jobs" }),

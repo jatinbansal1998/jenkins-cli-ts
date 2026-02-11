@@ -86,7 +86,7 @@ export async function runBuild(options: BuildOptions): Promise<BuildRunResult> {
   let job = options.job;
   let jobUrl = options.jobUrl;
   let branch = options.branch;
-  let defaultBranch = options.defaultBranch ?? false;
+  let defaultBranch = false;
   const watchFixed = options.watch;
 
   while (true) {
@@ -110,7 +110,7 @@ export async function runBuild(options: BuildOptions): Promise<BuildRunResult> {
 
     if (!useDefaultBranch && !resolvedBranch) {
       throw new CliError("Branch is required to trigger a build.", [
-        "Pass --branch <name> or use --default-branch to use the job default.",
+        "Pass --branch <name> or use --without-params to trigger without parameters.",
       ]);
     }
 
@@ -482,7 +482,7 @@ function validateBuildOptions(options: BuildOptions): void {
   }
 
   if (options.branch && options.defaultBranch) {
-    throw new CliError("Use either --branch or --default-branch, not both.", [
+    throw new CliError("Use either --branch or --without-params, not both.", [
       "Remove one of the flags and try again.",
     ]);
   }
@@ -534,7 +534,7 @@ function formatNonInteractiveBuildCommand(options: {
   ];
 
   if (options.defaultBranch || !options.branch?.trim()) {
-    parts.push("--default-branch");
+    parts.push("--without-params");
     return parts.join(" ");
   }
 
@@ -996,6 +996,7 @@ async function resolveInteractiveBuildSelection(options: {
     selectedJobLabel,
     branch: options.branch,
     defaultBranch: options.defaultBranch,
+    buildModePrompted: false,
     branchChoices: [],
     removableBranches: [],
   };

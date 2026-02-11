@@ -169,10 +169,15 @@ async function main(): Promise<void> {
             default: "BRANCH",
             describe: "Parameter name for the branch",
           })
+          .option("without-params", {
+            type: "boolean",
+            default: false,
+            describe: "Trigger build without parameters",
+          })
           .option("default-branch", {
             type: "boolean",
             default: false,
-            describe: "Use the job's default branch",
+            hidden: true,
           })
           .option("watch", {
             type: "boolean",
@@ -205,7 +210,9 @@ async function main(): Promise<void> {
           branchParam: branchParamExplicitlyPassed
             ? argv.branchParam
             : env.branchParamDefault,
-          defaultBranch: Boolean(argv.defaultBranch),
+          defaultBranch:
+            Boolean(argv.nonInteractive) &&
+            (Boolean(argv.withoutParams) || Boolean(argv.defaultBranch)),
           nonInteractive: Boolean(argv.nonInteractive),
           watch: watchExplicitlyPassed ? Boolean(argv.watch) : undefined,
         });
@@ -470,7 +477,7 @@ async function main(): Promise<void> {
     --job-url         Full Jenkins job URL
     --branch          Branch name to build
     --branch-param    Parameter name for the branch [default: "BRANCH"]
-    --default-branch  Use the job's default branch
+    --without-params  Trigger build without parameters
     --watch           Watch build status until completion
 
   status:

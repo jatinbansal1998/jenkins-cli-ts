@@ -247,6 +247,59 @@ describe("build command", () => {
 
 
 
+  test("non-interactive build without branch triggers without parameters", async () => {
+    const getJobStatus = mock(async () => ({ lastBuildNumber: 380 }));
+    const triggerBuild = mock(async () => ({
+      queueUrl: QUEUE_URL,
+      jobUrl: JOB_URL,
+    }));
+
+    await runBuild({
+      client: createClient({
+        getJobStatus,
+        triggerBuild,
+      }),
+      env: {} as EnvConfig,
+      jobUrl: JOB_URL,
+      nonInteractive: true,
+    });
+
+    expect(triggerBuild).toHaveBeenCalledTimes(1);
+    const triggerCalls = triggerBuild.mock.calls as unknown as Array<
+      Array<unknown>
+    >;
+    expect(triggerCalls[0]?.[0]).toBe(JOB_URL);
+    expect(triggerCalls[0]?.[1]).toEqual({});
+  });
+
+  test("non-interactive build with blank branch triggers without parameters", async () => {
+    const getJobStatus = mock(async () => ({ lastBuildNumber: 380 }));
+    const triggerBuild = mock(async () => ({
+      queueUrl: QUEUE_URL,
+      jobUrl: JOB_URL,
+    }));
+
+    await runBuild({
+      client: createClient({
+        getJobStatus,
+        triggerBuild,
+      }),
+      env: {} as EnvConfig,
+      jobUrl: JOB_URL,
+      branch: "   ",
+      nonInteractive: true,
+    });
+
+    expect(triggerBuild).toHaveBeenCalledTimes(1);
+    const triggerCalls = triggerBuild.mock.calls as unknown as Array<
+      Array<unknown>
+    >;
+    expect(triggerCalls[0]?.[0]).toBe(JOB_URL);
+    expect(triggerCalls[0]?.[1]).toEqual({});
+  });
+
+
+
   test("non-interactive build without branch triggers default branch", async () => {
     const getJobStatus = mock(async () => ({ lastBuildNumber: 380 }));
     const triggerBuild = mock(async () => ({
