@@ -59,7 +59,6 @@ describe("build command", () => {
   const originalArgv = [...process.argv];
 
   beforeEach(() => {
-    mock.clearAllMocks();
 
     confirmMock.mockReset();
     confirmMock.mockImplementation(async () => false);
@@ -244,6 +243,53 @@ describe("build command", () => {
       }),
     );
     expect(notifyBuildCompleteMock).toHaveBeenCalledTimes(0);
+  });
+
+
+
+  test("non-interactive build without branch triggers default branch", async () => {
+    const getJobStatus = mock(async () => ({ lastBuildNumber: 380 }));
+    const triggerBuild = mock(async () => ({
+      queueUrl: QUEUE_URL,
+      jobUrl: JOB_URL,
+    }));
+
+    await runBuild({
+      client: createClient({
+        getJobStatus,
+        triggerBuild,
+      }),
+      env: {} as EnvConfig,
+      jobUrl: JOB_URL,
+      nonInteractive: true,
+    });
+
+    expect(triggerBuild).toHaveBeenCalledTimes(1);
+    expect(triggerBuild.mock.calls[0]?.[0]).toBe(JOB_URL);
+    expect(triggerBuild.mock.calls[0]?.[1]).toEqual({});
+  });
+
+  test("non-interactive build with blank branch triggers default branch", async () => {
+    const getJobStatus = mock(async () => ({ lastBuildNumber: 380 }));
+    const triggerBuild = mock(async () => ({
+      queueUrl: QUEUE_URL,
+      jobUrl: JOB_URL,
+    }));
+
+    await runBuild({
+      client: createClient({
+        getJobStatus,
+        triggerBuild,
+      }),
+      env: {} as EnvConfig,
+      jobUrl: JOB_URL,
+      branch: "   ",
+      nonInteractive: true,
+    });
+
+    expect(triggerBuild).toHaveBeenCalledTimes(1);
+    expect(triggerBuild.mock.calls[0]?.[0]).toBe(JOB_URL);
+    expect(triggerBuild.mock.calls[0]?.[1]).toEqual({});
   });
 
   test("watch cancellation still reaches trigger-another-build confirmation", async () => {

@@ -247,8 +247,8 @@ Commands print `OK:` on success.
   `${XDG_CACHE_HOME:-~/.cache}/jenkins-cli/jobs.json`, Windows:
   `%LOCALAPPDATA%\jenkins-cli\jobs.json`.
 - `deploy` is an alias for `build`.
-- `build`/`deploy` uses `buildWithParameters`; branch is required unless you pass
-  `--default-branch`.
+- `build`/`deploy` uses `buildWithParameters` when a branch is provided; otherwise it
+  triggers Jenkins with no parameters (default branch behavior).
 - CSRF crumb usage is disabled by default. Enable it with
   `JENKINS_USE_CRUMB=true` or `useCrumb: true` in config when required by your Jenkins.
 - Use `--non-interactive` to disable prompts and fail fast.

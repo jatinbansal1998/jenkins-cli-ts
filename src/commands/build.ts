@@ -395,13 +395,10 @@ async function runBuildOnce(options: {
     jobUrl,
     branch: options.branch,
     defaultBranch: options.defaultBranch,
+    nonInteractive: true,
   });
 
-  if (!options.defaultBranch && !branch) {
-    throw new CliError("Branch is required to trigger a build.", [
-      "Pass --branch <name> or use --default-branch to use the job default.",
-    ]);
-  }
+  const useDefaultBranch = options.defaultBranch || !branch;
 
   let baselineBuildNumber: number | undefined;
   try {
@@ -411,10 +408,10 @@ async function runBuildOnce(options: {
     // Best-effort only.
   }
 
-  const params = options.defaultBranch ? {} : { [options.branchParam]: branch };
+  const params = useDefaultBranch ? {} : { [options.branchParam]: branch };
   const result = await options.client.triggerBuild(jobUrl, params);
 
-  if (!options.defaultBranch && branch) {
+  if (!useDefaultBranch && branch) {
     try {
       await recordBranchSelection({
         env: options.env,
@@ -490,11 +487,6 @@ function validateBuildOptions(options: BuildOptions): void {
     ]);
   }
 
-  if (options.nonInteractive && !options.defaultBranch && !options.branch) {
-    throw new CliError("Missing required --branch.", [
-      "Pass --branch <name> or use --default-branch to use the job default.",
-    ]);
-  }
 }
 
 function resolveCancelTarget(activeBuild: {
@@ -541,7 +533,7 @@ function formatNonInteractiveBuildCommand(options: {
     shellEscape(options.jobUrl),
   ];
 
-  if (options.defaultBranch) {
+  if (options.defaultBranch || !options.branch?.trim()) {
     parts.push("--default-branch");
     return parts.join(" ");
   }
@@ -1107,10 +1099,14 @@ async function resolveBranchValue(options: {
   jobUrl: string;
   branch?: string;
   defaultBranch?: boolean;
+  nonInteractive?: boolean;
 }): Promise<string> {
   let branch = options.branch?.trim() ?? "";
   if (options.defaultBranch || branch) {
     return branch;
+  }
+  if (options.nonInteractive) {
+    return "";
   }
   const cachedBranches = await loadCachedBranches({
     env: options.env,
