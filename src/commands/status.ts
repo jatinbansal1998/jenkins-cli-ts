@@ -28,6 +28,7 @@ import { runFlow } from "../flows/runner";
 import { flows } from "../flows/definition";
 import { statusFlowHandlers } from "../flows/handlers";
 import type { ActionEffectResult, StatusPostContext } from "../flows/types";
+import { withPromptTarget } from "../tui-target";
 
 /** Options for the status command. */
 type StatusOptions = {
@@ -112,6 +113,7 @@ export async function runStatus(options: StatusOptions): Promise<void> {
             jobs: loadedJobs,
             nonInteractive: false,
             allowBackToRecent: selection.allowBackToRecent,
+            env: options.env,
           });
           targets = selectedJobs.map((job) => ({
             jobUrl: job.url,
@@ -174,6 +176,7 @@ export async function runStatus(options: StatusOptions): Promise<void> {
 
     const primaryTarget = targets.length === 1 ? targets[0] : undefined;
     const postContext: StatusPostContext = {
+      env: options.env,
       targetLabel: primaryTarget?.jobLabel || "selected jobs",
       performAction: async (action): Promise<ActionEffectResult> => {
         if (!primaryTarget) {
@@ -353,9 +356,10 @@ async function runStatusOnce(options: StatusOptions): Promise<void> {
 
 async function promptForJobSelection(
   candidates: JenkinsJob[],
+  env: EnvConfig,
 ): Promise<StatusSelectionResult> {
   const response = await multiselect({
-    message: "Select jobs (press Esc to search again)",
+    message: withPromptTarget("Select jobs (press Esc to search again)", env),
     options: candidates.map((job) => ({
       value: job.url,
       label: getJobDisplayName(job),
@@ -398,7 +402,10 @@ async function resolveJobSelection(options: {
   const allowBackToRecent = recentJobs.length > 0;
   while (true) {
     if (allowBackToRecent) {
-      const selection = await promptForRecentJobSelection(recentJobs);
+      const selection = await promptForRecentJobSelection(
+        recentJobs,
+        options.env,
+      );
       if (selection.kind === "recent") {
         return selection;
       }
@@ -406,7 +413,10 @@ async function resolveJobSelection(options: {
     try {
       return {
         kind: "query",
-        query: await promptForJobSearch({ allowBack: allowBackToRecent }),
+        query: await promptForJobSearch({
+          allowBack: allowBackToRecent,
+          env: options.env,
+        }),
         allowBackToRecent,
       };
     } catch (err) {
@@ -420,13 +430,14 @@ async function resolveJobSelection(options: {
 
 async function promptForRecentJobSelection(
   recentJobs: { url: string; label: string }[],
+  env: EnvConfig,
 ): Promise<
   | { kind: "recent"; jobs: { jobUrl: string; label: string }[] }
   | { kind: "search" }
 > {
   while (true) {
     const mode = await select({
-      message: "Recent jobs",
+      message: withPromptTarget("Recent jobs", env),
       options: [
         { value: "recent", label: "Select from recent jobs" },
         { value: "search", label: "Search all jobs" },
@@ -440,7 +451,7 @@ async function promptForRecentJobSelection(
     }
 
     const response = await multiselect({
-      message: "Select recent jobs",
+      message: withPromptTarget("Select recent jobs", env),
       options: recentJobs.map((job) => ({
         value: job.url,
         label: job.label,
@@ -466,15 +477,16 @@ async function promptForRecentJobSelection(
   }
 }
 
-async function promptForJobSearch(options?: {
+async function promptForJobSearch(options: {
   allowBack?: boolean;
+  env: EnvConfig;
 }): Promise<string> {
   const response = await text({
-    message: "Job name or description",
+    message: withPromptTarget("Job name or description", options.env),
     placeholder: "e.g. api prod deploy",
   });
   if (isCancel(response)) {
-    if (options?.allowBack) {
+    if (options.allowBack) {
       throw new BackToRecentMenuError();
     }
     throw new CliError("Operation cancelled.");
@@ -493,7 +505,7 @@ async function loadJobsForStatus(options: {
     nonInteractive: options.nonInteractive,
     confirmRefresh: async (reason) => {
       const response = await confirm({
-        message: `${reason} Refresh now?`,
+        message: withPromptTarget(`${reason} Refresh now?`, options.env),
         initialValue: true,
       });
       if (isCancel(response)) {
@@ -509,6 +521,7 @@ async function resolveJobSearch(options: {
   jobs: JenkinsJob[];
   nonInteractive: boolean;
   allowBackToRecent: boolean;
+  env: EnvConfig;
 }): Promise<JenkinsJob[]> {
   if (options.nonInteractive) {
     const job = await resolveJobMatch({
@@ -524,6 +537,7 @@ async function resolveJobSearch(options: {
     if (!query) {
       query = await promptForJobSearch({
         allowBack: options.allowBackToRecent,
+        env: options.env,
       });
     }
 
@@ -533,10 +547,11 @@ async function resolveJobSearch(options: {
         return candidates;
       }
 
-      const selection = await promptForJobSelection(candidates);
+      const selection = await promptForJobSelection(candidates, options.env);
       if (selection.kind === "search") {
         query = await promptForJobSearch({
           allowBack: options.allowBackToRecent,
+          env: options.env,
         });
         continue;
       }
@@ -549,6 +564,7 @@ async function resolveJobSearch(options: {
         }
         query = await promptForJobSearch({
           allowBack: options.allowBackToRecent,
+          env: options.env,
         });
         continue;
       }

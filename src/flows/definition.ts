@@ -14,6 +14,7 @@ import {
   SEARCH_AGAIN_VALUE,
   SEARCH_ALL_JOBS_VALUE,
 } from "./constants";
+import { withPromptTarget } from "../tui-target";
 
 export const listInteractiveFlow: FlowDefinition<ListInteractiveContext> = {
   id: "listInteractive",
@@ -24,7 +25,8 @@ export const listInteractiveFlow: FlowDefinition<ListInteractiveContext> = {
       root: true,
       prompt: {
         kind: "select",
-        message: "Select a job to operate on",
+        message: (context) =>
+          withPromptTarget("Select a job to operate on", context.env),
         options: (context) => [
           ...context.jobs.map((job) => ({
             value: job.url,
@@ -47,7 +49,10 @@ export const listInteractiveFlow: FlowDefinition<ListInteractiveContext> = {
       prompt: {
         kind: "select",
         message: (context) =>
-          `Action for ${context.selectedJob?.fullName || context.selectedJob?.name || "job"}`,
+          withPromptTarget(
+            `Action for ${context.selectedJob?.fullName || context.selectedJob?.name || "job"}`,
+            context.env,
+          ),
         options: [
           { value: "build", label: "Build" },
           { value: "status", label: "Status" },
@@ -103,7 +108,7 @@ export const buildPreFlow: FlowDefinition<BuildPreContext> = {
       root: true,
       prompt: {
         kind: "select",
-        message: "Recent jobs",
+        message: (context) => withPromptTarget("Recent jobs", context.env),
         options: (context) => [
           { value: SEARCH_ALL_JOBS_VALUE, label: "Search all jobs" },
           ...context.recentJobs.map((job) => ({
@@ -123,7 +128,8 @@ export const buildPreFlow: FlowDefinition<BuildPreContext> = {
     search_from_recent: {
       prompt: {
         kind: "text",
-        message: "Job name or description",
+        message: (context) =>
+          withPromptTarget("Job name or description", context.env),
         placeholder: "e.g. api prod deploy",
         initialValue: (context) => context.searchQuery,
       },
@@ -140,7 +146,8 @@ export const buildPreFlow: FlowDefinition<BuildPreContext> = {
       root: true,
       prompt: {
         kind: "text",
-        message: "Job name or description",
+        message: (context) =>
+          withPromptTarget("Job name or description", context.env),
         placeholder: "e.g. api prod deploy",
         initialValue: (context) => context.searchQuery,
       },
@@ -156,7 +163,11 @@ export const buildPreFlow: FlowDefinition<BuildPreContext> = {
     results_from_recent: {
       prompt: {
         kind: "select",
-        message: "Select a job (press Esc to search again)",
+        message: (context) =>
+          withPromptTarget(
+            "Select a job (press Esc to search again)",
+            context.env,
+          ),
         options: (context) =>
           context.searchCandidates.map((job) => ({
             value: job.url,
@@ -174,7 +185,11 @@ export const buildPreFlow: FlowDefinition<BuildPreContext> = {
     results_direct: {
       prompt: {
         kind: "select",
-        message: "Select a job (press Esc to search again)",
+        message: (context) =>
+          withPromptTarget(
+            "Select a job (press Esc to search again)",
+            context.env,
+          ),
         options: (context) =>
           context.searchCandidates.map((job) => ({
             value: job.url,
@@ -192,7 +207,7 @@ export const buildPreFlow: FlowDefinition<BuildPreContext> = {
     branch_mode: {
       prompt: {
         kind: "select",
-        message: "Build mode",
+        message: (context) => withPromptTarget("Build mode", context.env),
         options: [
           {
             value: BUILD_WITH_PARAMS_VALUE,
@@ -226,7 +241,11 @@ export const buildPreFlow: FlowDefinition<BuildPreContext> = {
     branch_select: {
       prompt: {
         kind: "select",
-        message: "Branch name (press Esc for build mode)",
+        message: (context) =>
+          withPromptTarget(
+            "Branch name (press Esc for build mode)",
+            context.env,
+          ),
         options: (context) => [
           ...(context.removableBranches.length > 0
             ? [{ value: BRANCH_REMOVE_VALUE, label: "Remove cached branch" }]
@@ -250,7 +269,8 @@ export const buildPreFlow: FlowDefinition<BuildPreContext> = {
     branch_remove: {
       prompt: {
         kind: "select",
-        message: "Remove cached branch",
+        message: (context) =>
+          withPromptTarget("Remove cached branch", context.env),
         options: (context) =>
           context.removableBranches.map((branch) => ({
             value: branch,
@@ -274,7 +294,7 @@ export const buildPreFlow: FlowDefinition<BuildPreContext> = {
     branch_entry: {
       prompt: {
         kind: "text",
-        message: "Branch name",
+        message: (context) => withPromptTarget("Branch name", context.env),
         placeholder: "e.g. main",
       },
       onSelect: "buildPre.submitBranch",
@@ -295,7 +315,8 @@ export const buildPostFlow: FlowDefinition<BuildPostContext> = {
     action_menu: {
       prompt: {
         kind: "select",
-        message: (context) => `Next action for ${context.jobLabel}`,
+        message: (context) =>
+          withPromptTarget(`Next action for ${context.jobLabel}`, context.env),
         options: [
           { value: "watch", label: "Watch" },
           { value: "logs", label: "Logs" },
@@ -346,7 +367,8 @@ export const buildPostFlow: FlowDefinition<BuildPostContext> = {
       root: true,
       prompt: {
         kind: "confirm",
-        message: "Trigger another build?",
+        message: (context) =>
+          withPromptTarget("Trigger another build?", context.env),
         initialValue: false,
       },
       onSelect: "build.repeatConfirm",
@@ -367,7 +389,8 @@ export const statusPostFlow: FlowDefinition<StatusPostContext> = {
     action_menu: {
       prompt: {
         kind: "select",
-        message: (context) => `Action for ${context.targetLabel}`,
+        message: (context) =>
+          withPromptTarget(`Action for ${context.targetLabel}`, context.env),
         options: [
           { value: "watch", label: "Watch" },
           { value: "logs", label: "Logs" },
@@ -404,7 +427,8 @@ export const statusPostFlow: FlowDefinition<StatusPostContext> = {
       root: true,
       prompt: {
         kind: "confirm",
-        message: "Check another job?",
+        message: (context) =>
+          withPromptTarget("Check another job?", context.env),
         initialValue: false,
       },
       onSelect: "status.repeatConfirm",

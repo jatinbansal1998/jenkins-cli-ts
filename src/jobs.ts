@@ -4,6 +4,7 @@
  * natural language search with scoring for job lookups.
  */
 import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { createHash } from "node:crypto";
 import os from "node:os";
 import path from "node:path";
 import { CliError } from "./cli";
@@ -26,14 +27,17 @@ export type JobCache = {
 };
 
 const CACHE_DIR = resolveCacheDir();
-const CACHE_FILE = path.join(CACHE_DIR, "jobs.json");
+const DEFAULT_CACHE_FILE = path.join(CACHE_DIR, "jobs.json");
 
 export function getJobCacheDir(): string {
   return CACHE_DIR;
 }
 
-export function getJobCachePath(): string {
-  return CACHE_FILE;
+export function getJobCachePath(jenkinsUrl?: string): string {
+  if (!jenkinsUrl) {
+    return DEFAULT_CACHE_FILE;
+  }
+  return path.join(CACHE_DIR, `jobs-${buildCacheKey(jenkinsUrl)}.json`);
 }
 
 function resolveCacheDir(): string {
@@ -95,7 +99,7 @@ export async function loadJobs(options: {
   nonInteractive: boolean;
   confirmRefresh?: (reason: string) => Promise<boolean>;
 }): Promise<JenkinsJob[]> {
-  const cache = await readJobCache();
+  const cache = await readJobCache(options.env);
   const isCacheUsable = cache && cacheMatchesEnv(cache, options.env);
 
   if (options.refresh) {
@@ -129,23 +133,16 @@ export async function loadJobs(options: {
   throw new CliError(reason, hints);
 }
 
-export async function readJobCache(): Promise<JobCache | null> {
-  try {
-    const raw = await readFile(CACHE_FILE, "utf-8");
-    const parsed = JSON.parse(raw) as JobCache;
-    if (!isValidCache(parsed)) {
-      return null;
-    }
-    normalizeCachedJobs(parsed.jobs);
-    return parsed;
-  } catch {
-    return null;
-  }
+export async function readJobCache(env: {
+  jenkinsUrl: string;
+}): Promise<JobCache | null> {
+  const scopedPath = getJobCachePath(env.jenkinsUrl);
+  return await readCacheFromPath(scopedPath);
 }
 
 export async function writeJobCache(cache: JobCache): Promise<void> {
-  await mkdir(CACHE_DIR, { recursive: true });
-  await writeFile(CACHE_FILE, JSON.stringify(cache, null, 2), "utf-8");
+  const cachePath = getJobCachePath(cache.jenkinsUrl);
+  await writeCacheToPath(cachePath, cache);
 }
 
 async function fetchAndCacheJobs(
@@ -153,7 +150,7 @@ async function fetchAndCacheJobs(
   env: EnvConfig,
 ): Promise<JenkinsJob[]> {
   const jobs = await client.listJobs();
-  const existingCache = await readJobCache();
+  const existingCache = await readJobCache(env);
   const cachedJobs = mergeCachedBranches(jobs, existingCache);
   const recentJobs =
     existingCache && cacheMatchesEnv(existingCache, env)
@@ -170,23 +167,58 @@ async function fetchAndCacheJobs(
   return jobs;
 }
 
+async function readCacheFromPath(cachePath: string): Promise<JobCache | null> {
+  try {
+    const raw = await readFile(cachePath, "utf-8");
+    const parsed = JSON.parse(raw) as JobCache;
+    if (!isValidCache(parsed)) {
+      return null;
+    }
+    normalizeCachedJobs(parsed.jobs);
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+async function writeCacheToPath(
+  cachePath: string,
+  cache: JobCache,
+): Promise<void> {
+  await mkdir(CACHE_DIR, { recursive: true });
+  await writeFile(cachePath, JSON.stringify(cache, null, 2), "utf-8");
+}
+
 function cacheMatchesEnv(cache: JobCache, env: EnvConfig): boolean {
   return cache.jenkinsUrl === env.jenkinsUrl && cache.user === env.jenkinsUser;
+}
+
+function buildCacheKey(jenkinsUrl: string): string {
+  const normalized = jenkinsUrl.trim().toLowerCase().replace(/\/+$/, "");
+  let host = "jenkins";
+  try {
+    host = new URL(normalized).host.toLowerCase();
+  } catch {
+    // URL is already validated earlier; fallback keeps cache path safe.
+  }
+  const safeHost = host.replace(/[^a-z0-9.-]+/g, "-").replace(/^-+|-+$/g, "");
+  const digest = createHash("sha256")
+    .update(normalized)
+    .digest("hex")
+    .slice(0, 16);
+  return `${safeHost || "jenkins"}-${digest}`;
 }
 
 function isValidCache(cache: JobCache | null): cache is JobCache {
   if (!cache) {
     return false;
   }
-  if (
+  return !(
     typeof cache.jenkinsUrl !== "string" ||
     typeof cache.user !== "string" ||
     typeof cache.fetchedAt !== "string" ||
     !Array.isArray(cache.jobs)
-  ) {
-    return false;
-  }
-  return true;
+  );
 }
 
 function normalizeCachedJobs(jobs: CachedJob[]): void {

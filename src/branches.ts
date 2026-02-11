@@ -23,7 +23,7 @@ export async function loadCachedBranchHistory(options: {
   env: EnvConfig;
   jobUrl: string;
 }): Promise<string[]> {
-  const cache = await readJobCache();
+  const cache = await readJobCache(options.env);
   if (!cache || !cacheMatchesEnv(cache, options.env)) {
     return [];
   }
@@ -49,7 +49,7 @@ export async function removeCachedBranch(options: {
   if (!target || isDefaultBranch(target)) {
     return false;
   }
-  const cache = await readJobCache();
+  const cache = await readJobCache(options.env);
   if (!cache || !cacheMatchesEnv(cache, options.env)) {
     return false;
   }
@@ -77,7 +77,7 @@ export async function recordBranchSelection(options: {
   if (!normalizedBranch) {
     return;
   }
-  const cache = await readJobCache();
+  const cache = await readJobCache(options.env);
   if (!cache || !cacheMatchesEnv(cache, options.env)) {
     return;
   }

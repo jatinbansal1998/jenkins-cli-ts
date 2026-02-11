@@ -12,13 +12,18 @@ import { runCancel } from "./commands/cancel";
 import { runLogin } from "./commands/login";
 import { runList } from "./commands/list";
 import { runLogs } from "./commands/logs";
+import {
+  runProfileDelete,
+  runProfileList,
+  runProfileUse,
+} from "./commands/profile";
 import { runRerun } from "./commands/rerun";
 import { runStatus } from "./commands/status";
 import { runUpdate } from "./commands/update";
 import { runWait } from "./commands/wait";
 import { loadEnv, getDebugDefault } from "./env";
 import { JenkinsClient } from "./jenkins/client";
-import { getJobCachePath } from "./jobs";
+import { getJobCacheDir } from "./jobs";
 import { setDebugMode } from "./logger";
 import {
   getDeferredUpdatePromptVersion,
@@ -49,6 +54,23 @@ async function main(): Promise<void> {
     .option("debug", {
       type: "boolean",
       describe: "Log API requests and responses to api.log",
+    })
+    .option("profile", {
+      type: "string",
+      describe: "Use credentials from a named profile in config",
+    })
+    .option("url", {
+      type: "string",
+      describe: "One-off Jenkins base URL override for this command",
+    })
+    .option("user", {
+      type: "string",
+      describe: "One-off Jenkins username override for this command",
+    })
+    .option("token", {
+      type: "string",
+      alias: "api-token",
+      describe: "One-off Jenkins API token override for this command",
     })
     .middleware((argv) => {
       // Check if --debug or --no-debug was explicitly passed
@@ -85,14 +107,24 @@ async function main(): Promise<void> {
           .option("branch-param", {
             type: "string",
             describe: "Branch parameter name (default from env/config)",
+          })
+          .option("profile", {
+            type: "string",
+            describe: "Profile name to create or update",
           }),
       async (argv) => {
         await runLogin({
           url: typeof argv.url === "string" ? argv.url : undefined,
           user: typeof argv.user === "string" ? argv.user : undefined,
-          apiToken: typeof argv.token === "string" ? argv.token : undefined,
+          apiToken:
+            typeof argv.token === "string"
+              ? argv.token
+              : typeof argv.apiToken === "string"
+                ? argv.apiToken
+                : undefined,
           branchParam:
             typeof argv.branchParam === "string" ? argv.branchParam : undefined,
+          profile: typeof argv.profile === "string" ? argv.profile : undefined,
           nonInteractive: Boolean(argv.nonInteractive),
         });
       },
@@ -112,7 +144,7 @@ async function main(): Promise<void> {
             describe: "Refresh the job cache from Jenkins",
           }),
       async (argv) => {
-        const { env, client } = createContext();
+        const { env, client } = createContext(argv);
         await runList({
           client,
           env,
@@ -137,7 +169,7 @@ async function main(): Promise<void> {
             describe: "Refresh the job cache from Jenkins",
           }),
       async (argv) => {
-        const { env, client } = createContext();
+        const { env, client } = createContext(argv);
         await runList({
           client,
           env,
@@ -185,7 +217,7 @@ async function main(): Promise<void> {
             describe: "Watch build status until completion",
           }),
       async (argv) => {
-        const { env, client } = createContext();
+        const { env, client } = createContext(argv);
         const rawArgs = hideBin(process.argv);
         const branchParamExplicitlyPassed = rawArgs.some(
           (arg) =>
@@ -237,7 +269,7 @@ async function main(): Promise<void> {
             describe: "Watch latest build status until completion",
           }),
       async (argv) => {
-        const { env, client } = createContext();
+        const { env, client } = createContext(argv);
         const rawArgs = hideBin(process.argv);
         const watchExplicitlyPassed = rawArgs.some(
           (arg) =>
@@ -286,7 +318,7 @@ async function main(): Promise<void> {
             describe: "Timeout (e.g. 30m, 2h)",
           }),
       async (argv) => {
-        const { env, client } = createContext();
+        const { env, client } = createContext(argv);
         await runWait({
           client,
           env,
@@ -334,7 +366,7 @@ async function main(): Promise<void> {
             describe: "Polling interval when following (e.g. 2s)",
           }),
       async (argv) => {
-        const { env, client } = createContext();
+        const { env, client } = createContext(argv);
         await runLogs({
           client,
           env,
@@ -372,7 +404,7 @@ async function main(): Promise<void> {
             describe: "Full Jenkins queue item URL",
           }),
       async (argv) => {
-        const { env, client } = createContext();
+        const { env, client } = createContext(argv);
         await runCancel({
           client,
           env,
@@ -400,7 +432,7 @@ async function main(): Promise<void> {
             describe: "Full Jenkins job URL",
           }),
       async (argv) => {
-        const { env, client } = createContext();
+        const { env, client } = createContext(argv);
         await runRerun({
           client,
           env,
@@ -408,6 +440,54 @@ async function main(): Promise<void> {
           jobUrl: typeof argv.jobUrl === "string" ? argv.jobUrl : undefined,
           nonInteractive: Boolean(argv.nonInteractive),
         });
+      },
+    )
+    .command(
+      "profile <action> [name]",
+      "Manage Jenkins profiles",
+      (yargsInstance) =>
+        yargsInstance
+          .positional("action", {
+            type: "string",
+            describe: "Profile action",
+            choices: ["list", "use", "delete"],
+          })
+          .positional("name", {
+            type: "string",
+            describe: "Profile name (required for use/delete)",
+          }),
+      async (argv) => {
+        const action = typeof argv.action === "string" ? argv.action : "";
+        const name = typeof argv.name === "string" ? argv.name : undefined;
+        switch (action) {
+          case "list":
+            await runProfileList();
+            return;
+          case "use":
+            if (!name) {
+              throw new CliError("Missing required <name> for profile use.", [
+                "Run `jenkins-cli profile use <name>`.",
+              ]);
+            }
+            await runProfileUse({ name });
+            return;
+          case "delete":
+            if (!name) {
+              throw new CliError(
+                "Missing required <name> for profile delete.",
+                ["Run `jenkins-cli profile delete <name>`."],
+              );
+            }
+            await runProfileDelete({
+              name,
+              nonInteractive: Boolean(argv.nonInteractive),
+            });
+            return;
+          default:
+            throw new CliError("Unknown profile action.", [
+              "Use one of: list, use, delete.",
+            ]);
+        }
       },
     )
     .command(
@@ -515,7 +595,19 @@ async function main(): Promise<void> {
     --url           Jenkins base URL
     --user          Jenkins username
     --token         Jenkins API token
+    --profile       Profile name to create or update
     --branch-param  Branch parameter name
+
+  profile:
+    list            List configured profiles
+    use <name>      Set default profile
+    delete <name>   Delete a profile
+
+  global auth overrides:
+    --profile  Use a named profile from config
+    --url      One-off Jenkins base URL override
+    --user     One-off Jenkins username override
+    --token    One-off Jenkins API token override
 
   config/env:
     JENKINS_USE_CRUMB / useCrumb  Enable Jenkins CSRF crumb usage [default: disabled]
@@ -528,7 +620,8 @@ async function main(): Promise<void> {
     --enable-auto-install  Enable auto-install of updates
     --disable-auto-install Disable auto-install of updates
 
-Cache file: ${getJobCachePath()}
+Cache directory: ${getJobCacheDir()}
+Cache files are separated by Jenkins URL.
 
 Run "$0 <command> --help" for full details.`,
     )
@@ -577,11 +670,22 @@ async function promptForDeferredUpdate(
   }
 }
 
-function createContext(): {
+function createContext(argv?: {
+  profile?: unknown;
+  url?: unknown;
+  user?: unknown;
+  token?: unknown;
+  apiToken?: unknown;
+}): {
   env: ReturnType<typeof loadEnv>;
   client: JenkinsClient;
 } {
-  const env = loadEnv();
+  const env = loadEnv({
+    profile: toOptionalString(argv?.profile),
+    url: toOptionalString(argv?.url),
+    user: toOptionalString(argv?.user),
+    apiToken: toOptionalString(argv?.token) ?? toOptionalString(argv?.apiToken),
+  });
   const client = new JenkinsClient({
     baseUrl: env.jenkinsUrl,
     user: env.jenkinsUser,
@@ -589,6 +693,10 @@ function createContext(): {
     useCrumb: env.useCrumb,
   });
   return { env, client };
+}
+
+function toOptionalString(value: unknown): string | undefined {
+  return typeof value === "string" ? value : undefined;
 }
 
 main().catch((error) => {

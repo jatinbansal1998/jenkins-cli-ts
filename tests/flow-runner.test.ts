@@ -15,6 +15,13 @@ import type {
 import type { EnvConfig } from "../src/env";
 
 const CANCEL = Symbol("cancel");
+const TEST_ENV: EnvConfig = {
+  jenkinsUrl: "https://jenkins.example.com",
+  jenkinsUser: "test-user",
+  jenkinsApiToken: "test-token",
+  branchParamDefault: "BRANCH",
+  useCrumb: false,
+};
 
 function createPromptAdapter(responses: unknown[]) {
   let cursor = 0;
@@ -29,6 +36,7 @@ function createPromptAdapter(responses: unknown[]) {
 describe("flow runner", () => {
   test("root esc exits command", async () => {
     const context: BuildPostContext = {
+      env: TEST_ENV,
       jobLabel: "api-staging",
       returnToCaller: false,
       performAction: async () => "action_ok",
@@ -47,6 +55,7 @@ describe("flow runner", () => {
 
   test("menu esc goes back one level before root handling", async () => {
     const context: BuildPostContext = {
+      env: TEST_ENV,
       jobLabel: "api-staging",
       returnToCaller: false,
       performAction: async () => "action_ok",
@@ -64,6 +73,7 @@ describe("flow runner", () => {
 
   test("watch cancellation routes to root", async () => {
     const context: ListInteractiveContext = {
+      env: TEST_ENV,
       jobs: [{ name: "api", url: "https://jenkins.example.com/job/api/" }],
       performAction: async () => "watch_cancelled",
     };
@@ -83,6 +93,7 @@ describe("flow runner", () => {
 
   test("action error routes to root", async () => {
     const context: ListInteractiveContext = {
+      env: TEST_ENV,
       jobs: [{ name: "api", url: "https://jenkins.example.com/job/api/" }],
       performAction: async () => "action_error",
     };
@@ -102,6 +113,7 @@ describe("flow runner", () => {
 
   test("explicit done and confirm yes returns repeat", async () => {
     const context: BuildPostContext = {
+      env: TEST_ENV,
       jobLabel: "api-staging",
       returnToCaller: false,
       performAction: async () => "action_ok",
@@ -119,7 +131,7 @@ describe("flow runner", () => {
 
   test("build pre flow esc in search from recent returns to recent menu", async () => {
     const context: BuildPreContext = {
-      env: {} as EnvConfig,
+      env: TEST_ENV,
       jobs: [{ name: "api", url: "https://jenkins.example.com/job/api/" }],
       recentJobs: [
         { url: "https://jenkins.example.com/job/api/", label: "api" },

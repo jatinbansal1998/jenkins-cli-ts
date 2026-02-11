@@ -238,8 +238,9 @@ describe("build command", () => {
     expect(selectMock).toHaveBeenCalledTimes(1);
     expect(selectMock).toHaveBeenCalledWith(
       expect.objectContaining({
-        message:
+        message: expect.stringContaining(
           "Next action for https://jenkins.example.com/job/crypto-order-matching-engine/",
+        ),
       }),
     );
     expect(notifyBuildCompleteMock).toHaveBeenCalledTimes(0);
@@ -409,7 +410,7 @@ describe("build command", () => {
     expect(confirmMock).toHaveBeenCalledTimes(1);
     expect(confirmMock).toHaveBeenCalledWith(
       expect.objectContaining({
-        message: "Trigger another build?",
+        message: expect.stringContaining("Trigger another build?"),
       }),
     );
   });
