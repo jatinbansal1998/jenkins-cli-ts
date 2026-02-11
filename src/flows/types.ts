@@ -148,6 +148,7 @@ export type BuildPreContext = {
   selectedJobLabel?: string;
   branch?: string;
   defaultBranch: boolean;
+  buildModePrompted?: boolean;
   branchChoices: string[];
   removableBranches: string[];
   pendingBranchRemoval?: string;

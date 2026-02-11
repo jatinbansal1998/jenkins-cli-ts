@@ -86,7 +86,7 @@ export async function runBuild(options: BuildOptions): Promise<BuildRunResult> {
   let job = options.job;
   let jobUrl = options.jobUrl;
   let branch = options.branch;
-  let defaultBranch = options.defaultBranch ?? false;
+  let defaultBranch = false;
   const watchFixed = options.watch;
 
   while (true) {
@@ -110,7 +110,7 @@ export async function runBuild(options: BuildOptions): Promise<BuildRunResult> {
 
     if (!useDefaultBranch && !resolvedBranch) {
       throw new CliError("Branch is required to trigger a build.", [
-        "Pass --branch <name> or use --default-branch to use the job default.",
+        "Pass --branch <name> or use --without-params to trigger without parameters.",
       ]);
     }
 
@@ -395,13 +395,10 @@ async function runBuildOnce(options: {
     jobUrl,
     branch: options.branch,
     defaultBranch: options.defaultBranch,
+    nonInteractive: true,
   });
 
-  if (!options.defaultBranch && !branch) {
-    throw new CliError("Branch is required to trigger a build.", [
-      "Pass --branch <name> or use --default-branch to use the job default.",
-    ]);
-  }
+  const useDefaultBranch = options.defaultBranch || !branch;
 
   let baselineBuildNumber: number | undefined;
   try {
@@ -411,10 +408,10 @@ async function runBuildOnce(options: {
     // Best-effort only.
   }
 
-  const params = options.defaultBranch ? {} : { [options.branchParam]: branch };
+  const params = useDefaultBranch ? {} : { [options.branchParam]: branch };
   const result = await options.client.triggerBuild(jobUrl, params);
 
-  if (!options.defaultBranch && branch) {
+  if (!useDefaultBranch && branch) {
     try {
       await recordBranchSelection({
         env: options.env,
@@ -485,16 +482,11 @@ function validateBuildOptions(options: BuildOptions): void {
   }
 
   if (options.branch && options.defaultBranch) {
-    throw new CliError("Use either --branch or --default-branch, not both.", [
+    throw new CliError("Use either --branch or --without-params, not both.", [
       "Remove one of the flags and try again.",
     ]);
   }
 
-  if (options.nonInteractive && !options.defaultBranch && !options.branch) {
-    throw new CliError("Missing required --branch.", [
-      "Pass --branch <name> or use --default-branch to use the job default.",
-    ]);
-  }
 }
 
 function resolveCancelTarget(activeBuild: {
@@ -541,8 +533,8 @@ function formatNonInteractiveBuildCommand(options: {
     shellEscape(options.jobUrl),
   ];
 
-  if (options.defaultBranch) {
-    parts.push("--default-branch");
+  if (options.defaultBranch || !options.branch?.trim()) {
+    parts.push("--without-params");
     return parts.join(" ");
   }
 
@@ -1004,6 +996,7 @@ async function resolveInteractiveBuildSelection(options: {
     selectedJobLabel,
     branch: options.branch,
     defaultBranch: options.defaultBranch,
+    buildModePrompted: false,
     branchChoices: [],
     removableBranches: [],
   };
@@ -1107,10 +1100,14 @@ async function resolveBranchValue(options: {
   jobUrl: string;
   branch?: string;
   defaultBranch?: boolean;
+  nonInteractive?: boolean;
 }): Promise<string> {
   let branch = options.branch?.trim() ?? "";
   if (options.defaultBranch || branch) {
     return branch;
+  }
+  if (options.nonInteractive) {
+    return "";
   }
   const cachedBranches = await loadCachedBranches({
     env: options.env,

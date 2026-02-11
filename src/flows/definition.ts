@@ -8,6 +8,8 @@ import type {
 import {
   BRANCH_CUSTOM_VALUE,
   BRANCH_REMOVE_VALUE,
+  BUILD_WITHOUT_PARAMS_VALUE,
+  BUILD_WITH_PARAMS_VALUE,
   EXIT_VALUE,
   SEARCH_AGAIN_VALUE,
   SEARCH_ALL_JOBS_VALUE,
@@ -186,11 +188,35 @@ export const buildPreFlow: FlowDefinition<BuildPreContext> = {
         "select:job": "prepare_branch",
       },
     },
+    /** Selects whether to trigger with branch parameter or without parameters. */
+    branch_mode: {
+      prompt: {
+        kind: "select",
+        message: "Build mode",
+        options: [
+          {
+            value: BUILD_WITH_PARAMS_VALUE,
+            label: "Build with branch parameter",
+          },
+          {
+            value: BUILD_WITHOUT_PARAMS_VALUE,
+            label: "Build without parameters",
+          },
+        ],
+      },
+      onSelect: "buildPre.selectBuildMode",
+      transitions: {
+        esc: "entry",
+        "mode:with_params": "prepare_branch",
+        "mode:without_params": "complete",
+      },
+    },
     /** Loads branch metadata and decides if branch input is needed. */
     prepare_branch: {
       onEnter: "buildPre.prepareBranch",
       transitions: {
         "branch:ready": "complete",
+        "branch:mode": "branch_mode",
         "branch:select": "branch_select",
         "branch:entry": "branch_entry",
         "branch:error": "entry",

@@ -17,6 +17,8 @@ import { getJobDisplayName, resolveJobCandidates } from "../jobs";
 import {
   BRANCH_CUSTOM_VALUE,
   BRANCH_REMOVE_VALUE,
+  BUILD_WITHOUT_PARAMS_VALUE,
+  BUILD_WITH_PARAMS_VALUE,
   EXIT_VALUE,
   SEARCH_AGAIN_VALUE,
   SEARCH_ALL_JOBS_VALUE,
@@ -155,6 +157,7 @@ function selectRecentJobHandler({
     : recent.label;
   context.searchQuery = "";
   context.searchCandidates = [];
+  context.buildModePrompted = false;
   return "select:recent";
 }
 
@@ -179,6 +182,7 @@ function submitSearchHandler({
       context.selectedJobUrl = candidates[0].url;
       context.selectedJobLabel = getJobDisplayName(candidates[0]);
       context.searchCandidates = [];
+      context.buildModePrompted = false;
       return "search:auto";
     }
     context.searchCandidates = candidates;
@@ -210,7 +214,29 @@ function selectSearchCandidateHandler({
   context.selectedJobUrl = selected.url;
   context.selectedJobLabel = getJobDisplayName(selected);
   context.searchCandidates = [];
+  context.buildModePrompted = false;
   return "select:job";
+}
+
+function selectBuildModeHandler({
+  context,
+  input,
+}: {
+  context: BuildPreContext;
+  input?: unknown;
+}): EventId {
+  const value = String(input);
+  if (value === BUILD_WITHOUT_PARAMS_VALUE) {
+    context.defaultBranch = true;
+    context.branch = "";
+    return "mode:without_params";
+  }
+  if (value === BUILD_WITH_PARAMS_VALUE) {
+    context.defaultBranch = false;
+    context.branch = "";
+    return "mode:with_params";
+  }
+  return "mode:with_params";
 }
 
 async function prepareBranchHandler({
@@ -222,6 +248,11 @@ async function prepareBranchHandler({
   if (context.defaultBranch || branch) {
     context.branch = branch;
     return "branch:ready";
+  }
+
+  if (!context.buildModePrompted) {
+    context.buildModePrompted = true;
+    return "branch:mode";
   }
 
   const jobUrl = context.selectedJobUrl?.trim() ?? "";
@@ -264,8 +295,11 @@ function selectBranchHandler({
   }
   const branch = value.trim();
   if (!branch) {
-    return "branch:entry";
+    printError("Branch is required to trigger a parameterized build.");
+    printHint("Enter a branch name (e.g. main), or go back and choose Build without parameters.");
+    return "branch:retry";
   }
+  context.defaultBranch = false;
   context.branch = branch;
   return "branch:selected";
 }
@@ -319,10 +353,11 @@ function submitBranchHandler({
 }): EventId {
   const branch = String(input ?? "").trim();
   if (!branch) {
-    printError("Branch is required to trigger a build.");
-    printHint("Enter a branch name (e.g. main).");
+    printError("Branch is required to trigger a parameterized build.");
+    printHint("Enter a branch name (e.g. main), or go back and choose Build without parameters.");
     return "branch:retry";
   }
+  context.defaultBranch = false;
   context.branch = branch;
   return "branch:selected";
 }
@@ -372,6 +407,7 @@ export const buildPreFlowHandlers = {
   "buildPre.selectRecentJob": selectRecentJobHandler,
   "buildPre.submitSearch": submitSearchHandler,
   "buildPre.selectSearchCandidate": selectSearchCandidateHandler,
+  "buildPre.selectBuildMode": selectBuildModeHandler,
   "buildPre.prepareBranch": prepareBranchHandler,
   "buildPre.selectBranch": selectBranchHandler,
   "buildPre.selectBranchToRemove": selectBranchToRemoveHandler,
