@@ -296,7 +296,9 @@ function selectBranchHandler({
   const branch = value.trim();
   if (!branch) {
     printError("Branch is required to trigger a parameterized build.");
-    printHint("Enter a branch name (e.g. main), or go back and choose Build without parameters.");
+    printHint(
+      "Enter a branch name (e.g. main), or go back and choose Build without parameters.",
+    );
     return "branch:retry";
   }
   context.defaultBranch = false;
@@ -354,7 +356,9 @@ function submitBranchHandler({
   const branch = String(input ?? "").trim();
   if (!branch) {
     printError("Branch is required to trigger a parameterized build.");
-    printHint("Enter a branch name (e.g. main), or go back and choose Build without parameters.");
+    printHint(
+      "Enter a branch name (e.g. main), or go back and choose Build without parameters.",
+    );
     return "branch:retry";
   }
   context.defaultBranch = false;

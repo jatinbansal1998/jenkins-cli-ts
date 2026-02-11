@@ -226,7 +226,7 @@ export const buildPreFlow: FlowDefinition<BuildPreContext> = {
     branch_select: {
       prompt: {
         kind: "select",
-        message: "Branch name (press Esc to choose another job)",
+        message: "Branch name (press Esc for build mode)",
         options: (context) => [
           ...(context.removableBranches.length > 0
             ? [{ value: BRANCH_REMOVE_VALUE, label: "Remove cached branch" }]
@@ -240,7 +240,7 @@ export const buildPreFlow: FlowDefinition<BuildPreContext> = {
       },
       onSelect: "buildPre.selectBranch",
       transitions: {
-        esc: "entry",
+        esc: "branch_mode",
         "branch:selected": "complete",
         "branch:entry": "branch_entry",
         "branch:remove": "branch_remove",
@@ -279,7 +279,7 @@ export const buildPreFlow: FlowDefinition<BuildPreContext> = {
       },
       onSelect: "buildPre.submitBranch",
       transitions: {
-        esc: "branch_select",
+        esc: "branch_mode",
         "branch:retry": "branch_entry",
         "branch:selected": "complete",
       },

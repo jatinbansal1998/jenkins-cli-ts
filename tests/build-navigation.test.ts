@@ -87,7 +87,6 @@ function createClient(stubs: Partial<JenkinsClient>): JenkinsClient {
 
 describe("build command navigation", () => {
   beforeEach(() => {
-
     confirmMock.mockReset();
     confirmMock.mockImplementation(async () => false);
 
@@ -183,7 +182,6 @@ describe("build command navigation", () => {
     expect(triggerBuild).toHaveBeenCalledWith(JOB_URL, {});
   });
 
-
   test("interactive branch selection supports using job without parameters", async () => {
     const getJobStatus = mock(async () => ({ lastBuildNumber: 41 }));
     const triggerBuild = mock(async () => ({
@@ -244,7 +242,7 @@ describe("build command navigation", () => {
     });
   });
 
-  test("Esc in branch selection returns to recent job menu", async () => {
+  test("Esc in branch selection returns to build mode", async () => {
     const getJobStatus = mock(async () => ({ lastBuildNumber: 41 }));
     const triggerBuild = mock(async () => ({
       buildUrl: BUILD_URL,
@@ -257,9 +255,7 @@ describe("build command navigation", () => {
       .mockImplementationOnce(async () => JOB_URL)
       .mockImplementationOnce(async () => BUILD_WITH_PARAMS_VALUE)
       .mockImplementationOnce(async () => CANCEL)
-      .mockImplementationOnce(async () => JOB_URL)
-      .mockImplementationOnce(async () => BUILD_WITH_PARAMS_VALUE)
-      .mockImplementationOnce(async () => "development");
+      .mockImplementationOnce(async () => BUILD_WITHOUT_PARAMS_VALUE);
 
     await runBuild({
       client: createClient({
@@ -272,21 +268,12 @@ describe("build command navigation", () => {
     });
 
     expect(triggerBuild).toHaveBeenCalledTimes(1);
-    expect(triggerBuild).toHaveBeenCalledWith(JOB_URL, {
-      BRANCH: "development",
-    });
+    expect(triggerBuild).toHaveBeenCalledWith(JOB_URL, {});
     const selectCalls = selectMock.mock.calls as unknown as Array<
       Array<unknown>
     >;
     expect(selectCalls[3]?.[0]).toEqual(
-      expect.objectContaining({ message: "Recent jobs" }),
-    );
-    expect(selectCalls[3]?.[0]).toEqual(
-      expect.objectContaining({
-        options: expect.arrayContaining([
-          expect.objectContaining({ label: "Search all jobs" }),
-        ]),
-      }),
+      expect.objectContaining({ message: "Build mode" }),
     );
   });
 });
