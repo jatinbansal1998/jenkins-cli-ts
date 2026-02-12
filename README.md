@@ -8,6 +8,21 @@ for interactive use and automation with clear, parseable output.
 Installs `jenkins-cli` to your PATH (defaults to `$HOME/.bun/bin`). It will install
 Bun if it is missing.
 
+Homebrew (tap):
+
+```bash
+brew tap jatinbansal1998/tap
+brew install jatinbansal1998/tap/jenkins-cli
+```
+
+Upgrade:
+
+```bash
+brew upgrade jenkins-cli
+```
+
+Maintainers: see `docs/homebrew.md` for tap publishing steps.
+
 Install options:
 
 ```bash

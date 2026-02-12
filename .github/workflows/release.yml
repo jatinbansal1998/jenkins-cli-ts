@@ -65,11 +65,92 @@ jobs:
       - name: Ensure executable bit
         run: chmod +x dist/jenkins-cli
 
+      - name: Prepare Homebrew artifacts
+        shell: bash
+        env:
+          TAG_NAME: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+
+          sha256="$(shasum -a 256 dist/jenkins-cli | awk '{print $1}')"
+          version="${TAG_NAME#v}"
+
+          printf '%s  %s\n' "$sha256" "jenkins-cli" > dist/jenkins-cli.sha256
+
+          cat > dist/homebrew-jenkins-cli.rb <<EOF
+          class JenkinsCli < Formula
+            desc "Minimal Jenkins CLI for listing jobs, triggering builds, and checking status"
+            homepage "https://github.com/jatinbansal1998/jenkins-cli-ts"
+            url "https://github.com/jatinbansal1998/jenkins-cli-ts/releases/download/${TAG_NAME}/jenkins-cli"
+            version "${version}"
+            sha256 "${sha256}"
+
+            depends_on "bun"
+
+            def install
+              bin.install "jenkins-cli"
+            end
+
+            test do
+              assert_match "Usage: jenkins-cli", shell_output("#{bin}/jenkins-cli --help")
+            end
+          end
+          EOF
+
       - name: Create Release
         uses: softprops/action-gh-release@v1
         with:
           files: |
             dist/jenkins-cli
+            dist/jenkins-cli.sha256
+            dist/homebrew-jenkins-cli.rb
           generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Sync formula to homebrew tap
+        id: sync_tap
+        if: ${{ secrets.HOMEBREW_TAP_TOKEN != '' }}
+        shell: bash
+        env:
+          TAG_NAME: ${{ github.ref_name }}
+          GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          gh repo clone jatinbansal1998/homebrew-tap tap-repo -- --depth 1
+          mkdir -p tap-repo/Formula
+          cp dist/homebrew-jenkins-cli.rb tap-repo/Formula/jenkins-cli.rb
+
+          cd tap-repo
+          if git diff --quiet -- Formula/jenkins-cli.rb; then
+            echo "No formula changes detected; skipping tap update."
+            exit 0
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Formula/jenkins-cli.rb
+          git commit -m "jenkins-cli ${TAG_NAME}"
+          git push origin HEAD:main
+
+      - name: Summarize tap sync
+        if: always()
+        shell: bash
+        env:
+          TAP_SECRET_SET: ${{ secrets.HOMEBREW_TAP_TOKEN != '' }}
+          TAP_SYNC_OUTCOME: ${{ steps.sync_tap.outcome }}
+        run: |
+          {
+            echo "## Homebrew tap sync"
+            echo ""
+            if [ "$TAP_SECRET_SET" != "true" ]; then
+              echo "Skipped: \`HOMEBREW_TAP_TOKEN\` is not set."
+            elif [ "$TAP_SYNC_OUTCOME" = "success" ]; then
+              echo "Success: \`Formula/jenkins-cli.rb\` synced to \`jatinbansal1998/homebrew-tap\`."
+            elif [ "$TAP_SYNC_OUTCOME" = "skipped" ]; then
+              echo "Skipped by workflow condition."
+            else
+              echo "Failed: tap sync step outcome was \`$TAP_SYNC_OUTCOME\`."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
