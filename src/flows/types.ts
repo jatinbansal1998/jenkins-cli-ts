@@ -148,12 +148,16 @@ export type BuildPreContext = {
   searchCandidates: JenkinsJob[];
   selectedJobUrl?: string;
   selectedJobLabel?: string;
+  branchParam: string;
   branch?: string;
+  customParams: Record<string, string>;
   defaultBranch: boolean;
+  parameterMode?: "branch" | "custom" | "without";
   buildModePrompted?: boolean;
   branchChoices: string[];
   removableBranches: string[];
   pendingBranchRemoval?: string;
+  pendingCustomParamKey?: string;
 };
 
 /** Runtime context for `statusPost` flow. */

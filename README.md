@@ -158,6 +158,24 @@ jenkins-cli build --job-url "https://jenkins.example/job/api-prod/" --non-intera
 
 In interactive mode, choose **Build without parameters** from the build mode prompt.
 
+Trigger a build with custom parameters:
+
+```bash
+jenkins-cli build --job "api-prod" --param DEPLOY_ENV=staging --param FORCE=true
+```
+
+Trigger a build with both branch and custom parameters:
+
+```bash
+jenkins-cli build --job "api-prod" --branch main --param DEPLOY_ENV=staging
+```
+
+In interactive mode, build mode now offers:
+
+- **Build with branch parameter**
+- **Build with custom parameters**
+- **Build without parameters**
+
 Check status:
 
 ```bash
@@ -294,8 +312,8 @@ Commands print `OK:` on success.
 - The first profile added becomes the default profile.
 - Legacy single-profile config is migrated automatically when profile data is read/written.
 - `deploy` is an alias for `build`.
-- `build`/`deploy` uses `buildWithParameters` when a branch is provided; otherwise it
-  triggers Jenkins with no parameters.
+- `build`/`deploy` uses `buildWithParameters` when branch or custom parameters are
+  provided; otherwise it triggers Jenkins with no parameters.
 - CSRF crumb usage is disabled by default. Enable it with
   `JENKINS_USE_CRUMB=true` or `useCrumb: true` in config when required by your Jenkins.
 - Use `--non-interactive` to disable prompts and fail fast.

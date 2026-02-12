@@ -49,6 +49,7 @@ type BuildOptions = {
   job?: string;
   jobUrl?: string;
   branch?: string;
+  customParams?: Record<string, string>;
   branchParam?: string;
   defaultBranch?: boolean;
   nonInteractive: boolean;
@@ -77,6 +78,7 @@ export async function runBuild(options: BuildOptions): Promise<BuildRunResult> {
       job: options.job,
       jobUrl: options.jobUrl,
       branch: options.branch,
+      customParams: options.customParams,
       defaultBranch: options.defaultBranch ?? false,
       branchParam,
       watch: options.watch,
@@ -87,6 +89,7 @@ export async function runBuild(options: BuildOptions): Promise<BuildRunResult> {
   let job = options.job;
   let jobUrl = options.jobUrl;
   let branch = options.branch;
+  let customParams = cloneParams(options.customParams);
   let defaultBranch = false;
   const watchFixed = options.watch;
 
@@ -97,22 +100,26 @@ export async function runBuild(options: BuildOptions): Promise<BuildRunResult> {
       job,
       jobUrl,
       branch,
+      customParams,
       defaultBranch,
+      branchParam,
     });
     const resolvedJobUrl = preBuildSelection.jobUrl;
     const jobLabel = preBuildSelection.jobLabel;
     const matchedFromSearch = preBuildSelection.matchedFromSearch;
-    const resolvedBranch = preBuildSelection.branch;
-    const useDefaultBranch = preBuildSelection.defaultBranch;
+    const triggerConfig = resolveBuildTriggerConfig({
+      branch: preBuildSelection.branch,
+      customParams: preBuildSelection.customParams,
+      defaultBranch: preBuildSelection.defaultBranch,
+      branchParam,
+    });
+    const resolvedBranch = triggerConfig.branch;
+    const useDefaultBranch = triggerConfig.defaultBranch;
+    const resolvedCustomParams = triggerConfig.customParams;
+    const params = triggerConfig.params;
 
     if (matchedFromSearch) {
       printOk(`Selected job: ${jobLabel || resolvedJobUrl}.`);
-    }
-
-    if (!useDefaultBranch && !resolvedBranch) {
-      throw new CliError("Branch is required to trigger a build.", [
-        "Pass --branch <name> or use --without-params to trigger without parameters.",
-      ]);
     }
 
     let baselineBuildNumber: number | undefined;
@@ -124,10 +131,9 @@ export async function runBuild(options: BuildOptions): Promise<BuildRunResult> {
       // Best-effort only.
     }
 
-    const params = useDefaultBranch ? {} : { [branchParam]: resolvedBranch };
     const result = await options.client.triggerBuild(resolvedJobUrl, params);
 
-    if (!useDefaultBranch && resolvedBranch) {
+    if (resolvedBranch) {
       try {
         await recordBranchSelection({
           env: options.env,
@@ -168,6 +174,7 @@ export async function runBuild(options: BuildOptions): Promise<BuildRunResult> {
       jobUrl: resolvedJobUrl,
       branch: resolvedBranch,
       defaultBranch: useDefaultBranch,
+      customParams: resolvedCustomParams,
       branchParam,
       watch: shouldWatch,
     });
@@ -312,11 +319,16 @@ export async function runBuild(options: BuildOptions): Promise<BuildRunResult> {
           } else {
             printOk(`Build triggered for ${displayJob}.`);
           }
+          const tipParams = splitParamsForTip({
+            params,
+            branchParam,
+          });
           printNonInteractiveBuildTip({
             scriptName: getScriptName(),
             jobUrl: resolvedJobUrl,
-            branch: branchValue,
-            defaultBranch: !branchValue,
+            branch: tipParams.branch,
+            defaultBranch: tipParams.defaultBranch,
+            customParams: tipParams.customParams,
             branchParam,
           });
           return "action_ok";
@@ -337,6 +349,7 @@ export async function runBuild(options: BuildOptions): Promise<BuildRunResult> {
       job = undefined;
       jobUrl = undefined;
       branch = undefined;
+      customParams = {};
       defaultBranch = false;
       continue;
     }
@@ -377,6 +390,7 @@ async function runBuildOnce(options: {
   job?: string;
   jobUrl?: string;
   branch?: string;
+  customParams?: Record<string, string>;
   defaultBranch: boolean;
   branchParam: string;
   watch?: boolean;
@@ -401,7 +415,12 @@ async function runBuildOnce(options: {
     nonInteractive: true,
   });
 
-  const useDefaultBranch = options.defaultBranch || !branch;
+  const triggerConfig = resolveBuildTriggerConfig({
+    branch,
+    customParams: options.customParams,
+    defaultBranch: options.defaultBranch,
+    branchParam: options.branchParam,
+  });
 
   let baselineBuildNumber: number | undefined;
   try {
@@ -411,15 +430,17 @@ async function runBuildOnce(options: {
     // Best-effort only.
   }
 
-  const params = useDefaultBranch ? {} : { [options.branchParam]: branch };
-  const result = await options.client.triggerBuild(jobUrl, params);
+  const result = await options.client.triggerBuild(
+    jobUrl,
+    triggerConfig.params,
+  );
 
-  if (!useDefaultBranch && branch) {
+  if (triggerConfig.branch) {
     try {
       await recordBranchSelection({
         env: options.env,
         jobUrl,
-        branch,
+        branch: triggerConfig.branch,
       });
     } catch {
       // Ignore cache write failures for build success.
@@ -485,8 +506,16 @@ function validateBuildOptions(options: BuildOptions): void {
     ]);
   }
 
+  const hasCustomParams = hasParams(options.customParams);
+
   if (options.branch && options.defaultBranch) {
     throw new CliError("Use either --branch or --without-params, not both.", [
+      "Remove one of the flags and try again.",
+    ]);
+  }
+
+  if (hasCustomParams && options.defaultBranch) {
+    throw new CliError("Use either --param or --without-params, not both.", [
       "Remove one of the flags and try again.",
     ]);
   }
@@ -512,6 +541,7 @@ function printNonInteractiveBuildTip(options: {
   jobUrl: string;
   branch?: string;
   defaultBranch: boolean;
+  customParams?: Record<string, string>;
   branchParam: string;
   watch?: boolean;
 }): void {
@@ -525,6 +555,7 @@ function formatNonInteractiveBuildCommand(options: {
   jobUrl: string;
   branch?: string;
   defaultBranch: boolean;
+  customParams?: Record<string, string>;
   branchParam: string;
   watch?: boolean;
 }): string {
@@ -538,12 +569,21 @@ function formatNonInteractiveBuildCommand(options: {
 
   const trimmedBranch = options.branch?.trim();
   if (options.defaultBranch || !trimmedBranch) {
-    parts.push("--without-params");
+    if (!hasParams(options.customParams)) {
+      parts.push("--without-params");
+    }
   } else {
     parts.push("--branch", shellEscape(trimmedBranch));
     if (options.branchParam && options.branchParam !== "BRANCH") {
       parts.push("--branch-param", shellEscape(options.branchParam));
     }
+  }
+
+  const customEntries = Object.entries(options.customParams ?? {}).sort(
+    ([left], [right]) => left.localeCompare(right),
+  );
+  for (const [key, value] of customEntries) {
+    parts.push("--param", shellEscape(`${key}=${value}`));
   }
 
   if (options.watch) {
@@ -570,6 +610,105 @@ function normalizeBranchParam(value?: string): string {
     ]);
   }
   return branchParam;
+}
+
+function resolveBuildTriggerConfig(options: {
+  branch?: string;
+  customParams?: Record<string, string>;
+  defaultBranch: boolean;
+  branchParam: string;
+}): {
+  branch: string;
+  customParams: Record<string, string>;
+  defaultBranch: boolean;
+  params: Record<string, string>;
+} {
+  const branch = options.branch?.trim() ?? "";
+  const customParams = cloneParams(options.customParams);
+  const hasCustom = hasParams(customParams);
+
+  if (options.defaultBranch) {
+    if (branch) {
+      throw new CliError("Use either --branch or --without-params, not both.", [
+        "Remove one of the flags and try again.",
+      ]);
+    }
+    if (hasCustom) {
+      throw new CliError("Use either --param or --without-params, not both.", [
+        "Remove one of the flags and try again.",
+      ]);
+    }
+    return {
+      branch: "",
+      customParams: {},
+      defaultBranch: true,
+      params: {},
+    };
+  }
+
+  const params = { ...customParams };
+  if (branch) {
+    if (Object.prototype.hasOwnProperty.call(params, options.branchParam)) {
+      throw new CliError(
+        `Parameter key "${options.branchParam}" conflicts with --branch.`,
+        [`Remove --param ${options.branchParam}=... or omit --branch.`],
+      );
+    }
+    params[options.branchParam] = branch;
+  }
+
+  const isWithoutParams = !branch && !hasParams(customParams);
+
+  return {
+    branch,
+    customParams,
+    defaultBranch: isWithoutParams,
+    params: isWithoutParams ? {} : params,
+  };
+}
+
+function splitParamsForTip(options: {
+  params: Record<string, string>;
+  branchParam: string;
+}): {
+  branch?: string;
+  customParams: Record<string, string>;
+  defaultBranch: boolean;
+} {
+  const customParams = cloneParams(options.params);
+  const hasBranch = Object.prototype.hasOwnProperty.call(
+    customParams,
+    options.branchParam,
+  );
+  const branch = hasBranch ? customParams[options.branchParam] : undefined;
+  if (hasBranch) {
+    delete customParams[options.branchParam];
+  }
+
+  return {
+    branch,
+    customParams,
+    defaultBranch: !hasBranch && !hasParams(customParams),
+  };
+}
+
+function cloneParams(value?: Record<string, string>): Record<string, string> {
+  if (!value) {
+    return {};
+  }
+  const result: Record<string, string> = {};
+  for (const [rawKey, rawValue] of Object.entries(value)) {
+    const key = rawKey.trim();
+    if (!key) {
+      continue;
+    }
+    result[key] = rawValue;
+  }
+  return result;
+}
+
+function hasParams(value?: Record<string, string>): boolean {
+  return Object.keys(value ?? {}).length > 0;
 }
 
 async function resolveWatchDecision(options: {
@@ -945,12 +1084,15 @@ async function resolveInteractiveBuildSelection(options: {
   job?: string;
   jobUrl?: string;
   branch?: string;
+  customParams?: Record<string, string>;
   defaultBranch: boolean;
+  branchParam: string;
 }): Promise<{
   jobUrl: string;
   jobLabel: string;
   matchedFromSearch: boolean;
   branch: string;
+  customParams: Record<string, string>;
   defaultBranch: boolean;
 }> {
   const providedUrl = options.jobUrl?.trim() ?? "";
@@ -997,8 +1139,17 @@ async function resolveInteractiveBuildSelection(options: {
     searchCandidates: [],
     selectedJobUrl: providedUrl || undefined,
     selectedJobLabel,
+    branchParam: options.branchParam,
     branch: options.branch,
+    customParams: cloneParams(options.customParams),
     defaultBranch: options.defaultBranch,
+    parameterMode: options.defaultBranch
+      ? "without"
+      : options.branch
+        ? "branch"
+        : hasParams(options.customParams)
+          ? "custom"
+          : undefined,
     buildModePrompted: false,
     branchChoices: [],
     removableBranches: [],
@@ -1035,6 +1186,7 @@ async function resolveInteractiveBuildSelection(options: {
     jobLabel: context.selectedJobLabel || selectedJobUrl,
     matchedFromSearch,
     branch: context.branch?.trim() ?? "",
+    customParams: cloneParams(context.customParams),
     defaultBranch: context.defaultBranch,
   };
 }

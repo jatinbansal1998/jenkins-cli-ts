@@ -37,6 +37,14 @@ tagged release:
 If `HOMEBREW_TAP_TOKEN` is set, the workflow automatically commits the formula to
 `jatinbansal1998/homebrew-tap`.
 
+If release logs show:
+
+`remote: Permission to jatinbansal1998/homebrew-tap.git denied ... (403)`
+
+then the token is valid for GitHub auth but does not have write access to the tap.
+Recreate `HOMEBREW_TAP_TOKEN` as a fine-grained token scoped to
+`jatinbansal1998/homebrew-tap` with `Contents: Read and write`.
+
 Manual fallback (if token is missing or sync fails):
 
 ```bash

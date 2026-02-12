@@ -17,6 +17,7 @@ import { getJobDisplayName, resolveJobCandidates } from "../jobs";
 import {
   BRANCH_CUSTOM_VALUE,
   BRANCH_REMOVE_VALUE,
+  BUILD_WITH_CUSTOM_PARAMS_VALUE,
   BUILD_WITHOUT_PARAMS_VALUE,
   BUILD_WITH_PARAMS_VALUE,
   EXIT_VALUE,
@@ -227,16 +228,35 @@ function selectBuildModeHandler({
 }): EventId {
   const value = String(input);
   if (value === BUILD_WITHOUT_PARAMS_VALUE) {
+    context.parameterMode = "without";
+    context.buildModePrompted = true;
     context.defaultBranch = true;
     context.branch = "";
+    context.customParams = {};
+    context.pendingCustomParamKey = undefined;
     return "mode:without_params";
   }
-  if (value === BUILD_WITH_PARAMS_VALUE) {
+  if (value === BUILD_WITH_CUSTOM_PARAMS_VALUE) {
+    context.parameterMode = "custom";
+    context.buildModePrompted = true;
     context.defaultBranch = false;
     context.branch = "";
-    return "mode:with_params";
+    context.customParams = {};
+    context.pendingCustomParamKey = undefined;
+    return "mode:with_custom";
   }
-  return "mode:with_params";
+  if (value === BUILD_WITH_PARAMS_VALUE) {
+    context.parameterMode = "branch";
+    context.buildModePrompted = true;
+    context.defaultBranch = false;
+    context.branch = "";
+    context.customParams = {};
+    context.pendingCustomParamKey = undefined;
+    return "mode:with_branch";
+  }
+  context.parameterMode = "branch";
+  context.buildModePrompted = true;
+  return "mode:with_branch";
 }
 
 async function prepareBranchHandler({
@@ -245,13 +265,23 @@ async function prepareBranchHandler({
   context: BuildPreContext;
 }): Promise<EventId> {
   const branch = context.branch?.trim() ?? "";
-  if (context.defaultBranch || branch) {
-    context.branch = branch;
+  const hasCustomParams = Object.keys(context.customParams).length > 0;
+  context.branch = branch;
+
+  if (context.defaultBranch || branch || hasCustomParams) {
     return "branch:ready";
   }
 
   if (!context.buildModePrompted) {
     context.buildModePrompted = true;
+    return "branch:mode";
+  }
+
+  if (context.parameterMode === "custom") {
+    return "custom:key";
+  }
+
+  if (context.parameterMode !== "branch") {
     return "branch:mode";
   }
 
@@ -297,10 +327,11 @@ function selectBranchHandler({
   if (!branch) {
     printError("Branch is required to trigger a parameterized build.");
     printHint(
-      "Enter a branch name (e.g. main), or go back and choose Build without parameters.",
+      "Enter a branch name (e.g. main), or go back and choose another build mode.",
     );
     return "branch:retry";
   }
+  context.parameterMode = "branch";
   context.defaultBranch = false;
   context.branch = branch;
   return "branch:selected";
@@ -357,13 +388,76 @@ function submitBranchHandler({
   if (!branch) {
     printError("Branch is required to trigger a parameterized build.");
     printHint(
-      "Enter a branch name (e.g. main), or go back and choose Build without parameters.",
+      "Enter a branch name (e.g. main), or go back and choose another build mode.",
     );
     return "branch:retry";
   }
+  context.parameterMode = "branch";
   context.defaultBranch = false;
   context.branch = branch;
   return "branch:selected";
+}
+
+function submitCustomParamKeyHandler({
+  context,
+  input,
+}: {
+  context: BuildPreContext;
+  input?: unknown;
+}): EventId {
+  const key = String(input ?? "").trim();
+  if (!key) {
+    printError("Parameter name is required.");
+    printHint("Enter a parameter name (e.g. DEPLOY_ENV).");
+    return "param:key_retry";
+  }
+  if (Object.prototype.hasOwnProperty.call(context.customParams, key)) {
+    printError(`Parameter "${key}" is already set.`);
+    printHint("Use unique parameter names when adding custom parameters.");
+    return "param:key_retry";
+  }
+  if (context.branch && key === context.branchParam) {
+    printError(`Parameter "${key}" is reserved for --branch.`);
+    printHint(
+      `Use a different key, or run without --branch to set "${key}" manually.`,
+    );
+    return "param:key_retry";
+  }
+  context.pendingCustomParamKey = key;
+  return "param:key_ready";
+}
+
+function submitCustomParamValueHandler({
+  context,
+  input,
+}: {
+  context: BuildPreContext;
+  input?: unknown;
+}): EventId {
+  const key = context.pendingCustomParamKey?.trim() ?? "";
+  if (!key) {
+    return "param:value_retry";
+  }
+  context.customParams[key] = String(input ?? "");
+  context.pendingCustomParamKey = undefined;
+  return "param:added";
+}
+
+function cancelCustomParamEntryHandler({
+  context,
+}: {
+  context: BuildPreContext;
+}): EventId {
+  context.pendingCustomParamKey = undefined;
+  if (
+    context.parameterMode === "custom" &&
+    Object.keys(context.customParams).length === 0
+  ) {
+    context.parameterMode = undefined;
+    context.buildModePrompted = false;
+    return "custom:mode";
+  }
+  return "custom:done";
 }
 
 function selectStatusActionHandler({
@@ -417,6 +511,9 @@ export const buildPreFlowHandlers = {
   "buildPre.selectBranchToRemove": selectBranchToRemoveHandler,
   "buildPre.removeBranch": removeBranchHandler,
   "buildPre.submitBranch": submitBranchHandler,
+  "buildPre.submitCustomParamKey": submitCustomParamKeyHandler,
+  "buildPre.submitCustomParamValue": submitCustomParamValueHandler,
+  "buildPre.cancelCustomParamEntry": cancelCustomParamEntryHandler,
 } satisfies FlowHandlerRegistry<BuildPreContext>;
 
 export const statusFlowHandlers = {

@@ -138,6 +138,8 @@ describe("flow runner", () => {
       ],
       searchQuery: "",
       searchCandidates: [],
+      branchParam: "BRANCH",
+      customParams: {},
       defaultBranch: false,
       branchChoices: [],
       removableBranches: [],

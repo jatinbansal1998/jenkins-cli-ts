@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, mock, test } from "bun:test";
 import type { EnvConfig } from "../src/env";
 import {
+  BUILD_WITH_CUSTOM_PARAMS_VALUE,
   BUILD_WITHOUT_PARAMS_VALUE,
   BUILD_WITH_PARAMS_VALUE,
   SEARCH_ALL_JOBS_VALUE,
@@ -281,5 +282,74 @@ describe("build command navigation", () => {
         message: expect.stringContaining("Build mode"),
       }),
     );
+  });
+
+  test("interactive custom-params mode collects key and value", async () => {
+    const getJobStatus = mock(async () => ({ lastBuildNumber: 41 }));
+    const triggerBuild = mock(async () => ({
+      buildUrl: BUILD_URL,
+      buildNumber: 42,
+      queueUrl: QUEUE_URL,
+      jobUrl: JOB_URL,
+    }));
+
+    selectMock
+      .mockImplementationOnce(async () => JOB_URL)
+      .mockImplementationOnce(async () => BUILD_WITH_CUSTOM_PARAMS_VALUE);
+    textMock
+      .mockImplementationOnce(async () => "DEPLOY_ENV")
+      .mockImplementationOnce(async () => "staging");
+
+    await runBuild({
+      client: createClient({
+        getJobStatus,
+        triggerBuild,
+      }),
+      env: {} as EnvConfig,
+      nonInteractive: false,
+      watch: false,
+    });
+
+    expect(triggerBuild).toHaveBeenCalledTimes(1);
+    expect(triggerBuild).toHaveBeenCalledWith(JOB_URL, {
+      DEPLOY_ENV: "staging",
+    });
+  });
+
+  test("interactive branch mode can add extra custom parameters", async () => {
+    const getJobStatus = mock(async () => ({ lastBuildNumber: 41 }));
+    const triggerBuild = mock(async () => ({
+      buildUrl: BUILD_URL,
+      buildNumber: 42,
+      queueUrl: QUEUE_URL,
+      jobUrl: JOB_URL,
+    }));
+
+    selectMock
+      .mockImplementationOnce(async () => JOB_URL)
+      .mockImplementationOnce(async () => BUILD_WITH_PARAMS_VALUE)
+      .mockImplementationOnce(async () => "development");
+    confirmMock
+      .mockImplementationOnce(async () => true)
+      .mockImplementationOnce(async () => false);
+    textMock
+      .mockImplementationOnce(async () => "DEPLOY_ENV")
+      .mockImplementationOnce(async () => "staging");
+
+    await runBuild({
+      client: createClient({
+        getJobStatus,
+        triggerBuild,
+      }),
+      env: {} as EnvConfig,
+      nonInteractive: false,
+      watch: false,
+    });
+
+    expect(triggerBuild).toHaveBeenCalledTimes(1);
+    expect(triggerBuild).toHaveBeenCalledWith(JOB_URL, {
+      BRANCH: "development",
+      DEPLOY_ENV: "staging",
+    });
   });
 });

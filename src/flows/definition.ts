@@ -8,6 +8,7 @@ import type {
 import {
   BRANCH_CUSTOM_VALUE,
   BRANCH_REMOVE_VALUE,
+  BUILD_WITH_CUSTOM_PARAMS_VALUE,
   BUILD_WITHOUT_PARAMS_VALUE,
   BUILD_WITH_PARAMS_VALUE,
   EXIT_VALUE,
@@ -203,7 +204,7 @@ export const buildPreFlow: FlowDefinition<BuildPreContext> = {
         "select:job": "prepare_branch",
       },
     },
-    /** Selects whether to trigger with branch parameter or without parameters. */
+    /** Selects whether to trigger with branch/custom parameters or without parameters. */
     branch_mode: {
       prompt: {
         kind: "select",
@@ -214,6 +215,10 @@ export const buildPreFlow: FlowDefinition<BuildPreContext> = {
             label: "Build with branch parameter",
           },
           {
+            value: BUILD_WITH_CUSTOM_PARAMS_VALUE,
+            label: "Build with custom parameters",
+          },
+          {
             value: BUILD_WITHOUT_PARAMS_VALUE,
             label: "Build without parameters",
           },
@@ -222,11 +227,12 @@ export const buildPreFlow: FlowDefinition<BuildPreContext> = {
       onSelect: "buildPre.selectBuildMode",
       transitions: {
         esc: "entry",
-        "mode:with_params": "prepare_branch",
+        "mode:with_branch": "prepare_branch",
+        "mode:with_custom": "custom_key",
         "mode:without_params": "complete",
       },
     },
-    /** Loads branch metadata and decides if branch input is needed. */
+    /** Loads branch metadata and decides if branch/custom input is needed. */
     prepare_branch: {
       onEnter: "buildPre.prepareBranch",
       transitions: {
@@ -234,6 +240,7 @@ export const buildPreFlow: FlowDefinition<BuildPreContext> = {
         "branch:mode": "branch_mode",
         "branch:select": "branch_select",
         "branch:entry": "branch_entry",
+        "custom:key": "custom_key",
         "branch:error": "entry",
       },
     },
@@ -260,9 +267,10 @@ export const buildPreFlow: FlowDefinition<BuildPreContext> = {
       onSelect: "buildPre.selectBranch",
       transitions: {
         esc: "branch_mode",
-        "branch:selected": "complete",
+        "branch:selected": "custom_confirm",
         "branch:entry": "branch_entry",
         "branch:remove": "branch_remove",
+        "branch:retry": "branch_select",
       },
     },
     /** Menu for selecting which cached branch entry to remove. */
@@ -301,7 +309,76 @@ export const buildPreFlow: FlowDefinition<BuildPreContext> = {
       transitions: {
         esc: "branch_mode",
         "branch:retry": "branch_entry",
-        "branch:selected": "complete",
+        "branch:selected": "custom_confirm",
+      },
+    },
+    /** Optional branch follow-up for adding extra custom parameters. */
+    custom_confirm: {
+      prompt: {
+        kind: "confirm",
+        message: (context) =>
+          withPromptTarget("Add custom parameters?", context.env),
+        initialValue: false,
+      },
+      transitions: {
+        esc: "complete",
+        "confirm:yes": "custom_key",
+        "confirm:no": "complete",
+      },
+    },
+    /** Custom parameter key entry point. */
+    custom_key: {
+      prompt: {
+        kind: "text",
+        message: (context) => withPromptTarget("Parameter name", context.env),
+        placeholder: "e.g. DEPLOY_ENV",
+      },
+      onSelect: "buildPre.submitCustomParamKey",
+      transitions: {
+        esc: "custom_cancel",
+        "param:key_retry": "custom_key",
+        "param:key_ready": "custom_value",
+      },
+    },
+    /** Custom parameter value prompt for the currently pending key. */
+    custom_value: {
+      prompt: {
+        kind: "text",
+        message: (context) =>
+          withPromptTarget(
+            context.pendingCustomParamKey
+              ? `Value for ${context.pendingCustomParamKey}`
+              : "Parameter value",
+            context.env,
+          ),
+      },
+      onSelect: "buildPre.submitCustomParamValue",
+      transitions: {
+        esc: "custom_key",
+        "param:value_retry": "custom_key",
+        "param:added": "custom_more",
+      },
+    },
+    /** Repeats custom parameter entry until the user is done. */
+    custom_more: {
+      prompt: {
+        kind: "confirm",
+        message: (context) =>
+          withPromptTarget("Add another custom parameter?", context.env),
+        initialValue: false,
+      },
+      transitions: {
+        esc: "custom_cancel",
+        "confirm:yes": "custom_key",
+        "confirm:no": "complete",
+      },
+    },
+    /** Handles Esc behavior for custom-parameter entry states. */
+    custom_cancel: {
+      onEnter: "buildPre.cancelCustomParamEntry",
+      transitions: {
+        "custom:mode": "branch_mode",
+        "custom:done": "complete",
       },
     },
   },

@@ -12,7 +12,7 @@ jenkins-cli build
 CLI args
   -> createContext (env + Jenkins client)
   -> runBuild(options)
-       -> buildPre flow (collect job + branch)
+       -> buildPre flow (collect job + build parameters)
        -> triggerBuild(...)
        -> optional watch loop
        -> buildPost flow (watch/logs/cancel/rerun/done)
@@ -36,7 +36,7 @@ CLI args
    - `env` from `loadEnv()`
    - `client = new JenkinsClient(...)`
 3. `runBuild({...})` is called with flags:
-   - `job`, `jobUrl`, `branch`, `branchParam`
+   - `job`, `jobUrl`, `branch`, `branchParam`, `param`
    - `defaultBranch`, `watch`, `nonInteractive`
 
 ### B) `runBuild` startup
@@ -52,16 +52,17 @@ CLI args
 
 ### C) `buildPre` flow (input collection)
 
-The flow chooses job + branch and returns when state reaches `complete`.
+The flow chooses job + parameter strategy and returns when state reaches `complete`.
 
 ```text
 entry
   -> recent_menu OR search_direct
   -> search_from_recent
-  -> results_from_recent/results_direct
-  -> prepare_branch
-  -> branch_select OR branch_entry
-  -> complete
+	-> results_from_recent/results_direct
+	-> prepare_branch
+	-> branch_mode (branch/custom/without)
+	-> branch_select OR branch_entry OR custom_key/custom_value loop
+	-> complete
 ```
 
 What this flow writes into context:
@@ -69,6 +70,7 @@ What this flow writes into context:
 - `selectedJobUrl`
 - `selectedJobLabel`
 - `branch`
+- `customParams`
 - branch cache lists (`branchChoices`, `removableBranches`)
 
 ### D) Build trigger
@@ -77,8 +79,8 @@ After `buildPre` returns `complete`:
 
 ```text
 params =
-  {}                                if default branch
-  { [branchParam]: selectedBranch } otherwise
+  {}                                                  if without parameters
+  { [branchParam]: selectedBranch, ...customParams } otherwise
 
 client.triggerBuild(jobUrl, params)
 ```
@@ -122,8 +124,10 @@ Assume user does:
 2. Selects `Search all jobs`
 3. Types `api prod`
 4. Selects job `api-prod`
-5. Selects branch `development`
-6. Chooses `Watch`
+5. Selects build mode `Build with branch parameter`
+6. Selects branch `development`
+7. Chooses to add custom parameter `DEPLOY_ENV=staging`
+8. Chooses `Watch`
 
 Data evolution:
 
@@ -144,8 +148,11 @@ After job select:
 After branch select:
   branch="development"
 
+After custom parameter entry:
+  customParams={ DEPLOY_ENV: "staging" }
+
 Trigger payload:
-  params={ BRANCH: "development" }   // if branchParam is BRANCH
+  params={ BRANCH: "development", DEPLOY_ENV: "staging" }
 ```
 
 ## 5) Esc/back behavior in `buildPre`

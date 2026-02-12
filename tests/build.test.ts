@@ -291,6 +291,44 @@ describe("build command", () => {
     expect(commandLine).toContain("--watch");
   });
 
+  test("tip command prints repeatable --param flags for custom parameters", async () => {
+    const getJobStatus = mock(async () => ({ lastBuildNumber: 380 }));
+    const triggerBuild = mock(async () => ({
+      buildUrl: BUILD_URL,
+      buildNumber: 381,
+      queueUrl: QUEUE_URL,
+      jobUrl: JOB_URL,
+    }));
+    const logSpy = spyOn(console, "log");
+
+    await runBuild({
+      client: createClient({
+        getJobStatus,
+        triggerBuild,
+      }),
+      env: {} as EnvConfig,
+      jobUrl: JOB_URL,
+      customParams: {
+        DEPLOY_ENV: "staging",
+        FORCE: "true",
+      },
+      nonInteractive: false,
+      returnToCaller: true,
+    });
+
+    const commandLine = logSpy.mock.calls
+      .map((call) => call[0])
+      .find(
+        (entry): entry is string =>
+          typeof entry === "string" &&
+          entry.includes("build --non-interactive") &&
+          entry.includes("--param"),
+      );
+
+    expect(commandLine).toContain("--param 'DEPLOY_ENV=staging'");
+    expect(commandLine).toContain("--param 'FORCE=true'");
+  });
+
   test("non-interactive build without branch triggers without parameters", async () => {
     const getJobStatus = mock(async () => ({ lastBuildNumber: 380 }));
     const triggerBuild = mock(async () => ({
@@ -340,6 +378,96 @@ describe("build command", () => {
     >;
     expect(triggerCalls[0]?.[0]).toBe(JOB_URL);
     expect(triggerCalls[0]?.[1]).toEqual({});
+  });
+
+  test("non-interactive build with custom params triggers parameterized build", async () => {
+    const getJobStatus = mock(async () => ({ lastBuildNumber: 380 }));
+    const triggerBuild = mock(async () => ({
+      queueUrl: QUEUE_URL,
+      jobUrl: JOB_URL,
+    }));
+
+    await runBuild({
+      client: createClient({
+        getJobStatus,
+        triggerBuild,
+      }),
+      env: {} as EnvConfig,
+      jobUrl: JOB_URL,
+      customParams: {
+        DEPLOY_ENV: "staging",
+        FORCE: "true",
+      },
+      nonInteractive: true,
+    });
+
+    expect(triggerBuild).toHaveBeenCalledTimes(1);
+    const triggerCalls = triggerBuild.mock.calls as unknown as Array<
+      Array<unknown>
+    >;
+    expect(triggerCalls[0]?.[0]).toBe(JOB_URL);
+    expect(triggerCalls[0]?.[1]).toEqual({
+      DEPLOY_ENV: "staging",
+      FORCE: "true",
+    });
+  });
+
+  test("non-interactive build merges branch and custom params", async () => {
+    const getJobStatus = mock(async () => ({ lastBuildNumber: 380 }));
+    const triggerBuild = mock(async () => ({
+      queueUrl: QUEUE_URL,
+      jobUrl: JOB_URL,
+    }));
+
+    await runBuild({
+      client: createClient({
+        getJobStatus,
+        triggerBuild,
+      }),
+      env: {} as EnvConfig,
+      jobUrl: JOB_URL,
+      branch: "staging",
+      customParams: {
+        DEPLOY_ENV: "staging",
+      },
+      nonInteractive: true,
+    });
+
+    expect(triggerBuild).toHaveBeenCalledTimes(1);
+    const triggerCalls = triggerBuild.mock.calls as unknown as Array<
+      Array<unknown>
+    >;
+    expect(triggerCalls[0]?.[0]).toBe(JOB_URL);
+    expect(triggerCalls[0]?.[1]).toEqual({
+      DEPLOY_ENV: "staging",
+      BRANCH: "staging",
+    });
+  });
+
+  test("non-interactive build fails when branch param key conflicts with custom params", async () => {
+    const getJobStatus = mock(async () => ({ lastBuildNumber: 380 }));
+    const triggerBuild = mock(async () => ({
+      queueUrl: QUEUE_URL,
+      jobUrl: JOB_URL,
+    }));
+
+    await expect(
+      runBuild({
+        client: createClient({
+          getJobStatus,
+          triggerBuild,
+        }),
+        env: {} as EnvConfig,
+        jobUrl: JOB_URL,
+        branch: "staging",
+        customParams: {
+          BRANCH: "main",
+        },
+        nonInteractive: true,
+      }),
+    ).rejects.toThrow('Parameter key "BRANCH" conflicts with --branch.');
+
+    expect(triggerBuild).not.toHaveBeenCalled();
   });
 
   test("watch cancellation still reaches trigger-another-build confirmation", async () => {

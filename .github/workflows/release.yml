@@ -107,6 +107,15 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Checkout homebrew tap
+        if: ${{ env.HOMEBREW_TAP_TOKEN != '' }}
+        uses: actions/checkout@v4
+        with:
+          repository: jatinbansal1998/homebrew-tap
+          token: ${{ env.HOMEBREW_TAP_TOKEN }}
+          path: tap-repo
+          fetch-depth: 1
+
       - name: Sync formula to homebrew tap
         id: sync_tap
         if: ${{ env.HOMEBREW_TAP_TOKEN != '' }}
@@ -114,22 +123,29 @@ jobs:
         env:
           TAG_NAME: ${{ github.ref_name }}
           GH_TOKEN: ${{ env.HOMEBREW_TAP_TOKEN }}
+          GH_NAME: github-actions[bot]
+          GH_EMAIL: 41898282+github-actions[bot]@users.noreply.github.com
         run: |
           set -euo pipefail
 
-          git clone "https://x-access-token:${GH_TOKEN}@github.com/jatinbansal1998/homebrew-tap.git" tap-repo --depth 1
           mkdir -p tap-repo/Formula
           cp dist/homebrew-jenkins-cli.rb tap-repo/Formula/jenkins-cli.rb
 
           cd tap-repo
+          git remote set-url origin "https://x-access-token:${GH_TOKEN}@github.com/jatinbansal1998/homebrew-tap.git"
+          if ! git ls-remote --exit-code origin HEAD >/dev/null 2>&1; then
+            echo "::error::HOMEBREW_TAP_TOKEN cannot access jatinbansal1998/homebrew-tap. Ensure the token targets that repo and has Contents: Read and write."
+            exit 1
+          fi
+
           git add Formula/jenkins-cli.rb
           if git diff --cached --quiet -- Formula/jenkins-cli.rb; then
             echo "No formula changes detected; skipping tap update."
             exit 0
           fi
 
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git config user.name "${GH_NAME}"
+          git config user.email "${GH_EMAIL}"
           git commit -m "jenkins-cli ${TAG_NAME}"
           git push origin HEAD:main
 

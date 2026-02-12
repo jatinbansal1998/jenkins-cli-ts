@@ -201,6 +201,11 @@ async function main(): Promise<void> {
             default: "BRANCH",
             describe: "Parameter name for the branch",
           })
+          .option("param", {
+            type: "string",
+            array: true,
+            describe: "Custom build parameter in KEY=VALUE format (repeatable)",
+          })
           .option("without-params", {
             type: "boolean",
             default: false,
@@ -239,6 +244,7 @@ async function main(): Promise<void> {
           job: typeof argv.job === "string" ? argv.job : undefined,
           jobUrl: typeof argv.jobUrl === "string" ? argv.jobUrl : undefined,
           branch: typeof argv.branch === "string" ? argv.branch : undefined,
+          customParams: parseBuildCustomParams(argv.param),
           branchParam: branchParamExplicitlyPassed
             ? argv.branchParam
             : env.branchParamDefault,
@@ -557,6 +563,7 @@ async function main(): Promise<void> {
     --job-url         Full Jenkins job URL
     --branch          Branch name to build
     --branch-param    Parameter name for the branch [default: "BRANCH"]
+    --param           Custom build parameter KEY=VALUE (repeatable)
     --without-params  Trigger build without parameters
     --watch           Watch build status until completion
 
@@ -697,6 +704,49 @@ function createContext(argv?: {
 
 function toOptionalString(value: unknown): string | undefined {
   return typeof value === "string" ? value : undefined;
+}
+
+function parseBuildCustomParams(
+  value: unknown,
+): Record<string, string> | undefined {
+  const entries = Array.isArray(value)
+    ? value
+    : typeof value === "string"
+      ? [value]
+      : [];
+  if (entries.length === 0) {
+    return undefined;
+  }
+
+  const params: Record<string, string> = {};
+  for (const entry of entries) {
+    if (typeof entry !== "string") {
+      throw new CliError("Invalid --param value.", [
+        "Use --param KEY=VALUE (example: --param DEPLOY_ENV=staging).",
+      ]);
+    }
+    const equalsIndex = entry.indexOf("=");
+    if (equalsIndex <= 0) {
+      throw new CliError(`Invalid --param value "${entry}".`, [
+        "Use --param KEY=VALUE (example: --param DEPLOY_ENV=staging).",
+      ]);
+    }
+    const key = entry.slice(0, equalsIndex).trim();
+    const paramValue = entry.slice(equalsIndex + 1);
+    if (!key) {
+      throw new CliError(`Invalid --param value "${entry}".`, [
+        "Parameter name cannot be empty.",
+      ]);
+    }
+    if (Object.prototype.hasOwnProperty.call(params, key)) {
+      throw new CliError(`Duplicate --param key "${key}".`, [
+        "Use unique parameter names when passing --param multiple times.",
+      ]);
+    }
+    params[key] = paramValue;
+  }
+
+  return params;
 }
 
 main().catch((error) => {
