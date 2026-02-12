@@ -4,7 +4,9 @@ import { CliError } from "../src/cli";
 import {
   clearPendingUpdateState,
   compareVersions,
+  getPreferredUpdateCommand,
   getDeferredUpdatePromptVersion,
+  isHomebrewManagedPath,
   normalizeVersionTag,
   resolveAssetUrl,
   resolveExecutablePath,
@@ -76,6 +78,48 @@ describe("update helpers", () => {
     process.argv[1] = "/tmp/jenkins-cli";
     try {
       expect(resolveExecutablePath()).toBe(path.resolve("/tmp/jenkins-cli"));
+    } finally {
+      if (prevArgv === undefined) {
+        process.argv.splice(1, 1);
+      } else {
+        process.argv[1] = prevArgv;
+      }
+    }
+  });
+
+  test("isHomebrewManagedPath detects Homebrew cellar path", () => {
+    expect(
+      isHomebrewManagedPath(
+        "/opt/homebrew/Cellar/jenkins-cli/0.6.0/bin/jenkins-cli",
+      ),
+    ).toBeTrue();
+  });
+
+  test("isHomebrewManagedPath ignores non-Homebrew paths", () => {
+    expect(
+      isHomebrewManagedPath("/Users/dev/.bun/bin/jenkins-cli"),
+    ).toBeFalse();
+  });
+
+  test("getPreferredUpdateCommand returns brew command for cellar install", () => {
+    const prevArgv = process.argv[1];
+    process.argv[1] = "/usr/local/Cellar/jenkins-cli/0.6.0/bin/jenkins-cli";
+    try {
+      expect(getPreferredUpdateCommand()).toBe("brew upgrade jenkins-cli");
+    } finally {
+      if (prevArgv === undefined) {
+        process.argv.splice(1, 1);
+      } else {
+        process.argv[1] = prevArgv;
+      }
+    }
+  });
+
+  test("getPreferredUpdateCommand returns self-update for standalone install", () => {
+    const prevArgv = process.argv[1];
+    process.argv[1] = "/Users/dev/.bun/bin/jenkins-cli";
+    try {
+      expect(getPreferredUpdateCommand()).toBe("jenkins-cli update");
     } finally {
       if (prevArgv === undefined) {
         process.argv.splice(1, 1);

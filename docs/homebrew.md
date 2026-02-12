@@ -10,6 +10,15 @@ brew tap jatinbansal1998/tap
 brew install jatinbansal1998/tap/jenkins-cli
 ```
 
+For upgrades, use:
+
+```bash
+brew upgrade jenkins-cli
+```
+
+Homebrew installs are managed by brew, so `jenkins-cli update` is intentionally
+not used for in-place upgrades.
+
 ## Tap repository setup (one time)
 
 1. Create a GitHub repository named `homebrew-tap`.

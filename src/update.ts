@@ -7,6 +7,7 @@ import { CONFIG_DIR } from "./config";
 const REPO_SLUG = "jatinbansal1998/jenkins-cli-ts";
 const API_ROOT = `https://api.github.com/repos/${REPO_SLUG}`;
 const ASSET_NAME = "jenkins-cli";
+const HOMEBREW_CELLAR_SEGMENT = `${path.sep}Cellar${path.sep}jenkins-cli${path.sep}`;
 const AUTO_UPDATE_INTERVAL_MS = 60 * 60 * 1000;
 const UPDATE_STATE_FILE = path.join(CONFIG_DIR, "update-state.json");
 
@@ -169,6 +170,20 @@ export function resolveExecutablePath(): string {
     ]);
   }
   return resolved;
+}
+
+export function isHomebrewManagedPath(executablePath: string): boolean {
+  return path.resolve(executablePath).includes(HOMEBREW_CELLAR_SEGMENT);
+}
+
+export function getPreferredUpdateCommand(): string {
+  const argv1 = process.argv[1];
+  if (!argv1) {
+    return "jenkins-cli update";
+  }
+  return isHomebrewManagedPath(argv1)
+    ? "brew upgrade jenkins-cli"
+    : "jenkins-cli update";
 }
 
 export async function fetchLatestRelease(options?: {
@@ -361,6 +376,18 @@ async function runAutoUpdate(currentVersion: string): Promise<void> {
       await writeUpdateState(pendingState);
       return;
     }
+    const updateCommand = getPreferredUpdateCommand();
+    const homebrewManaged = updateCommand === "brew upgrade jenkins-cli";
+    if (homebrewManaged) {
+      printHint(
+        `New version available: ${release.tag_name}. Run \`${updateCommand}\`.`,
+      );
+      await writeUpdateState({
+        ...pendingState,
+        lastNotifiedVersion: release.tag_name,
+      });
+      return;
+    }
     if (autoInstallEnabled) {
       try {
         const assetUrl = resolveAssetUrl(release);
@@ -378,7 +405,7 @@ async function runAutoUpdate(currentVersion: string): Promise<void> {
     }
 
     printHint(
-      `New version available: ${release.tag_name}. Run \`jenkins-cli update\`.`,
+      `New version available: ${release.tag_name}. Run \`${updateCommand}\`.`,
     );
 
     await writeUpdateState({
