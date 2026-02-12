@@ -9,6 +9,7 @@ import {
   readConfigSync,
   resolveDefaultProfileName,
 } from "./config";
+import { ENV_KEYS } from "./env-keys";
 
 export type LoadEnvOptions = {
   profile?: string;
@@ -38,14 +39,14 @@ export function normalizeUrl(rawUrl: string): string {
   try {
     url = new URL(trimmed);
   } catch {
-    throw new CliError("Invalid JENKINS_URL.", [
+    throw new CliError(`Invalid ${ENV_KEYS.JENKINS_URL}.`, [
       "Use a full URL like https://jenkins.example.com.",
     ]);
   }
 
   if (url.protocol !== "http:" && url.protocol !== "https:") {
-    throw new CliError("Invalid JENKINS_URL protocol.", [
-      "Use http:// or https:// for JENKINS_URL.",
+    throw new CliError(`Invalid ${ENV_KEYS.JENKINS_URL} protocol.`, [
+      `Use http:// or https:// for ${ENV_KEYS.JENKINS_URL}.`,
     ]);
   }
 
@@ -84,7 +85,7 @@ export function loadEnv(options: LoadEnvOptions = {}): EnvConfig {
       jenkinsUser: cliUser,
       jenkinsApiToken: cliToken,
       branchParamDefault: resolveBranchParamDefault(),
-      useCrumb: parseUseCrumbValue(process.env.JENKINS_USE_CRUMB),
+      useCrumb: parseUseCrumbValue(process.env[ENV_KEYS.JENKINS_USE_CRUMB]),
     };
   }
 
@@ -101,31 +102,31 @@ export function loadEnv(options: LoadEnvOptions = {}): EnvConfig {
       profileName: activeProfileName,
       branchParamDefault: resolveBranchParamDefault(activeProfile.branchParam),
       useCrumb: parseUseCrumbValue(
-        process.env.JENKINS_USE_CRUMB ?? activeProfile.useCrumb,
+        process.env[ENV_KEYS.JENKINS_USE_CRUMB] ?? activeProfile.useCrumb,
       ),
     };
   }
 
-  const rawUrl = process.env.JENKINS_URL;
-  const rawUser = process.env.JENKINS_USER;
-  const rawToken = process.env.JENKINS_API_TOKEN;
+  const rawUrl = process.env[ENV_KEYS.JENKINS_URL];
+  const rawUser = process.env[ENV_KEYS.JENKINS_USER];
+  const rawToken = process.env[ENV_KEYS.JENKINS_API_TOKEN];
   if (!rawUrl || rawUrl.trim() === "") {
-    throw new CliError("Missing JENKINS_URL.", [
-      "Set JENKINS_URL to your Jenkins base URL (e.g., https://jenkins.example.com).",
+    throw new CliError(`Missing ${ENV_KEYS.JENKINS_URL}.`, [
+      `Set ${ENV_KEYS.JENKINS_URL} to your Jenkins base URL (e.g., https://jenkins.example.com).`,
       `Or add it to ${CONFIG_FILE}.`,
     ]);
   }
 
   if (!rawUser || rawUser.trim() === "") {
-    throw new CliError("Missing JENKINS_USER.", [
-      "Set JENKINS_USER to your Jenkins username or service account.",
+    throw new CliError(`Missing ${ENV_KEYS.JENKINS_USER}.`, [
+      `Set ${ENV_KEYS.JENKINS_USER} to your Jenkins username or service account.`,
       `Or add it to ${CONFIG_FILE}.`,
     ]);
   }
 
   if (!rawToken || rawToken.trim() === "") {
-    throw new CliError("Missing JENKINS_API_TOKEN.", [
-      "Set JENKINS_API_TOKEN to your Jenkins API token.",
+    throw new CliError(`Missing ${ENV_KEYS.JENKINS_API_TOKEN}.`, [
+      `Set ${ENV_KEYS.JENKINS_API_TOKEN} to your Jenkins API token.`,
       `Or add it to ${CONFIG_FILE}.`,
     ]);
   }
@@ -135,7 +136,7 @@ export function loadEnv(options: LoadEnvOptions = {}): EnvConfig {
     jenkinsUser: rawUser.trim(),
     jenkinsApiToken: rawToken.trim(),
     branchParamDefault: resolveBranchParamDefault(),
-    useCrumb: parseUseCrumbValue(process.env.JENKINS_USE_CRUMB),
+    useCrumb: parseUseCrumbValue(process.env[ENV_KEYS.JENKINS_USE_CRUMB]),
   };
 }
 
@@ -145,7 +146,7 @@ export function loadEnv(options: LoadEnvOptions = {}): EnvConfig {
  * This is used as the default value when --debug flag is not explicitly passed.
  */
 export function getDebugDefault(): boolean {
-  const rawDebug = normalizeOptionalString(process.env.JENKINS_DEBUG);
+  const rawDebug = normalizeOptionalString(process.env[ENV_KEYS.JENKINS_DEBUG]);
   if (rawDebug) {
     return parseBooleanFlag(rawDebug);
   }
@@ -206,7 +207,7 @@ function parseUseCrumbValue(value: string | boolean | undefined): boolean {
 
 function resolveBranchParamDefault(profileBranchParam?: string): string {
   const envBranchParam = normalizeOptionalString(
-    process.env.JENKINS_BRANCH_PARAM,
+    process.env[ENV_KEYS.JENKINS_BRANCH_PARAM],
   );
   if (envBranchParam) {
     return envBranchParam;

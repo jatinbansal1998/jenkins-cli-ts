@@ -15,7 +15,7 @@ import {
   toStatusDetailsFromJob,
 } from "../status-format";
 import type { EnvConfig } from "../env";
-import type { JenkinsClient } from "../jenkins/client";
+import type { JenkinsClient } from "../jenkins/api-wrapper";
 import type { JenkinsJob } from "../types/jenkins";
 import {
   getJobDisplayName,

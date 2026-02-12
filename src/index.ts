@@ -22,9 +22,14 @@ import { runStatus } from "./commands/status";
 import { runUpdate } from "./commands/update";
 import { runWait } from "./commands/wait";
 import { loadEnv, getDebugDefault } from "./env";
-import { JenkinsClient } from "./jenkins/client";
+import { ENV_KEYS } from "./env-keys";
+import { JenkinsClient } from "./jenkins/api-wrapper";
 import { getJobCacheDir } from "./jobs";
 import { setDebugMode } from "./logger";
+import {
+  enforceMinimumVersionFromCache,
+  kickOffMinimumVersionRefresh,
+} from "./min-version-policy";
 import {
   getDeferredUpdatePromptVersion,
   kickOffAutoUpdate,
@@ -40,6 +45,8 @@ const scriptName = getScriptName();
 
 async function main(): Promise<void> {
   const rawArgs = hideBin(process.argv);
+  await enforceMinimumVersionFromCache({ currentVersion: VERSION, rawArgs });
+  kickOffMinimumVersionRefresh({ currentVersion: VERSION });
   await promptForDeferredUpdate(VERSION, rawArgs);
   kickOffAutoUpdate(VERSION, rawArgs);
 
@@ -617,7 +624,7 @@ async function main(): Promise<void> {
     --token    One-off Jenkins API token override
 
   config/env:
-    JENKINS_USE_CRUMB / useCrumb  Enable Jenkins CSRF crumb usage [default: disabled]
+    ${ENV_KEYS.JENKINS_USE_CRUMB} / useCrumb  Enable Jenkins CSRF crumb usage [default: disabled]
 
   update / upgrade:
     [tag]          Install a specific version tag (e.g. v0.2.4)

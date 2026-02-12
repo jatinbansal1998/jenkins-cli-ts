@@ -10,6 +10,7 @@ import {
   printHint,
   printOk,
 } from "../cli";
+import { CLI_FLAGS } from "../cli-constants";
 import {
   loadCachedBranchHistory,
   loadCachedBranches,
@@ -18,7 +19,7 @@ import {
 } from "../branches.ts";
 import { loadRecentJobs, recordRecentJob } from "../recent-jobs.ts";
 import type { EnvConfig } from "../env";
-import type { JenkinsClient } from "../jenkins/client";
+import type { JenkinsClient } from "../jenkins/api-wrapper";
 import type { BuildStatus, JobStatus } from "../types/jenkins";
 import { getJobDisplayName, loadJobs, resolveJobMatch } from "../jobs";
 import { notifyBuildComplete } from "../notify";
@@ -562,7 +563,7 @@ function formatNonInteractiveBuildCommand(options: {
   const parts: string[] = [
     options.scriptName,
     "build",
-    "--non-interactive",
+    CLI_FLAGS.NON_INTERACTIVE,
     "--job-url",
     shellEscape(options.jobUrl),
   ];

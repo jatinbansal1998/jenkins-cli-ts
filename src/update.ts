@@ -1,25 +1,25 @@
 import os from "node:os";
 import path from "node:path";
 import { chmod, copyFile, mkdir, mkdtemp, rename, rm } from "node:fs/promises";
+import {
+  CLI_FLAGS,
+  UPDATE_COMMAND_BREW,
+  UPDATE_COMMAND_SELF,
+  isUpdateCommandAlias,
+} from "./cli-constants";
 import { CliError, printHint } from "./cli";
 import { CONFIG_DIR } from "./config";
+import {
+  downloadReleaseAsset,
+  fetchLatestRelease as fetchLatestGitHubRelease,
+  fetchReleaseByTag as fetchReleaseByTagFromGitHub,
+  type GitHubReleaseInfo as ReleaseInfo,
+} from "./github/api-wrapper";
 
-const REPO_SLUG = "jatinbansal1998/jenkins-cli-ts";
-const API_ROOT = `https://api.github.com/repos/${REPO_SLUG}`;
 const ASSET_NAME = "jenkins-cli";
 const HOMEBREW_CELLAR_SEGMENT = `${path.sep}Cellar${path.sep}jenkins-cli${path.sep}`;
 const AUTO_UPDATE_INTERVAL_MS = 60 * 60 * 1000;
 const UPDATE_STATE_FILE = path.join(CONFIG_DIR, "update-state.json");
-
-type ReleaseAsset = {
-  name: string;
-  browser_download_url: string;
-};
-
-type ReleaseInfo = {
-  tag_name: string;
-  assets: ReleaseAsset[];
-};
 
 export type UpdateState = {
   autoUpdate?: boolean;
@@ -29,6 +29,10 @@ export type UpdateState = {
   pendingVersion?: string;
   pendingDetectedAt?: string;
   dismissedVersion?: string;
+  minAllowedVersion?: string;
+  minAllowedMessage?: string;
+  minAllowedFetchedAt?: string;
+  minAllowedSourceUrl?: string;
 };
 
 export function clearPendingUpdateState(state: UpdateState): UpdateState {
@@ -166,7 +170,7 @@ export function resolveExecutablePath(): string {
     resolved.includes(`${path.sep}src${path.sep}`);
   if (looksLikeSource) {
     throw new CliError("Update is not supported when running from source.", [
-      "Install the global CLI and re-run `jenkins-cli update`.",
+      `Install the global CLI and re-run \`${UPDATE_COMMAND_SELF}\`.`,
     ]);
   }
   return resolved;
@@ -179,79 +183,26 @@ export function isHomebrewManagedPath(executablePath: string): boolean {
 export function getPreferredUpdateCommand(): string {
   const argv1 = process.argv[1];
   if (!argv1) {
-    return "jenkins-cli update";
+    return UPDATE_COMMAND_SELF;
   }
   return isHomebrewManagedPath(argv1)
-    ? "brew upgrade jenkins-cli"
-    : "jenkins-cli update";
+    ? UPDATE_COMMAND_BREW
+    : UPDATE_COMMAND_SELF;
 }
 
-export async function fetchLatestRelease(options?: {
+export async function fetchLatestRelease(options: {
+  currentVersion: string;
   timeoutMs?: number;
 }): Promise<ReleaseInfo> {
-  return await fetchRelease("releases/latest", options);
+  return await fetchLatestGitHubRelease(options);
 }
 
 export async function fetchReleaseByTag(
   tag: string,
-  options?: { timeoutMs?: number },
+  options: { currentVersion: string; timeoutMs?: number },
 ): Promise<ReleaseInfo> {
   const normalized = normalizeVersionTag(tag);
-  return await fetchRelease(`releases/tags/${normalized}`, options);
-}
-
-function getTimer(timeoutMs?: number): {
-  controller: AbortController;
-  cleanup: () => void;
-} {
-  const controller = new AbortController();
-  let timeout: ReturnType<typeof setTimeout> | undefined;
-  if (timeoutMs && timeoutMs > 0) {
-    timeout = setTimeout(() => controller.abort(), timeoutMs);
-    if (typeof timeout.unref === "function") {
-      timeout.unref();
-    }
-  }
-  return {
-    controller,
-    cleanup: () => {
-      if (timeout) {
-        clearTimeout(timeout);
-      }
-    },
-  };
-}
-
-async function fetchRelease(
-  endpoint: string,
-  options?: { timeoutMs?: number },
-): Promise<ReleaseInfo> {
-  const { controller, cleanup } = getTimer(options?.timeoutMs);
-  try {
-    const response = await fetch(`${API_ROOT}/${endpoint}`, {
-      headers: {
-        "User-Agent": "jenkins-cli",
-        Accept: "application/vnd.github+json",
-      },
-      signal: controller.signal,
-    });
-    if (!response.ok) {
-      throw new CliError(
-        `Failed to fetch release info (HTTP ${response.status}).`,
-        [
-          "Check your network connection.",
-          "GitHub API rate limits can also cause failures.",
-        ],
-      );
-    }
-    const payload = (await response.json()) as ReleaseInfo;
-    if (!payload.tag_name || !Array.isArray(payload.assets)) {
-      throw new CliError("Unexpected release payload from GitHub.");
-    }
-    return payload;
-  } finally {
-    cleanup();
-  }
+  return await fetchReleaseByTagFromGitHub(normalized, options);
 }
 
 export function resolveAssetUrl(release: ReleaseInfo): string {
@@ -268,20 +219,15 @@ export function resolveAssetUrl(release: ReleaseInfo): string {
 export async function downloadAndInstall(
   assetUrl: string,
   targetPath: string,
+  currentVersion: string,
 ): Promise<void> {
   const tempDir = await mkdtemp(path.join(os.tmpdir(), "jenkins-cli-"));
   const tempFile = path.join(tempDir, "jenkins-cli");
   try {
-    const response = await fetch(assetUrl, {
-      headers: {
-        "User-Agent": "jenkins-cli",
-      },
+    const response = await downloadReleaseAsset({
+      assetUrl,
+      currentVersion,
     });
-    if (!response.ok) {
-      throw new CliError(`Failed to download CLI (HTTP ${response.status}).`, [
-        "Check the release assets or try again later.",
-      ]);
-    }
     await Bun.write(tempFile, response);
     await chmod(tempFile, 0o755);
     try {
@@ -306,18 +252,18 @@ export async function downloadAndInstall(
 }
 
 function shouldSkipAutoUpdate(rawArgs: string[]): boolean {
-  const skipFlags = new Set([
-    "--help",
-    "-h",
-    "--version",
-    "-v",
-    "--non-interactive",
-    "--nonInteractive",
+  const skipFlags = new Set<string>([
+    CLI_FLAGS.HELP,
+    CLI_FLAGS.HELP_SHORT,
+    CLI_FLAGS.VERSION,
+    CLI_FLAGS.VERSION_SHORT,
+    CLI_FLAGS.NON_INTERACTIVE,
+    CLI_FLAGS.NON_INTERACTIVE_CAMEL,
   ]);
   if (rawArgs.some((arg) => skipFlags.has(arg))) {
     return true;
   }
-  return rawArgs.some((arg) => arg === "update" || arg === "upgrade");
+  return rawArgs.some((arg) => isUpdateCommandAlias(arg));
 }
 
 export function shouldPromptForDeferredUpdate(rawArgs: string[]): boolean {
@@ -355,7 +301,10 @@ async function runAutoUpdate(currentVersion: string): Promise<void> {
       }
     }
 
-    const release = await fetchLatestRelease({ timeoutMs: 800 });
+    const release = await fetchLatestRelease({
+      currentVersion,
+      timeoutMs: 800,
+    });
     const nowIso = new Date().toISOString();
     const nextState: UpdateState = {
       ...state,
@@ -377,7 +326,7 @@ async function runAutoUpdate(currentVersion: string): Promise<void> {
       return;
     }
     const updateCommand = getPreferredUpdateCommand();
-    const homebrewManaged = updateCommand === "brew upgrade jenkins-cli";
+    const homebrewManaged = updateCommand === UPDATE_COMMAND_BREW;
     if (homebrewManaged) {
       printHint(
         `New version available: ${release.tag_name}. Run \`${updateCommand}\`.`,
@@ -392,7 +341,7 @@ async function runAutoUpdate(currentVersion: string): Promise<void> {
       try {
         const assetUrl = resolveAssetUrl(release);
         const targetPath = resolveExecutablePath();
-        await downloadAndInstall(assetUrl, targetPath);
+        await downloadAndInstall(assetUrl, targetPath, currentVersion);
         printHint(`Auto-updated jenkins-cli to ${release.tag_name}.`);
         await writeUpdateState({
           ...clearPendingUpdateState(pendingState),

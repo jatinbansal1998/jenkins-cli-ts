@@ -1,9 +1,14 @@
-import { describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, mock, test } from "bun:test";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
 import path from "node:path";
 import { CliError } from "../src/cli";
+import { GITHUB_REPO_URL } from "../src/github-constants";
 import {
   clearPendingUpdateState,
   compareVersions,
+  downloadAndInstall,
+  fetchLatestRelease,
   getPreferredUpdateCommand,
   getDeferredUpdatePromptVersion,
   isHomebrewManagedPath,
@@ -12,6 +17,15 @@ import {
   resolveExecutablePath,
   withPendingUpdateState,
 } from "../src/update";
+
+const realFetch = globalThis.fetch;
+type FetchInput = Parameters<typeof fetch>[0];
+type FetchInit = Parameters<typeof fetch>[1];
+
+afterEach(() => {
+  globalThis.fetch = realFetch;
+  mock.restore();
+});
 
 describe("update version helpers", () => {
   test("normalizeVersionTag adds v prefix", () => {
@@ -191,3 +205,84 @@ describe("deferred update state helpers", () => {
     expect(pending).toBeNull();
   });
 });
+
+describe("GitHub headers", () => {
+  test("fetchLatestRelease sends a versioned user agent", async () => {
+    const fetchMock = mock(async (_input: FetchInput, _init?: FetchInit) => {
+      return new Response(
+        JSON.stringify({
+          tag_name: "v1.2.3",
+          assets: [],
+        }),
+        { status: 200 },
+      );
+    });
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+    await fetchLatestRelease({ currentVersion: "0.6.2" });
+
+    const requestInit = fetchMock.mock.calls[0]?.[1] as RequestInit | undefined;
+    expect(readHeader(requestInit, "User-Agent")).toBe(
+      `jenkins-cli/0.6.2 (+${GITHUB_REPO_URL}; platform=${process.platform}; arch=${process.arch})`,
+    );
+    expect(readHeader(requestInit, "Accept")).toBe(
+      "application/vnd.github+json",
+    );
+  });
+
+  test("downloadAndInstall sends a versioned user agent", async () => {
+    const tempDir = mkdtempSync(
+      path.join(tmpdir(), "jenkins-cli-update-test-"),
+    );
+    const targetPath = path.join(tempDir, "jenkins-cli");
+    const fetchMock = mock(
+      async (_input: FetchInput, _init?: FetchInit) =>
+        new Response("binary", { status: 200 }),
+    );
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+    try {
+      await downloadAndInstall(
+        "https://github.com/jatinbansal1998/jenkins-cli-ts/releases/download/v1.2.3/jenkins-cli",
+        targetPath,
+        "0.6.2",
+      );
+      expect(readFileSync(targetPath, "utf8")).toBe("binary");
+      const requestInit = fetchMock.mock.calls[0]?.[1] as
+        | RequestInit
+        | undefined;
+      expect(readHeader(requestInit, "User-Agent")).toBe(
+        `jenkins-cli/0.6.2 (+${GITHUB_REPO_URL}; platform=${process.platform}; arch=${process.arch})`,
+      );
+    } finally {
+      rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
+});
+
+function readHeader(
+  init: RequestInit | undefined,
+  name: string,
+): string | undefined {
+  const headers = init?.headers;
+  if (!headers) {
+    return undefined;
+  }
+  if (headers instanceof Headers) {
+    return headers.get(name) ?? undefined;
+  }
+  if (Array.isArray(headers)) {
+    const entries = headers as Array<[string, string]>;
+    const lower = name.toLowerCase();
+    const entry = entries.find(([key]) => key.toLowerCase() === lower);
+    return entry?.[1];
+  }
+  const objectHeaders = headers as Record<string, string | readonly string[]>;
+  const lower = name.toLowerCase();
+  for (const [key, value] of Object.entries(objectHeaders)) {
+    if (key.toLowerCase() === lower) {
+      return Array.isArray(value) ? value.join(", ") : String(value);
+    }
+  }
+  return undefined;
+}

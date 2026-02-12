@@ -10,7 +10,7 @@ import path from "node:path";
 import { CliError } from "./cli";
 import { MIN_SCORE, AMBIGUITY_GAP, MAX_OPTIONS, SCORES } from "./config/fuzzy";
 import type { EnvConfig } from "./env";
-import type { JenkinsClient } from "./jenkins/client";
+import type { JenkinsClient } from "./jenkins/api-wrapper";
 import type { JenkinsJob } from "./types/jenkins";
 
 /** Cached job data with metadata. */
@@ -170,7 +170,7 @@ async function fetchAndCacheJobs(
 async function readCacheFromPath(cachePath: string): Promise<JobCache | null> {
   try {
     const raw = await readFile(cachePath, "utf-8");
-    const parsed = JSON.parse(raw) as JobCache;
+    const parsed = JSON.parse(raw) as unknown;
     if (!isValidCache(parsed)) {
       return null;
     }
@@ -201,7 +201,10 @@ function buildCacheKey(jenkinsUrl: string): string {
   } catch {
     // URL is already validated earlier; fallback keeps cache path safe.
   }
-  const safeHost = host.replace(/[^a-z0-9.-]+/g, "-").replace(/^-+|-+$/g, "");
+  const safeHost = host
+    .replaceAll(/[^a-z0-9.-]+/g, "-")
+    .replaceAll(/^-+/g, "")
+    .replaceAll(/-+$/g, "");
   const digest = createHash("sha256")
     .update(normalized)
     .digest("hex")
@@ -209,15 +212,16 @@ function buildCacheKey(jenkinsUrl: string): string {
   return `${safeHost || "jenkins"}-${digest}`;
 }
 
-function isValidCache(cache: JobCache | null): cache is JobCache {
-  if (!cache) {
+function isValidCache(cache: unknown): cache is JobCache {
+  if (!cache || typeof cache !== "object" || Array.isArray(cache)) {
     return false;
   }
+  const record = cache as Record<string, unknown>;
   return !(
-    typeof cache.jenkinsUrl !== "string" ||
-    typeof cache.user !== "string" ||
-    typeof cache.fetchedAt !== "string" ||
-    !Array.isArray(cache.jobs)
+    typeof record.jenkinsUrl !== "string" ||
+    typeof record.user !== "string" ||
+    typeof record.fetchedAt !== "string" ||
+    !Array.isArray(record.jobs)
   );
 }
 
@@ -244,7 +248,7 @@ function mergeCachedBranches(
   });
 }
 
-function normalizeBranches(entries: string[]): string[] {
+function normalizeBranches(entries: unknown[]): string[] {
   const deduped = new Set<string>();
   const normalized: string[] = [];
   for (const entry of entries) {

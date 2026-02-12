@@ -1,7 +1,7 @@
 import { confirm, isCancel, select, text } from "@clack/prompts";
 import { CliError, printError, printHint } from "../cli";
 import type { EnvConfig } from "../env";
-import type { JenkinsClient } from "../jenkins/client";
+import type { JenkinsClient } from "../jenkins/api-wrapper";
 import type { JenkinsJob } from "../types/jenkins";
 import {
   getJobDisplayName,
@@ -104,11 +104,14 @@ async function resolveJobFromQuery(options: {
 
       const candidates = resolveJobCandidates(query, options.jobs);
       if (candidates.length === 1) {
+        // Length check guarantees an entry here; keep fallback for defensive flow.
         const first = candidates[0];
-        if (!first) {
-          throw new CliError("Unable to resolve selected job.");
+        if (first) {
+          return first;
         }
-        return first;
+        printError("Unable to resolve selected job.");
+        query = "";
+        continue;
       }
       const selected = await select({
         message: "Select a job",
@@ -123,9 +126,10 @@ async function resolveJobFromQuery(options: {
       }
       const match = candidates.find((candidate) => candidate.url === selected);
       if (!match) {
-        throw new CliError("Selected job is no longer available.", [
-          "Run `jenkins-cli list --refresh` to update the cache.",
-        ]);
+        printError("Selected job is no longer available.");
+        printHint("Run `jenkins-cli list --refresh` to update the cache.");
+        query = "";
+        continue;
       }
       return match;
     } catch (error) {
