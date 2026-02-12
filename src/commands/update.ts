@@ -8,6 +8,8 @@ import {
   downloadAndInstall,
   fetchLatestRelease,
   fetchReleaseByTag,
+  getPreferredUpdateCommand,
+  isHomebrewManagedPath,
   normalizeVersionTag,
   readUpdateState,
   resolveAssetUrl,
@@ -27,6 +29,9 @@ type UpdateOptions = {
 };
 
 export async function runUpdate(options: UpdateOptions): Promise<void> {
+  const preferredUpdateCommand = getPreferredUpdateCommand();
+  const homebrewManaged = preferredUpdateCommand === "brew upgrade jenkins-cli";
+
   if (options.enableAuto && options.disableAuto) {
     throw new CliError("Cannot use --enable-auto and --disable-auto together.");
   }
@@ -45,6 +50,13 @@ export async function runUpdate(options: UpdateOptions): Promise<void> {
     options.enableAutoInstall ||
     options.disableAutoInstall
   ) {
+    if (options.enableAutoInstall && homebrewManaged) {
+      throw new CliError(
+        "Auto-install is not supported for Homebrew-managed installs.",
+        ["Use `brew upgrade jenkins-cli` to apply updates."],
+      );
+    }
+
     const state = await readUpdateState();
     const nextState = { ...state };
 
@@ -90,7 +102,7 @@ export async function runUpdate(options: UpdateOptions): Promise<void> {
       );
     } else {
       printOk(`Latest version is ${latest.tag_name}.`);
-      printHint("Run `jenkins-cli update` to install it.");
+      printHint(`Run \`${preferredUpdateCommand}\` to install it.`);
       await writeUpdateState(
         withPendingUpdateState(
           {
@@ -127,6 +139,17 @@ export async function runUpdate(options: UpdateOptions): Promise<void> {
 
   const assetUrl = resolveAssetUrl(release);
   const targetPath = resolveExecutablePath();
+  if (isHomebrewManagedPath(targetPath)) {
+    throw new CliError(
+      "This jenkins-cli installation is managed by Homebrew.",
+      [
+        "Use `brew upgrade jenkins-cli` to update.",
+        requestedVersion
+          ? "Installing a specific tag is not supported via Homebrew installs."
+          : "Homebrew keeps the installed binary and metadata in sync.",
+      ],
+    );
+  }
   await downloadAndInstall(assetUrl, targetPath);
 
   await recordSuccessfulUpdate(release.tag_name);

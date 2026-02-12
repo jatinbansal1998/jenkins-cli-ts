@@ -8,7 +8,21 @@ for interactive use and automation with clear, parseable output.
 Installs `jenkins-cli` to your PATH (defaults to `$HOME/.bun/bin`). It will install
 Bun if it is missing.
 
-Homebrew (tap):
+Install (standalone script):
+
+```bash
+curl -fsSL http://jatinbansal.com/jenkins-cli/install/ | bash
+curl -fsSL https://raw.githubusercontent.com/jatinbansal1998/jenkins-cli-ts/main/install | bash
+```
+
+Optional overrides:
+
+```bash
+JENKINS_CLI_VERSION=vX.Y.Z curl -fsSL http://jatinbansal.com/jenkins-cli/install/ | bash
+JENKINS_CLI_INSTALL_DIR="$HOME/.local/bin" curl -fsSL http://jatinbansal.com/jenkins-cli/install/ | bash
+```
+
+Homebrew (tap, alternative):
 
 ```bash
 brew tap jatinbansal1998/tap
@@ -22,20 +36,6 @@ brew upgrade jenkins-cli
 ```
 
 Maintainers: see `docs/homebrew.md` for tap publishing steps.
-
-Install options:
-
-```bash
-curl -fsSL http://jatinbansal.com/jenkins-cli/install/ | bash
-curl -fsSL https://raw.githubusercontent.com/jatinbansal1998/jenkins-cli-ts/main/install | bash
-```
-
-Optional overrides:
-
-```bash
-JENKINS_CLI_VERSION=vX.Y.Z curl -fsSL http://jatinbansal.com/jenkins-cli/install/ | bash
-JENKINS_CLI_INSTALL_DIR="$HOME/.local/bin" curl -fsSL http://jatinbansal.com/jenkins-cli/install/ | bash
-```
 
 ## Setup
 
@@ -218,6 +218,14 @@ jenkins-cli rerun --job "api-prod"
 ```
 
 ## Update
+
+If installed with Homebrew, use:
+
+```bash
+brew upgrade jenkins-cli
+```
+
+`jenkins-cli update` is for standalone installs (for example via the install script).
 
 Update to the latest release (alias: `upgrade`):
 
