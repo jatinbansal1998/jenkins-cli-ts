@@ -74,6 +74,13 @@ jobs:
         run: |
           set -euo pipefail
 
+          package_version="$(bun -e "console.log(require('./package.json').version)")"
+          tag_version="${TAG_NAME#v}"
+          if [ "$package_version" != "$tag_version" ]; then
+            echo "::error::Tag ${TAG_NAME} does not match package.json version ${package_version}."
+            exit 1
+          fi
+
           sha256="$(shasum -a 256 dist/jenkins-cli | awk '{print $1}')"
           printf '%s  %s\n' "$sha256" "jenkins-cli" > dist/jenkins-cli.sha256
 
@@ -82,6 +89,7 @@ jobs:
             desc "Minimal Jenkins CLI for listing jobs, triggering builds, and checking status"
             homepage "https://github.com/jatinbansal1998/jenkins-cli-ts"
             url "https://github.com/jatinbansal1998/jenkins-cli-ts/releases/download/${TAG_NAME}/jenkins-cli"
+            version "${package_version}"
             sha256 "${sha256}"
 
             depends_on "oven-sh/bun/bun"
