@@ -75,8 +75,6 @@ jobs:
           set -euo pipefail
 
           sha256="$(shasum -a 256 dist/jenkins-cli | awk '{print $1}')"
-          version="${TAG_NAME#v}"
-
           printf '%s  %s\n' "$sha256" "jenkins-cli" > dist/jenkins-cli.sha256
 
           cat > dist/homebrew-jenkins-cli.rb <<EOF
@@ -84,10 +82,9 @@ jobs:
             desc "Minimal Jenkins CLI for listing jobs, triggering builds, and checking status"
             homepage "https://github.com/jatinbansal1998/jenkins-cli-ts"
             url "https://github.com/jatinbansal1998/jenkins-cli-ts/releases/download/${TAG_NAME}/jenkins-cli"
-            version "${version}"
             sha256 "${sha256}"
 
-            depends_on "bun"
+            depends_on "oven-sh/bun/bun"
 
             def install
               bin.install "jenkins-cli"
