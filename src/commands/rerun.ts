@@ -1,7 +1,7 @@
 import { CliError, printOk } from "../cli";
 import { recordBranchSelection } from "../branches";
 import type { EnvConfig } from "../env";
-import type { JenkinsClient } from "../jenkins/client";
+import type { JenkinsClient } from "../jenkins/api-wrapper";
 import { recordRecentJob } from "../recent-jobs";
 import { resolveJobTarget } from "./ops-helpers";
 

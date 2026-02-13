@@ -2,6 +2,7 @@
  * Update command implementation.
  */
 import { CliError, printHint, printOk } from "../cli";
+import { UPDATE_COMMAND_BREW } from "../cli-constants";
 import {
   clearPendingUpdateState,
   compareVersions,
@@ -30,7 +31,7 @@ type UpdateOptions = {
 
 export async function runUpdate(options: UpdateOptions): Promise<void> {
   const preferredUpdateCommand = getPreferredUpdateCommand();
-  const homebrewManaged = preferredUpdateCommand === "brew upgrade jenkins-cli";
+  const homebrewManaged = preferredUpdateCommand === UPDATE_COMMAND_BREW;
 
   if (options.enableAuto && options.disableAuto) {
     throw new CliError("Cannot use --enable-auto and --disable-auto together.");
@@ -53,7 +54,7 @@ export async function runUpdate(options: UpdateOptions): Promise<void> {
     if (options.enableAutoInstall && homebrewManaged) {
       throw new CliError(
         "Auto-install is not supported for Homebrew-managed installs.",
-        ["Use `brew upgrade jenkins-cli` to apply updates."],
+        [`Use \`${UPDATE_COMMAND_BREW}\` to apply updates.`],
       );
     }
 
@@ -89,7 +90,9 @@ export async function runUpdate(options: UpdateOptions): Promise<void> {
     const state = await readUpdateState();
     const autoUpdateEnabled = state.autoUpdate !== false;
     const autoInstallEnabled = state.autoInstall === true;
-    const latest = await fetchLatestRelease();
+    const latest = await fetchLatestRelease({
+      currentVersion: options.currentVersion,
+    });
     const nowIso = new Date().toISOString();
     const comparison = compareVersions(latest.tag_name, options.currentVersion);
     if (comparison !== null && comparison <= 0) {
@@ -123,8 +126,12 @@ export async function runUpdate(options: UpdateOptions): Promise<void> {
 
   const requestedVersion = options.tag?.trim();
   const release = requestedVersion
-    ? await fetchReleaseByTag(normalizeVersionTag(requestedVersion))
-    : await fetchLatestRelease();
+    ? await fetchReleaseByTag(normalizeVersionTag(requestedVersion), {
+        currentVersion: options.currentVersion,
+      })
+    : await fetchLatestRelease({
+        currentVersion: options.currentVersion,
+      });
 
   if (!requestedVersion) {
     const comparison = compareVersions(
@@ -143,14 +150,14 @@ export async function runUpdate(options: UpdateOptions): Promise<void> {
     throw new CliError(
       "This jenkins-cli installation is managed by Homebrew.",
       [
-        "Use `brew upgrade jenkins-cli` to update.",
+        `Use \`${UPDATE_COMMAND_BREW}\` to update.`,
         requestedVersion
           ? "Installing a specific tag is not supported via Homebrew installs."
           : "Homebrew keeps the installed binary and metadata in sync.",
       ],
     );
   }
-  await downloadAndInstall(assetUrl, targetPath);
+  await downloadAndInstall(assetUrl, targetPath, options.currentVersion);
 
   await recordSuccessfulUpdate(release.tag_name);
   printOk(`Updated jenkins-cli to ${release.tag_name}.`);

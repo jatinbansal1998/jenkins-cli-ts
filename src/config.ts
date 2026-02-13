@@ -3,6 +3,7 @@ import { chmod, mkdir, readFile, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { CliError } from "./cli";
+import { ENV_KEYS } from "./env-keys";
 
 export const CONFIG_DIR = path.join(os.homedir(), ".config", "jenkins-cli");
 export const CONFIG_FILE = path.join(CONFIG_DIR, "jenkins-cli-config.json");
@@ -237,7 +238,9 @@ function parseConfigContents(
           profiles,
           defaultProfile: undefined,
         });
-  const debug = parseBooleanLike(record.debug ?? record.JENKINS_DEBUG);
+  const debug = parseBooleanLike(
+    record.debug ?? record[ENV_KEYS.JENKINS_DEBUG],
+  );
 
   return {
     config: {
@@ -302,16 +305,16 @@ function parseProfileRecord(
     return undefined;
   }
   const record = rawProfile as Record<string, unknown>;
-  const jenkinsUrl = pickString(record, ["jenkinsUrl", "JENKINS_URL"]);
+  const jenkinsUrl = pickString(record, ["jenkinsUrl", ENV_KEYS.JENKINS_URL]);
   const jenkinsUser = pickString(record, [
     "jenkinsUser",
     "accountName",
-    "JENKINS_USER",
+    ENV_KEYS.JENKINS_USER,
   ]);
   const jenkinsApiToken = pickString(record, [
     "jenkinsApiToken",
     "apiToken",
-    "JENKINS_API_TOKEN",
+    ENV_KEYS.JENKINS_API_TOKEN,
   ]);
   if (!jenkinsUrl || !jenkinsUser || !jenkinsApiToken) {
     return undefined;
@@ -320,12 +323,12 @@ function parseProfileRecord(
   const branchParam = pickString(record, [
     "branchParam",
     "jenkinsBranchParam",
-    "JENKINS_BRANCH_PARAM",
+    ENV_KEYS.JENKINS_BRANCH_PARAM,
   ]);
   const useCrumb = firstBoolean(record, [
     "useCrumb",
     "jenkinsUseCrumb",
-    "JENKINS_USE_CRUMB",
+    ENV_KEYS.JENKINS_USE_CRUMB,
   ]);
 
   return {

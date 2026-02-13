@@ -10,6 +10,7 @@ import {
   readConfigSync,
   writeConfigFile,
 } from "../config";
+import { ENV_KEYS } from "../env-keys";
 import { normalizeUrl } from "../env";
 
 type LoginOptions = {
@@ -63,11 +64,15 @@ export async function runLogin(options: LoginOptions): Promise<void> {
   }
   console.log("");
   console.log("To set env vars in your current shell, run:");
-  console.log(`  export JENKINS_URL=${shellEscape(normalizedUrl)}`);
-  console.log(`  export JENKINS_USER=${shellEscape(user)}`);
-  console.log(`  export JENKINS_API_TOKEN=${shellEscape(apiToken)}`);
+  console.log(`  export ${ENV_KEYS.JENKINS_URL}=${shellEscape(normalizedUrl)}`);
+  console.log(`  export ${ENV_KEYS.JENKINS_USER}=${shellEscape(user)}`);
+  console.log(
+    `  export ${ENV_KEYS.JENKINS_API_TOKEN}=${shellEscape(apiToken)}`,
+  );
   if (branchParam !== DEFAULT_BRANCH_PARAM) {
-    console.log(`  export JENKINS_BRANCH_PARAM=${shellEscape(branchParam)}`);
+    console.log(
+      `  export ${ENV_KEYS.JENKINS_BRANCH_PARAM}=${shellEscape(branchParam)}`,
+    );
   }
   console.log("");
   console.log(
@@ -209,7 +214,7 @@ function getBranchParamDefault(
     profiles: Record<string, { branchParam?: string }>;
   },
 ): string {
-  const envValue = process.env.JENKINS_BRANCH_PARAM?.trim();
+  const envValue = process.env[ENV_KEYS.JENKINS_BRANCH_PARAM]?.trim();
   if (envValue) {
     return envValue;
   }

@@ -1,6 +1,6 @@
 import { CliError, printOk } from "../cli";
 import type { EnvConfig } from "../env";
-import type { JenkinsClient } from "../jenkins/client";
+import type { JenkinsClient } from "../jenkins/api-wrapper";
 import {
   ensureValidUrl,
   parseOptionalDurationMs,
