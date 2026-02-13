@@ -45,8 +45,8 @@ const scriptName = getScriptName();
 
 async function main(): Promise<void> {
   const rawArgs = hideBin(process.argv);
-  await enforceMinimumVersionFromCache({ currentVersion: VERSION, rawArgs });
   kickOffMinimumVersionRefresh({ currentVersion: VERSION });
+  await enforceMinimumVersionFromCache({ currentVersion: VERSION, rawArgs });
   await promptForDeferredUpdate(VERSION, rawArgs);
   kickOffAutoUpdate(VERSION, rawArgs);
 

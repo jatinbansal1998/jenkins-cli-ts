@@ -3,6 +3,7 @@ import { CLI_FLAGS, isUpdateCommandAlias } from "./cli-constants";
 import { runUpdate } from "./commands/update";
 import { GITHUB_VERSION_POLICY_URL } from "./github-constants";
 import { fetchVersionPolicy } from "./github/api-wrapper";
+import parser from "yargs-parser";
 import {
   compareVersions,
   getPreferredUpdateCommand,
@@ -158,7 +159,11 @@ function parseMinimumVersionPolicy(
 }
 
 function isUpdateCommand(rawArgs: string[]): boolean {
-  return rawArgs.some((arg) => isUpdateCommandAlias(arg));
+  const parsed = parser(rawArgs);
+  const command = parsed._.find(
+    (value): value is string => typeof value === "string",
+  );
+  return typeof command === "string" && isUpdateCommandAlias(command);
 }
 
 function isInteractive(rawArgs: string[]): boolean {

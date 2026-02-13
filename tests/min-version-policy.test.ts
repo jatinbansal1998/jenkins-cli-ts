@@ -117,6 +117,34 @@ describe("minimum version policy", () => {
     expect(runUpdateMock).not.toHaveBeenCalled();
   });
 
+  test("option value named update does not bypass gate", async () => {
+    const { enforceMinimumVersionFromCache } =
+      await import("../src/min-version-policy");
+    updateState = { minAllowedVersion: "v9.9.9" };
+
+    await expect(
+      enforceMinimumVersionFromCache({
+        currentVersion: "0.6.2",
+        rawArgs: ["list", "--profile", "update", "--non-interactive"],
+      }),
+    ).rejects.toBeInstanceOf(CliError);
+    expect(runUpdateMock).not.toHaveBeenCalled();
+  });
+
+  test("global options before update command still bypass gate", async () => {
+    const { enforceMinimumVersionFromCache } =
+      await import("../src/min-version-policy");
+    updateState = { minAllowedVersion: "v9.9.9" };
+
+    await expect(
+      enforceMinimumVersionFromCache({
+        currentVersion: "0.6.2",
+        rawArgs: ["--profile", "default", "update"],
+      }),
+    ).resolves.toBeUndefined();
+    expect(runUpdateMock).not.toHaveBeenCalled();
+  });
+
   test("refresh skips network call when cached policy is still fresh", async () => {
     const { kickOffMinimumVersionRefresh } =
       await import("../src/min-version-policy");
