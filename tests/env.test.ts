@@ -48,6 +48,7 @@ function runLoadEnv(params: {
       JENKINS_URL: "https://jenkins.example.com",
       JENKINS_USER: "user",
       JENKINS_API_TOKEN: "token",
+      JENKINS_USE_CRUMB: undefined,
       ...params.env,
       TEST_LOAD_ENV_OPTIONS: params.options
         ? JSON.stringify(params.options)
