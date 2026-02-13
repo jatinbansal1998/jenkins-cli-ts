@@ -1,0 +1,29 @@
+{
+  "jenkinsUrl": "https://jenkins.example.com",
+  "user": "ci-user",
+  "fetchedAt": "2026-02-12T00:00:00.000Z",
+  "jobs": [
+    {
+      "name": "api-staging",
+      "fullName": "platform/api-staging",
+      "url": "https://jenkins.example.com/job/api-staging/",
+      "branches": ["main", "release/2026.02"]
+    },
+    {
+      "name": "api-prod",
+      "fullName": "platform/api-prod",
+      "url": "https://jenkins.example.com/job/api-prod/",
+      "branches": ["main", "release/2026.02"]
+    },
+    {
+      "name": "worker-staging",
+      "fullName": "platform/worker-staging",
+      "url": "https://jenkins.example.com/job/worker-staging/",
+      "branches": ["main", "release/2026.02", "feature/mock-e2e"]
+    }
+  ],
+  "recentJobs": [
+    "https://jenkins.example.com/job/api-staging/",
+    "https://jenkins.example.com/job/worker-staging/"
+  ]
+}

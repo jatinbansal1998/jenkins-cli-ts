@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, mock, test } from "bun:test";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import fs from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { CliError } from "../src/cli";
@@ -231,7 +231,7 @@ describe("GitHub headers", () => {
   });
 
   test("downloadAndInstall sends a versioned user agent", async () => {
-    const tempDir = mkdtempSync(
+    const tempDir = fs.mkdtempSync(
       path.join(tmpdir(), "jenkins-cli-update-test-"),
     );
     const targetPath = path.join(tempDir, "jenkins-cli");
@@ -247,7 +247,7 @@ describe("GitHub headers", () => {
         targetPath,
         "0.6.2",
       );
-      expect(readFileSync(targetPath, "utf8")).toBe("binary");
+      expect(fs.readFileSync(targetPath, "utf8")).toBe("binary");
       const requestInit = fetchMock.mock.calls[0]?.[1] as
         | RequestInit
         | undefined;
@@ -255,7 +255,7 @@ describe("GitHub headers", () => {
         `jenkins-cli/0.6.2 (+${GITHUB_REPO_URL}; platform=${process.platform}; arch=${process.arch})`,
       );
     } finally {
-      rmSync(tempDir, { recursive: true, force: true });
+      fs.rmSync(tempDir, { recursive: true, force: true });
     }
   });
 });

@@ -1,17 +1,11 @@
 import { describe, expect, test } from "bun:test";
-import {
-  mkdtempSync,
-  mkdirSync,
-  readFileSync,
-  rmSync,
-  writeFileSync,
-} from "node:fs";
+import fs from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 describe("cli default command", () => {
   test("defaults to list flow when no command is provided", () => {
-    const tempHome = mkdtempSync(join(tmpdir(), "jenkins-cli-home-"));
+    const tempHome = fs.mkdtempSync(join(tmpdir(), "jenkins-cli-home-"));
 
     try {
       const result = Bun.spawnSync({
@@ -36,18 +30,18 @@ describe("cli default command", () => {
       expect(output).toContain("Job cache is missing.");
       expect(output).not.toContain("Missing command. Use --help to see usage.");
     } finally {
-      rmSync(tempHome, { recursive: true, force: true });
+      fs.rmSync(tempHome, { recursive: true, force: true });
     }
   });
 
   test("migrates legacy config during normal command execution", () => {
-    const tempHome = mkdtempSync(join(tmpdir(), "jenkins-cli-home-"));
+    const tempHome = fs.mkdtempSync(join(tmpdir(), "jenkins-cli-home-"));
     const configDir = join(tempHome, ".config", "jenkins-cli");
     const configPath = join(configDir, "jenkins-cli-config.json");
 
     try {
-      mkdirSync(configDir, { recursive: true });
-      writeFileSync(
+      fs.mkdirSync(configDir, { recursive: true });
+      fs.writeFileSync(
         configPath,
         JSON.stringify(
           {
@@ -80,7 +74,9 @@ describe("cli default command", () => {
       expect(result.exitCode).toBe(1);
       expect(output).toContain("Job cache is missing.");
 
-      const migratedConfig = JSON.parse(readFileSync(configPath, "utf8")) as {
+      const migratedConfig = JSON.parse(
+        fs.readFileSync(configPath, "utf8"),
+      ) as {
         version?: number;
         defaultProfile?: string;
         profiles?: Record<string, unknown>;
@@ -89,18 +85,18 @@ describe("cli default command", () => {
       expect(migratedConfig.defaultProfile).toBe("default");
       expect(migratedConfig.profiles?.default).toBeDefined();
     } finally {
-      rmSync(tempHome, { recursive: true, force: true });
+      fs.rmSync(tempHome, { recursive: true, force: true });
     }
   });
 
   test("does not fallback to legacy global cache file", () => {
-    const tempHome = mkdtempSync(join(tmpdir(), "jenkins-cli-home-"));
+    const tempHome = fs.mkdtempSync(join(tmpdir(), "jenkins-cli-home-"));
     const cacheDir = join(tempHome, "Library", "Caches", "jenkins-cli");
     const legacyCachePath = join(cacheDir, "jobs.json");
 
     try {
-      mkdirSync(cacheDir, { recursive: true });
-      writeFileSync(
+      fs.mkdirSync(cacheDir, { recursive: true });
+      fs.writeFileSync(
         legacyCachePath,
         JSON.stringify(
           {
@@ -141,18 +137,18 @@ describe("cli default command", () => {
       expect(output).toContain("Job cache is missing.");
       expect(output).not.toContain("api-prod");
     } finally {
-      rmSync(tempHome, { recursive: true, force: true });
+      fs.rmSync(tempHome, { recursive: true, force: true });
     }
   });
 
   test("fails fast in non-interactive mode when cached minimum version is higher", () => {
-    const tempHome = mkdtempSync(join(tmpdir(), "jenkins-cli-home-"));
+    const tempHome = fs.mkdtempSync(join(tmpdir(), "jenkins-cli-home-"));
     const configDir = join(tempHome, ".config", "jenkins-cli");
     const updateStatePath = join(configDir, "update-state.json");
 
     try {
-      mkdirSync(configDir, { recursive: true });
-      writeFileSync(
+      fs.mkdirSync(configDir, { recursive: true });
+      fs.writeFileSync(
         updateStatePath,
         JSON.stringify({
           minAllowedVersion: "v9.9.9",
@@ -185,12 +181,12 @@ describe("cli default command", () => {
       expect(output).toContain("Minimum required version: v9.9.9.");
       expect(output).toContain("Run `jenkins-cli update` to update.");
     } finally {
-      rmSync(tempHome, { recursive: true, force: true });
+      fs.rmSync(tempHome, { recursive: true, force: true });
     }
   });
 
   test("startup remains non-blocking when min-version cache is missing", () => {
-    const tempHome = mkdtempSync(join(tmpdir(), "jenkins-cli-home-"));
+    const tempHome = fs.mkdtempSync(join(tmpdir(), "jenkins-cli-home-"));
 
     try {
       const result = Bun.spawnSync({
@@ -215,7 +211,7 @@ describe("cli default command", () => {
       expect(output).toContain("Job cache is missing.");
       expect(output).not.toContain("Minimum required version:");
     } finally {
-      rmSync(tempHome, { recursive: true, force: true });
+      fs.rmSync(tempHome, { recursive: true, force: true });
     }
   });
 });

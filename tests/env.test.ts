@@ -1,72 +1,83 @@
-import { afterAll, beforeEach, describe, expect, mock, test } from "bun:test";
+import { describe, expect, test } from "bun:test";
+import fs from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
-const existsSyncMock = mock(() => false);
-const readFileSyncMock = mock(() => "{}");
-const mkdirSyncMock = mock(() => undefined);
-const writeFileSyncMock = mock(() => undefined);
-const chmodSyncMock = mock(() => undefined);
-
-mock.module("node:fs", () => ({
-  default: {
-    existsSync: existsSyncMock,
-    readFileSync: readFileSyncMock,
-    mkdirSync: mkdirSyncMock,
-    writeFileSync: writeFileSyncMock,
-    chmodSync: chmodSyncMock,
-  },
-}));
-
-const { loadEnv } = await import("../src/env");
-
-const originalEnv = {
-  JENKINS_URL: process.env.JENKINS_URL,
-  JENKINS_USER: process.env.JENKINS_USER,
-  JENKINS_API_TOKEN: process.env.JENKINS_API_TOKEN,
-  JENKINS_BRANCH_PARAM: process.env.JENKINS_BRANCH_PARAM,
-  JENKINS_USE_CRUMB: process.env.JENKINS_USE_CRUMB,
+type LoadEnvResult = {
+  ok: boolean;
+  env?: {
+    jenkinsUrl: string;
+    jenkinsUser: string;
+    jenkinsApiToken: string;
+    profileName?: string;
+    branchParamDefault: string;
+    useCrumb: boolean;
+  };
+  message?: string;
 };
 
-function setRequiredEnv(): void {
-  process.env.JENKINS_URL = "https://jenkins.example.com";
-  process.env.JENKINS_USER = "user";
-  process.env.JENKINS_API_TOKEN = "token";
+const FIXTURE_PATH = join(process.cwd(), "tests", "helpers.load-env.ts");
+
+function withTempHome(run: (homeDir: string) => void): void {
+  const homeDir = fs.mkdtempSync(join(tmpdir(), "jenkins-cli-env-"));
+  try {
+    run(homeDir);
+  } finally {
+    fs.rmSync(homeDir, { recursive: true, force: true });
+  }
 }
 
-beforeEach(() => {
-  existsSyncMock.mockReset();
-  existsSyncMock.mockReturnValue(false);
-  readFileSyncMock.mockReset();
-  readFileSyncMock.mockReturnValue("{}");
-  mkdirSyncMock.mockReset();
-  mkdirSyncMock.mockImplementation(() => undefined);
-  writeFileSyncMock.mockReset();
-  writeFileSyncMock.mockImplementation(() => undefined);
-  chmodSyncMock.mockReset();
-  chmodSyncMock.mockImplementation(() => undefined);
+function writeConfig(homeDir: string, config: unknown): void {
+  const configDir = join(homeDir, ".config", "jenkins-cli");
+  const configPath = join(configDir, "jenkins-cli-config.json");
+  fs.mkdirSync(configDir, { recursive: true });
+  fs.writeFileSync(configPath, JSON.stringify(config, null, 2));
+}
 
-  setRequiredEnv();
-  delete process.env.JENKINS_BRANCH_PARAM;
-  delete process.env.JENKINS_USE_CRUMB;
-});
+function runLoadEnv(params: {
+  homeDir: string;
+  env?: Record<string, string | undefined>;
+  options?: { profile?: string };
+}): { exitCode: number; payload: LoadEnvResult } {
+  const result = Bun.spawnSync({
+    cmd: ["bun", "run", FIXTURE_PATH],
+    cwd: process.cwd(),
+    env: {
+      ...process.env,
+      HOME: params.homeDir,
+      JENKINS_URL: "https://jenkins.example.com",
+      JENKINS_USER: "user",
+      JENKINS_API_TOKEN: "token",
+      JENKINS_USE_CRUMB: undefined,
+      ...params.env,
+      TEST_LOAD_ENV_OPTIONS: params.options
+        ? JSON.stringify(params.options)
+        : undefined,
+    },
+    stdout: "pipe",
+    stderr: "pipe",
+  });
 
-afterAll(() => {
-  process.env.JENKINS_URL = originalEnv.JENKINS_URL;
-  process.env.JENKINS_USER = originalEnv.JENKINS_USER;
-  process.env.JENKINS_API_TOKEN = originalEnv.JENKINS_API_TOKEN;
-  process.env.JENKINS_BRANCH_PARAM = originalEnv.JENKINS_BRANCH_PARAM;
-  process.env.JENKINS_USE_CRUMB = originalEnv.JENKINS_USE_CRUMB;
-});
+  const output = new TextDecoder().decode(result.stdout).trim();
+  return {
+    exitCode: result.exitCode,
+    payload: JSON.parse(output) as LoadEnvResult,
+  };
+}
 
 describe("loadEnv useCrumb parsing", () => {
   test("defaults useCrumb to false", () => {
-    const env = loadEnv();
-    expect(env.useCrumb).toBeFalse();
+    withTempHome((homeDir) => {
+      const result = runLoadEnv({ homeDir });
+      expect(result.exitCode).toBe(0);
+      expect(result.payload.ok).toBeTrue();
+      expect(result.payload.env?.useCrumb).toBeFalse();
+    });
   });
 
   test("reads useCrumb=true from config", () => {
-    existsSyncMock.mockReturnValue(true);
-    readFileSyncMock.mockReturnValue(
-      JSON.stringify({
+    withTempHome((homeDir) => {
+      writeConfig(homeDir, {
         defaultProfile: "default",
         profiles: {
           default: {
@@ -76,33 +87,42 @@ describe("loadEnv useCrumb parsing", () => {
             useCrumb: true,
           },
         },
-      }),
-    );
+      });
 
-    const env = loadEnv();
-    expect(env.useCrumb).toBeTrue();
+      const result = runLoadEnv({ homeDir });
+      expect(result.exitCode).toBe(0);
+      expect(result.payload.env?.useCrumb).toBeTrue();
+    });
   });
 
   test("reads JENKINS_USE_CRUMB boolean value from config", () => {
-    existsSyncMock.mockReturnValue(true);
-    readFileSyncMock.mockReturnValue(
-      JSON.stringify({
+    withTempHome((homeDir) => {
+      writeConfig(homeDir, {
         JENKINS_URL: "https://legacy-jenkins.example.com",
         JENKINS_USER: "legacy-user",
         JENKINS_API_TOKEN: "legacy-token",
         JENKINS_USE_CRUMB: true,
-      }),
-    );
+      });
 
-    const env = loadEnv();
-    expect(env.useCrumb).toBeTrue();
-    expect(writeFileSyncMock).toHaveBeenCalledTimes(1);
+      const result = runLoadEnv({ homeDir });
+      expect(result.exitCode).toBe(0);
+      expect(result.payload.env?.useCrumb).toBeTrue();
+
+      const migrated = JSON.parse(
+        fs.readFileSync(
+          join(homeDir, ".config", "jenkins-cli", "jenkins-cli-config.json"),
+          "utf8",
+        ),
+      ) as {
+        version?: number;
+      };
+      expect(migrated.version).toBe(2);
+    });
   });
 
   test("env value overrides config value", () => {
-    existsSyncMock.mockReturnValue(true);
-    readFileSyncMock.mockReturnValue(
-      JSON.stringify({
+    withTempHome((homeDir) => {
+      writeConfig(homeDir, {
         defaultProfile: "default",
         profiles: {
           default: {
@@ -112,32 +132,45 @@ describe("loadEnv useCrumb parsing", () => {
             useCrumb: false,
           },
         },
-      }),
-    );
-    process.env.JENKINS_USE_CRUMB = "true";
+      });
 
-    const env = loadEnv();
-    expect(env.useCrumb).toBeTrue();
+      const result = runLoadEnv({
+        homeDir,
+        env: { JENKINS_USE_CRUMB: "true" },
+      });
+      expect(result.exitCode).toBe(0);
+      expect(result.payload.env?.useCrumb).toBeTrue();
+    });
   });
 
   test("parses env string variants", () => {
-    const truthy = ["true", "TRUE"];
-    const falsy = ["false", "FALSE", "1", "0", "random-value", ""];
+    withTempHome((homeDir) => {
+      const truthy = ["true", "TRUE"];
+      const falsy = ["false", "FALSE", "1", "0", "random-value", ""];
 
-    for (const value of truthy) {
-      process.env.JENKINS_USE_CRUMB = value;
-      expect(loadEnv().useCrumb).toBeTrue();
-    }
-    for (const value of falsy) {
-      process.env.JENKINS_USE_CRUMB = value;
-      expect(loadEnv().useCrumb).toBeFalse();
-    }
+      for (const value of truthy) {
+        const result = runLoadEnv({
+          homeDir,
+          env: { JENKINS_USE_CRUMB: value },
+        });
+        expect(result.exitCode).toBe(0);
+        expect(result.payload.env?.useCrumb).toBeTrue();
+      }
+
+      for (const value of falsy) {
+        const result = runLoadEnv({
+          homeDir,
+          env: { JENKINS_USE_CRUMB: value },
+        });
+        expect(result.exitCode).toBe(0);
+        expect(result.payload.env?.useCrumb).toBeFalse();
+      }
+    });
   });
 
   test("uses default profile and ignores env credentials", () => {
-    existsSyncMock.mockReturnValue(true);
-    readFileSyncMock.mockReturnValue(
-      JSON.stringify({
+    withTempHome((homeDir) => {
+      writeConfig(homeDir, {
         defaultProfile: "work",
         profiles: {
           work: {
@@ -146,24 +179,30 @@ describe("loadEnv useCrumb parsing", () => {
             jenkinsApiToken: "work-token",
           },
         },
-      }),
-    );
+      });
 
-    process.env.JENKINS_URL = "https://env-jenkins.example.com";
-    process.env.JENKINS_USER = "env-user";
-    process.env.JENKINS_API_TOKEN = "env-token";
+      const result = runLoadEnv({
+        homeDir,
+        env: {
+          JENKINS_URL: "https://env-jenkins.example.com",
+          JENKINS_USER: "env-user",
+          JENKINS_API_TOKEN: "env-token",
+        },
+      });
 
-    const env = loadEnv();
-    expect(env.jenkinsUrl).toBe("https://work-jenkins.example.com");
-    expect(env.jenkinsUser).toBe("work-user");
-    expect(env.jenkinsApiToken).toBe("work-token");
-    expect(env.profileName).toBe("work");
+      expect(result.exitCode).toBe(0);
+      expect(result.payload.env?.jenkinsUrl).toBe(
+        "https://work-jenkins.example.com",
+      );
+      expect(result.payload.env?.jenkinsUser).toBe("work-user");
+      expect(result.payload.env?.jenkinsApiToken).toBe("work-token");
+      expect(result.payload.env?.profileName).toBe("work");
+    });
   });
 
   test("uses explicit profile and ignores env credentials", () => {
-    existsSyncMock.mockReturnValue(true);
-    readFileSyncMock.mockReturnValue(
-      JSON.stringify({
+    withTempHome((homeDir) => {
+      writeConfig(homeDir, {
         defaultProfile: "work",
         profiles: {
           work: {
@@ -177,17 +216,25 @@ describe("loadEnv useCrumb parsing", () => {
             jenkinsApiToken: "prod-token",
           },
         },
-      }),
-    );
+      });
 
-    process.env.JENKINS_URL = "https://env-jenkins.example.com";
-    process.env.JENKINS_USER = "env-user";
-    process.env.JENKINS_API_TOKEN = "env-token";
+      const result = runLoadEnv({
+        homeDir,
+        options: { profile: "prod" },
+        env: {
+          JENKINS_URL: "https://env-jenkins.example.com",
+          JENKINS_USER: "env-user",
+          JENKINS_API_TOKEN: "env-token",
+        },
+      });
 
-    const env = loadEnv({ profile: "prod" });
-    expect(env.jenkinsUrl).toBe("https://prod-jenkins.example.com");
-    expect(env.jenkinsUser).toBe("prod-user");
-    expect(env.jenkinsApiToken).toBe("prod-token");
-    expect(env.profileName).toBe("prod");
+      expect(result.exitCode).toBe(0);
+      expect(result.payload.env?.jenkinsUrl).toBe(
+        "https://prod-jenkins.example.com",
+      );
+      expect(result.payload.env?.jenkinsUser).toBe("prod-user");
+      expect(result.payload.env?.jenkinsApiToken).toBe("prod-token");
+      expect(result.payload.env?.profileName).toBe("prod");
+    });
   });
 });
