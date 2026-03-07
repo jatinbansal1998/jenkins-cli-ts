@@ -52,7 +52,7 @@ describe("minimum version policy", () => {
 
     await expect(
       enforceMinimumVersionFromCache({
-        currentVersion: "0.6.2",
+        currentVersion: "0.7.0",
         rawArgs: ["list"],
       }),
     ).resolves.toBeUndefined();
@@ -66,7 +66,7 @@ describe("minimum version policy", () => {
 
     await expect(
       enforceMinimumVersionFromCache({
-        currentVersion: "0.6.2",
+        currentVersion: "0.7.0",
         rawArgs: ["list"],
       }),
     ).resolves.toBeUndefined();
@@ -82,7 +82,7 @@ describe("minimum version policy", () => {
 
     await expect(
       enforceMinimumVersionFromCache({
-        currentVersion: "0.6.2",
+        currentVersion: "0.7.0",
         rawArgs: ["list"],
       }),
     ).resolves.toBeUndefined();
@@ -96,7 +96,7 @@ describe("minimum version policy", () => {
 
     await expect(
       enforceMinimumVersionFromCache({
-        currentVersion: "0.6.2",
+        currentVersion: "0.7.0",
         rawArgs: ["list", "--non-interactive"],
       }),
     ).rejects.toBeInstanceOf(CliError);
@@ -110,7 +110,7 @@ describe("minimum version policy", () => {
 
     await expect(
       enforceMinimumVersionFromCache({
-        currentVersion: "0.6.2",
+        currentVersion: "0.7.0",
         rawArgs: ["update"],
       }),
     ).resolves.toBeUndefined();
@@ -124,7 +124,7 @@ describe("minimum version policy", () => {
 
     await expect(
       enforceMinimumVersionFromCache({
-        currentVersion: "0.6.2",
+        currentVersion: "0.7.0",
         rawArgs: ["list", "--profile", "update", "--non-interactive"],
       }),
     ).rejects.toBeInstanceOf(CliError);
@@ -138,7 +138,7 @@ describe("minimum version policy", () => {
 
     await expect(
       enforceMinimumVersionFromCache({
-        currentVersion: "0.6.2",
+        currentVersion: "0.7.0",
         rawArgs: ["--profile", "default", "update"],
       }),
     ).resolves.toBeUndefined();
@@ -149,13 +149,13 @@ describe("minimum version policy", () => {
     const { kickOffMinimumVersionRefresh } =
       await import("../src/min-version-policy");
     updateState = {
-      minAllowedVersion: "v0.6.2",
+      minAllowedVersion: "v0.7.0",
       minAllowedFetchedAt: new Date().toISOString(),
     };
     const fetchMock = mock(async () => new Response("{}", { status: 200 }));
     globalThis.fetch = fetchMock as unknown as typeof fetch;
 
-    kickOffMinimumVersionRefresh({ currentVersion: "0.6.2" });
+    kickOffMinimumVersionRefresh({ currentVersion: "0.7.0" });
     await flushBackgroundTasks();
 
     expect(fetchMock).not.toHaveBeenCalled();
@@ -166,7 +166,7 @@ describe("minimum version policy", () => {
     const { kickOffMinimumVersionRefresh } =
       await import("../src/min-version-policy");
     updateState = {
-      minAllowedVersion: "v0.6.2",
+      minAllowedVersion: "v0.7.0",
       minAllowedFetchedAt: new Date(
         Date.now() - 2 * 60 * 60 * 1000,
       ).toISOString(),
@@ -184,7 +184,7 @@ describe("minimum version policy", () => {
     );
     globalThis.fetch = fetchMock as unknown as typeof fetch;
 
-    kickOffMinimumVersionRefresh({ currentVersion: "0.6.2" });
+    kickOffMinimumVersionRefresh({ currentVersion: "0.7.0" });
     await flushBackgroundTasks();
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
@@ -208,7 +208,7 @@ describe("minimum version policy", () => {
     const fetchMock = mock(async () => new Response("{}", { status: 500 }));
     globalThis.fetch = fetchMock as unknown as typeof fetch;
 
-    kickOffMinimumVersionRefresh({ currentVersion: "0.6.2" });
+    kickOffMinimumVersionRefresh({ currentVersion: "0.7.0" });
     await flushBackgroundTasks();
 
     expect(fetchMock).toHaveBeenCalledTimes(1);

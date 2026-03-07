@@ -1,3 +1,4 @@
+import { markAnalyticsPollingCommand } from "../analytics";
 import { CliError, printOk } from "../cli";
 import type { EnvConfig } from "../env";
 import type { JenkinsClient } from "../jenkins/api-wrapper";
@@ -6,6 +7,8 @@ import {
   parseOptionalDurationMs,
   resolveJobTarget,
 } from "./ops-helpers";
+
+export const DEFAULT_LOG_POLL_MS = 1_000;
 
 type LogsOptions = {
   client: JenkinsClient;
@@ -33,10 +36,17 @@ export async function runLogs(options: LogsOptions): Promise<void> {
   }
 
   const follow = options.follow !== false;
-  const pollMs = parseOptionalDurationMs(options.poll, 2_000, "poll");
+  if (follow) {
+    markAnalyticsPollingCommand();
+  }
+  const pollMs = parseOptionalDurationMs(
+    options.poll,
+    DEFAULT_LOG_POLL_MS,
+    "poll",
+  );
   if (pollMs <= 0) {
     throw new CliError("Invalid --poll value.", [
-      "Use an interval greater than 0ms (e.g. --poll 2s).",
+      "Use an interval greater than 0ms (e.g. --poll 1s).",
     ]);
   }
 
@@ -111,17 +121,19 @@ async function streamLogs(options: {
   buildUrl: string;
   follow: boolean;
   pollMs: number;
-}): Promise<void> {
+}): Promise<number> {
   let start = 0;
+  let streamedBytes = 0;
 
   while (true) {
     const chunk = await options.client.getConsoleChunk(options.buildUrl, start);
     if (chunk.text) {
       process.stdout.write(chunk.text);
+      streamedBytes += Buffer.byteLength(chunk.text);
     }
     start = chunk.nextStart;
     if (!options.follow) {
-      return;
+      return streamedBytes;
     }
 
     if (chunk.hasMore) {
@@ -131,7 +143,7 @@ async function streamLogs(options: {
 
     const status = await options.client.getBuildStatus(options.buildUrl);
     if (!status.building) {
-      return;
+      return streamedBytes;
     }
     await Bun.sleep(options.pollMs);
   }

@@ -1,4 +1,5 @@
 import { spinner } from "@clack/prompts";
+import { markAnalyticsPollingCommand } from "../analytics";
 import { CliError, printError, printHint, printOk } from "../cli";
 import type { EnvConfig } from "../env";
 import type { JenkinsClient } from "../jenkins/api-wrapper";
@@ -15,6 +16,8 @@ import {
   resolveJobTarget,
 } from "./ops-helpers";
 import { waitForPollIntervalOrCancel } from "./watch-utils";
+
+export const DEFAULT_WAIT_INTERVAL_MS = 5_000;
 
 type WaitOptions = {
   client: JenkinsClient;
@@ -35,14 +38,18 @@ type WaitResult = {
   buildUrl?: string;
   cancelled?: boolean;
   timedOut?: boolean;
+  durationMs?: number;
+  queueTimeMs?: number;
+  hadStageInfo?: boolean;
 };
 
 export async function runWait(options: WaitOptions): Promise<WaitResult> {
   validateWaitOptions(options);
+  markAnalyticsPollingCommand();
 
   const intervalMs = parseOptionalDurationMs(
     options.interval,
-    10_000,
+    DEFAULT_WAIT_INTERVAL_MS,
     "interval",
   );
   const timeoutMs = options.timeout
@@ -55,7 +62,7 @@ export async function runWait(options: WaitOptions): Promise<WaitResult> {
   }
   if (intervalMs <= 0) {
     throw new CliError("Invalid --interval value.", [
-      "Use an interval greater than 0ms (e.g. --interval 10s).",
+      "Use an interval greater than 0ms (e.g. --interval 5s).",
     ]);
   }
 
@@ -188,6 +195,11 @@ export async function waitForBuild(options: {
           result: initialStatus.result || "UNKNOWN",
           buildNumber: initialStatus.lastBuildNumber,
           buildUrl: finalBuildUrl,
+          durationMs: initialStatus.lastBuildDurationMs,
+          queueTimeMs: initialStatus.queueTimeMs,
+          hadStageInfo: Boolean(
+            initialStatus.stage?.name || initialStatus.stage?.status,
+          ),
         };
       }
       if (initialStatus.building && initialStatus.lastBuildNumber) {
@@ -288,6 +300,9 @@ export async function waitForBuild(options: {
             result: currentResult,
             buildNumber: status.buildNumber ?? buildNumber,
             buildUrl: finalBuildUrl,
+            durationMs: status.durationMs,
+            queueTimeMs: status.queueTimeMs,
+            hadStageInfo: Boolean(status.stage?.name || status.stage?.status),
           };
         }
       } else if (options.jobUrl) {
@@ -333,6 +348,9 @@ export async function waitForBuild(options: {
               result: currentResult,
               buildNumber: currentNumber,
               buildUrl: finalBuildUrl,
+              durationMs: status.lastBuildDurationMs,
+              queueTimeMs: status.queueTimeMs,
+              hadStageInfo: Boolean(status.stage?.name || status.stage?.status),
             };
           }
         } else {

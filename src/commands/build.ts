@@ -3,6 +3,7 @@
  * Triggers a Jenkins build for a specified job with branch parameter support.
  */
 import { confirm, isCancel, select, spinner, text } from "@clack/prompts";
+import { markAnalyticsPollingCommand } from "../analytics";
 import {
   CliError,
   getScriptName,
@@ -746,6 +747,7 @@ async function watchBuildStatus(options: {
   baselineBuildNumber?: number;
 }): Promise<{ result: string; buildNumber?: number; cancelled?: boolean }> {
   const pollIntervalMs = 30_000;
+  markAnalyticsPollingCommand();
   const useSpinner = Boolean(process.stdout.isTTY);
   const statusSpinner = useSpinner ? spinner() : null;
   const cancelSignal = createWatchCancelSignal();

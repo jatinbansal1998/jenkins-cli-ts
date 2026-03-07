@@ -71,6 +71,7 @@ export async function runStatus(options: StatusOptions): Promise<void> {
 
   while (true) {
     let targets: { jobUrl: string; jobLabel: string }[] = [];
+    let selectionMode = jobUrl ? "job_url" : "job";
 
     if (jobUrl) {
       ensureValidUrl(jobUrl, "job-url");
@@ -95,6 +96,7 @@ export async function runStatus(options: StatusOptions): Promise<void> {
       });
 
       if (selection.kind === "recent") {
+        selectionMode = "recent";
         targets = selection.jobs.map((recentJob) => {
           const selectedJob = loadedJobs.find(
             (job) => job.url === recentJob.jobUrl,
@@ -119,6 +121,7 @@ export async function runStatus(options: StatusOptions): Promise<void> {
             jobUrl: job.url,
             jobLabel: getJobDisplayName(job),
           }));
+          selectionMode = targets.length > 1 ? "multi_select" : "job";
         } catch (err) {
           if (
             err instanceof BackToRecentMenuError &&

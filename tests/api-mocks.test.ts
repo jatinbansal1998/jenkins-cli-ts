@@ -39,13 +39,13 @@ describe("shared API mocks", () => {
     const mocks = await installApiMocks();
     restoreFetch = mocks.restore;
 
-    const release = await fetchLatestRelease({ currentVersion: "0.6.2" });
+    const release = await fetchLatestRelease({ currentVersion: "0.7.0" });
     expect(release.tag_name).toBe("v9.9.9");
     expect(release.assets[0]?.name).toBe("jenkins-cli");
 
-    const policy = await fetchVersionPolicy({ currentVersion: "0.6.2" });
+    const policy = await fetchVersionPolicy({ currentVersion: "0.7.0" });
     expect(policy).toEqual({
-      minVersion: "0.6.0",
+      minVersion: "0.7.0",
       message: "Mocked policy for tests.",
       updatedAt: "2026-02-12T00:00:00.000Z",
     });

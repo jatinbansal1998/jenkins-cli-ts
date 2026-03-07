@@ -55,7 +55,8 @@ Config file:
       "useCrumb": false
     }
   },
-  "debug": false
+  "debug": false,
+  "analyticsDisabled": false
 }
 ```
 
@@ -88,6 +89,20 @@ Environment variable fallback (single account only):
 - `JENKINS_USER`
 - `JENKINS_API_TOKEN`
 - Optional: `JENKINS_USE_CRUMB` (`true` to enable; default: disabled)
+
+Analytics:
+
+- Analytics is enabled by default using the bundled PostHog project token.
+- Default analytics host is the managed reverse proxy: `https://t.jatinbansal.com`
+- Optional: `JENKINS_POSTHOG_API_KEY` to override the bundled PostHog project token
+- Optional: `JENKINS_POSTHOG_HOST` to override the PostHog host
+- Optional: `JENKINS_ANALYTICS_DISABLED=true` to opt out entirely
+- Optional config: set `"analyticsDisabled": true` in `~/.config/jenkins-cli/jenkins-cli-config.json`
+
+Privacy guardrails:
+
+- Analytics never sends Jenkins usernames, API tokens, Jenkins URLs, job names, job URLs, build URLs, queue URLs, branch names, raw search text, build parameter names or values, or log output.
+- Analytics only sends anonymous install ID, CLI version, command names, interactivity/TTY flags, high-level outcomes, exact command durations in milliseconds, and coarse Jenkins API health counts.
 
 ## Usage
 
@@ -191,7 +206,7 @@ jenkins-cli status --job "api-prod" --watch
 Wait for a build to finish:
 
 ```bash
-jenkins-cli wait --job "api-prod" --timeout 30m --interval 10s
+jenkins-cli wait --job "api-prod" --timeout 30m --interval 5s
 jenkins-cli wait --build-url "https://jenkins.example.com/job/api-prod/184/"
 jenkins-cli wait --queue-url "https://jenkins.example.com/queue/item/123/"
 ```
@@ -200,6 +215,7 @@ Stream logs:
 
 ```bash
 jenkins-cli logs --job "api-prod" --follow
+jenkins-cli logs --job "api-prod" --follow --poll 1s
 jenkins-cli logs --build-url "https://jenkins.example.com/job/api-prod/184/" --no-follow
 ```
 

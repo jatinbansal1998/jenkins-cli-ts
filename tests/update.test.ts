@@ -104,7 +104,7 @@ describe("update helpers", () => {
   test("isHomebrewManagedPath detects Homebrew cellar path", () => {
     expect(
       isHomebrewManagedPath(
-        "/opt/homebrew/Cellar/jenkins-cli/0.6.0/bin/jenkins-cli",
+        "/opt/homebrew/Cellar/jenkins-cli/0.7.0/bin/jenkins-cli",
       ),
     ).toBeTrue();
   });
@@ -117,7 +117,7 @@ describe("update helpers", () => {
 
   test("getPreferredUpdateCommand returns brew command for cellar install", () => {
     const prevArgv = process.argv[1];
-    process.argv[1] = "/usr/local/Cellar/jenkins-cli/0.6.0/bin/jenkins-cli";
+    process.argv[1] = "/usr/local/Cellar/jenkins-cli/0.7.0/bin/jenkins-cli";
     try {
       expect(getPreferredUpdateCommand()).toBe("brew upgrade jenkins-cli");
     } finally {
@@ -219,11 +219,11 @@ describe("GitHub headers", () => {
     });
     globalThis.fetch = fetchMock as unknown as typeof fetch;
 
-    await fetchLatestRelease({ currentVersion: "0.6.2" });
+    await fetchLatestRelease({ currentVersion: "0.7.0" });
 
     const requestInit = fetchMock.mock.calls[0]?.[1] as RequestInit | undefined;
     expect(readHeader(requestInit, "User-Agent")).toBe(
-      `jenkins-cli/0.6.2 (+${GITHUB_REPO_URL}; platform=${process.platform}; arch=${process.arch})`,
+      `jenkins-cli/0.7.0 (+${GITHUB_REPO_URL}; platform=${process.platform}; arch=${process.arch})`,
     );
     expect(readHeader(requestInit, "Accept")).toBe(
       "application/vnd.github+json",
@@ -245,14 +245,14 @@ describe("GitHub headers", () => {
       await downloadAndInstall(
         "https://github.com/jatinbansal1998/jenkins-cli-ts/releases/download/v1.2.3/jenkins-cli",
         targetPath,
-        "0.6.2",
+        "0.7.0",
       );
       expect(fs.readFileSync(targetPath, "utf8")).toBe("binary");
       const requestInit = fetchMock.mock.calls[0]?.[1] as
         | RequestInit
         | undefined;
       expect(readHeader(requestInit, "User-Agent")).toBe(
-        `jenkins-cli/0.6.2 (+${GITHUB_REPO_URL}; platform=${process.platform}; arch=${process.arch})`,
+        `jenkins-cli/0.7.0 (+${GITHUB_REPO_URL}; platform=${process.platform}; arch=${process.arch})`,
       );
     } finally {
       fs.rmSync(tempDir, { recursive: true, force: true });

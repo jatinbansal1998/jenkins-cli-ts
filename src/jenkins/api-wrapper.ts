@@ -4,6 +4,7 @@
  * listing jobs, fetching status, and triggering builds.
  */
 import { CliError } from "../cli";
+import { recordJenkinsApiCall, recordJenkinsApiFailure } from "../analytics";
 import { ENV_KEYS } from "../env-keys";
 import {
   logApiRequest,
@@ -266,6 +267,11 @@ export class JenkinsClient {
       "fetch build logs",
     );
     if (!response.ok) {
+      recordJenkinsApiFailure({
+        operation: "fetch_build_logs",
+        errorType: "http_error",
+        httpStatus: response.status,
+      });
       await this.raiseHttpError(response, "fetch build logs");
     }
 
@@ -334,6 +340,12 @@ export class JenkinsClient {
     });
 
     if (!response.ok) {
+      recordJenkinsApiFailure({
+        operation: "trigger_build",
+        errorType: "http_error",
+        httpStatus: response.status,
+        retryAttempted: this.useCrumb && response.status === 403,
+      });
       await this.raiseHttpError(response, "trigger build");
     }
 
@@ -357,6 +369,12 @@ export class JenkinsClient {
   ): Promise<void> {
     const response = await this.sendPostWithCrumbRetry({ url, context, body });
     if (!response.ok) {
+      recordJenkinsApiFailure({
+        operation: toAnalyticsOperation(context),
+        errorType: "http_error",
+        httpStatus: response.status,
+        retryAttempted: this.useCrumb && response.status === 403,
+      });
       await this.raiseHttpError(response, context);
     }
   }
@@ -436,6 +454,11 @@ export class JenkinsClient {
       if (response.status === 404 || response.status === 403) {
         return null;
       }
+      recordJenkinsApiFailure({
+        operation: "fetch_crumb",
+        errorType: "http_error",
+        httpStatus: response.status,
+      });
       await this.raiseHttpError(response, "fetch crumb");
     }
 
@@ -458,12 +481,21 @@ export class JenkinsClient {
     );
 
     if (!response.ok) {
+      recordJenkinsApiFailure({
+        operation: toAnalyticsOperation(context),
+        errorType: "http_error",
+        httpStatus: response.status,
+      });
       await this.raiseHttpError(response, context);
     }
 
     try {
       return (await response.json()) as T;
     } catch {
+      recordJenkinsApiFailure({
+        operation: toAnalyticsOperation(context),
+        errorType: "invalid_json",
+      });
       throw new CliError(`Invalid JSON response while trying to ${context}.`, [
         "Try again, or verify your Jenkins server is healthy.",
       ]);
@@ -482,9 +514,11 @@ export class JenkinsClient {
     options: RequestInit,
     retriesLeft: number,
     context: string,
+    attemptedRetry = false,
   ): Promise<Response> {
     const method = options.method ?? "GET";
     const requestBody = this.serializeRequestBody(options.body);
+    recordJenkinsApiCall();
     logApiRequest(method, url, options.headers, requestBody);
 
     const controller = new AbortController();
@@ -515,11 +549,22 @@ export class JenkinsClient {
       return response;
     } catch (error) {
       if (retriesLeft > 0) {
-        return this.fetchWithTimeout(url, options, retriesLeft - 1, context);
+        return this.fetchWithTimeout(
+          url,
+          options,
+          retriesLeft - 1,
+          context,
+          true,
+        );
       }
 
       if (error instanceof Error && error.name === "AbortError") {
         logNetworkError(method, url, "TIMEOUT");
+        recordJenkinsApiFailure({
+          operation: toAnalyticsOperation(context),
+          errorType: "timeout",
+          retryAttempted: attemptedRetry,
+        });
         throw new CliError(`Request timed out while trying to ${context}.`, [
           `Check your network and that ${this.baseUrl} is reachable.`,
         ]);
@@ -527,6 +572,11 @@ export class JenkinsClient {
 
       const errorMsg = error instanceof Error ? error.message : "Unknown error";
       logNetworkError(method, url, errorMsg);
+      recordJenkinsApiFailure({
+        operation: toAnalyticsOperation(context),
+        errorType: "network_error",
+        retryAttempted: attemptedRetry,
+      });
       throw new CliError(`Network error while trying to ${context}.`, [
         `Check your network and that ${this.baseUrl} is reachable.`,
       ]);
@@ -727,6 +777,10 @@ export class JenkinsClient {
       return null;
     }
   }
+}
+
+function toAnalyticsOperation(context: string): string {
+  return context.trim().replaceAll(/\s+/g, "_");
 }
 
 function extractBuildParameters(

@@ -49,7 +49,8 @@ export async function runList(options: ListOptions): Promise<void> {
 
   if (options.nonInteractive) {
     const search = options.search?.trim() ?? "";
-    printJobs(getFilteredJobs(jobs, search), search);
+    const filteredJobs = getFilteredJobs(jobs, search);
+    printJobs(filteredJobs, search);
     return;
   }
 

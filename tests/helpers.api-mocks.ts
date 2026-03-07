@@ -56,7 +56,7 @@ export async function installApiMocks(
   const versionPolicy =
     options.versionPolicy ??
     ({
-      minVersion: "0.6.0",
+      minVersion: "0.7.0",
       message: "Mocked policy for tests.",
       updatedAt: "2026-02-12T00:00:00.000Z",
     } as const);

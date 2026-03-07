@@ -6,12 +6,13 @@
 import yargs from "yargs/yargs";
 import { hideBin } from "yargs/helpers";
 import { confirm, isCancel } from "@clack/prompts";
+import { runWithAnalytics, updateAnalyticsContext } from "./analytics";
 import { CliError, getScriptName, handleCliError, printHint } from "./cli";
 import { runBuild } from "./commands/build";
 import { runCancel } from "./commands/cancel";
 import { runLogin } from "./commands/login";
 import { runList } from "./commands/list";
-import { runLogs } from "./commands/logs";
+import { DEFAULT_LOG_POLL_MS, runLogs } from "./commands/logs";
 import {
   runProfileDelete,
   runProfileList,
@@ -20,7 +21,7 @@ import {
 import { runRerun } from "./commands/rerun";
 import { runStatus } from "./commands/status";
 import { runUpdate } from "./commands/update";
-import { runWait } from "./commands/wait";
+import { DEFAULT_WAIT_INTERVAL_MS, runWait } from "./commands/wait";
 import { loadEnv, getDebugDefault } from "./env";
 import { ENV_KEYS } from "./env-keys";
 import { JenkinsClient } from "./jenkins/api-wrapper";
@@ -120,19 +121,24 @@ async function main(): Promise<void> {
             describe: "Profile name to create or update",
           }),
       async (argv) => {
-        await runLogin({
-          url: typeof argv.url === "string" ? argv.url : undefined,
-          user: typeof argv.user === "string" ? argv.user : undefined,
-          apiToken:
-            typeof argv.token === "string"
-              ? argv.token
-              : typeof argv.apiToken === "string"
-                ? argv.apiToken
+        await runTrackedCommand("login", argv, async () => {
+          await runLogin({
+            url: typeof argv.url === "string" ? argv.url : undefined,
+            user: typeof argv.user === "string" ? argv.user : undefined,
+            apiToken:
+              typeof argv.token === "string"
+                ? argv.token
+                : typeof argv.apiToken === "string"
+                  ? argv.apiToken
+                  : undefined,
+            branchParam:
+              typeof argv.branchParam === "string"
+                ? argv.branchParam
                 : undefined,
-          branchParam:
-            typeof argv.branchParam === "string" ? argv.branchParam : undefined,
-          profile: typeof argv.profile === "string" ? argv.profile : undefined,
-          nonInteractive: Boolean(argv.nonInteractive),
+            profile:
+              typeof argv.profile === "string" ? argv.profile : undefined,
+            nonInteractive: Boolean(argv.nonInteractive),
+          });
         });
       },
     )
@@ -151,13 +157,15 @@ async function main(): Promise<void> {
             describe: "Refresh the job cache from Jenkins",
           }),
       async (argv) => {
-        const { env, client } = createContext(argv);
-        await runList({
-          client,
-          env,
-          search: typeof argv.search === "string" ? argv.search : undefined,
-          refresh: Boolean(argv.refresh),
-          nonInteractive: Boolean(argv.nonInteractive),
+        await runTrackedCommand("list", argv, async () => {
+          const { env, client } = createContext(argv);
+          await runList({
+            client,
+            env,
+            search: typeof argv.search === "string" ? argv.search : undefined,
+            refresh: Boolean(argv.refresh),
+            nonInteractive: Boolean(argv.nonInteractive),
+          });
         });
       },
     )
@@ -176,13 +184,15 @@ async function main(): Promise<void> {
             describe: "Refresh the job cache from Jenkins",
           }),
       async (argv) => {
-        const { env, client } = createContext(argv);
-        await runList({
-          client,
-          env,
-          search: typeof argv.search === "string" ? argv.search : undefined,
-          refresh: Boolean(argv.refresh),
-          nonInteractive: Boolean(argv.nonInteractive),
+        await runTrackedCommand("list", argv, async () => {
+          const { env, client } = createContext(argv);
+          await runList({
+            client,
+            env,
+            search: typeof argv.search === "string" ? argv.search : undefined,
+            refresh: Boolean(argv.refresh),
+            nonInteractive: Boolean(argv.nonInteractive),
+          });
         });
       },
     )
@@ -229,37 +239,39 @@ async function main(): Promise<void> {
             describe: "Watch build status until completion",
           }),
       async (argv) => {
-        const { env, client } = createContext(argv);
-        const rawArgs = hideBin(process.argv);
-        const branchParamExplicitlyPassed = rawArgs.some(
-          (arg) =>
-            arg === "--branch-param" ||
-            arg.startsWith("--branch-param=") ||
-            arg === "--branchParam" ||
-            arg.startsWith("--branchParam="),
-        );
-        const watchExplicitlyPassed = rawArgs.some(
-          (arg) =>
-            arg === "--watch" ||
-            arg === "--no-watch" ||
-            arg.startsWith("--watch=") ||
-            arg.startsWith("--no-watch="),
-        );
-        await runBuild({
-          client,
-          env,
-          job: typeof argv.job === "string" ? argv.job : undefined,
-          jobUrl: typeof argv.jobUrl === "string" ? argv.jobUrl : undefined,
-          branch: typeof argv.branch === "string" ? argv.branch : undefined,
-          customParams: parseBuildCustomParams(argv.param),
-          branchParam: branchParamExplicitlyPassed
-            ? argv.branchParam
-            : env.branchParamDefault,
-          defaultBranch:
-            Boolean(argv.nonInteractive) &&
-            (Boolean(argv.withoutParams) || Boolean(argv.defaultBranch)),
-          nonInteractive: Boolean(argv.nonInteractive),
-          watch: watchExplicitlyPassed ? Boolean(argv.watch) : undefined,
+        await runTrackedCommand("build", argv, async () => {
+          const { env, client } = createContext(argv);
+          const rawArgs = hideBin(process.argv);
+          const branchParamExplicitlyPassed = rawArgs.some(
+            (arg) =>
+              arg === "--branch-param" ||
+              arg.startsWith("--branch-param=") ||
+              arg === "--branchParam" ||
+              arg.startsWith("--branchParam="),
+          );
+          const watchExplicitlyPassed = rawArgs.some(
+            (arg) =>
+              arg === "--watch" ||
+              arg === "--no-watch" ||
+              arg.startsWith("--watch=") ||
+              arg.startsWith("--no-watch="),
+          );
+          await runBuild({
+            client,
+            env,
+            job: typeof argv.job === "string" ? argv.job : undefined,
+            jobUrl: typeof argv.jobUrl === "string" ? argv.jobUrl : undefined,
+            branch: typeof argv.branch === "string" ? argv.branch : undefined,
+            customParams: parseBuildCustomParams(argv.param),
+            branchParam: branchParamExplicitlyPassed
+              ? argv.branchParam
+              : env.branchParamDefault,
+            defaultBranch:
+              Boolean(argv.nonInteractive) &&
+              (Boolean(argv.withoutParams) || Boolean(argv.defaultBranch)),
+            nonInteractive: Boolean(argv.nonInteractive),
+            watch: watchExplicitlyPassed ? Boolean(argv.watch) : undefined,
+          });
         });
       },
     )
@@ -282,22 +294,24 @@ async function main(): Promise<void> {
             describe: "Watch latest build status until completion",
           }),
       async (argv) => {
-        const { env, client } = createContext(argv);
-        const rawArgs = hideBin(process.argv);
-        const watchExplicitlyPassed = rawArgs.some(
-          (arg) =>
-            arg === "--watch" ||
-            arg === "--no-watch" ||
-            arg.startsWith("--watch=") ||
-            arg.startsWith("--no-watch="),
-        );
-        await runStatus({
-          client,
-          env,
-          job: typeof argv.job === "string" ? argv.job : undefined,
-          jobUrl: typeof argv.jobUrl === "string" ? argv.jobUrl : undefined,
-          nonInteractive: Boolean(argv.nonInteractive),
-          watch: watchExplicitlyPassed ? Boolean(argv.watch) : undefined,
+        await runTrackedCommand("status", argv, async () => {
+          const { env, client } = createContext(argv);
+          const rawArgs = hideBin(process.argv);
+          const watchExplicitlyPassed = rawArgs.some(
+            (arg) =>
+              arg === "--watch" ||
+              arg === "--no-watch" ||
+              arg.startsWith("--watch=") ||
+              arg.startsWith("--no-watch="),
+          );
+          await runStatus({
+            client,
+            env,
+            job: typeof argv.job === "string" ? argv.job : undefined,
+            jobUrl: typeof argv.jobUrl === "string" ? argv.jobUrl : undefined,
+            nonInteractive: Boolean(argv.nonInteractive),
+            watch: watchExplicitlyPassed ? Boolean(argv.watch) : undefined,
+          });
         });
       },
     )
@@ -324,27 +338,30 @@ async function main(): Promise<void> {
           })
           .option("interval", {
             type: "string",
-            describe: "Polling interval (e.g. 10s, 1m)",
+            describe: `Polling interval (e.g. ${DEFAULT_WAIT_INTERVAL_MS / 1000}s, 1m)`,
           })
           .option("timeout", {
             type: "string",
             describe: "Timeout (e.g. 30m, 2h)",
           }),
       async (argv) => {
-        const { env, client } = createContext(argv);
-        await runWait({
-          client,
-          env,
-          job: typeof argv.job === "string" ? argv.job : undefined,
-          jobUrl: typeof argv.jobUrl === "string" ? argv.jobUrl : undefined,
-          buildUrl:
-            typeof argv.buildUrl === "string" ? argv.buildUrl : undefined,
-          queueUrl:
-            typeof argv.queueUrl === "string" ? argv.queueUrl : undefined,
-          interval:
-            typeof argv.interval === "string" ? argv.interval : undefined,
-          timeout: typeof argv.timeout === "string" ? argv.timeout : undefined,
-          nonInteractive: Boolean(argv.nonInteractive),
+        await runTrackedCommand("wait", argv, async () => {
+          const { env, client } = createContext(argv);
+          await runWait({
+            client,
+            env,
+            job: typeof argv.job === "string" ? argv.job : undefined,
+            jobUrl: typeof argv.jobUrl === "string" ? argv.jobUrl : undefined,
+            buildUrl:
+              typeof argv.buildUrl === "string" ? argv.buildUrl : undefined,
+            queueUrl:
+              typeof argv.queueUrl === "string" ? argv.queueUrl : undefined,
+            interval:
+              typeof argv.interval === "string" ? argv.interval : undefined,
+            timeout:
+              typeof argv.timeout === "string" ? argv.timeout : undefined,
+            nonInteractive: Boolean(argv.nonInteractive),
+          });
         });
       },
     )
@@ -376,22 +393,24 @@ async function main(): Promise<void> {
           })
           .option("poll", {
             type: "string",
-            describe: "Polling interval when following (e.g. 2s)",
+            describe: `Polling interval when following (e.g. ${DEFAULT_LOG_POLL_MS / 1000}s)`,
           }),
       async (argv) => {
-        const { env, client } = createContext(argv);
-        await runLogs({
-          client,
-          env,
-          job: typeof argv.job === "string" ? argv.job : undefined,
-          jobUrl: typeof argv.jobUrl === "string" ? argv.jobUrl : undefined,
-          buildUrl:
-            typeof argv.buildUrl === "string" ? argv.buildUrl : undefined,
-          queueUrl:
-            typeof argv.queueUrl === "string" ? argv.queueUrl : undefined,
-          follow: Boolean(argv.follow),
-          poll: typeof argv.poll === "string" ? argv.poll : undefined,
-          nonInteractive: Boolean(argv.nonInteractive),
+        await runTrackedCommand("logs", argv, async () => {
+          const { env, client } = createContext(argv);
+          await runLogs({
+            client,
+            env,
+            job: typeof argv.job === "string" ? argv.job : undefined,
+            jobUrl: typeof argv.jobUrl === "string" ? argv.jobUrl : undefined,
+            buildUrl:
+              typeof argv.buildUrl === "string" ? argv.buildUrl : undefined,
+            queueUrl:
+              typeof argv.queueUrl === "string" ? argv.queueUrl : undefined,
+            follow: Boolean(argv.follow),
+            poll: typeof argv.poll === "string" ? argv.poll : undefined,
+            nonInteractive: Boolean(argv.nonInteractive),
+          });
         });
       },
     )
@@ -417,17 +436,19 @@ async function main(): Promise<void> {
             describe: "Full Jenkins queue item URL",
           }),
       async (argv) => {
-        const { env, client } = createContext(argv);
-        await runCancel({
-          client,
-          env,
-          job: typeof argv.job === "string" ? argv.job : undefined,
-          jobUrl: typeof argv.jobUrl === "string" ? argv.jobUrl : undefined,
-          buildUrl:
-            typeof argv.buildUrl === "string" ? argv.buildUrl : undefined,
-          queueUrl:
-            typeof argv.queueUrl === "string" ? argv.queueUrl : undefined,
-          nonInteractive: Boolean(argv.nonInteractive),
+        await runTrackedCommand("cancel", argv, async () => {
+          const { env, client } = createContext(argv);
+          await runCancel({
+            client,
+            env,
+            job: typeof argv.job === "string" ? argv.job : undefined,
+            jobUrl: typeof argv.jobUrl === "string" ? argv.jobUrl : undefined,
+            buildUrl:
+              typeof argv.buildUrl === "string" ? argv.buildUrl : undefined,
+            queueUrl:
+              typeof argv.queueUrl === "string" ? argv.queueUrl : undefined,
+            nonInteractive: Boolean(argv.nonInteractive),
+          });
         });
       },
     )
@@ -445,13 +466,15 @@ async function main(): Promise<void> {
             describe: "Full Jenkins job URL",
           }),
       async (argv) => {
-        const { env, client } = createContext(argv);
-        await runRerun({
-          client,
-          env,
-          job: typeof argv.job === "string" ? argv.job : undefined,
-          jobUrl: typeof argv.jobUrl === "string" ? argv.jobUrl : undefined,
-          nonInteractive: Boolean(argv.nonInteractive),
+        await runTrackedCommand("rerun", argv, async () => {
+          const { env, client } = createContext(argv);
+          await runRerun({
+            client,
+            env,
+            job: typeof argv.job === "string" ? argv.job : undefined,
+            jobUrl: typeof argv.jobUrl === "string" ? argv.jobUrl : undefined,
+            nonInteractive: Boolean(argv.nonInteractive),
+          });
         });
       },
     )
@@ -472,35 +495,42 @@ async function main(): Promise<void> {
       async (argv) => {
         const action = typeof argv.action === "string" ? argv.action : "";
         const name = typeof argv.name === "string" ? argv.name : undefined;
-        switch (action) {
-          case "list":
-            await runProfileList();
-            return;
-          case "use":
-            if (!name) {
-              throw new CliError("Missing required <name> for profile use.", [
-                "Run `jenkins-cli profile use <name>`.",
-              ]);
+        await runTrackedCommand(
+          `profile:${action || "unknown"}`,
+          argv,
+          async () => {
+            switch (action) {
+              case "list":
+                await runProfileList();
+                return;
+              case "use":
+                if (!name) {
+                  throw new CliError(
+                    "Missing required <name> for profile use.",
+                    ["Run `jenkins-cli profile use <name>`."],
+                  );
+                }
+                await runProfileUse({ name });
+                return;
+              case "delete":
+                if (!name) {
+                  throw new CliError(
+                    "Missing required <name> for profile delete.",
+                    ["Run `jenkins-cli profile delete <name>`."],
+                  );
+                }
+                await runProfileDelete({
+                  name,
+                  nonInteractive: Boolean(argv.nonInteractive),
+                });
+                return;
+              default:
+                throw new CliError("Unknown profile action.", [
+                  "Use one of: list, use, delete.",
+                ]);
             }
-            await runProfileUse({ name });
-            return;
-          case "delete":
-            if (!name) {
-              throw new CliError(
-                "Missing required <name> for profile delete.",
-                ["Run `jenkins-cli profile delete <name>`."],
-              );
-            }
-            await runProfileDelete({
-              name,
-              nonInteractive: Boolean(argv.nonInteractive),
-            });
-            return;
-          default:
-            throw new CliError("Unknown profile action.", [
-              "Use one of: list, use, delete.",
-            ]);
-        }
+          },
+        );
       },
     )
     .command(
@@ -544,14 +574,16 @@ async function main(): Promise<void> {
             "disable-auto-install",
           ]),
       async (argv) => {
-        await runUpdate({
-          currentVersion: VERSION,
-          tag: typeof argv.tag === "string" ? argv.tag : undefined,
-          check: Boolean(argv.check),
-          enableAuto: Boolean(argv.enableAuto),
-          disableAuto: Boolean(argv.disableAuto),
-          enableAutoInstall: Boolean(argv.enableAutoInstall),
-          disableAutoInstall: Boolean(argv.disableAutoInstall),
+        await runTrackedCommand("update", argv, async () => {
+          await runUpdate({
+            currentVersion: VERSION,
+            tag: typeof argv.tag === "string" ? argv.tag : undefined,
+            check: Boolean(argv.check),
+            enableAuto: Boolean(argv.enableAuto),
+            disableAuto: Boolean(argv.disableAuto),
+            enableAutoInstall: Boolean(argv.enableAutoInstall),
+            disableAutoInstall: Boolean(argv.disableAutoInstall),
+          });
         });
       },
     )
@@ -584,7 +616,7 @@ async function main(): Promise<void> {
     --job-url   Full Jenkins job URL
     --build-url Full Jenkins build URL
     --queue-url Full Jenkins queue item URL
-    --interval  Polling interval (e.g. 10s, 1m)
+    --interval  Polling interval (e.g. ${DEFAULT_WAIT_INTERVAL_MS / 1000}s, 1m)
     --timeout   Timeout (e.g. 30m, 2h)
 
   logs:
@@ -593,7 +625,7 @@ async function main(): Promise<void> {
     --build-url Full Jenkins build URL
     --queue-url Full Jenkins queue item URL
     --follow    Keep streaming logs until build completes [default: true]
-    --poll      Polling interval when following (e.g. 2s)
+    --poll      Polling interval when following (e.g. ${DEFAULT_LOG_POLL_MS / 1000}s)
 
   cancel:
     --job       Job name or description
@@ -625,6 +657,9 @@ async function main(): Promise<void> {
 
   config/env:
     ${ENV_KEYS.JENKINS_USE_CRUMB} / useCrumb  Enable Jenkins CSRF crumb usage [default: disabled]
+    ${ENV_KEYS.JENKINS_POSTHOG_API_KEY}       Override bundled PostHog project token
+    ${ENV_KEYS.JENKINS_POSTHOG_HOST}          Override the PostHog host
+    ${ENV_KEYS.JENKINS_ANALYTICS_DISABLED}    Disable analytics entirely
 
   update / upgrade:
     [tag]          Install a specific version tag (e.g. v0.2.4)
@@ -706,11 +741,48 @@ function createContext(argv?: {
     apiToken: env.jenkinsApiToken,
     useCrumb: env.useCrumb,
   });
+  updateAnalyticsContext({
+    used_profile: Boolean(env.profileName),
+    used_auth_override: hasCredentialOverrides(argv),
+    use_crumb: env.useCrumb,
+  });
   return { env, client };
+}
+
+async function runTrackedCommand(
+  command: string,
+  argv: { nonInteractive?: unknown } | undefined,
+  action: () => Promise<void>,
+): Promise<void> {
+  await runWithAnalytics(
+    {
+      command,
+      interactive: !Boolean(argv?.nonInteractive),
+    },
+    action,
+  );
 }
 
 function toOptionalString(value: unknown): string | undefined {
   return typeof value === "string" ? value : undefined;
+}
+
+function hasCredentialOverrides(
+  argv:
+    | {
+        url?: unknown;
+        user?: unknown;
+        token?: unknown;
+        apiToken?: unknown;
+      }
+    | undefined,
+): boolean {
+  return (
+    typeof argv?.url === "string" ||
+    typeof argv?.user === "string" ||
+    typeof argv?.token === "string" ||
+    typeof argv?.apiToken === "string"
+  );
 }
 
 function parseBuildCustomParams(

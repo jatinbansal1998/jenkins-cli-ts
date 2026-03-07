@@ -27,7 +27,7 @@ beforeEach(() => {
 });
 
 describe("writeConfigFile", () => {
-  test("preserves useCrumb and debug from existing config", async () => {
+  test("preserves useCrumb, debug, and analyticsDisabled from existing config", async () => {
     readFileMock.mockImplementation(async () =>
       JSON.stringify({
         jenkinsUrl: "https://old-jenkins.example.com",
@@ -35,6 +35,7 @@ describe("writeConfigFile", () => {
         jenkinsApiToken: "old-token",
         useCrumb: true,
         debug: false,
+        analyticsDisabled: true,
       }),
     );
 
@@ -55,6 +56,7 @@ describe("writeConfigFile", () => {
     expect(payload.defaultProfile).toBe("default");
     expect(payload.profiles.default.useCrumb).toBeTrue();
     expect(payload.debug).toBeFalse();
+    expect(payload.analyticsDisabled).toBeTrue();
     expect(payload.profiles.default.jenkinsUrl).toBe(
       "https://jenkins.example.com",
     );
