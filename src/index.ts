@@ -757,7 +757,7 @@ async function runTrackedCommand(
   await runWithAnalytics(
     {
       command,
-      interactive: !Boolean(argv?.nonInteractive),
+      interactive: !argv?.nonInteractive,
     },
     action,
   );
