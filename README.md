@@ -55,8 +55,7 @@ Config file:
       "useCrumb": false
     }
   },
-  "debug": false,
-  "analyticsDisabled": false
+  "debug": false
 }
 ```
 
@@ -92,12 +91,14 @@ Environment variable fallback (single account only):
 
 Analytics:
 
-- Analytics is enabled by default using the bundled PostHog project token.
+- Analytics is disabled by default.
+- Set `"analyticsDisabled": false` in `~/.config/jenkins-cli/jenkins-cli-config.json` to enable the bundled PostHog analytics.
 - Default analytics host is the managed reverse proxy: `https://t.jatinbansal.com`
-- Optional: `JENKINS_POSTHOG_API_KEY` to override the bundled PostHog project token
+- Optional: `JENKINS_POSTHOG_API_KEY` to enable analytics with a custom PostHog project token
 - Optional: `JENKINS_POSTHOG_HOST` to override the PostHog host
-- Optional: `JENKINS_ANALYTICS_DISABLED=true` to opt out entirely
-- Optional config: set `"analyticsDisabled": true` in `~/.config/jenkins-cli/jenkins-cli-config.json`
+- Optional: `JENKINS_ANALYTICS_DISABLED=false` to enable analytics from env using the bundled token
+- Optional: `JENKINS_ANALYTICS_DISABLED=true` to force-disable analytics entirely
+- Optional config: set `"analyticsDisabled": true` to force-disable analytics entirely
 
 Privacy guardrails:
 

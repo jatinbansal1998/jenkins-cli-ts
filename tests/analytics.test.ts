@@ -15,9 +15,11 @@ const tempHome = fs.mkdtempSync(join(tmpdir(), "jenkins-cli-analytics-home-"));
 process.env.HOME = tempHome;
 
 const {
+  markAnalyticsPollingCommand,
   recordJenkinsApiCall,
   recordJenkinsApiFailure,
   resetAnalyticsForTests,
+  runInteractiveSubcommandWithAnalytics,
   runWithAnalytics,
   updateAnalyticsContext,
 } = await import("../src/analytics");
@@ -172,5 +174,115 @@ describe("analytics", () => {
     );
 
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  test("disables analytics by default when not explicitly enabled", async () => {
+    const isolatedHome = fs.mkdtempSync(
+      join(tmpdir(), "jenkins-cli-analytics-isolated-home-"),
+    );
+
+    const result = Bun.spawnSync({
+      cmd: [
+        "bun",
+        "-e",
+        `
+          let called = false;
+          globalThis.fetch = (async () => {
+            called = true;
+            return new Response("{}", { status: 200 });
+          });
+          const { runWithAnalytics } = await import("./src/analytics");
+          await runWithAnalytics({ command: "list", interactive: false }, async () => {});
+          console.log(called ? "called" : "not-called");
+        `,
+      ],
+      cwd: process.cwd(),
+      env: {
+        ...process.env,
+        HOME: isolatedHome,
+        JENKINS_POSTHOG_API_KEY: "",
+        JENKINS_ANALYTICS_DISABLED: "",
+      },
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+
+    fs.rmSync(isolatedHome, { recursive: true, force: true });
+
+    expect(result.exitCode).toBe(0);
+    expect(result.stderr.toString().trim()).toBe("");
+    expect(result.stdout.toString().trim()).toBe("not-called");
+  });
+
+  test("tracks nested interactive commands as separate sessions", async () => {
+    const fetchMock = mock(async (_input: FetchInput, init?: RequestInit) => {
+      return new Response(init?.body ?? "", { status: 200 });
+    });
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+    await runWithAnalytics(
+      {
+        command: "list",
+        interactive: true,
+      },
+      async () => {
+        updateAnalyticsContext({
+          used_profile: true,
+          use_crumb: true,
+        });
+        await runInteractiveSubcommandWithAnalytics("build", async () => {
+          await runInteractiveSubcommandWithAnalytics("wait", async () => {
+            markAnalyticsPollingCommand();
+          });
+        });
+      },
+    );
+
+    const events = fetchMock.mock.calls.flatMap(([, init]) => {
+      const payload = JSON.parse(String(init?.body)) as {
+        batch: Array<{ event: string; properties: Record<string, unknown> }>;
+      };
+      return payload.batch;
+    });
+
+    expect(events.map((event) => event.event)).toEqual([
+      "command_started",
+      "command_started",
+      "command_started",
+      "command_finished",
+      "command_finished",
+      "command_finished",
+    ]);
+
+    const listStarted = events[0]?.properties ?? {};
+    expect(listStarted.command).toBe("list");
+    expect(listStarted.parent_command).toBeUndefined();
+    expect(listStarted.used_profile).toBeUndefined();
+
+    const buildStarted = events[1]?.properties ?? {};
+    expect(buildStarted.command).toBe("build");
+    expect(buildStarted.parent_command).toBe("list");
+    expect(buildStarted.used_profile).toBeTrue();
+    expect(buildStarted.use_crumb).toBeTrue();
+
+    const waitStarted = events[2]?.properties ?? {};
+    expect(waitStarted.command).toBe("wait");
+    expect(waitStarted.parent_command).toBe("build");
+    expect(waitStarted.used_profile).toBeTrue();
+    expect(waitStarted.use_crumb).toBeTrue();
+
+    const waitFinished = events[3]?.properties ?? {};
+    expect(waitFinished.command).toBe("wait");
+    expect(waitFinished.parent_command).toBe("build");
+
+    const buildFinished = events[4]?.properties ?? {};
+    expect(buildFinished.command).toBe("build");
+    expect(buildFinished.parent_command).toBe("list");
+
+    const listFinished = events[5]?.properties ?? {};
+    expect(listFinished.command).toBe("list");
+    expect(listFinished.parent_command).toBeUndefined();
+    expect(listFinished.used_profile).toBeTrue();
+    expect(listFinished.use_crumb).toBeTrue();
   });
 });

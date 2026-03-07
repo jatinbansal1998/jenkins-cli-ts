@@ -3,7 +3,10 @@
  * Triggers a Jenkins build for a specified job with branch parameter support.
  */
 import { confirm, isCancel, select, spinner, text } from "@clack/prompts";
-import { markAnalyticsPollingCommand } from "../analytics";
+import {
+  markAnalyticsPollingCommand,
+  runInteractiveSubcommandWithAnalytics,
+} from "../analytics";
 import {
   CliError,
   getScriptName,
@@ -215,15 +218,17 @@ export async function runBuild(options: BuildOptions): Promise<BuildRunResult> {
       returnToCaller: Boolean(options.returnToCaller),
       performAction: async (action): Promise<ActionEffectResult> => {
         if (action === "watch") {
-          const finalStatus = await runMenuAction(async () =>
-            watchBuildStatus({
-              client: options.client,
-              jobUrl: resolvedJobUrl,
-              jobLabel: displayJob,
-              buildUrl: activeBuild.buildUrl,
-              buildNumber: activeBuild.buildNumber,
-              queueUrl: activeBuild.queueUrl,
-            }),
+          const finalStatus = await runTrackedBuildAction("wait", () =>
+            runMenuAction(async () =>
+              watchBuildStatus({
+                client: options.client,
+                jobUrl: resolvedJobUrl,
+                jobLabel: displayJob,
+                buildUrl: activeBuild.buildUrl,
+                buildNumber: activeBuild.buildNumber,
+                queueUrl: activeBuild.queueUrl,
+              }),
+            ),
           );
           if (!finalStatus) {
             return "action_error";
@@ -245,95 +250,104 @@ export async function runBuild(options: BuildOptions): Promise<BuildRunResult> {
         }
 
         if (action === "logs") {
-          const result = await runMenuAction(async () => {
-            await runLogs({
-              client: options.client,
-              env: options.env,
-              buildUrl: activeBuild.buildUrl,
-              queueUrl: activeBuild.queueUrl,
-              jobUrl:
-                !activeBuild.buildUrl && !activeBuild.queueUrl
-                  ? resolvedJobUrl
-                  : undefined,
-              follow: true,
-              nonInteractive: false,
-            });
-            return "action_ok";
-          });
+          const result = await runTrackedBuildAction("logs", () =>
+            runMenuAction(async () => {
+              await runLogs({
+                client: options.client,
+                env: options.env,
+                buildUrl: activeBuild.buildUrl,
+                queueUrl: activeBuild.queueUrl,
+                jobUrl:
+                  !activeBuild.buildUrl && !activeBuild.queueUrl
+                    ? resolvedJobUrl
+                    : undefined,
+                follow: true,
+                nonInteractive: false,
+              });
+              return "action_ok";
+            }),
+          );
           return (result ?? "action_error") as ActionEffectResult;
         }
 
         if (action === "cancel") {
-          const result = await runMenuAction(async () => {
-            const cancelTarget = resolveCancelTarget(activeBuild);
-            await runCancel({
-              client: options.client,
-              env: options.env,
-              buildUrl: cancelTarget.buildUrl,
-              queueUrl: cancelTarget.queueUrl,
-              jobUrl:
-                !cancelTarget.buildUrl && !cancelTarget.queueUrl
-                  ? resolvedJobUrl
-                  : undefined,
-              nonInteractive: false,
-            });
-            return "action_ok";
-          });
+          const result = await runTrackedBuildAction("cancel", () =>
+            runMenuAction(async () => {
+              const cancelTarget = resolveCancelTarget(activeBuild);
+              await runCancel({
+                client: options.client,
+                env: options.env,
+                buildUrl: cancelTarget.buildUrl,
+                queueUrl: cancelTarget.queueUrl,
+                jobUrl:
+                  !cancelTarget.buildUrl && !cancelTarget.queueUrl
+                    ? resolvedJobUrl
+                    : undefined,
+                nonInteractive: false,
+              });
+              return "action_ok";
+            }),
+          );
           return (result ?? "action_error") as ActionEffectResult;
         }
 
         if (action === "rerun") {
-          const rerunResult = await options.client.triggerBuild(
-            resolvedJobUrl,
-            params,
-          );
-          activeBuild = {
-            buildUrl: rerunResult.buildUrl,
-            buildNumber: rerunResult.buildNumber,
-            queueUrl: rerunResult.queueUrl,
-          };
+          return await runTrackedBuildAction<ActionEffectResult>(
+            "rerun",
+            async (): Promise<ActionEffectResult> => {
+              const rerunResult = await options.client.triggerBuild(
+                resolvedJobUrl,
+                params,
+              );
+              activeBuild = {
+                buildUrl: rerunResult.buildUrl,
+                buildNumber: rerunResult.buildNumber,
+                queueUrl: rerunResult.queueUrl,
+              };
 
-          const branchValue = params[branchParam];
-          if (branchValue) {
-            try {
-              await recordBranchSelection({
-                env: options.env,
-                jobUrl: resolvedJobUrl,
-                branch: branchValue,
+              const branchValue = params[branchParam];
+              if (branchValue) {
+                try {
+                  await recordBranchSelection({
+                    env: options.env,
+                    jobUrl: resolvedJobUrl,
+                    branch: branchValue,
+                  });
+                } catch {
+                  // Ignore cache write failures for build success.
+                }
+              }
+              try {
+                await recordRecentJob({
+                  env: options.env,
+                  jobUrl: resolvedJobUrl,
+                });
+              } catch {
+                // Ignore cache write failures for build success.
+              }
+
+              if (rerunResult.buildUrl) {
+                printOk(`Build started at ${rerunResult.buildUrl}.`);
+              } else if (rerunResult.queueUrl) {
+                printOk(`Build queued for ${displayJob}.`);
+              } else {
+                printOk(`Build triggered for ${displayJob}.`);
+              }
+              const tipParams = splitParamsForTip({
+                params,
+                branchParam,
               });
-            } catch {
-              // Ignore cache write failures for build success.
-            }
-          }
-          try {
-            await recordRecentJob({
-              env: options.env,
-              jobUrl: resolvedJobUrl,
-            });
-          } catch {
-            // Ignore cache write failures for build success.
-          }
-
-          if (rerunResult.buildUrl) {
-            printOk(`Build started at ${rerunResult.buildUrl}.`);
-          } else if (rerunResult.queueUrl) {
-            printOk(`Build queued for ${displayJob}.`);
-          } else {
-            printOk(`Build triggered for ${displayJob}.`);
-          }
-          const tipParams = splitParamsForTip({
-            params,
-            branchParam,
-          });
-          printNonInteractiveBuildTip({
-            scriptName: getScriptName(),
-            jobUrl: resolvedJobUrl,
-            branch: tipParams.branch,
-            defaultBranch: tipParams.defaultBranch,
-            customParams: tipParams.customParams,
-            branchParam,
-          });
-          return "action_ok";
+              printNonInteractiveBuildTip({
+                scriptName: getScriptName(),
+                jobUrl: resolvedJobUrl,
+                branch: tipParams.branch,
+                defaultBranch: tipParams.defaultBranch,
+                customParams: tipParams.customParams,
+                branchParam,
+              });
+              return "action_ok";
+            },
+          );
         }
 
         return "action_error";
@@ -384,6 +398,13 @@ async function runMenuAction<T>(
     }
     throw error;
   }
+}
+
+async function runTrackedBuildAction<T>(
+  command: string,
+  action: () => Promise<T>,
+): Promise<T> {
+  return await runInteractiveSubcommandWithAnalytics(command, action);
 }
 
 async function runBuildOnce(options: {

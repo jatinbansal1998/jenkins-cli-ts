@@ -2,6 +2,7 @@
  * List command implementation.
  * Displays all cached Jenkins jobs with optional search filtering.
  */
+import { runInteractiveSubcommandWithAnalytics } from "../analytics";
 import { CliError, printError, printHint, printOk } from "../cli";
 import type { EnvConfig } from "../env";
 import type { JenkinsClient } from "../jenkins/api-wrapper";
@@ -184,20 +185,39 @@ async function performListAction(
 
   switch (action) {
     case "build":
-      return await runMenuAction(runBuildAction, context);
+      return await runTrackedListAction("build", () =>
+        runMenuAction(runBuildAction, context),
+      );
     case "status":
-      return await runMenuAction(runStatusAction, context);
+      return await runTrackedListAction("status", () =>
+        runMenuAction(runStatusAction, context),
+      );
     case "watch":
-      return await runMenuAction(runWatchAction, context);
+      return await runTrackedListAction("wait", () =>
+        runMenuAction(runWatchAction, context),
+      );
     case "logs":
-      return await runMenuAction(runLogsAction, context);
+      return await runTrackedListAction("logs", () =>
+        runMenuAction(runLogsAction, context),
+      );
     case "cancel":
-      return await runMenuAction(runCancelAction, context);
+      return await runTrackedListAction("cancel", () =>
+        runMenuAction(runCancelAction, context),
+      );
     case "rerun":
-      return await runMenuAction(runRerunAction, context);
+      return await runTrackedListAction("rerun", () =>
+        runMenuAction(runRerunAction, context),
+      );
     default:
       return "action_error";
   }
+}
+
+async function runTrackedListAction<T>(
+  command: string,
+  action: () => Promise<T>,
+): Promise<T> {
+  return await runInteractiveSubcommandWithAnalytics(command, action);
 }
 
 async function runBuildAction(

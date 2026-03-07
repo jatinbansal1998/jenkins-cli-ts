@@ -54,6 +54,12 @@ const DEFAULT_POSTHOG_PROJECT_TOKEN =
 const DEFAULT_POSTHOG_HOST = "https://t.jatinbansal.com";
 const ANALYTICS_ID_FILE = path.join(CONFIG_DIR, "analytics-id");
 const FLUSH_TIMEOUT_MS = 1_500;
+const SESSION_ONLY_PROP_KEYS = new Set([
+  "command",
+  "interactive",
+  "tty",
+  "parent_command",
+]);
 
 // Keeps the current command's analytics session available across async calls so
 // nested code can append events without receiving an explicit session object.
@@ -144,11 +150,16 @@ class CommandSession {
   private apiFailureCount = 0;
   private pollingCommand = false;
 
-  constructor(analytics: PostHogClient, options: CommandRunOptions) {
+  constructor(
+    analytics: PostHogClient,
+    options: CommandRunOptions,
+    inheritedProps: AnalyticsProps = {},
+  ) {
     this.analytics = analytics;
     this.command = options.command;
     this.startedAt = Date.now();
     this.commonProps = sanitizeProps({
+      ...inheritedProps,
       command: options.command,
       interactive: options.interactive,
       tty: Boolean(process.stdout.isTTY),
@@ -166,6 +177,21 @@ class CommandSession {
       ...this.commonProps,
       ...properties,
     });
+  }
+
+  getCommand(): string {
+    return this.command;
+  }
+
+  getInheritedProps(): AnalyticsProps {
+    const inheritedProps: AnalyticsProps = {};
+    for (const [key, value] of Object.entries(this.commonProps)) {
+      if (SESSION_ONLY_PROP_KEYS.has(key)) {
+        continue;
+      }
+      inheritedProps[key] = value;
+    }
+    return inheritedProps;
   }
 
   markPollingCommand(): void {
@@ -223,7 +249,16 @@ export async function runWithAnalytics<T>(
   options: CommandRunOptions,
   action: () => Promise<T>,
 ): Promise<T> {
-  const session = new CommandSession(getAnalyticsClient(), options);
+  const parentSession = storage.getStore();
+  const inheritedProps = parentSession?.getInheritedProps() ?? {};
+  if (parentSession) {
+    inheritedProps.parent_command = parentSession.getCommand();
+  }
+  const session = new CommandSession(
+    getAnalyticsClient(),
+    options,
+    inheritedProps,
+  );
   return await storage.run(session, async () => {
     session.track("command_started");
     try {
@@ -235,6 +270,19 @@ export async function runWithAnalytics<T>(
       throw error;
     }
   });
+}
+
+export async function runInteractiveSubcommandWithAnalytics<T>(
+  command: string,
+  action: () => Promise<T>,
+): Promise<T> {
+  return await runWithAnalytics(
+    {
+      command,
+      interactive: true,
+    },
+    action,
+  );
 }
 
 export function updateAnalyticsContext(properties: AnalyticsProps): void {
@@ -273,9 +321,9 @@ function getAnalyticsClient(): PostHogClient {
   return cachedClient;
 }
 
-// Computes the effective analytics config for this process. By default we use
-// the bundled public PostHog project token and reverse-proxy host, but users
-// can opt out or override host/token via env/config.
+// Computes the effective analytics config for this process. Analytics is
+// disabled by default; users can explicitly opt in through config or env and
+// still override the host/token when enabled.
 function resolveAnalyticsClientConfig(): AnalyticsClientConfig {
   let config;
   try {
@@ -289,16 +337,26 @@ function resolveAnalyticsClientConfig(): AnalyticsClientConfig {
   const host =
     normalizeOptionalString(process.env[ENV_KEYS.JENKINS_POSTHOG_HOST]) ??
     DEFAULT_POSTHOG_HOST;
-  const disabledByEnv = parseBooleanFlag(
+  const analyticsDisabledByEnv = parseOptionalBooleanFlag(
     process.env[ENV_KEYS.JENKINS_ANALYTICS_DISABLED],
   );
-  const disabledByConfig = config?.analyticsDisabled === true;
+  const analyticsDisabledByConfig = config?.analyticsDisabled;
+  const analyticsEnabled =
+    analyticsDisabledByEnv === false ||
+    analyticsDisabledByConfig === false ||
+    Boolean(apiKey);
+  const analyticsDisabled =
+    analyticsDisabledByEnv === true ||
+    analyticsDisabledByConfig === true ||
+    !analyticsEnabled;
 
   return {
-    apiKey: apiKey ?? DEFAULT_POSTHOG_PROJECT_TOKEN,
+    apiKey: analyticsDisabled
+      ? undefined
+      : (apiKey ?? DEFAULT_POSTHOG_PROJECT_TOKEN),
     host,
-    disabled: disabledByEnv || disabledByConfig,
-    distinctId: getOrCreateAnalyticsId(),
+    disabled: analyticsDisabled,
+    distinctId: analyticsDisabled ? undefined : getOrCreateAnalyticsId(),
   };
 }
 
@@ -388,13 +446,21 @@ function normalizeOptionalString(
   return trimmed ? trimmed : undefined;
 }
 
-// Parses the small set of truthy string values we support for env flags.
-function parseBooleanFlag(value: string | undefined): boolean {
+// Parses the small set of boolean-like env values we support.
+function parseOptionalBooleanFlag(
+  value: string | undefined,
+): boolean | undefined {
   if (typeof value !== "string") {
-    return false;
+    return undefined;
   }
   const normalized = value.trim().toLowerCase();
-  return normalized === "true" || normalized === "1";
+  if (normalized === "true" || normalized === "1") {
+    return true;
+  }
+  if (normalized === "false" || normalized === "0") {
+    return false;
+  }
+  return undefined;
 }
 
 // Normalizes the analytics host to a valid absolute URL. If the override is
