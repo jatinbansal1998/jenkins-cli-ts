@@ -3,6 +3,10 @@
 Minimal Jenkins CLI for listing jobs, triggering builds, and checking status. Built
 for interactive use and automation with clear, parseable output.
 
+## Demo
+
+![Jenkins CLI demo](docs/media/jenkins-cli-demo.gif)
+
 ## Install
 
 Installs `jenkins-cli` to your PATH (defaults to `$HOME/.bun/bin`). It will install
