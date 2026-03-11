@@ -5,7 +5,7 @@ for interactive use and automation with clear, parseable output.
 
 ## Demo
 
-[![Jenkins CLI demo](docs/media/jenkins-cli-demo-thumbnail.png)](docs/media/jenkins-cli-demo.mp4)
+![Jenkins CLI demo](docs/media/jenkins-cli-demo.gif)
 
 ## Install
 
