@@ -13,10 +13,24 @@ import type { JenkinsClient } from "../src/jenkins/client";
 const CANCEL = Symbol("cancel");
 const NEXT_PAGE_VALUE = "__jenkins_cli_history_next__";
 const REBUILD_VALUE = "__jenkins_cli_history_rebuild__";
+const RERUN_LAST_VALUE = "__jenkins_cli_history_rerun_last__";
 
+const confirmMock = mock(async (): Promise<boolean> => false);
 const selectMock = mock(async (): Promise<unknown> => CANCEL);
+const textMock = mock(async (): Promise<string> => "");
 const isCancelMock = mock((value: unknown) => value === CANCEL);
+const runCancelMock = mock(async () => undefined);
 const runLogsMock = mock(async () => undefined);
+const runWaitMock = mock(
+  async (): Promise<{
+    result: string;
+    buildNumber?: number;
+    buildUrl?: string;
+    cancelled?: boolean;
+  }> => ({
+    result: "SUCCESS",
+  }),
+);
 const recordRecentJobMock = mock(async () => undefined);
 const recordBranchSelectionMock = mock(async () => undefined);
 const resolveJobTargetMock = mock(
@@ -32,13 +46,29 @@ const resolveJobTargetMock = mock(
 
 mock.module("../src/commands/history-deps", () => ({
   historyDeps: {
+    confirm: confirmMock,
     select: selectMock,
+    text: textMock,
     isCancel: isCancelMock,
+    runCancel: runCancelMock,
     runLogs: runLogsMock,
+    runWait: runWaitMock,
     recordRecentJob: recordRecentJobMock,
     recordBranchSelection: recordBranchSelectionMock,
     resolveJobTarget: resolveJobTargetMock,
   },
+}));
+
+mock.module("../src/recent-jobs", () => ({
+  loadRecentJobs: mock(async () => []),
+  recordRecentJob: recordRecentJobMock,
+}));
+
+mock.module("../src/branches", () => ({
+  loadCachedBranches: mock(async () => []),
+  loadCachedBranchHistory: mock(async () => []),
+  removeCachedBranch: mock(async () => false),
+  recordBranchSelection: recordBranchSelectionMock,
 }));
 
 const { runHistory } = await import("../src/commands/history");
@@ -54,12 +84,29 @@ const TEST_ENV: EnvConfig = {
 describe("runHistory", () => {
   beforeEach(() => {
     mock.clearAllMocks();
+    confirmMock.mockReset();
+    confirmMock.mockImplementation(async (): Promise<boolean> => false);
     selectMock.mockReset();
     selectMock.mockImplementation(async (): Promise<unknown> => CANCEL);
+    textMock.mockReset();
+    textMock.mockImplementation(async (): Promise<string> => "");
     isCancelMock.mockReset();
     isCancelMock.mockImplementation((value: unknown) => value === CANCEL);
+    runCancelMock.mockReset();
+    runCancelMock.mockImplementation(async () => undefined);
     runLogsMock.mockReset();
     runLogsMock.mockImplementation(async () => undefined);
+    runWaitMock.mockReset();
+    runWaitMock.mockImplementation(
+      async (): Promise<{
+        result: string;
+        buildNumber?: number;
+        buildUrl?: string;
+        cancelled?: boolean;
+      }> => ({
+        result: "SUCCESS",
+      }),
+    );
     recordRecentJobMock.mockReset();
     recordRecentJobMock.mockImplementation(async () => undefined);
     recordBranchSelectionMock.mockReset();
@@ -216,6 +263,192 @@ describe("runHistory", () => {
         BRANCH: "release/42",
         DEPLOY_ENV: "staging",
       },
+    );
+  });
+
+  test("interactive can rerun the latest job build from history", async () => {
+    const listBuildHistory = mock(async () => ({
+      builds: [
+        {
+          buildNumber: 57,
+          buildUrl: "https://jenkins.example.com/job/api/57/",
+          result: "FAILURE",
+          branch: "release/42",
+          parameters: [{ name: "BRANCH", value: "release/42" }],
+        },
+      ],
+      total: 1,
+      offset: 0,
+      limit: 5,
+      hasNext: false,
+      hasPrevious: false,
+    }));
+    const getJobStatus = mock(async () => ({
+      lastBuildNumber: 99,
+      lastBuildUrl: "https://jenkins.example.com/job/api/99/",
+      parameters: [
+        { name: "BRANCH", value: "release/99" },
+        { name: "DEPLOY_ENV", value: "prod" },
+      ],
+    }));
+    const triggerBuild = mock(async () => ({
+      queueUrl: "https://jenkins.example.com/queue/item/999/",
+    }));
+    const client = {
+      listBuildHistory,
+      getJobStatus,
+      triggerBuild,
+    } as unknown as JenkinsClient;
+
+    selectMock
+      .mockImplementationOnce(
+        async (): Promise<unknown> => "https://jenkins.example.com/job/api/57/",
+      )
+      .mockImplementationOnce(async (): Promise<unknown> => RERUN_LAST_VALUE)
+      .mockImplementationOnce(async (): Promise<unknown> => CANCEL);
+
+    await runHistory({
+      client,
+      env: TEST_ENV,
+      jobUrl: "https://jenkins.example.com/job/api/",
+      nonInteractive: false,
+    });
+
+    expect(getJobStatus).toHaveBeenCalledTimes(1);
+    expect(triggerBuild).toHaveBeenCalledWith(
+      "https://jenkins.example.com/job/api/",
+      {
+        BRANCH: "release/99",
+        DEPLOY_ENV: "prod",
+      },
+    );
+  });
+
+  test("interactive rebuild returns the rebuilt run to the caller after exiting history", async () => {
+    const listBuildHistory = mock(async () => ({
+      builds: [
+        {
+          buildNumber: 57,
+          buildUrl: "https://jenkins.example.com/job/api/57/",
+          result: "FAILURE",
+          branch: "release/42",
+          parameters: [
+            { name: "BRANCH", value: "release/42" },
+            { name: "DEPLOY_ENV", value: "staging" },
+          ],
+        },
+      ],
+      total: 1,
+      offset: 0,
+      limit: 5,
+      hasNext: false,
+      hasPrevious: false,
+    }));
+    const triggerBuild = mock(async () => ({
+      queueUrl: "https://jenkins.example.com/queue/item/123/",
+    }));
+    const client = {
+      listBuildHistory,
+      triggerBuild,
+    } as unknown as JenkinsClient;
+
+    selectMock
+      .mockImplementationOnce(
+        async (): Promise<unknown> => "https://jenkins.example.com/job/api/57/",
+      )
+      .mockImplementationOnce(async (): Promise<unknown> => REBUILD_VALUE)
+      .mockImplementationOnce(async (): Promise<unknown> => "done")
+      .mockImplementationOnce(async (): Promise<unknown> => CANCEL);
+
+    const result = await runHistory({
+      client,
+      env: TEST_ENV,
+      jobUrl: "https://jenkins.example.com/job/api/",
+      nonInteractive: false,
+    });
+
+    expect(result).toEqual({
+      activeBuild: {
+        buildUrl: undefined,
+        buildNumber: undefined,
+        queueUrl: "https://jenkins.example.com/queue/item/123/",
+      },
+    });
+  });
+
+  test("interactive rebuild enters the shared post-build flow with watch", async () => {
+    const listBuildHistory = mock(async () => ({
+      builds: [
+        {
+          buildNumber: 57,
+          buildUrl: "https://jenkins.example.com/job/api/57/",
+          result: "FAILURE",
+          branch: "release/42",
+          parameters: [
+            { name: "BRANCH", value: "release/42" },
+            { name: "DEPLOY_ENV", value: "staging" },
+          ],
+        },
+      ],
+      total: 1,
+      offset: 0,
+      limit: 5,
+      hasNext: false,
+      hasPrevious: false,
+    }));
+    const triggerBuild = mock(async () => ({
+      queueUrl: "https://jenkins.example.com/queue/item/123/",
+    }));
+    const client = {
+      listBuildHistory,
+      triggerBuild,
+    } as unknown as JenkinsClient;
+
+    selectMock
+      .mockImplementationOnce(
+        async (): Promise<unknown> => "https://jenkins.example.com/job/api/57/",
+      )
+      .mockImplementationOnce(async (): Promise<unknown> => REBUILD_VALUE)
+      .mockImplementationOnce(async (): Promise<unknown> => "watch")
+      .mockImplementationOnce(async (): Promise<unknown> => "done")
+      .mockImplementationOnce(async (): Promise<unknown> => CANCEL);
+
+    await runHistory({
+      client,
+      env: TEST_ENV,
+      jobUrl: "https://jenkins.example.com/job/api/",
+      nonInteractive: false,
+    });
+
+    expect(selectMock).toHaveBeenNthCalledWith(
+      3,
+      expect.objectContaining({
+        message: expect.stringContaining("Next action for"),
+        options: expect.arrayContaining([
+          expect.objectContaining({ value: "watch", label: "Watch" }),
+          expect.objectContaining({ value: "history", label: "Build history" }),
+          expect.objectContaining({ value: "logs", label: "Logs" }),
+          expect.objectContaining({ value: "cancel", label: "Cancel" }),
+          expect.objectContaining({
+            value: "rerun",
+            label: "Rerun same inputs",
+          }),
+          expect.objectContaining({
+            value: "rerun_last",
+            label: "Rerun last build",
+          }),
+          expect.objectContaining({ value: "done", label: "Done" }),
+        ]),
+      }),
+    );
+    expect(runWaitMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        client,
+        env: TEST_ENV,
+        queueUrl: "https://jenkins.example.com/queue/item/123/",
+        nonInteractive: false,
+        suppressExitCode: true,
+      }),
     );
   });
 });

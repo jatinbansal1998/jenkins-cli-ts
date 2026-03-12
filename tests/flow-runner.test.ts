@@ -136,6 +136,7 @@ describe("flow runner", () => {
       recentJobs: [
         { url: "https://jenkins.example.com/job/api/", label: "api" },
       ],
+      jobSelectionLocked: false,
       searchQuery: "",
       searchCandidates: [],
       branchParam: "BRANCH",

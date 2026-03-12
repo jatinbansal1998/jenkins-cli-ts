@@ -22,6 +22,7 @@ const spinnerMock = mock(() => ({
 }));
 
 const runCancelMock = mock(async (..._args: unknown[]) => undefined);
+const runHistoryMock = mock(async () => ({}));
 const runLogsMock = mock(async () => undefined);
 const notifyBuildCompleteMock = mock(async () => undefined);
 
@@ -35,6 +36,10 @@ mock.module("@clack/prompts", () => ({
 
 mock.module("../src/commands/cancel", () => ({
   runCancel: runCancelMock,
+}));
+
+mock.module("../src/commands/history", () => ({
+  runHistory: runHistoryMock,
 }));
 
 mock.module("../src/commands/logs", () => ({
@@ -81,6 +86,9 @@ describe("build command", () => {
 
     runCancelMock.mockReset();
     runCancelMock.mockImplementation(async () => undefined);
+
+    runHistoryMock.mockReset();
+    runHistoryMock.mockImplementation(async () => ({}));
 
     runLogsMock.mockReset();
     runLogsMock.mockImplementation(async () => undefined);
@@ -129,6 +137,53 @@ describe("build command", () => {
       expect.objectContaining({
         buildUrl: BUILD_URL,
         queueUrl: undefined,
+        jobUrl: undefined,
+      }),
+    );
+  });
+
+  test("history rebuild updates the active build used by follow-up log actions", async () => {
+    const getJobStatus = mock(async () => ({ lastBuildNumber: 380 }));
+    const triggerBuild = mock(async () => ({
+      buildUrl: BUILD_URL,
+      buildNumber: 381,
+      queueUrl: QUEUE_URL,
+      jobUrl: JOB_URL,
+    }));
+    const rebuiltBuildUrl =
+      "https://jenkins.example.com/job/crypto-order-matching-engine/382/";
+    const rebuiltQueueUrl = "https://jenkins.example.com/queue/item/9043/";
+
+    runHistoryMock.mockImplementationOnce(async () => ({
+      activeBuild: {
+        buildUrl: rebuiltBuildUrl,
+        buildNumber: 382,
+        queueUrl: rebuiltQueueUrl,
+      },
+    }));
+    confirmMock.mockImplementationOnce(async () => false);
+    selectMock
+      .mockImplementationOnce(async () => "history")
+      .mockImplementationOnce(async () => "logs")
+      .mockImplementationOnce(async () => "done");
+
+    await runBuild({
+      client: createClient({
+        getJobStatus,
+        triggerBuild,
+      }),
+      env: {} as EnvConfig,
+      jobUrl: JOB_URL,
+      branch: "staging",
+      nonInteractive: false,
+    });
+
+    expect(runHistoryMock).toHaveBeenCalledTimes(1);
+    expect(runLogsMock).toHaveBeenCalledTimes(1);
+    expect(runLogsMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        buildUrl: rebuiltBuildUrl,
+        queueUrl: rebuiltQueueUrl,
         jobUrl: undefined,
       }),
     );
@@ -541,5 +596,87 @@ describe("build command", () => {
         message: expect.stringContaining("Trigger another build?"),
       }),
     );
+  });
+
+  test("watch can cancel the active build directly with C", async () => {
+    const originalExitCode = process.exitCode;
+    process.exitCode = 0;
+
+    const getJobStatus = mock(async () => ({ lastBuildNumber: 380 }));
+    const triggerBuild = mock(async () => ({
+      buildUrl: BUILD_URL,
+      buildNumber: 381,
+      queueUrl: QUEUE_URL,
+      jobUrl: JOB_URL,
+    }));
+    const stopBuild = mock(async () => undefined);
+    const getBuildStatus = mock(async () => {
+      if (getBuildStatus.mock.calls.length === 1) {
+        process.stdin.emit("data", "c");
+        return {
+          buildNumber: 381,
+          buildUrl: BUILD_URL,
+          result: null,
+          building: true,
+        };
+      }
+      return {
+        buildNumber: 381,
+        buildUrl: BUILD_URL,
+        result: "ABORTED",
+        building: false,
+      };
+    });
+
+    selectMock.mockImplementationOnce(async () => "done");
+
+    const stdinIsTTY = Object.getOwnPropertyDescriptor(process.stdin, "isTTY");
+    const stdoutIsTTY = Object.getOwnPropertyDescriptor(
+      process.stdout,
+      "isTTY",
+    );
+
+    Object.defineProperty(process.stdin, "isTTY", {
+      configurable: true,
+      value: true,
+    });
+    Object.defineProperty(process.stdout, "isTTY", {
+      configurable: true,
+      value: true,
+    });
+
+    try {
+      await runBuild({
+        client: createClient({
+          getJobStatus,
+          triggerBuild,
+          getBuildStatus,
+          stopBuild,
+        }),
+        env: {} as EnvConfig,
+        jobUrl: JOB_URL,
+        branch: "staging",
+        nonInteractive: false,
+        watch: true,
+        returnToCaller: true,
+      });
+
+      expect(stopBuild).toHaveBeenCalledTimes(1);
+      expect(stopBuild).toHaveBeenCalledWith(BUILD_URL);
+      expect(notifyBuildCompleteMock).toHaveBeenCalledTimes(0);
+      expect(process.exitCode).toBe(0);
+    } finally {
+      process.exitCode = originalExitCode;
+      if (stdinIsTTY) {
+        Object.defineProperty(process.stdin, "isTTY", stdinIsTTY);
+      } else {
+        Reflect.deleteProperty(process.stdin, "isTTY");
+      }
+      if (stdoutIsTTY) {
+        Object.defineProperty(process.stdout, "isTTY", stdoutIsTTY);
+      } else {
+        Reflect.deleteProperty(process.stdout, "isTTY");
+      }
+    }
   });
 });

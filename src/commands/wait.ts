@@ -15,9 +15,14 @@ import {
   parseOptionalDurationMs,
   resolveJobTarget,
 } from "./ops-helpers";
-import { waitForPollIntervalOrCancel } from "./watch-utils";
+import {
+  createWatchControlSignal,
+  DEFAULT_WATCH_INTERVAL_MS,
+  requestCancellationForWatchTarget,
+  waitForPollIntervalOrCancel,
+} from "./watch-utils";
 
-export const DEFAULT_WAIT_INTERVAL_MS = 5_000;
+export const DEFAULT_WAIT_INTERVAL_MS = DEFAULT_WATCH_INTERVAL_MS;
 
 type WaitOptions = {
   client: JenkinsClient;
@@ -37,6 +42,7 @@ type WaitResult = {
   buildNumber?: number;
   buildUrl?: string;
   cancelled?: boolean;
+  cancelIssued?: boolean;
   timedOut?: boolean;
   durationMs?: number;
   queueTimeMs?: number;
@@ -88,6 +94,9 @@ export async function runWait(options: WaitOptions): Promise<WaitResult> {
   }
   if (result.cancelled) {
     process.exitCode = 130;
+    return result;
+  }
+  if (result.cancelIssued) {
     return result;
   }
   if (result.result !== "SUCCESS") {
@@ -162,12 +171,18 @@ export async function waitForBuild(options: {
 }): Promise<WaitResult> {
   const useSpinner = Boolean(process.stdout.isTTY) && !options.nonInteractive;
   const statusSpinner = useSpinner ? spinner() : null;
-  const cancelSignal = createWatchCancelSignal();
+  const cancelSignal = createWatchControlSignal();
   const startedAt = Date.now();
+  const watchPrompt = cancelSignal
+    ? `Waiting for ${options.jobLabel} (Esc to stop, c to cancel)`
+    : `Waiting for ${options.jobLabel}`;
+  if (cancelSignal) {
+    printHint("Controls: Esc stops watching. Press c to cancel the build.");
+  }
+  let cancelIssued = false;
 
   if (statusSpinner) {
-    const hint = cancelSignal ? " (Esc to stop)" : "";
-    statusSpinner.start(`Waiting for ${options.jobLabel}${hint}`);
+    statusSpinner.start(watchPrompt);
   }
 
   let buildUrl = options.buildUrl;
@@ -224,7 +239,8 @@ export async function waitForBuild(options: {
         };
       }
 
-      if (cancelSignal?.isCancelled()) {
+      const watchAction = cancelSignal?.getAction();
+      if (watchAction === "stop") {
         const message = "Wait stopped.";
         if (statusSpinner) {
           statusSpinner.stop(message);
@@ -236,7 +252,59 @@ export async function waitForBuild(options: {
           buildNumber,
           buildUrl,
           cancelled: true,
+          cancelIssued,
         };
+      }
+      if (watchAction === "cancel" && cancelSignal) {
+        cancelSignal.clearAction();
+        try {
+          const cancelResult = await requestCancellationForWatchTarget({
+            client: options.client,
+            jobUrl: options.jobUrl,
+            buildUrl,
+            queueUrl,
+          });
+          cancelIssued = true;
+          if (cancelResult.kind === "build") {
+            buildUrl = cancelResult.buildUrl;
+            buildNumber = cancelResult.buildNumber ?? buildNumber;
+            queueUrl = undefined;
+            persistWatchMessage({
+              spinnerInstance: statusSpinner,
+              watchPrompt,
+              message: cancelResult.message,
+            });
+            continue;
+          }
+          persistWatchMessage({
+            spinnerInstance: statusSpinner,
+            watchPrompt,
+            message: cancelResult.message,
+          });
+          return {
+            result: "ABORTED",
+            buildNumber,
+            buildUrl,
+            cancelIssued: true,
+          };
+        } catch (error) {
+          if (statusSpinner) {
+            statusSpinner.stop("Cancel failed.");
+          }
+          if (error instanceof CliError) {
+            printError(error.message);
+            for (const hint of error.hints) {
+              printHint(hint);
+            }
+          } else {
+            printError(
+              error instanceof Error ? error.message : "Unexpected error.",
+            );
+          }
+          if (statusSpinner) {
+            statusSpinner.start(watchPrompt);
+          }
+        }
       }
 
       if (queueUrl) {
@@ -300,6 +368,7 @@ export async function waitForBuild(options: {
             result: currentResult,
             buildNumber: status.buildNumber ?? buildNumber,
             buildUrl: finalBuildUrl,
+            cancelIssued,
             durationMs: status.durationMs,
             queueTimeMs: status.queueTimeMs,
             hadStageInfo: Boolean(status.stage?.name || status.stage?.status),
@@ -348,6 +417,7 @@ export async function waitForBuild(options: {
               result: currentResult,
               buildNumber: currentNumber,
               buildUrl: finalBuildUrl,
+              cancelIssued,
               durationMs: status.lastBuildDurationMs,
               queueTimeMs: status.queueTimeMs,
               hadStageInfo: Boolean(status.stage?.name || status.stage?.status),
@@ -378,6 +448,19 @@ function emitProgress(options: {
 }): void {
   if (options.spinnerInstance) {
     options.spinnerInstance.message(options.message);
+    return;
+  }
+  printOk(options.message);
+}
+
+function persistWatchMessage(options: {
+  spinnerInstance: ReturnType<typeof spinner> | null;
+  watchPrompt: string;
+  message: string;
+}): void {
+  if (options.spinnerInstance) {
+    options.spinnerInstance.stop(options.message);
+    options.spinnerInstance.start(options.watchPrompt);
     return;
   }
   printOk(options.message);
@@ -435,58 +518,6 @@ function printFinalJobStatus(
   const summary = `Build for ${jobLabel} #${buildNumber}: ${result}`;
   const details = formatStatusDetails(toStatusDetailsFromJob(status), buildUrl);
   printOk(details ? `${summary}\n${details}` : summary);
-}
-
-type WatchCancelSignal = {
-  isCancelled: () => boolean;
-  wait: Promise<void>;
-  cleanup: () => void;
-};
-
-function createWatchCancelSignal(): WatchCancelSignal | null {
-  if (!process.stdin.isTTY || !process.stdout.isTTY) {
-    return null;
-  }
-
-  let cancelled = false;
-  let resolveWait: (() => void) | null = null;
-  const wait = new Promise<void>((resolve) => {
-    resolveWait = resolve;
-  });
-  const stdin = process.stdin;
-  const wasRaw = stdin.isRaw;
-
-  const onData = (data: Buffer | string) => {
-    const value = data.toString();
-    if (value.includes("\u001b")) {
-      cancelled = true;
-      resolveWait?.();
-    }
-  };
-
-  try {
-    stdin.setRawMode(true);
-  } catch {
-    // Ignore raw mode errors.
-  }
-  stdin.on("data", onData);
-  stdin.resume();
-
-  return {
-    isCancelled: () => cancelled,
-    wait,
-    cleanup: () => {
-      stdin.off("data", onData);
-      if (stdin.isTTY) {
-        try {
-          stdin.setRawMode(Boolean(wasRaw));
-        } catch {
-          // Ignore cleanup errors.
-        }
-      }
-      stdin.pause();
-    },
-  };
 }
 
 function formatDuration(durationMs: number): string {

@@ -1,8 +1,13 @@
-import { CliError, printOk } from "../cli";
+import { CliError, printError, printHint, printOk } from "../cli";
 import type { EnvConfig } from "../env";
 import type { JenkinsClient } from "../jenkins/api-wrapper";
 import type { BuildHistoryEntry, BuildHistoryPage } from "../types/jenkins";
+import { runFlow } from "../flows/runner";
+import { flows } from "../flows/definition";
+import { buildFlowHandlers } from "../flows/handlers";
+import type { ActionEffectResult, BuildPostContext } from "../flows/types";
 import { historyDeps } from "./history-deps";
+import { printRerunResult, rerunLastBuildForJob } from "./rerun-core";
 import { withPromptTarget } from "../tui-target";
 
 const HISTORY_PAGE_SIZE = 5;
@@ -10,8 +15,15 @@ const NEXT_PAGE_VALUE = "__jenkins_cli_history_next__";
 const PREVIOUS_PAGE_VALUE = "__jenkins_cli_history_previous__";
 const BACK_VALUE = "__jenkins_cli_history_back__";
 const REBUILD_VALUE = "__jenkins_cli_history_rebuild__";
+const RERUN_LAST_VALUE = "__jenkins_cli_history_rerun_last__";
 const LOGS_VALUE = "__jenkins_cli_history_logs__";
 const URL_VALUE = "__jenkins_cli_history_url__";
+
+export type HistoryActiveBuild = {
+  buildUrl?: string;
+  buildNumber?: number;
+  queueUrl?: string;
+};
 
 type HistoryOptions = {
   client: JenkinsClient;
@@ -22,7 +34,13 @@ type HistoryOptions = {
   offset?: number;
 };
 
-export async function runHistory(options: HistoryOptions): Promise<void> {
+export type HistoryRunResult = {
+  activeBuild?: HistoryActiveBuild;
+};
+
+export async function runHistory(
+  options: HistoryOptions,
+): Promise<HistoryRunResult> {
   if (options.job && options.jobUrl) {
     throw new CliError("Provide either --job or --job-url, not both.", [
       "Remove one of the flags and try again.",
@@ -44,10 +62,11 @@ export async function runHistory(options: HistoryOptions): Promise<void> {
       limit: HISTORY_PAGE_SIZE,
     });
     renderBuildHistory(page, target.jobLabel);
-    return;
+    return {};
   }
 
   let offset = initialOffset;
+  let latestActiveBuild: HistoryActiveBuild | undefined;
   while (true) {
     const page = await options.client.listBuildHistory(target.jobUrl, {
       offset,
@@ -56,7 +75,7 @@ export async function runHistory(options: HistoryOptions): Promise<void> {
 
     if (page.builds.length === 0) {
       printOk(`No builds found for ${target.jobLabel}.`);
-      return;
+      return latestActiveBuild ? { activeBuild: latestActiveBuild } : {};
     }
 
     renderBuildHistory(page, target.jobLabel);
@@ -65,7 +84,7 @@ export async function runHistory(options: HistoryOptions): Promise<void> {
       options: buildHistoryOptions(page),
     });
     if (historyDeps.isCancel(selection) || selection === BACK_VALUE) {
-      return;
+      return latestActiveBuild ? { activeBuild: latestActiveBuild } : {};
     }
     if (selection === NEXT_PAGE_VALUE) {
       offset += HISTORY_PAGE_SIZE;
@@ -83,13 +102,16 @@ export async function runHistory(options: HistoryOptions): Promise<void> {
       continue;
     }
 
-    await runBuildHistoryAction({
+    const result = await runBuildHistoryAction({
       client: options.client,
       env: options.env,
       jobLabel: target.jobLabel,
       jobUrl: target.jobUrl,
       build: selectedBuild,
     });
+    if (result.activeBuild) {
+      latestActiveBuild = result.activeBuild;
+    }
   }
 }
 
@@ -99,7 +121,7 @@ async function runBuildHistoryAction(options: {
   jobLabel: string;
   jobUrl: string;
   build: BuildHistoryEntry;
-}): Promise<void> {
+}): Promise<HistoryRunResult> {
   while (true) {
     const selection = await historyDeps.select({
       message: withPromptTarget(
@@ -107,14 +129,15 @@ async function runBuildHistoryAction(options: {
         options.env,
       ),
       options: [
-        { value: REBUILD_VALUE, label: "Rebuild with same parameters" },
+        { value: REBUILD_VALUE, label: "Rebuild selected build" },
+        { value: RERUN_LAST_VALUE, label: "Rerun last build for job" },
         { value: LOGS_VALUE, label: "Logs" },
         { value: URL_VALUE, label: "Show URL" },
         { value: BACK_VALUE, label: "Back" },
       ],
     });
     if (historyDeps.isCancel(selection) || selection === BACK_VALUE) {
-      return;
+      return {};
     }
     if (selection === URL_VALUE) {
       printOk(`Build URL: ${options.build.buildUrl}`);
@@ -134,26 +157,11 @@ async function runBuildHistoryAction(options: {
       const params = toParamRecord(options.build.parameters);
       const result = await options.client.triggerBuild(options.jobUrl, params);
 
-      try {
-        await historyDeps.recordRecentJob({
-          env: options.env,
-          jobUrl: options.jobUrl,
-        });
-      } catch {
-        // Ignore cache write failures for rebuild success.
-      }
-
-      if (options.build.branch) {
-        try {
-          await historyDeps.recordBranchSelection({
-            env: options.env,
-            jobUrl: options.jobUrl,
-            branch: options.build.branch,
-          });
-        } catch {
-          // Ignore cache write failures for rebuild success.
-        }
-      }
+      await recordHistoryRebuildSuccess({
+        env: options.env,
+        jobUrl: options.jobUrl,
+        branch: options.build.branch,
+      });
 
       const buildNumber =
         typeof options.build.buildNumber === "number"
@@ -169,8 +177,261 @@ async function runBuildHistoryAction(options: {
       } else {
         printOk(`Build triggered for ${options.jobLabel}.`);
       }
-      return;
+
+      const activeBuild = await runHistoryRebuildPostFlow({
+        client: options.client,
+        env: options.env,
+        jobLabel: options.jobLabel,
+        jobUrl: options.jobUrl,
+        params,
+        branch: extractBranchFromParams(params) ?? options.build.branch,
+        activeBuild: {
+          buildUrl: result.buildUrl,
+          buildNumber: result.buildNumber,
+          queueUrl: result.queueUrl,
+        },
+      });
+      return { activeBuild };
     }
+    if (selection === RERUN_LAST_VALUE) {
+      const rerun = await rerunLastBuildForJob({
+        client: options.client,
+        env: options.env,
+        jobUrl: options.jobUrl,
+        jobLabel: options.jobLabel,
+      });
+      printRerunResult({
+        jobLabel: options.jobLabel,
+        jobUrl: options.jobUrl,
+        source: "last build",
+        rerun,
+      });
+
+      const activeBuild = await runHistoryRebuildPostFlow({
+        client: options.client,
+        env: options.env,
+        jobLabel: options.jobLabel,
+        jobUrl: options.jobUrl,
+        params: rerun.params,
+        branch: extractBranchFromParams(rerun.params) ?? options.build.branch,
+        activeBuild: {
+          buildUrl: rerun.result.buildUrl,
+          buildNumber: rerun.result.buildNumber,
+          queueUrl: rerun.result.queueUrl,
+        },
+      });
+      return { activeBuild };
+    }
+  }
+}
+
+async function runHistoryRebuildPostFlow(options: {
+  client: JenkinsClient;
+  env: EnvConfig;
+  jobLabel: string;
+  jobUrl: string;
+  params: Record<string, string>;
+  branch?: string;
+  activeBuild: HistoryActiveBuild;
+}): Promise<HistoryActiveBuild> {
+  let activeBuild = { ...options.activeBuild };
+  const context: BuildPostContext = {
+    env: options.env,
+    jobLabel: options.jobLabel,
+    returnToCaller: true,
+    performAction: async (action): Promise<ActionEffectResult> => {
+      if (action === "watch") {
+        const result = await runHistoryMenuAction(async () =>
+          historyDeps.runWait({
+            client: options.client,
+            env: options.env,
+            buildUrl: activeBuild.buildUrl,
+            queueUrl: activeBuild.queueUrl,
+            jobUrl:
+              !activeBuild.buildUrl && !activeBuild.queueUrl
+                ? options.jobUrl
+                : undefined,
+            nonInteractive: false,
+            suppressExitCode: true,
+          }),
+        );
+        if (!result) {
+          return "action_error";
+        }
+        activeBuild = {
+          buildUrl: result.buildUrl ?? activeBuild.buildUrl,
+          buildNumber: result.buildNumber ?? activeBuild.buildNumber,
+          queueUrl: result.buildUrl ? undefined : activeBuild.queueUrl,
+        };
+        return result.cancelled ? "watch_cancelled" : "action_ok";
+      }
+
+      if (action === "logs") {
+        const result = await runHistoryMenuAction(async () => {
+          await historyDeps.runLogs({
+            client: options.client,
+            env: options.env,
+            buildUrl: activeBuild.buildUrl,
+            queueUrl: activeBuild.queueUrl,
+            jobUrl:
+              !activeBuild.buildUrl && !activeBuild.queueUrl
+                ? options.jobUrl
+                : undefined,
+            follow: true,
+            nonInteractive: false,
+          });
+          return "action_ok";
+        });
+        return (result ?? "action_error") as ActionEffectResult;
+      }
+
+      if (action === "history") {
+        const result = await runHistoryMenuAction(async () => {
+          const historyResult = await runHistory({
+            client: options.client,
+            env: options.env,
+            jobUrl: options.jobUrl,
+            nonInteractive: false,
+          });
+          if (historyResult.activeBuild) {
+            activeBuild = { ...historyResult.activeBuild };
+          }
+          return "action_ok";
+        });
+        return (result ?? "action_error") as ActionEffectResult;
+      }
+
+      if (action === "cancel") {
+        const result = await runHistoryMenuAction(async () => {
+          await historyDeps.runCancel({
+            client: options.client,
+            env: options.env,
+            buildUrl: activeBuild.buildUrl,
+            queueUrl: activeBuild.queueUrl,
+            jobUrl:
+              !activeBuild.buildUrl && !activeBuild.queueUrl
+                ? options.jobUrl
+                : undefined,
+            nonInteractive: false,
+          });
+          return "action_ok";
+        });
+        return (result ?? "action_error") as ActionEffectResult;
+      }
+
+      if (action === "rerun") {
+        const result = await runHistoryMenuAction(async () => {
+          const rerunResult = await options.client.triggerBuild(
+            options.jobUrl,
+            options.params,
+          );
+          activeBuild = {
+            buildUrl: rerunResult.buildUrl,
+            buildNumber: rerunResult.buildNumber,
+            queueUrl: rerunResult.queueUrl,
+          };
+          await recordHistoryRebuildSuccess({
+            env: options.env,
+            jobUrl: options.jobUrl,
+            branch: options.branch,
+          });
+          if (rerunResult.buildUrl) {
+            printOk(`Build started at ${rerunResult.buildUrl}.`);
+          } else if (rerunResult.queueUrl) {
+            printOk(`Build queued for ${options.jobLabel}.`);
+          } else {
+            printOk(`Build triggered for ${options.jobLabel}.`);
+          }
+          return "action_ok";
+        });
+        return (result ?? "action_error") as ActionEffectResult;
+      }
+
+      if (action === "rerun_last") {
+        const result = await runHistoryMenuAction(async () => {
+          const rerun = await rerunLastBuildForJob({
+            client: options.client,
+            env: options.env,
+            jobUrl: options.jobUrl,
+            jobLabel: options.jobLabel,
+          });
+          activeBuild = {
+            buildUrl: rerun.result.buildUrl,
+            buildNumber: rerun.result.buildNumber,
+            queueUrl: rerun.result.queueUrl,
+          };
+          printRerunResult({
+            jobLabel: options.jobLabel,
+            jobUrl: options.jobUrl,
+            source: "last build",
+            rerun,
+          });
+          return "action_ok";
+        });
+        return (result ?? "action_error") as ActionEffectResult;
+      }
+
+      return "action_error";
+    },
+  };
+
+  await runFlow({
+    definition: flows.buildPost,
+    handlers: buildFlowHandlers,
+    prompts: {
+      confirm: historyDeps.confirm,
+      isCancel: historyDeps.isCancel,
+      select: historyDeps.select,
+      text: historyDeps.text,
+    },
+    context,
+  });
+  return activeBuild;
+}
+
+async function runHistoryMenuAction<T>(
+  action: () => Promise<T>,
+): Promise<T | undefined> {
+  try {
+    return await action();
+  } catch (error) {
+    if (error instanceof CliError) {
+      printError(error.message);
+      for (const hint of error.hints) {
+        printHint(hint);
+      }
+      return undefined;
+    }
+    throw error;
+  }
+}
+
+async function recordHistoryRebuildSuccess(options: {
+  env: EnvConfig;
+  jobUrl: string;
+  branch?: string;
+}): Promise<void> {
+  try {
+    await historyDeps.recordRecentJob({
+      env: options.env,
+      jobUrl: options.jobUrl,
+    });
+  } catch {
+    // Ignore cache write failures for rebuild success.
+  }
+
+  if (!options.branch) {
+    return;
+  }
+
+  try {
+    await historyDeps.recordBranchSelection({
+      env: options.env,
+      jobUrl: options.jobUrl,
+      branch: options.branch,
+    });
+  } catch {
+    // Ignore cache write failures for rebuild success.
   }
 }
 
@@ -367,4 +628,29 @@ function toParamRecord(
     result[key] = param.value;
   }
   return result;
+}
+
+function extractBranchFromParams(
+  params: Record<string, string>,
+): string | undefined {
+  const candidates = [
+    "BRANCH",
+    "BRANCH_TAG",
+    "GIT_BRANCH",
+    "BRANCH_NAME",
+    "REF",
+    "TAG",
+  ];
+
+  for (const key of candidates) {
+    const value = params[key];
+    if (value) {
+      return value;
+    }
+  }
+
+  const fallback = Object.entries(params).find(
+    ([name, value]) => name.toLowerCase().includes("branch") && value,
+  );
+  return fallback?.[1];
 }

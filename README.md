@@ -221,6 +221,7 @@ In interactive mode, build history lets you:
 
 - Page through builds 5 at a time
 - Rebuild a selected historical build with the same parameters
+- Continue into the same post-build action menu used by `build` after a rebuild
 - Open the selected build's URL
 - Jump into logs for the selected build
 - Inspect failed step and failure reason when Jenkins exposes them
