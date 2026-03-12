@@ -253,3 +253,153 @@ describe("JenkinsClient POST with crumb", () => {
     ).toBe("fresh-crumb");
   });
 });
+
+describe("JenkinsClient listBuildHistory", () => {
+  test("returns paginated build history with failed step details", async () => {
+    const fetchMock = mock(async (input: FetchInput, _init?: FetchInit) => {
+      const url = String(input);
+      if (
+        url ===
+        "https://jenkins.example.com/job/my-job/api/json?tree=builds[number,url,result,building,timestamp,duration,estimatedDuration,actions[parameters[name,value]]]"
+      ) {
+        return new Response(
+          JSON.stringify({
+            builds: [
+              {
+                number: 103,
+                url: "https://jenkins.example.com/job/my-job/103/",
+                result: "SUCCESS",
+                timestamp: 1030,
+                duration: 10_000,
+              },
+              {
+                number: 102,
+                url: "https://jenkins.example.com/job/my-job/102/",
+                result: "FAILURE",
+                timestamp: 1020,
+                duration: 8_000,
+                actions: [
+                  {
+                    parameters: [
+                      { name: "BRANCH", value: "main" },
+                      { name: "DEPLOY_ENV", value: "staging" },
+                    ],
+                  },
+                ],
+              },
+              {
+                number: 101,
+                url: "https://jenkins.example.com/job/my-job/101/",
+                result: "SUCCESS",
+                timestamp: 1010,
+                duration: 6_000,
+              },
+            ],
+          }),
+          { status: 200 },
+        );
+      }
+      if (url === "https://jenkins.example.com/job/my-job/102/wfapi/describe") {
+        return new Response(
+          JSON.stringify({
+            stages: [
+              {
+                name: "Build",
+                status: "SUCCESS",
+              },
+              {
+                name: "Deploy",
+                status: "FAILED",
+                _links: {
+                  self: {
+                    href: "/job/my-job/102/execution/node/12/wfapi/describe",
+                  },
+                },
+              },
+            ],
+            queueDurationMillis: 2000,
+          }),
+          { status: 200 },
+        );
+      }
+      if (url === "https://jenkins.example.com/job/my-job/101/wfapi/describe") {
+        return new Response(
+          JSON.stringify({
+            stages: [
+              {
+                name: "Deploy",
+                status: "SUCCESS",
+              },
+            ],
+          }),
+          { status: 200 },
+        );
+      }
+      if (
+        url ===
+        "https://jenkins.example.com/job/my-job/102/execution/node/12/wfapi/describe"
+      ) {
+        return new Response(
+          JSON.stringify({
+            name: "Deploy",
+            status: "FAILED",
+            stageFlowNodes: [
+              {
+                name: "Deploy to ECS",
+                status: "FAILED",
+                error: {
+                  message: "task definition validation failed",
+                },
+              },
+            ],
+          }),
+          { status: 200 },
+        );
+      }
+      return new Response("", { status: 404 });
+    });
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+    const client = new JenkinsClient({
+      baseUrl: "https://jenkins.example.com",
+      user: "user",
+      apiToken: "token",
+      timeoutMs: 1_000,
+    });
+
+    const page = await client.listBuildHistory(
+      "https://jenkins.example.com/job/my-job/",
+      {
+        offset: 1,
+        limit: 2,
+      },
+    );
+
+    expect(page.total).toBe(3);
+    expect(page.offset).toBe(1);
+    expect(page.limit).toBe(2);
+    expect(page.hasNext).toBe(false);
+    expect(page.hasPrevious).toBe(true);
+    expect(page.builds).toHaveLength(2);
+    expect(page.builds[0]).toMatchObject({
+      buildNumber: 102,
+      branch: "main",
+      failure: {
+        stageName: "Deploy",
+        stepName: "Deploy to ECS",
+        reason: "task definition validation failed",
+      },
+      stage: {
+        name: "Deploy",
+        status: "FAILED",
+      },
+    });
+    expect(page.builds[1]).toMatchObject({
+      buildNumber: 101,
+      stage: {
+        name: "Deploy",
+        status: "SUCCESS",
+      },
+    });
+  });
+});

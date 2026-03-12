@@ -10,6 +10,7 @@ import { runWithAnalytics, updateAnalyticsContext } from "./analytics";
 import { CliError, getScriptName, handleCliError, printHint } from "./cli";
 import { runBuild } from "./commands/build";
 import { runCancel } from "./commands/cancel";
+import { runHistory } from "./commands/history";
 import { runLogin } from "./commands/login";
 import { runList } from "./commands/list";
 import { DEFAULT_LOG_POLL_MS, runLogs } from "./commands/logs";
@@ -316,6 +317,38 @@ async function main(): Promise<void> {
       },
     )
     .command(
+      ["history", "builds"],
+      "Show paginated build history for a job",
+      (yargsInstance) =>
+        yargsInstance
+          .option("job", {
+            type: "string",
+            describe: "Job name or description",
+          })
+          .option("job-url", {
+            type: "string",
+            describe: "Full Jenkins job URL",
+          })
+          .option("offset", {
+            type: "number",
+            default: 0,
+            describe: "Skip the first N builds before showing the next 5",
+          }),
+      async (argv) => {
+        await runTrackedCommand("history", argv, async () => {
+          const { env, client } = createContext(argv);
+          await runHistory({
+            client,
+            env,
+            job: typeof argv.job === "string" ? argv.job : undefined,
+            jobUrl: typeof argv.jobUrl === "string" ? argv.jobUrl : undefined,
+            offset: typeof argv.offset === "number" ? argv.offset : undefined,
+            nonInteractive: Boolean(argv.nonInteractive),
+          });
+        });
+      },
+    )
+    .command(
       "wait",
       "Wait for a Jenkins build to finish",
       (yargsInstance) =>
@@ -611,6 +644,11 @@ async function main(): Promise<void> {
     --job-url  Full Jenkins job URL
     --watch    Watch latest build status until completion
 
+  history / builds:
+    --job      Job name or description
+    --job-url  Full Jenkins job URL
+    --offset   Skip the first N builds before showing the next 5
+
   wait:
     --job       Job name or description
     --job-url   Full Jenkins job URL
@@ -757,7 +795,7 @@ async function runTrackedCommand(
   await runWithAnalytics(
     {
       command,
-      interactive: !Boolean(argv?.nonInteractive),
+      interactive: !argv?.nonInteractive,
     },
     action,
   );

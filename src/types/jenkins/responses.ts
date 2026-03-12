@@ -33,6 +33,10 @@ export type JenkinsApiBuild = {
   actions?: JenkinsApiBuildAction[];
 };
 
+export type JenkinsApiBuildsResponse = {
+  builds?: JenkinsApiBuild[];
+};
+
 export type JenkinsJobStatusResponse = {
   lastBuild?: JenkinsApiBuild;
 };
@@ -80,9 +84,41 @@ export type JenkinsQueueWaitTimeResponse = {
   inQueueSince?: number;
 };
 
+export type JenkinsPipelineLinkResponse = {
+  href?: string;
+};
+
+export type JenkinsPipelineNodeErrorResponse = {
+  type?: string;
+  message?: string;
+};
+
+export type JenkinsPipelineNodeLogResponse = {
+  text?: string;
+  length?: number;
+  hasMore?: boolean;
+};
+
+export type JenkinsPipelineNodeResponse = {
+  id?: string | number;
+  name?: string;
+  status?: string;
+  error?: JenkinsPipelineNodeErrorResponse;
+  _links?: {
+    self?: JenkinsPipelineLinkResponse;
+    log?: JenkinsPipelineLinkResponse;
+  };
+  stageFlowNodes?: JenkinsPipelineNodeResponse[];
+};
+
 export type JenkinsPipelineStageResponse = {
   name?: string;
   status?: string;
+  _links?: {
+    self?: JenkinsPipelineLinkResponse;
+    log?: JenkinsPipelineLinkResponse;
+  };
+  stageFlowNodes?: JenkinsPipelineNodeResponse[];
 };
 
 export type JenkinsPipelineDescribeResponse = {

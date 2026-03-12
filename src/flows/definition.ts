@@ -57,6 +57,7 @@ export const listInteractiveFlow: FlowDefinition<ListInteractiveContext> = {
         options: [
           { value: "build", label: "Build" },
           { value: "status", label: "Status" },
+          { value: "history", label: "Build history" },
           { value: "watch", label: "Watch" },
           { value: "logs", label: "Logs" },
           { value: "cancel", label: "Cancel" },
@@ -72,6 +73,7 @@ export const listInteractiveFlow: FlowDefinition<ListInteractiveContext> = {
         "select:exit": "exit_command",
         "select:build": "run_action",
         "select:status": "run_action",
+        "select:history": "run_action",
         "select:watch": "run_action",
         "select:logs": "run_action",
         "select:cancel": "run_action",
@@ -396,6 +398,7 @@ export const buildPostFlow: FlowDefinition<BuildPostContext> = {
           withPromptTarget(`Next action for ${context.jobLabel}`, context.env),
         options: [
           { value: "watch", label: "Watch" },
+          { value: "history", label: "Build history" },
           { value: "logs", label: "Logs" },
           { value: "cancel", label: "Cancel" },
           { value: "rerun", label: "Rerun same inputs" },
@@ -407,6 +410,7 @@ export const buildPostFlow: FlowDefinition<BuildPostContext> = {
         esc: "after_menu",
         done: "after_menu",
         "select:watch": "run_action",
+        "select:history": "run_action",
         "select:logs": "run_action",
         "select:cancel": "run_action",
         "select:rerun": "run_action",
@@ -470,6 +474,7 @@ export const statusPostFlow: FlowDefinition<StatusPostContext> = {
           withPromptTarget(`Action for ${context.targetLabel}`, context.env),
         options: [
           { value: "watch", label: "Watch" },
+          { value: "history", label: "Build history" },
           { value: "logs", label: "Logs" },
           { value: "cancel", label: "Cancel running/queued build" },
           { value: "rerun", label: "Rerun last failed build" },
@@ -482,6 +487,7 @@ export const statusPostFlow: FlowDefinition<StatusPostContext> = {
         esc: "again_confirm",
         done: "again_confirm",
         "select:watch": "run_action",
+        "select:history": "run_action",
         "select:logs": "run_action",
         "select:cancel": "run_action",
         "select:rerun": "run_action",

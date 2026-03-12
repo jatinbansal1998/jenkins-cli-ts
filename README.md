@@ -1,7 +1,8 @@
 # Jenkins CLI
 
-Minimal Jenkins CLI for listing jobs, triggering builds, and checking status. Built
-for interactive use and automation with clear, parseable output.
+Minimal Jenkins CLI for listing jobs, triggering builds, checking status, and
+inspecting recent build history. Built for interactive use and automation with
+clear, parseable output.
 
 ## Demo
 
@@ -128,7 +129,7 @@ jenkins-cli list
 In interactive mode, `list` acts as a launcher:
 
 - Search and select a job
-- Run `Build`, `Status`, `Watch`, `Logs`, `Cancel`, or `Rerun`
+- Run `Build`, `Status`, `Build history`, `Watch`, `Logs`, `Cancel`, or `Rerun`
 
 Refresh the cache from Jenkins:
 
@@ -207,6 +208,22 @@ Watch the latest build status from status command:
 ```bash
 jenkins-cli status --job "api-prod" --watch
 ```
+
+Show recent build history in a Jenkins-style table:
+
+```bash
+jenkins-cli history --job "api-prod"
+jenkins-cli builds --job "api-prod"
+jenkins-cli history --job "api-prod" --offset 5
+```
+
+In interactive mode, build history lets you:
+
+- Page through builds 5 at a time
+- Rebuild a selected historical build with the same parameters
+- Open the selected build's URL
+- Jump into logs for the selected build
+- Inspect failed step and failure reason when Jenkins exposes them
 
 Wait for a build to finish:
 
