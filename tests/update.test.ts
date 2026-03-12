@@ -13,6 +13,8 @@ import {
   getDeferredUpdatePromptVersion,
   isHomebrewManagedPath,
   normalizeVersionTag,
+  parseUpdateChannel,
+  resolveUpdateChannel,
   resolveAssetUrl,
   resolveExecutablePath,
   withPendingUpdateState,
@@ -50,6 +52,26 @@ describe("update version helpers", () => {
 
   test("compareVersions returns null for invalid version", () => {
     expect(compareVersions("v1.0.0", "latest")).toBeNull();
+  });
+
+  test("compareVersions treats stable as newer than prerelease of same version", () => {
+    expect(compareVersions("v1.0.0", "v1.0.0-beta.1")).toBe(1);
+  });
+
+  test("compareVersions orders prerelease identifiers semantically", () => {
+    expect(compareVersions("v1.0.0-beta.2", "v1.0.0-beta.11")).toBe(-1);
+  });
+
+  test("parseUpdateChannel supports beta and prerelease aliases", () => {
+    expect(parseUpdateChannel("stable")).toBe("stable");
+    expect(parseUpdateChannel("beta")).toBe("prerelease");
+    expect(parseUpdateChannel("pre-release")).toBe("prerelease");
+    expect(parseUpdateChannel("prerelease")).toBe("prerelease");
+    expect(parseUpdateChannel("nightly")).toBeNull();
+  });
+
+  test("resolveUpdateChannel defaults to stable", () => {
+    expect(resolveUpdateChannel({})).toBe("stable");
   });
 });
 
@@ -207,6 +229,58 @@ describe("deferred update state helpers", () => {
 });
 
 describe("GitHub headers", () => {
+  test("fetchLatestRelease defaults to the dedicated latest stable release endpoint", async () => {
+    const fetchMock = mock(async (_input: FetchInput, _init?: FetchInit) => {
+      return new Response(
+        JSON.stringify({
+          tag_name: "v1.2.9",
+          prerelease: false,
+          assets: [],
+        }),
+        { status: 200 },
+      );
+    });
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+    const release = await fetchLatestRelease({ currentVersion: "0.7.0" });
+
+    expect(release.tag_name).toBe("v1.2.9");
+    expect(fetchMock.mock.calls[0]?.[0]).toBe(
+      "https://api.github.com/repos/jatinbansal1998/jenkins-cli-ts/releases/latest",
+    );
+  });
+
+  test("fetchLatestRelease returns the latest prerelease when channel allows it", async () => {
+    const fetchMock = mock(async (_input: FetchInput, _init?: FetchInit) => {
+      return new Response(
+        JSON.stringify([
+          {
+            tag_name: "v1.3.0-beta.1",
+            prerelease: true,
+            assets: [],
+          },
+          {
+            tag_name: "v1.2.9",
+            prerelease: false,
+            assets: [],
+          },
+        ]),
+        { status: 200 },
+      );
+    });
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+    const release = await fetchLatestRelease({
+      currentVersion: "0.7.0",
+      channel: "prerelease",
+    });
+
+    expect(release.tag_name).toBe("v1.3.0-beta.1");
+    expect(fetchMock.mock.calls[0]?.[0]).toBe(
+      "https://api.github.com/repos/jatinbansal1998/jenkins-cli-ts/releases?per_page=20",
+    );
+  });
+
   test("fetchLatestRelease sends a versioned user agent", async () => {
     const fetchMock = mock(async (_input: FetchInput, _init?: FetchInit) => {
       return new Response(
@@ -221,6 +295,9 @@ describe("GitHub headers", () => {
 
     await fetchLatestRelease({ currentVersion: "0.7.0" });
 
+    expect(fetchMock.mock.calls[0]?.[0]).toBe(
+      "https://api.github.com/repos/jatinbansal1998/jenkins-cli-ts/releases/latest",
+    );
     const requestInit = fetchMock.mock.calls[0]?.[1] as RequestInit | undefined;
     expect(readHeader(requestInit, "User-Agent")).toBe(
       `jenkins-cli/0.7.0 (+${GITHUB_REPO_URL}; platform=${process.platform}; arch=${process.arch})`,

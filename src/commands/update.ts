@@ -12,9 +12,12 @@ import {
   getPreferredUpdateCommand,
   isHomebrewManagedPath,
   normalizeVersionTag,
+  parseUpdateChannel,
   readUpdateState,
+  resolveUpdateChannel,
   resolveAssetUrl,
   resolveExecutablePath,
+  type UpdateState,
   withPendingUpdateState,
   writeUpdateState,
 } from "../update";
@@ -27,11 +30,16 @@ type UpdateOptions = {
   disableAuto?: boolean;
   enableAutoInstall?: boolean;
   disableAutoInstall?: boolean;
+  channel?: string;
 };
 
 export async function runUpdate(options: UpdateOptions): Promise<void> {
   const preferredUpdateCommand = getPreferredUpdateCommand();
   const homebrewManaged = preferredUpdateCommand === UPDATE_COMMAND_BREW;
+  const requestedChannel =
+    typeof options.channel === "string"
+      ? parseUpdateChannel(options.channel)
+      : undefined;
 
   if (options.enableAuto && options.disableAuto) {
     throw new CliError("Cannot use --enable-auto and --disable-auto together.");
@@ -44,22 +52,32 @@ export async function runUpdate(options: UpdateOptions): Promise<void> {
   if (options.check && options.tag) {
     throw new CliError("Cannot use --check with a version tag.");
   }
+  if (options.channel && !requestedChannel) {
+    throw new CliError(`Unknown update channel "${options.channel}".`, [
+      "Use one of: stable, beta, prerelease.",
+    ]);
+  }
 
-  if (
+  const state = await readUpdateState();
+  const nextState: UpdateState = { ...state };
+  if (requestedChannel) {
+    nextState.updateChannel = requestedChannel;
+  }
+
+  const hasSettingsChange =
     options.enableAuto ||
     options.disableAuto ||
     options.enableAutoInstall ||
-    options.disableAutoInstall
-  ) {
+    options.disableAutoInstall ||
+    requestedChannel !== undefined;
+
+  if (hasSettingsChange) {
     if (options.enableAutoInstall && homebrewManaged) {
       throw new CliError(
         "Auto-install is not supported for Homebrew-managed installs.",
         [`Use \`${UPDATE_COMMAND_BREW}\` to apply updates.`],
       );
     }
-
-    const state = await readUpdateState();
-    const nextState = { ...state };
 
     if (options.enableAuto) {
       nextState.autoUpdate = true;
@@ -77,50 +95,37 @@ export async function runUpdate(options: UpdateOptions): Promise<void> {
     }
 
     await writeUpdateState(nextState);
-    const autoUpdateEnabled = nextState.autoUpdate !== false;
-    const autoInstallEnabled = nextState.autoInstall === true;
-    printOk(
-      `Auto-update checks: ${autoUpdateEnabled ? "enabled (notify only)" : "disabled"}.`,
-    );
-    printOk(`Auto-install: ${autoInstallEnabled ? "enabled" : "disabled"}.`);
-    return;
+    if (!options.check && !options.tag) {
+      printUpdatePreferences(nextState);
+      return;
+    }
   }
 
+  const effectiveState = hasSettingsChange ? nextState : state;
+  const updateChannel = resolveUpdateChannel(effectiveState);
+
   if (options.check) {
-    const state = await readUpdateState();
-    const autoUpdateEnabled = state.autoUpdate !== false;
-    const autoInstallEnabled = state.autoInstall === true;
     const latest = await fetchLatestRelease({
       currentVersion: options.currentVersion,
+      channel: updateChannel,
     });
     const nowIso = new Date().toISOString();
     const comparison = compareVersions(latest.tag_name, options.currentVersion);
+    const checkedState: UpdateState = {
+      ...effectiveState,
+      lastCheckedAt: nowIso,
+    };
     if (comparison !== null && comparison <= 0) {
       printOk(`Already on latest version (${options.currentVersion}).`);
-      await writeUpdateState(
-        clearPendingUpdateState({
-          ...state,
-          lastCheckedAt: nowIso,
-        }),
-      );
+      await writeUpdateState(clearPendingUpdateState(checkedState));
     } else {
       printOk(`Latest version is ${latest.tag_name}.`);
       printHint(`Run \`${preferredUpdateCommand}\` to install it.`);
       await writeUpdateState(
-        withPendingUpdateState(
-          {
-            ...state,
-            lastCheckedAt: nowIso,
-          },
-          latest.tag_name,
-          nowIso,
-        ),
+        withPendingUpdateState(checkedState, latest.tag_name, nowIso),
       );
     }
-    printOk(
-      `Auto-update checks: ${autoUpdateEnabled ? "enabled (notify only)" : "disabled"}.`,
-    );
-    printOk(`Auto-install: ${autoInstallEnabled ? "enabled" : "disabled"}.`);
+    printUpdatePreferences(effectiveState);
     return;
   }
 
@@ -131,6 +136,7 @@ export async function runUpdate(options: UpdateOptions): Promise<void> {
       })
     : await fetchLatestRelease({
         currentVersion: options.currentVersion,
+        channel: updateChannel,
       });
 
   if (!requestedVersion) {
@@ -161,6 +167,17 @@ export async function runUpdate(options: UpdateOptions): Promise<void> {
 
   await recordSuccessfulUpdate(release.tag_name);
   printOk(`Updated jenkins-cli to ${release.tag_name}.`);
+}
+
+function printUpdatePreferences(state: UpdateState): void {
+  const autoUpdateEnabled = state.autoUpdate !== false;
+  const autoInstallEnabled = state.autoInstall === true;
+  const updateChannel = resolveUpdateChannel(state);
+  printOk(
+    `Auto-update checks: ${autoUpdateEnabled ? "enabled (notify only)" : "disabled"}.`,
+  );
+  printOk(`Auto-install: ${autoInstallEnabled ? "enabled" : "disabled"}.`);
+  printOk(`Update channel: ${updateChannel}.`);
 }
 
 async function recordSuccessfulUpdate(version: string): Promise<void> {

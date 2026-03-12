@@ -17,6 +17,7 @@ type FetchInit = Parameters<typeof fetch>[1];
 export type ApiMocksOptions = {
   jenkinsUrl?: string;
   latestRelease?: GitHubReleaseInfo;
+  releases?: GitHubReleaseInfo[];
   versionPolicy?: {
     minVersion: string;
     message?: string;
@@ -53,6 +54,19 @@ export async function installApiMocks(
         },
       ],
     } satisfies GitHubReleaseInfo);
+  const releases = options.releases ?? [
+    latestRelease,
+    {
+      tag_name: "v9.9.8",
+      assets: [
+        {
+          name: "jenkins-cli",
+          browser_download_url:
+            "https://github.com/jatinbansal1998/jenkins-cli-ts/releases/download/v9.9.8/jenkins-cli",
+        },
+      ],
+    },
+  ];
   const versionPolicy =
     options.versionPolicy ??
     ({
@@ -83,6 +97,10 @@ export async function installApiMocks(
 
     if (requestUrl === `${GITHUB_API_ROOT}/releases/latest`) {
       return jsonResponse(latestRelease);
+    }
+
+    if (requestUrl === `${GITHUB_API_ROOT}/releases?per_page=20`) {
+      return jsonResponse(releases);
     }
 
     if (requestUrl.startsWith(`${GITHUB_API_ROOT}/releases/tags/`)) {

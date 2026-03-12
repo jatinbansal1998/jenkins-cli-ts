@@ -50,4 +50,40 @@ describe("shared API mocks", () => {
       updatedAt: "2026-02-12T00:00:00.000Z",
     });
   });
+
+  test("mocks prerelease selection when update channel allows it", async () => {
+    const mocks = await installApiMocks({
+      releases: [
+        {
+          tag_name: "v10.0.0-beta.1",
+          prerelease: true,
+          assets: [
+            {
+              name: "jenkins-cli",
+              browser_download_url:
+                "https://github.com/jatinbansal1998/jenkins-cli-ts/releases/download/v10.0.0-beta.1/jenkins-cli",
+            },
+          ],
+        },
+        {
+          tag_name: "v9.9.9",
+          assets: [
+            {
+              name: "jenkins-cli",
+              browser_download_url:
+                "https://github.com/jatinbansal1998/jenkins-cli-ts/releases/download/v9.9.9/jenkins-cli",
+            },
+          ],
+        },
+      ],
+    });
+    restoreFetch = mocks.restore;
+
+    const release = await fetchLatestRelease({
+      currentVersion: "0.7.0",
+      channel: "prerelease",
+    });
+
+    expect(release.tag_name).toBe("v10.0.0-beta.1");
+  });
 });

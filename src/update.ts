@@ -21,9 +21,12 @@ const HOMEBREW_CELLAR_SEGMENT = `${path.sep}Cellar${path.sep}jenkins-cli${path.s
 const AUTO_UPDATE_INTERVAL_MS = 60 * 60 * 1000;
 const UPDATE_STATE_FILE = path.join(CONFIG_DIR, "update-state.json");
 
+export type UpdateChannel = "stable" | "prerelease";
+
 export type UpdateState = {
   autoUpdate?: boolean;
   autoInstall?: boolean;
+  updateChannel?: UpdateChannel;
   lastCheckedAt?: string;
   lastNotifiedVersion?: string;
   pendingVersion?: string;
@@ -87,43 +90,72 @@ export function normalizeVersionTag(input: string): string {
   return trimmed.startsWith("v") ? trimmed : `v${trimmed}`;
 }
 
+export function parseUpdateChannel(input: string): UpdateChannel | null {
+  const normalized = input.trim().toLowerCase();
+  switch (normalized) {
+    case "stable":
+      return "stable";
+    case "beta":
+    case "prerelease":
+    case "pre-release":
+      return "prerelease";
+    default:
+      return null;
+  }
+}
+
+export function resolveUpdateChannel(
+  state: Pick<UpdateState, "updateChannel">,
+): UpdateChannel {
+  return state.updateChannel === "prerelease" ? "prerelease" : "stable";
+}
+
 function stripVersionPrefix(input: string): string {
   return input.trim().replace(/^v/i, "");
 }
 
-function parseVersionParts(input: string): number[] | null {
-  const cleaned = stripVersionPrefix(input);
+type ParsedVersion = {
+  main: number[];
+  prerelease: string[] | null;
+};
+
+function parseVersion(input: string): ParsedVersion | null {
+  const cleaned = stripVersionPrefix(input).split("+")[0]?.trim();
   if (!cleaned) {
     return null;
   }
-  const [main] = cleaned.split("-");
+  const match =
+    /^(?<main>\d+(?:\.\d+)*)(?:-(?<prerelease>[0-9A-Za-z.-]+))?$/.exec(cleaned);
+  const main = match?.groups?.main;
   if (!main) {
     return null;
   }
-  const parts = main.split(".");
-  if (parts.length === 0) {
+  const numbers = main.split(".").map((part) => {
+    if (!/^\d+$/.test(part)) {
+      return Number.NaN;
+    }
+    return Number(part);
+  });
+  if (numbers.some((part) => Number.isNaN(part))) {
     return null;
   }
-  const numbers: number[] = [];
-  for (const part of parts) {
-    if (!/^\d+$/.test(part)) {
-      return null;
-    }
-    numbers.push(Number(part));
-  }
-  return numbers;
+  const prerelease = match?.groups?.prerelease?.split(".") ?? null;
+  return {
+    main: numbers,
+    prerelease,
+  };
 }
 
 export function compareVersions(a: string, b: string): number | null {
-  const aParts = parseVersionParts(a);
-  const bParts = parseVersionParts(b);
-  if (!aParts || !bParts) {
+  const aVersion = parseVersion(a);
+  const bVersion = parseVersion(b);
+  if (!aVersion || !bVersion) {
     return null;
   }
-  const length = Math.max(aParts.length, bParts.length, 3);
+  const length = Math.max(aVersion.main.length, bVersion.main.length, 3);
   for (let i = 0; i < length; i += 1) {
-    const aValue = aParts[i] ?? 0;
-    const bValue = bParts[i] ?? 0;
+    const aValue = aVersion.main[i] ?? 0;
+    const bValue = bVersion.main[i] ?? 0;
     if (aValue > bValue) {
       return 1;
     }
@@ -131,6 +163,56 @@ export function compareVersions(a: string, b: string): number | null {
       return -1;
     }
   }
+
+  if (!aVersion.prerelease && !bVersion.prerelease) {
+    return 0;
+  }
+  if (!aVersion.prerelease) {
+    return 1;
+  }
+  if (!bVersion.prerelease) {
+    return -1;
+  }
+
+  const prereleaseLength = Math.max(
+    aVersion.prerelease.length,
+    bVersion.prerelease.length,
+  );
+  for (let i = 0; i < prereleaseLength; i += 1) {
+    const aIdentifier = aVersion.prerelease[i];
+    const bIdentifier = bVersion.prerelease[i];
+    if (aIdentifier === undefined) {
+      return -1;
+    }
+    if (bIdentifier === undefined) {
+      return 1;
+    }
+    if (aIdentifier === bIdentifier) {
+      continue;
+    }
+
+    const aNumeric = /^\d+$/.test(aIdentifier);
+    const bNumeric = /^\d+$/.test(bIdentifier);
+    if (aNumeric && bNumeric) {
+      const aValue = Number(aIdentifier);
+      const bValue = Number(bIdentifier);
+      if (aValue > bValue) {
+        return 1;
+      }
+      if (aValue < bValue) {
+        return -1;
+      }
+      continue;
+    }
+    if (aNumeric) {
+      return -1;
+    }
+    if (bNumeric) {
+      return 1;
+    }
+    return aIdentifier.localeCompare(bIdentifier);
+  }
+
   return 0;
 }
 
@@ -192,6 +274,7 @@ export function getPreferredUpdateCommand(): string {
 
 export async function fetchLatestRelease(options: {
   currentVersion: string;
+  channel?: UpdateChannel;
   timeoutMs?: number;
 }): Promise<ReleaseInfo> {
   return await fetchLatestGitHubRelease(options);
@@ -303,6 +386,7 @@ async function runAutoUpdate(currentVersion: string): Promise<void> {
 
     const release = await fetchLatestRelease({
       currentVersion,
+      channel: resolveUpdateChannel(state),
       timeoutMs: 800,
     });
     const nowIso = new Date().toISOString();

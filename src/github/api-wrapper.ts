@@ -6,7 +6,9 @@ import {
 import { createGitHubHeaders } from "../github-http";
 
 const RELEASES_LATEST_ENDPOINT = "releases/latest";
+const RELEASES_ENDPOINT = "releases";
 const RELEASES_TAGS_ENDPOINT = "releases/tags";
+const MAX_RELEASES_TO_SCAN = 20;
 
 export type GitHubReleaseAsset = {
   name: string;
@@ -16,6 +18,8 @@ export type GitHubReleaseAsset = {
 export type GitHubReleaseInfo = {
   tag_name: string;
   assets: GitHubReleaseAsset[];
+  prerelease?: boolean;
+  draft?: boolean;
 };
 
 type TimedRequestOptions = {
@@ -24,6 +28,7 @@ type TimedRequestOptions = {
 
 type GitHubReleaseRequestOptions = TimedRequestOptions & {
   currentVersion: string;
+  channel?: "stable" | "prerelease";
 };
 
 type VersionPolicyRequestOptions = TimedRequestOptions & {
@@ -34,7 +39,21 @@ type VersionPolicyRequestOptions = TimedRequestOptions & {
 export async function fetchLatestRelease(
   options: GitHubReleaseRequestOptions,
 ): Promise<GitHubReleaseInfo> {
-  return await fetchRelease(RELEASES_LATEST_ENDPOINT, options);
+  if (options.channel !== "prerelease") {
+    return await fetchRelease(RELEASES_LATEST_ENDPOINT, options);
+  }
+
+  const releases = await fetchReleases(
+    `${RELEASES_ENDPOINT}?per_page=${MAX_RELEASES_TO_SCAN}`,
+    options,
+  );
+  const latest = releases.find((release) => !release.draft);
+  if (!latest) {
+    throw new CliError("No eligible GitHub releases were found.", [
+      "Create a release or prerelease in GitHub before updating.",
+    ]);
+  }
+  return latest;
 }
 
 export async function fetchReleaseByTag(
@@ -91,6 +110,28 @@ async function fetchRelease(
   endpoint: string,
   options: GitHubReleaseRequestOptions,
 ): Promise<GitHubReleaseInfo> {
+  const payload = await fetchJson(endpoint, options);
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+    throw new CliError("Unexpected release payload from GitHub.");
+  }
+  return validateReleaseInfo(payload);
+}
+
+async function fetchReleases(
+  endpoint: string,
+  options: GitHubReleaseRequestOptions,
+): Promise<GitHubReleaseInfo[]> {
+  const payload = await fetchJson(endpoint, options);
+  if (!Array.isArray(payload)) {
+    throw new CliError("Unexpected releases payload from GitHub.");
+  }
+  return payload.map((item) => validateReleaseInfo(item));
+}
+
+async function fetchJson(
+  endpoint: string,
+  options: GitHubReleaseRequestOptions,
+): Promise<unknown> {
   const { controller, cleanup } = withTimeout(options.timeoutMs);
   try {
     const response = await fetch(`${GITHUB_API_ROOT}/${endpoint}`, {
@@ -111,14 +152,21 @@ async function fetchRelease(
         ],
       );
     }
-    const payload = (await response.json()) as GitHubReleaseInfo;
-    if (!payload.tag_name || !Array.isArray(payload.assets)) {
-      throw new CliError("Unexpected release payload from GitHub.");
-    }
-    return payload;
+    return await response.json();
   } finally {
     cleanup();
   }
+}
+
+function validateReleaseInfo(payload: unknown): GitHubReleaseInfo {
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+    throw new CliError("Unexpected release payload from GitHub.");
+  }
+  const release = payload as GitHubReleaseInfo;
+  if (!release.tag_name || !Array.isArray(release.assets)) {
+    throw new CliError("Unexpected release payload from GitHub.");
+  }
+  return release;
 }
 
 function withTimeout(timeoutMs?: number): {
