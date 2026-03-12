@@ -30,6 +30,7 @@ import { notifyBuildComplete } from "../notify";
 import { runCancel } from "./cancel";
 import { runHistory } from "./history";
 import { runLogs } from "./logs";
+import { DEFAULT_WAIT_INTERVAL_MS } from "./wait";
 import {
   formatCompactStatus,
   formatStatusDetails,
@@ -783,7 +784,7 @@ async function watchBuildStatus(options: {
   queueUrl?: string;
   baselineBuildNumber?: number;
 }): Promise<{ result: string; buildNumber?: number; cancelled?: boolean }> {
-  const pollIntervalMs = 30_000;
+  const pollIntervalMs = DEFAULT_WAIT_INTERVAL_MS;
   markAnalyticsPollingCommand();
   const useSpinner = Boolean(process.stdout.isTTY);
   const statusSpinner = useSpinner ? spinner() : null;
