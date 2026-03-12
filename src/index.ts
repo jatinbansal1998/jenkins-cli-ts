@@ -596,6 +596,11 @@ async function main(): Promise<void> {
             type: "boolean",
             describe: "Disable auto-install of updates",
           })
+          .option("channel", {
+            type: "string",
+            describe:
+              "Set update channel: stable or prerelease (beta alias supported)",
+          })
           .conflicts("enable-auto", ["disable-auto", "check"])
           .conflicts("disable-auto", ["enable-auto", "check"])
           .conflicts("enable-auto-install", ["disable-auto-install", "check"])
@@ -616,6 +621,8 @@ async function main(): Promise<void> {
             disableAuto: Boolean(argv.disableAuto),
             enableAutoInstall: Boolean(argv.enableAutoInstall),
             disableAutoInstall: Boolean(argv.disableAutoInstall),
+            channel:
+              typeof argv.channel === "string" ? argv.channel : undefined,
           });
         });
       },
@@ -702,6 +709,7 @@ async function main(): Promise<void> {
   update / upgrade:
     [tag]          Install a specific version tag (e.g. v0.2.4)
     --check        Check for updates without installing
+    --channel      Set update channel (stable or prerelease; beta alias supported)
     --enable-auto  Enable daily update checks (notify only)
     --disable-auto Disable daily update checks
     --enable-auto-install  Enable auto-install of updates
