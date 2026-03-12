@@ -5,6 +5,7 @@ import {
 } from "../github-constants";
 import { createGitHubHeaders } from "../github-http";
 
+const RELEASES_LATEST_ENDPOINT = "releases/latest";
 const RELEASES_ENDPOINT = "releases";
 const RELEASES_TAGS_ENDPOINT = "releases/tags";
 const MAX_RELEASES_TO_SCAN = 20;
@@ -38,19 +39,18 @@ type VersionPolicyRequestOptions = TimedRequestOptions & {
 export async function fetchLatestRelease(
   options: GitHubReleaseRequestOptions,
 ): Promise<GitHubReleaseInfo> {
+  if (options.channel !== "prerelease") {
+    return await fetchRelease(RELEASES_LATEST_ENDPOINT, options);
+  }
+
   const releases = await fetchReleases(
     `${RELEASES_ENDPOINT}?per_page=${MAX_RELEASES_TO_SCAN}`,
     options,
   );
-  const includePrereleases = options.channel === "prerelease";
-  const latest = releases.find(
-    (release) => !release.draft && (includePrereleases || !release.prerelease),
-  );
+  const latest = releases.find((release) => !release.draft);
   if (!latest) {
     throw new CliError("No eligible GitHub releases were found.", [
-      includePrereleases
-        ? "Create a release or prerelease in GitHub before updating."
-        : "Create a stable GitHub release before updating stable installs.",
+      "Create a release or prerelease in GitHub before updating.",
     ]);
   }
   return latest;

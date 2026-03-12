@@ -229,21 +229,14 @@ describe("deferred update state helpers", () => {
 });
 
 describe("GitHub headers", () => {
-  test("fetchLatestRelease defaults to the latest stable release", async () => {
+  test("fetchLatestRelease defaults to the dedicated latest stable release endpoint", async () => {
     const fetchMock = mock(async (_input: FetchInput, _init?: FetchInit) => {
       return new Response(
-        JSON.stringify([
-          {
-            tag_name: "v1.3.0-beta.1",
-            prerelease: true,
-            assets: [],
-          },
-          {
-            tag_name: "v1.2.9",
-            prerelease: false,
-            assets: [],
-          },
-        ]),
+        JSON.stringify({
+          tag_name: "v1.2.9",
+          prerelease: false,
+          assets: [],
+        }),
         { status: 200 },
       );
     });
@@ -252,6 +245,9 @@ describe("GitHub headers", () => {
     const release = await fetchLatestRelease({ currentVersion: "0.7.0" });
 
     expect(release.tag_name).toBe("v1.2.9");
+    expect(fetchMock.mock.calls[0]?.[0]).toBe(
+      "https://api.github.com/repos/jatinbansal1998/jenkins-cli-ts/releases/latest",
+    );
   });
 
   test("fetchLatestRelease returns the latest prerelease when channel allows it", async () => {
@@ -280,17 +276,18 @@ describe("GitHub headers", () => {
     });
 
     expect(release.tag_name).toBe("v1.3.0-beta.1");
+    expect(fetchMock.mock.calls[0]?.[0]).toBe(
+      "https://api.github.com/repos/jatinbansal1998/jenkins-cli-ts/releases?per_page=20",
+    );
   });
 
   test("fetchLatestRelease sends a versioned user agent", async () => {
     const fetchMock = mock(async (_input: FetchInput, _init?: FetchInit) => {
       return new Response(
-        JSON.stringify([
-          {
-            tag_name: "v1.2.3",
-            assets: [],
-          },
-        ]),
+        JSON.stringify({
+          tag_name: "v1.2.3",
+          assets: [],
+        }),
         { status: 200 },
       );
     });
@@ -299,7 +296,7 @@ describe("GitHub headers", () => {
     await fetchLatestRelease({ currentVersion: "0.7.0" });
 
     expect(fetchMock.mock.calls[0]?.[0]).toBe(
-      "https://api.github.com/repos/jatinbansal1998/jenkins-cli-ts/releases?per_page=20",
+      "https://api.github.com/repos/jatinbansal1998/jenkins-cli-ts/releases/latest",
     );
     const requestInit = fetchMock.mock.calls[0]?.[1] as RequestInit | undefined;
     expect(readHeader(requestInit, "User-Agent")).toBe(
