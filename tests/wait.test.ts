@@ -1,4 +1,13 @@
-import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import {
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  mock,
+  spyOn,
+  test,
+} from "bun:test";
+import { CliError } from "../src/cli";
 import type { EnvConfig } from "../src/env";
 import type { JenkinsClient } from "../src/jenkins/client";
 import { runWait, waitForBuild } from "../src/commands/wait";
@@ -123,5 +132,226 @@ describe("wait command", () => {
     });
     expect(process.exitCode).toBe(0);
     expect(getBuildStatus).toHaveBeenCalledTimes(1);
+  });
+
+  test("waitForBuild can cancel the watched build directly with C", async () => {
+    const stopBuild = mock(async () => undefined);
+    const getBuildStatus = mock(async () => {
+      if (getBuildStatus.mock.calls.length === 1) {
+        process.stdin.emit("data", "c");
+        return {
+          buildNumber: 12,
+          buildUrl: "https://jenkins.example.com/job/api/12/",
+          result: null,
+          building: true,
+        };
+      }
+      return {
+        buildNumber: 12,
+        buildUrl: "https://jenkins.example.com/job/api/12/",
+        result: "ABORTED",
+        building: false,
+      };
+    });
+
+    const stdinIsTTY = Object.getOwnPropertyDescriptor(process.stdin, "isTTY");
+    const stdoutIsTTY = Object.getOwnPropertyDescriptor(
+      process.stdout,
+      "isTTY",
+    );
+
+    Object.defineProperty(process.stdin, "isTTY", {
+      configurable: true,
+      value: true,
+    });
+    Object.defineProperty(process.stdout, "isTTY", {
+      configurable: true,
+      value: true,
+    });
+
+    try {
+      const result = await waitForBuild({
+        client: createClient({
+          stopBuild,
+          getBuildStatus,
+        }),
+        buildUrl: "https://jenkins.example.com/job/api/12/",
+        jobLabel: "api",
+        intervalMs: 1,
+        nonInteractive: true,
+      });
+
+      expect(stopBuild).toHaveBeenCalledTimes(1);
+      expect(stopBuild).toHaveBeenCalledWith(
+        "https://jenkins.example.com/job/api/12/",
+      );
+      expect(result).toMatchObject({
+        result: "ABORTED",
+        buildNumber: 12,
+        buildUrl: "https://jenkins.example.com/job/api/12/",
+        cancelIssued: true,
+      });
+    } finally {
+      if (stdinIsTTY) {
+        Object.defineProperty(process.stdin, "isTTY", stdinIsTTY);
+      } else {
+        Reflect.deleteProperty(process.stdin, "isTTY");
+      }
+      if (stdoutIsTTY) {
+        Object.defineProperty(process.stdout, "isTTY", stdoutIsTTY);
+      } else {
+        Reflect.deleteProperty(process.stdout, "isTTY");
+      }
+    }
+  });
+
+  test("waitForBuild shows a cancel error and continues watching when cancel fails", async () => {
+    const errorSpy = spyOn(console, "error");
+    const stopBuild = mock(async () => {
+      throw new CliError("Cancel request failed.", ["Try again in a moment."]);
+    });
+    const getBuildStatus = mock(async () => {
+      if (getBuildStatus.mock.calls.length === 1) {
+        process.stdin.emit("data", "c");
+        return {
+          buildNumber: 13,
+          buildUrl: "https://jenkins.example.com/job/api/13/",
+          result: null,
+          building: true,
+        };
+      }
+      return {
+        buildNumber: 13,
+        buildUrl: "https://jenkins.example.com/job/api/13/",
+        result: "SUCCESS",
+        building: false,
+      };
+    });
+
+    const stdinIsTTY = Object.getOwnPropertyDescriptor(process.stdin, "isTTY");
+    const stdoutIsTTY = Object.getOwnPropertyDescriptor(
+      process.stdout,
+      "isTTY",
+    );
+
+    Object.defineProperty(process.stdin, "isTTY", {
+      configurable: true,
+      value: true,
+    });
+    Object.defineProperty(process.stdout, "isTTY", {
+      configurable: true,
+      value: true,
+    });
+
+    try {
+      const result = await waitForBuild({
+        client: createClient({
+          stopBuild,
+          getBuildStatus,
+        }),
+        buildUrl: "https://jenkins.example.com/job/api/13/",
+        jobLabel: "api",
+        intervalMs: 1,
+        nonInteractive: true,
+      });
+
+      expect(stopBuild).toHaveBeenCalledTimes(1);
+      expect(errorSpy).toHaveBeenCalledWith("ERROR: Cancel request failed.");
+      expect(errorSpy).toHaveBeenCalledWith("HINT: Try again in a moment.");
+      expect(result).toMatchObject({
+        result: "SUCCESS",
+        buildNumber: 13,
+        buildUrl: "https://jenkins.example.com/job/api/13/",
+      });
+    } finally {
+      if (stdinIsTTY) {
+        Object.defineProperty(process.stdin, "isTTY", stdinIsTTY);
+      } else {
+        Reflect.deleteProperty(process.stdin, "isTTY");
+      }
+      if (stdoutIsTTY) {
+        Object.defineProperty(process.stdout, "isTTY", stdoutIsTTY);
+      } else {
+        Reflect.deleteProperty(process.stdout, "isTTY");
+      }
+    }
+  });
+
+  test("waitForBuild allows multiple cancel attempts with c", async () => {
+    const stopBuild = mock(async () => undefined);
+    const getBuildStatus = mock(async () => {
+      const callCount = getBuildStatus.mock.calls.length;
+      if (callCount === 1) {
+        process.stdin.emit("data", "c");
+        return {
+          buildNumber: 14,
+          buildUrl: "https://jenkins.example.com/job/api/14/",
+          result: null,
+          building: true,
+        };
+      }
+      if (callCount === 2) {
+        process.stdin.emit("data", "c");
+        return {
+          buildNumber: 14,
+          buildUrl: "https://jenkins.example.com/job/api/14/",
+          result: null,
+          building: true,
+        };
+      }
+      return {
+        buildNumber: 14,
+        buildUrl: "https://jenkins.example.com/job/api/14/",
+        result: "ABORTED",
+        building: false,
+      };
+    });
+
+    const stdinIsTTY = Object.getOwnPropertyDescriptor(process.stdin, "isTTY");
+    const stdoutIsTTY = Object.getOwnPropertyDescriptor(
+      process.stdout,
+      "isTTY",
+    );
+
+    Object.defineProperty(process.stdin, "isTTY", {
+      configurable: true,
+      value: true,
+    });
+    Object.defineProperty(process.stdout, "isTTY", {
+      configurable: true,
+      value: true,
+    });
+
+    try {
+      const result = await waitForBuild({
+        client: createClient({
+          stopBuild,
+          getBuildStatus,
+        }),
+        buildUrl: "https://jenkins.example.com/job/api/14/",
+        jobLabel: "api",
+        intervalMs: 1,
+        nonInteractive: true,
+      });
+
+      expect(stopBuild).toHaveBeenCalledTimes(2);
+      expect(result).toMatchObject({
+        result: "ABORTED",
+        buildNumber: 14,
+        buildUrl: "https://jenkins.example.com/job/api/14/",
+        cancelIssued: true,
+      });
+    } finally {
+      if (stdinIsTTY) {
+        Object.defineProperty(process.stdin, "isTTY", stdinIsTTY);
+      } else {
+        Reflect.deleteProperty(process.stdin, "isTTY");
+      }
+      if (stdoutIsTTY) {
+        Object.defineProperty(process.stdout, "isTTY", stdoutIsTTY);
+      } else {
+        Reflect.deleteProperty(process.stdout, "isTTY");
+      }
+    }
   });
 });

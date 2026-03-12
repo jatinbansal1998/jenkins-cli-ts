@@ -212,6 +212,10 @@ async function performListAction(
       return await runTrackedListAction("rerun", () =>
         runMenuAction(runRerunAction, context),
       );
+    case "rerun_last":
+      return await runTrackedListAction("rerun-last", () =>
+        runMenuAction(runRerunLastBuildAction, context),
+      );
     default:
       return "action_error";
   }
@@ -305,6 +309,18 @@ async function runRerunAction(
   context: ListActionContext,
 ): Promise<"action_ok"> {
   await listDeps.runRerun({
+    client: context.client,
+    env: context.env,
+    jobUrl: context.selectedJob.url,
+    nonInteractive: false,
+  });
+  return "action_ok";
+}
+
+async function runRerunLastBuildAction(
+  context: ListActionContext,
+): Promise<"action_ok"> {
+  await listDeps.runRerunLastBuild({
     client: context.client,
     env: context.env,
     jobUrl: context.selectedJob.url,

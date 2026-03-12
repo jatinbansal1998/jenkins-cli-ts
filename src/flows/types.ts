@@ -144,6 +144,7 @@ export type BuildPreContext = {
   env: EnvConfig;
   jobs: JenkinsJob[];
   recentJobs: { url: string; label: string }[];
+  jobSelectionLocked: boolean;
   searchQuery: string;
   searchCandidates: JenkinsJob[];
   selectedJobUrl?: string;

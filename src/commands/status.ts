@@ -9,7 +9,7 @@ import { runBuild } from "./build";
 import { runCancel } from "./cancel";
 import { runHistory } from "./history";
 import { runLogs } from "./logs";
-import { runRerun } from "./rerun";
+import { runRerun, runRerunLastBuild } from "./rerun";
 import { runWait } from "./wait";
 import {
   formatStatusDetails,
@@ -248,6 +248,20 @@ export async function runStatus(options: StatusOptions): Promise<void> {
           const result = await runTrackedStatusAction("rerun", () =>
             runMenuAction(async () => {
               await runRerun({
+                client: options.client,
+                env: options.env,
+                jobUrl: primaryTarget.jobUrl,
+                nonInteractive: false,
+              });
+              return "action_ok";
+            }),
+          );
+          return (result ?? "action_error") as ActionEffectResult;
+        }
+        if (action === "rerun_last") {
+          const result = await runTrackedStatusAction("rerun-last", () =>
+            runMenuAction(async () => {
+              await runRerunLastBuild({
                 client: options.client,
                 env: options.env,
                 jobUrl: primaryTarget.jobUrl,

@@ -259,6 +259,14 @@ function selectBuildModeHandler({
   return "mode:with_branch";
 }
 
+function leaveBuildModeHandler({
+  context,
+}: {
+  context: BuildPreContext;
+}): EventId {
+  return context.jobSelectionLocked ? "build_mode:exit" : "build_mode:entry";
+}
+
 async function prepareBranchHandler({
   context,
 }: {
@@ -506,6 +514,7 @@ export const buildPreFlowHandlers = {
   "buildPre.submitSearch": submitSearchHandler,
   "buildPre.selectSearchCandidate": selectSearchCandidateHandler,
   "buildPre.selectBuildMode": selectBuildModeHandler,
+  "buildPre.leaveBuildMode": leaveBuildModeHandler,
   "buildPre.prepareBranch": prepareBranchHandler,
   "buildPre.selectBranch": selectBranchHandler,
   "buildPre.selectBranchToRemove": selectBranchToRemoveHandler,

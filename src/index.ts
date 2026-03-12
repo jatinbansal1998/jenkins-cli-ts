@@ -22,7 +22,8 @@ import {
 import { runRerun } from "./commands/rerun";
 import { runStatus } from "./commands/status";
 import { runUpdate } from "./commands/update";
-import { DEFAULT_WAIT_INTERVAL_MS, runWait } from "./commands/wait";
+import { runWait } from "./commands/wait";
+import { DEFAULT_WATCH_INTERVAL_MS } from "./commands/watch-utils";
 import { loadEnv, getDebugDefault } from "./env";
 import { ENV_KEYS } from "./env-keys";
 import { JenkinsClient } from "./jenkins/api-wrapper";
@@ -371,7 +372,7 @@ async function main(): Promise<void> {
           })
           .option("interval", {
             type: "string",
-            describe: `Polling interval (e.g. ${DEFAULT_WAIT_INTERVAL_MS / 1000}s, 1m)`,
+            describe: `Polling interval (e.g. ${DEFAULT_WATCH_INTERVAL_MS / 1000}s, 1m)`,
           })
           .option("timeout", {
             type: "string",
@@ -661,7 +662,7 @@ async function main(): Promise<void> {
     --job-url   Full Jenkins job URL
     --build-url Full Jenkins build URL
     --queue-url Full Jenkins queue item URL
-    --interval  Polling interval (e.g. ${DEFAULT_WAIT_INTERVAL_MS / 1000}s, 1m)
+    --interval  Polling interval (e.g. ${DEFAULT_WATCH_INTERVAL_MS / 1000}s, 1m)
     --timeout   Timeout (e.g. 30m, 2h)
 
   logs:

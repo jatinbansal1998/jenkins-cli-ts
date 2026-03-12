@@ -61,6 +61,7 @@ export const listInteractiveFlow: FlowDefinition<ListInteractiveContext> = {
           { value: "watch", label: "Watch" },
           { value: "logs", label: "Logs" },
           { value: "cancel", label: "Cancel" },
+          { value: "rerun_last", label: "Rerun last build" },
           { value: "rerun", label: "Rerun last failed" },
           { value: "search", label: "Back to search" },
           { value: "exit", label: "Exit" },
@@ -77,6 +78,7 @@ export const listInteractiveFlow: FlowDefinition<ListInteractiveContext> = {
         "select:watch": "run_action",
         "select:logs": "run_action",
         "select:cancel": "run_action",
+        "select:rerun_last": "run_action",
         "select:rerun": "run_action",
       },
     },
@@ -228,10 +230,18 @@ export const buildPreFlow: FlowDefinition<BuildPreContext> = {
       },
       onSelect: "buildPre.selectBuildMode",
       transitions: {
-        esc: "entry",
+        esc: "build_mode_back",
         "mode:with_branch": "prepare_branch",
         "mode:with_custom": "custom_key",
         "mode:without_params": "complete",
+      },
+    },
+    /** Resolves whether Esc from build mode should exit or reopen job selection. */
+    build_mode_back: {
+      onEnter: "buildPre.leaveBuildMode",
+      transitions: {
+        "build_mode:entry": "entry",
+        "build_mode:exit": "exit_command",
       },
     },
     /** Loads branch metadata and decides if branch/custom input is needed. */
@@ -402,6 +412,7 @@ export const buildPostFlow: FlowDefinition<BuildPostContext> = {
           { value: "logs", label: "Logs" },
           { value: "cancel", label: "Cancel" },
           { value: "rerun", label: "Rerun same inputs" },
+          { value: "rerun_last", label: "Rerun last build" },
           { value: "done", label: "Done" },
         ],
       },
@@ -414,6 +425,7 @@ export const buildPostFlow: FlowDefinition<BuildPostContext> = {
         "select:logs": "run_action",
         "select:cancel": "run_action",
         "select:rerun": "run_action",
+        "select:rerun_last": "run_action",
       },
     },
     /** Executes the chosen post-build action and handles its result. */
@@ -477,6 +489,7 @@ export const statusPostFlow: FlowDefinition<StatusPostContext> = {
           { value: "history", label: "Build history" },
           { value: "logs", label: "Logs" },
           { value: "cancel", label: "Cancel running/queued build" },
+          { value: "rerun_last", label: "Rerun last build" },
           { value: "rerun", label: "Rerun last failed build" },
           { value: "build", label: "Build now" },
           { value: "done", label: "Done" },
@@ -490,6 +503,7 @@ export const statusPostFlow: FlowDefinition<StatusPostContext> = {
         "select:history": "run_action",
         "select:logs": "run_action",
         "select:cancel": "run_action",
+        "select:rerun_last": "run_action",
         "select:rerun": "run_action",
         "select:build": "run_action",
       },
