@@ -95,7 +95,6 @@ export function parseUpdateChannel(input: string): UpdateChannel | null {
   switch (normalized) {
     case "stable":
       return "stable";
-    case "beta":
     case "prerelease":
     case "pre-release":
       return "prerelease";

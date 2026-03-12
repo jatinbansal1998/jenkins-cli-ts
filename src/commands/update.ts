@@ -54,7 +54,7 @@ export async function runUpdate(options: UpdateOptions): Promise<void> {
   }
   if (options.channel && !requestedChannel) {
     throw new CliError(`Unknown update channel "${options.channel}".`, [
-      "Use one of: stable, beta, prerelease.",
+      "Use one of: stable, prerelease.",
     ]);
   }
 
