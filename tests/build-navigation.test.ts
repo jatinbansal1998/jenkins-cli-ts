@@ -316,6 +316,35 @@ describe("build command navigation", () => {
     });
   });
 
+  test("Esc from build mode with a locked job exits instead of reopening empty search", async () => {
+    const getJobStatus = mock(async () => ({ lastBuildNumber: 41 }));
+    const triggerBuild = mock(async () => ({
+      buildUrl: BUILD_URL,
+      buildNumber: 42,
+      queueUrl: QUEUE_URL,
+      jobUrl: JOB_URL,
+    }));
+
+    selectMock
+      .mockImplementationOnce(async () => BUILD_WITH_PARAMS_VALUE)
+      .mockImplementationOnce(async () => CANCEL)
+      .mockImplementationOnce(async () => CANCEL);
+
+    await runBuild({
+      client: createClient({
+        getJobStatus,
+        triggerBuild,
+      }),
+      env: {} as EnvConfig,
+      jobUrl: JOB_URL,
+      nonInteractive: false,
+      watch: false,
+    });
+
+    expect(triggerBuild).not.toHaveBeenCalled();
+    expect(textMock).not.toHaveBeenCalled();
+  });
+
   test("interactive branch mode can add extra custom parameters", async () => {
     const getJobStatus = mock(async () => ({ lastBuildNumber: 41 }));
     const triggerBuild = mock(async () => ({

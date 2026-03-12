@@ -25,4 +25,50 @@ describe("flow definitions", () => {
       }),
     ).toThrow();
   });
+
+  test("interactive action menus expose rerun last build options", () => {
+    const listActionMenu = flows.listInteractive.states.action_menu;
+    const buildActionMenu = flows.buildPost.states.action_menu;
+    const statusActionMenu = flows.statusPost.states.action_menu;
+
+    expect(listActionMenu).toBeDefined();
+    expect(buildActionMenu).toBeDefined();
+    expect(statusActionMenu).toBeDefined();
+
+    if (!listActionMenu || !buildActionMenu || !statusActionMenu) {
+      throw new Error("Expected action menu states.");
+    }
+
+    const listOptions = listActionMenu.prompt;
+    const buildOptions = buildActionMenu.prompt;
+    const statusOptions = statusActionMenu.prompt;
+
+    expect(listOptions).toBeDefined();
+    expect(buildOptions).toBeDefined();
+    expect(statusOptions).toBeDefined();
+
+    if (
+      !listOptions ||
+      listOptions.kind !== "select" ||
+      !buildOptions ||
+      buildOptions.kind !== "select" ||
+      !statusOptions ||
+      statusOptions.kind !== "select"
+    ) {
+      throw new Error("Expected select prompts for action menus.");
+    }
+
+    expect(listOptions.options).toContainEqual({
+      value: "rerun_last",
+      label: "Rerun last build",
+    });
+    expect(buildOptions.options).toContainEqual({
+      value: "rerun_last",
+      label: "Rerun last build",
+    });
+    expect(statusOptions.options).toContainEqual({
+      value: "rerun_last",
+      label: "Rerun last build",
+    });
+  });
 });

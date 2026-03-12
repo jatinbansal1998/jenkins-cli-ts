@@ -31,6 +31,7 @@ const runWaitMock = mock(async (..._args: unknown[]) => undefined);
 const runLogsMock = mock(async () => undefined);
 const runCancelMock = mock(async () => undefined);
 const runRerunMock = mock(async () => undefined);
+const runRerunLastBuildMock = mock(async () => undefined);
 
 mock.module("../src/commands/list-deps", () => ({
   listDeps: {
@@ -52,6 +53,7 @@ mock.module("../src/commands/list-deps", () => ({
     runLogs: runLogsMock,
     runCancel: runCancelMock,
     runRerun: runRerunMock,
+    runRerunLastBuild: runRerunLastBuildMock,
   },
 }));
 
@@ -85,6 +87,8 @@ describe("runList", () => {
     runCancelMock.mockImplementation(async () => undefined);
     runRerunMock.mockReset();
     runRerunMock.mockImplementation(async () => undefined);
+    runRerunLastBuildMock.mockReset();
+    runRerunLastBuildMock.mockImplementation(async () => undefined);
   });
 
   afterEach(() => {
@@ -180,6 +184,32 @@ describe("runList", () => {
 
     expect(runHistoryMock).toHaveBeenCalledTimes(1);
     expect(runHistoryMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        jobUrl: "https://jenkins.example.com/job/alpha",
+      }),
+    );
+  });
+
+  test("interactive routes selected action to rerun last build", async () => {
+    textMock
+      .mockImplementationOnce(async () => "alpha")
+      .mockImplementationOnce(async () => "q");
+    selectMock
+      .mockImplementationOnce(
+        async () => "https://jenkins.example.com/job/alpha",
+      )
+      .mockImplementationOnce(async () => "rerun_last")
+      .mockImplementationOnce(async () => "search");
+
+    await runList({
+      client: {} as JenkinsClient,
+      env: { branchParamDefault: "BRANCH" } as EnvConfig,
+      refresh: false,
+      nonInteractive: false,
+    });
+
+    expect(runRerunLastBuildMock).toHaveBeenCalledTimes(1);
+    expect(runRerunLastBuildMock).toHaveBeenCalledWith(
       expect.objectContaining({
         jobUrl: "https://jenkins.example.com/job/alpha",
       }),
