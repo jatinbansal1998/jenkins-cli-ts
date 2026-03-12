@@ -599,8 +599,7 @@ async function main(): Promise<void> {
           })
           .option("channel", {
             type: "string",
-            describe:
-              "Set update channel: stable or prerelease (beta alias supported)",
+            describe: "Set update channel: stable or prerelease",
           })
           .conflicts("enable-auto", ["disable-auto", "check"])
           .conflicts("disable-auto", ["enable-auto", "check"])
@@ -710,7 +709,7 @@ async function main(): Promise<void> {
   update / upgrade:
     [tag]          Install a specific version tag (e.g. v0.2.4)
     --check        Check for updates without installing
-    --channel      Set update channel (stable or prerelease; beta alias supported)
+    --channel      Set update channel (stable or prerelease)
     --enable-auto  Enable daily update checks (notify only)
     --disable-auto Disable daily update checks
     --enable-auto-install  Enable auto-install of updates

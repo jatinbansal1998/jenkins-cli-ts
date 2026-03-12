@@ -290,7 +290,6 @@ Set the update channel:
 ```bash
 jenkins-cli update --channel stable
 jenkins-cli update --channel prerelease
-jenkins-cli update --channel beta
 ```
 
 Auto-update checks (notify only):
@@ -312,7 +311,6 @@ Auto-update defaults:
 - Notify-only checks are enabled by default.
 - Auto-install is disabled by default.
 - Update channel defaults to `stable`.
-- `beta` and `prerelease` both opt into GitHub releases marked as pre-release.
 - Stable channel only installs stable releases, even if a newer prerelease exists.
 - Prerelease channel installs whichever GitHub release is newest, using the release order from GitHub.
 

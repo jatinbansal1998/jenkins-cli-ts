@@ -62,9 +62,8 @@ describe("update version helpers", () => {
     expect(compareVersions("v1.0.0-beta.2", "v1.0.0-beta.11")).toBe(-1);
   });
 
-  test("parseUpdateChannel supports beta and prerelease aliases", () => {
+  test("parseUpdateChannel supports prerelease aliases", () => {
     expect(parseUpdateChannel("stable")).toBe("stable");
-    expect(parseUpdateChannel("beta")).toBe("prerelease");
     expect(parseUpdateChannel("pre-release")).toBe("prerelease");
     expect(parseUpdateChannel("prerelease")).toBe("prerelease");
     expect(parseUpdateChannel("nightly")).toBeNull();
