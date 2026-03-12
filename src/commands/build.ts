@@ -28,6 +28,7 @@ import type { BuildStatus, JobStatus } from "../types/jenkins";
 import { getJobDisplayName, loadJobs, resolveJobMatch } from "../jobs";
 import { notifyBuildComplete } from "../notify";
 import { runCancel } from "./cancel";
+import { runHistory } from "./history";
 import { runLogs } from "./logs";
 import {
   formatCompactStatus,
@@ -262,6 +263,21 @@ export async function runBuild(options: BuildOptions): Promise<BuildRunResult> {
                     ? resolvedJobUrl
                     : undefined,
                 follow: true,
+                nonInteractive: false,
+              });
+              return "action_ok";
+            }),
+          );
+          return (result ?? "action_error") as ActionEffectResult;
+        }
+
+        if (action === "history") {
+          const result = await runTrackedBuildAction("history", () =>
+            runMenuAction(async () => {
+              await runHistory({
+                client: options.client,
+                env: options.env,
+                jobUrl: resolvedJobUrl,
                 nonInteractive: false,
               });
               return "action_ok";

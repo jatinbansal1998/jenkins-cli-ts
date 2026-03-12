@@ -12,6 +12,12 @@ export type JenkinsPipelineStage = {
   status?: string;
 };
 
+export type JenkinsBuildFailure = {
+  stageName?: string;
+  stepName?: string;
+  reason?: string;
+};
+
 /** Jenkins job metadata. */
 export type JenkinsJob = {
   name: string;
@@ -45,6 +51,29 @@ export type BuildStatus = {
   parameters?: JenkinsBuildParameter[];
   branch?: string;
   stage?: JenkinsPipelineStage;
+};
+
+export type BuildHistoryEntry = {
+  buildNumber?: number;
+  buildUrl: string;
+  result?: string | null;
+  building?: boolean;
+  timestampMs?: number;
+  durationMs?: number;
+  estimatedDurationMs?: number;
+  parameters?: JenkinsBuildParameter[];
+  branch?: string;
+  stage?: JenkinsPipelineStage;
+  failure?: JenkinsBuildFailure;
+};
+
+export type BuildHistoryPage = {
+  builds: BuildHistoryEntry[];
+  total: number;
+  offset: number;
+  limit: number;
+  hasNext: boolean;
+  hasPrevious: boolean;
 };
 
 export type QueueItemSummary = {
@@ -86,6 +115,7 @@ export type TriggerBuildResult = {
 export type PipelineInfo = {
   stage?: JenkinsPipelineStage;
   queueDurationMs?: number;
+  failure?: JenkinsBuildFailure;
 };
 
 export type Crumb = {

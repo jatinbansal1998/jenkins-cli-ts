@@ -13,13 +13,18 @@ import {
   logNetworkError,
 } from "../logger";
 import type {
+  BuildHistoryEntry,
+  BuildHistoryPage,
   BuildStatus,
   ConsoleChunk,
   Crumb,
   JenkinsApiBuild,
   JenkinsApiBuildAction,
+  JenkinsApiBuildsResponse,
   JenkinsApiJob,
+  JenkinsPipelineNodeResponse,
   JenkinsApiQueueItem,
+  JenkinsBuildFailure,
   JenkinsBuildParameter,
   JenkinsClientOptions,
   JenkinsCrumbResponse,
@@ -40,6 +45,8 @@ import type {
 } from "../types/jenkins";
 
 export type {
+  BuildHistoryEntry,
+  BuildHistoryPage,
   BuildStatus,
   ConsoleChunk,
   JenkinsClientOptions,
@@ -183,6 +190,52 @@ export class JenkinsClient {
       parameters,
       branch,
       stage: pipeline?.stage,
+    };
+  }
+
+  async listBuildHistory(
+    jobUrl: string,
+    options: {
+      offset?: number;
+      limit?: number;
+    } = {},
+  ): Promise<BuildHistoryPage> {
+    const limit = normalizePageLimit(options.limit);
+    const offset = normalizePageOffset(options.offset);
+    const url = this.withJob(
+      jobUrl,
+      "api/json?tree=builds[number,url,result,building,timestamp,duration,estimatedDuration,actions[parameters[name,value]]]",
+    );
+    const payload = await this.requestJson<JenkinsApiBuildsResponse>(
+      url,
+      "list build history",
+    );
+    const normalizedBuilds = (
+      Array.isArray(payload.builds) ? payload.builds : []
+    )
+      .map(normalizeBuildHistoryEntry)
+      .filter((entry): entry is BuildHistoryEntry => Boolean(entry));
+    const pageBuilds = normalizedBuilds.slice(offset, offset + limit);
+    const enrichedBuilds = await Promise.all(
+      pageBuilds.map(async (entry) => {
+        const pipeline = await this.getPipelineInfo(entry.buildUrl, {
+          includeFailure: true,
+        });
+        return {
+          ...entry,
+          ...(pipeline?.stage ? { stage: pipeline.stage } : {}),
+          ...(pipeline?.failure ? { failure: pipeline.failure } : {}),
+        };
+      }),
+    );
+
+    return {
+      builds: enrichedBuilds,
+      total: normalizedBuilds.length,
+      offset,
+      limit,
+      hasNext: offset + limit < normalizedBuilds.length,
+      hasPrevious: offset > 0,
     };
   }
 
@@ -748,6 +801,9 @@ export class JenkinsClient {
 
   private async getPipelineInfo(
     buildUrl: string,
+    options: {
+      includeFailure?: boolean;
+    } = {},
   ): Promise<PipelineInfo | null> {
     const base = buildUrl.endsWith("/") ? buildUrl : `${buildUrl}/`;
     const url = new URL("wfapi/describe", base).toString();
@@ -769,10 +825,69 @@ export class JenkinsClient {
           stage.status === "PAUSED_PENDING_INPUT",
       );
       const stage = activeStage ?? stages.at(-1);
+      const failure = options.includeFailure
+        ? await this.getPipelineFailure(data)
+        : undefined;
       return {
         stage,
         queueDurationMs: data.queueDurationMillis,
+        failure,
       };
+    } catch {
+      return null;
+    }
+  }
+
+  private async getPipelineFailure(
+    pipeline: JenkinsPipelineDescribeResponse,
+  ): Promise<JenkinsBuildFailure | undefined> {
+    const stages = Array.isArray(pipeline.stages) ? pipeline.stages : [];
+    const failedStage = stages.find((stage) => isFailureStatus(stage.status));
+    if (!failedStage) {
+      return undefined;
+    }
+
+    const failure: JenkinsBuildFailure = {
+      stageName: failedStage.name,
+    };
+    const stageLink = failedStage._links?.self?.href;
+    if (!stageLink) {
+      return failure;
+    }
+
+    const stageNode = await this.getPipelineNode(this.resolveUrl(stageLink));
+    if (!stageNode) {
+      return failure;
+    }
+
+    const failedNode = findFailedPipelineNode(stageNode);
+    const reason =
+      cleanFailureReason(failedNode?.error?.message) ||
+      cleanFailureReason(stageNode.error?.message) ||
+      statusToReason(failedNode?.status) ||
+      statusToReason(stageNode.status);
+
+    return {
+      stageName: failure.stageName,
+      stepName: failedNode?.name || stageNode.name || failure.stageName,
+      reason,
+    };
+  }
+
+  private async getPipelineNode(
+    url: string,
+  ): Promise<JenkinsPipelineNodeResponse | null> {
+    try {
+      const response = await this.fetchWithTimeout(
+        url,
+        { method: "GET", headers: this.authHeaders() },
+        0,
+        "fetch pipeline node",
+      );
+      if (!response.ok) {
+        return null;
+      }
+      return (await response.json()) as JenkinsPipelineNodeResponse;
     } catch {
       return null;
     }
@@ -832,6 +947,81 @@ function extractBranchParam(
     (param) => param.name.toLowerCase().includes("branch") && param.value,
   );
   return fallback?.value;
+}
+
+function normalizeBuildHistoryEntry(
+  build: JenkinsApiBuild,
+): BuildHistoryEntry | null {
+  const buildUrl = typeof build.url === "string" ? build.url : "";
+  if (!buildUrl) {
+    return null;
+  }
+  const parameters = extractBuildParameters(build.actions);
+  return {
+    buildNumber: build.number,
+    buildUrl,
+    result: build.result ?? null,
+    building: build.building ?? false,
+    timestampMs: build.timestamp,
+    durationMs: build.duration,
+    estimatedDurationMs: build.estimatedDuration,
+    parameters,
+    branch: extractBranchParam(parameters),
+  };
+}
+
+function findFailedPipelineNode(
+  node: JenkinsPipelineNodeResponse,
+): JenkinsPipelineNodeResponse | undefined {
+  const childNodes = Array.isArray(node.stageFlowNodes)
+    ? node.stageFlowNodes
+    : [];
+  for (const child of childNodes) {
+    const nested = findFailedPipelineNode(child);
+    if (nested) {
+      return nested;
+    }
+  }
+  if (isFailureStatus(node.status)) {
+    return node;
+  }
+  return undefined;
+}
+
+function isFailureStatus(status: string | undefined): boolean {
+  const normalized = (status ?? "").trim().toUpperCase();
+  return (
+    normalized === "FAILED" ||
+    normalized === "FAILURE" ||
+    normalized === "UNSTABLE" ||
+    normalized === "ABORTED"
+  );
+}
+
+function cleanFailureReason(value: string | undefined): string | undefined {
+  const normalized = value?.trim() ?? "";
+  return normalized || undefined;
+}
+
+function statusToReason(status: string | undefined): string | undefined {
+  const normalized = (status ?? "").trim();
+  return normalized ? `Pipeline step status: ${normalized}` : undefined;
+}
+
+function normalizePageLimit(value: number | undefined): number {
+  if (!Number.isFinite(value) || typeof value !== "number") {
+    return 5;
+  }
+  const normalized = Math.floor(value);
+  return normalized > 0 ? normalized : 5;
+}
+
+function normalizePageOffset(value: number | undefined): number {
+  if (!Number.isFinite(value) || typeof value !== "number") {
+    return 0;
+  }
+  const normalized = Math.floor(value);
+  return normalized >= 0 ? normalized : 0;
 }
 
 function serializeUnknownValue(value: unknown): string {
