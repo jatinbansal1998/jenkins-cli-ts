@@ -1,7 +1,12 @@
 # Jenkins CLI
 
-Minimal Jenkins CLI for listing jobs, triggering builds, and checking status. Built
-for interactive use and automation with clear, parseable output.
+Minimal Jenkins CLI for listing jobs, triggering builds, checking status, and
+inspecting recent build history. Built for interactive use and automation with
+clear, parseable output.
+
+## Demo
+
+![Jenkins CLI demo](docs/media/jenkins-cli-demo.gif)
 
 ## Install
 
@@ -124,7 +129,7 @@ jenkins-cli list
 In interactive mode, `list` acts as a launcher:
 
 - Search and select a job
-- Run `Build`, `Status`, `Watch`, `Logs`, `Cancel`, or `Rerun`
+- Run `Build`, `Status`, `Build history`, `Watch`, `Logs`, `Cancel`, or `Rerun`
 
 Refresh the cache from Jenkins:
 
@@ -204,6 +209,23 @@ Watch the latest build status from status command:
 jenkins-cli status --job "api-prod" --watch
 ```
 
+Show recent build history in a Jenkins-style table:
+
+```bash
+jenkins-cli history --job "api-prod"
+jenkins-cli builds --job "api-prod"
+jenkins-cli history --job "api-prod" --offset 5
+```
+
+In interactive mode, build history lets you:
+
+- Page through builds 5 at a time
+- Rebuild a selected historical build with the same parameters
+- Continue into the same post-build action menu used by `build` after a rebuild
+- Open the selected build's URL
+- Jump into logs for the selected build
+- Inspect failed step and failure reason when Jenkins exposes them
+
 Wait for a build to finish:
 
 ```bash
@@ -263,6 +285,14 @@ Check for updates without installing:
 jenkins-cli update --check
 ```
 
+Set the update channel:
+
+```bash
+jenkins-cli update --channel stable
+jenkins-cli update --channel prerelease
+jenkins-cli update --channel beta
+```
+
 Auto-update checks (notify only):
 
 ```bash
@@ -281,6 +311,10 @@ Auto-update defaults:
 
 - Notify-only checks are enabled by default.
 - Auto-install is disabled by default.
+- Update channel defaults to `stable`.
+- `beta` and `prerelease` both opt into GitHub releases marked as pre-release.
+- Stable channel only installs stable releases, even if a newer prerelease exists.
+- Prerelease channel installs whichever GitHub release is newest, using the release order from GitHub.
 
 ## Development
 

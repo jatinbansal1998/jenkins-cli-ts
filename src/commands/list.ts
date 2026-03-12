@@ -192,6 +192,10 @@ async function performListAction(
       return await runTrackedListAction("status", () =>
         runMenuAction(runStatusAction, context),
       );
+    case "history":
+      return await runTrackedListAction("history", () =>
+        runMenuAction(runHistoryAction, context),
+      );
     case "watch":
       return await runTrackedListAction("wait", () =>
         runMenuAction(runWatchAction, context),
@@ -207,6 +211,10 @@ async function performListAction(
     case "rerun":
       return await runTrackedListAction("rerun", () =>
         runMenuAction(runRerunAction, context),
+      );
+    case "rerun_last":
+      return await runTrackedListAction("rerun-last", () =>
+        runMenuAction(runRerunLastBuildAction, context),
       );
     default:
       return "action_error";
@@ -242,6 +250,18 @@ async function runStatusAction(
     env: context.env,
     jobUrl: context.selectedJob.url,
     nonInteractive: true,
+  });
+  return "action_ok";
+}
+
+async function runHistoryAction(
+  context: ListActionContext,
+): Promise<"action_ok"> {
+  await listDeps.runHistory({
+    client: context.client,
+    env: context.env,
+    jobUrl: context.selectedJob.url,
+    nonInteractive: false,
   });
   return "action_ok";
 }
@@ -289,6 +309,18 @@ async function runRerunAction(
   context: ListActionContext,
 ): Promise<"action_ok"> {
   await listDeps.runRerun({
+    client: context.client,
+    env: context.env,
+    jobUrl: context.selectedJob.url,
+    nonInteractive: false,
+  });
+  return "action_ok";
+}
+
+async function runRerunLastBuildAction(
+  context: ListActionContext,
+): Promise<"action_ok"> {
+  await listDeps.runRerunLastBuild({
     client: context.client,
     env: context.env,
     jobUrl: context.selectedJob.url,

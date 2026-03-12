@@ -10,6 +10,7 @@ import { runWithAnalytics, updateAnalyticsContext } from "./analytics";
 import { CliError, getScriptName, handleCliError, printHint } from "./cli";
 import { runBuild } from "./commands/build";
 import { runCancel } from "./commands/cancel";
+import { runHistory } from "./commands/history";
 import { runLogin } from "./commands/login";
 import { runList } from "./commands/list";
 import { DEFAULT_LOG_POLL_MS, runLogs } from "./commands/logs";
@@ -21,7 +22,8 @@ import {
 import { runRerun } from "./commands/rerun";
 import { runStatus } from "./commands/status";
 import { runUpdate } from "./commands/update";
-import { DEFAULT_WAIT_INTERVAL_MS, runWait } from "./commands/wait";
+import { runWait } from "./commands/wait";
+import { DEFAULT_WATCH_INTERVAL_MS } from "./commands/watch-utils";
 import { loadEnv, getDebugDefault } from "./env";
 import { ENV_KEYS } from "./env-keys";
 import { JenkinsClient } from "./jenkins/api-wrapper";
@@ -316,6 +318,38 @@ async function main(): Promise<void> {
       },
     )
     .command(
+      ["history", "builds"],
+      "Show paginated build history for a job",
+      (yargsInstance) =>
+        yargsInstance
+          .option("job", {
+            type: "string",
+            describe: "Job name or description",
+          })
+          .option("job-url", {
+            type: "string",
+            describe: "Full Jenkins job URL",
+          })
+          .option("offset", {
+            type: "number",
+            default: 0,
+            describe: "Skip the first N builds before showing the next 5",
+          }),
+      async (argv) => {
+        await runTrackedCommand("history", argv, async () => {
+          const { env, client } = createContext(argv);
+          await runHistory({
+            client,
+            env,
+            job: typeof argv.job === "string" ? argv.job : undefined,
+            jobUrl: typeof argv.jobUrl === "string" ? argv.jobUrl : undefined,
+            offset: typeof argv.offset === "number" ? argv.offset : undefined,
+            nonInteractive: Boolean(argv.nonInteractive),
+          });
+        });
+      },
+    )
+    .command(
       "wait",
       "Wait for a Jenkins build to finish",
       (yargsInstance) =>
@@ -338,7 +372,7 @@ async function main(): Promise<void> {
           })
           .option("interval", {
             type: "string",
-            describe: `Polling interval (e.g. ${DEFAULT_WAIT_INTERVAL_MS / 1000}s, 1m)`,
+            describe: `Polling interval (e.g. ${DEFAULT_WATCH_INTERVAL_MS / 1000}s, 1m)`,
           })
           .option("timeout", {
             type: "string",
@@ -563,6 +597,11 @@ async function main(): Promise<void> {
             type: "boolean",
             describe: "Disable auto-install of updates",
           })
+          .option("channel", {
+            type: "string",
+            describe:
+              "Set update channel: stable or prerelease (beta alias supported)",
+          })
           .conflicts("enable-auto", ["disable-auto", "check"])
           .conflicts("disable-auto", ["enable-auto", "check"])
           .conflicts("enable-auto-install", ["disable-auto-install", "check"])
@@ -583,6 +622,8 @@ async function main(): Promise<void> {
             disableAuto: Boolean(argv.disableAuto),
             enableAutoInstall: Boolean(argv.enableAutoInstall),
             disableAutoInstall: Boolean(argv.disableAutoInstall),
+            channel:
+              typeof argv.channel === "string" ? argv.channel : undefined,
           });
         });
       },
@@ -611,12 +652,17 @@ async function main(): Promise<void> {
     --job-url  Full Jenkins job URL
     --watch    Watch latest build status until completion
 
+  history / builds:
+    --job      Job name or description
+    --job-url  Full Jenkins job URL
+    --offset   Skip the first N builds before showing the next 5
+
   wait:
     --job       Job name or description
     --job-url   Full Jenkins job URL
     --build-url Full Jenkins build URL
     --queue-url Full Jenkins queue item URL
-    --interval  Polling interval (e.g. ${DEFAULT_WAIT_INTERVAL_MS / 1000}s, 1m)
+    --interval  Polling interval (e.g. ${DEFAULT_WATCH_INTERVAL_MS / 1000}s, 1m)
     --timeout   Timeout (e.g. 30m, 2h)
 
   logs:
@@ -664,6 +710,7 @@ async function main(): Promise<void> {
   update / upgrade:
     [tag]          Install a specific version tag (e.g. v0.2.4)
     --check        Check for updates without installing
+    --channel      Set update channel (stable or prerelease; beta alias supported)
     --enable-auto  Enable daily update checks (notify only)
     --disable-auto Disable daily update checks
     --enable-auto-install  Enable auto-install of updates

@@ -7,8 +7,9 @@ import { runInteractiveSubcommandWithAnalytics } from "../analytics";
 import { CliError, printError, printHint, printOk } from "../cli";
 import { runBuild } from "./build";
 import { runCancel } from "./cancel";
+import { runHistory } from "./history";
 import { runLogs } from "./logs";
-import { runRerun } from "./rerun";
+import { runRerun, runRerunLastBuild } from "./rerun";
 import { runWait } from "./wait";
 import {
   formatStatusDetails,
@@ -72,7 +73,6 @@ export async function runStatus(options: StatusOptions): Promise<void> {
 
   while (true) {
     let targets: { jobUrl: string; jobLabel: string }[] = [];
-    let selectionMode = jobUrl ? "job_url" : "job";
 
     if (jobUrl) {
       ensureValidUrl(jobUrl, "job-url");
@@ -97,7 +97,6 @@ export async function runStatus(options: StatusOptions): Promise<void> {
       });
 
       if (selection.kind === "recent") {
-        selectionMode = "recent";
         targets = selection.jobs.map((recentJob) => {
           const selectedJob = loadedJobs.find(
             (job) => job.url === recentJob.jobUrl,
@@ -122,7 +121,6 @@ export async function runStatus(options: StatusOptions): Promise<void> {
             jobUrl: job.url,
             jobLabel: getJobDisplayName(job),
           }));
-          selectionMode = targets.length > 1 ? "multi_select" : "job";
         } catch (err) {
           if (
             err instanceof BackToRecentMenuError &&
@@ -218,6 +216,20 @@ export async function runStatus(options: StatusOptions): Promise<void> {
           );
           return (result ?? "action_error") as ActionEffectResult;
         }
+        if (action === "history") {
+          const result = await runTrackedStatusAction("history", () =>
+            runMenuAction(async () => {
+              await runHistory({
+                client: options.client,
+                env: options.env,
+                jobUrl: primaryTarget.jobUrl,
+                nonInteractive: false,
+              });
+              return "action_ok";
+            }),
+          );
+          return (result ?? "action_error") as ActionEffectResult;
+        }
         if (action === "cancel") {
           const result = await runTrackedStatusAction("cancel", () =>
             runMenuAction(async () => {
@@ -236,6 +248,20 @@ export async function runStatus(options: StatusOptions): Promise<void> {
           const result = await runTrackedStatusAction("rerun", () =>
             runMenuAction(async () => {
               await runRerun({
+                client: options.client,
+                env: options.env,
+                jobUrl: primaryTarget.jobUrl,
+                nonInteractive: false,
+              });
+              return "action_ok";
+            }),
+          );
+          return (result ?? "action_error") as ActionEffectResult;
+        }
+        if (action === "rerun_last") {
+          const result = await runTrackedStatusAction("rerun-last", () =>
+            runMenuAction(async () => {
+              await runRerunLastBuild({
                 client: options.client,
                 env: options.env,
                 jobUrl: primaryTarget.jobUrl,
