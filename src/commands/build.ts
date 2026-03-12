@@ -588,7 +588,7 @@ async function runBuildOnce(options: {
     if (finalStatus.cancelled) {
       return;
     }
-    if (!finalStatus.cancelled) {
+    if (!finalStatus.cancelIssued) {
       await notifyBuildComplete({
         message: formatNotificationMessage({
           jobLabel: displayJob,

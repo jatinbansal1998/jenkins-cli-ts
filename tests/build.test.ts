@@ -679,4 +679,83 @@ describe("build command", () => {
       }
     }
   });
+
+  test("non-interactive watch treats deliberate cancel as non-failure", async () => {
+    const originalExitCode = process.exitCode;
+    process.exitCode = 0;
+
+    const getJobStatus = mock(async () => ({ lastBuildNumber: 380 }));
+    const triggerBuild = mock(async () => ({
+      buildUrl: BUILD_URL,
+      buildNumber: 381,
+      queueUrl: QUEUE_URL,
+      jobUrl: JOB_URL,
+    }));
+    const stopBuild = mock(async () => undefined);
+    const getBuildStatus = mock(async () => {
+      if (getBuildStatus.mock.calls.length === 1) {
+        process.stdin.emit("data", "c");
+        return {
+          buildNumber: 381,
+          buildUrl: BUILD_URL,
+          result: null,
+          building: true,
+        };
+      }
+      return {
+        buildNumber: 381,
+        buildUrl: BUILD_URL,
+        result: "ABORTED",
+        building: false,
+      };
+    });
+
+    const stdinIsTTY = Object.getOwnPropertyDescriptor(process.stdin, "isTTY");
+    const stdoutIsTTY = Object.getOwnPropertyDescriptor(
+      process.stdout,
+      "isTTY",
+    );
+
+    Object.defineProperty(process.stdin, "isTTY", {
+      configurable: true,
+      value: true,
+    });
+    Object.defineProperty(process.stdout, "isTTY", {
+      configurable: true,
+      value: true,
+    });
+
+    try {
+      await runBuild({
+        client: createClient({
+          getJobStatus,
+          triggerBuild,
+          getBuildStatus,
+          stopBuild,
+        }),
+        env: {} as EnvConfig,
+        jobUrl: JOB_URL,
+        branch: "staging",
+        nonInteractive: true,
+        watch: true,
+      });
+
+      expect(stopBuild).toHaveBeenCalledTimes(1);
+      expect(stopBuild).toHaveBeenCalledWith(BUILD_URL);
+      expect(notifyBuildCompleteMock).toHaveBeenCalledTimes(0);
+      expect(process.exitCode).toBe(0);
+    } finally {
+      process.exitCode = originalExitCode;
+      if (stdinIsTTY) {
+        Object.defineProperty(process.stdin, "isTTY", stdinIsTTY);
+      } else {
+        Reflect.deleteProperty(process.stdin, "isTTY");
+      }
+      if (stdoutIsTTY) {
+        Object.defineProperty(process.stdout, "isTTY", stdoutIsTTY);
+      } else {
+        Reflect.deleteProperty(process.stdout, "isTTY");
+      }
+    }
+  });
 });
