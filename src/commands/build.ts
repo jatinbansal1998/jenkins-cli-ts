@@ -79,7 +79,39 @@ export type BuildRunResult = {
   rootRequested?: boolean;
 };
 
+const defaultBuildDeps = {
+  confirm,
+  isCancel,
+  select,
+  spinner,
+  text,
+  loadCachedBranchHistory,
+  loadCachedBranches,
+  recordBranchSelection,
+  removeCachedBranch,
+  loadRecentJobs,
+  recordRecentJob,
+  getJobDisplayName,
+  loadJobs,
+  resolveJobMatch,
+  notifyBuildComplete,
+  runCancel,
+  runHistory,
+  runLogs,
+};
+
+let activeBuildDeps = defaultBuildDeps;
+
+export function setBuildDepsForTesting(
+  overrides?: Partial<typeof defaultBuildDeps>,
+): void {
+  activeBuildDeps = overrides
+    ? { ...defaultBuildDeps, ...overrides }
+    : defaultBuildDeps;
+}
+
 export async function runBuild(options: BuildOptions): Promise<BuildRunResult> {
+  const deps = activeBuildDeps;
   validateBuildOptions(options);
   const branchParam = normalizeBranchParam(options.branchParam);
 
@@ -158,7 +190,7 @@ export async function runBuild(options: BuildOptions): Promise<BuildRunResult> {
 
     if (resolvedBranch) {
       try {
-        await recordBranchSelection({
+        await deps.recordBranchSelection({
           env: options.env,
           jobUrl: resolvedJobUrl,
           branch: resolvedBranch,
@@ -169,7 +201,7 @@ export async function runBuild(options: BuildOptions): Promise<BuildRunResult> {
     }
 
     try {
-      await recordRecentJob({
+      await deps.recordRecentJob({
         env: options.env,
         jobUrl: resolvedJobUrl,
       });
@@ -217,7 +249,7 @@ export async function runBuild(options: BuildOptions): Promise<BuildRunResult> {
         baselineBuildNumber,
       });
       if (!finalStatus.cancelled && !finalStatus.cancelIssued) {
-        await notifyBuildComplete({
+        await deps.notifyBuildComplete({
           message: formatNotificationMessage({
             jobLabel: displayJob,
             buildNumber: finalStatus.buildNumber,
@@ -255,7 +287,7 @@ export async function runBuild(options: BuildOptions): Promise<BuildRunResult> {
             return "watch_cancelled";
           }
           if (!finalStatus.cancelIssued) {
-            await notifyBuildComplete({
+            await deps.notifyBuildComplete({
               message: formatNotificationMessage({
                 jobLabel: displayJob,
                 buildNumber: finalStatus.buildNumber,
@@ -272,7 +304,7 @@ export async function runBuild(options: BuildOptions): Promise<BuildRunResult> {
         if (action === "logs") {
           const result = await runTrackedBuildAction("logs", () =>
             runMenuAction(async () => {
-              await runLogs({
+              await deps.runLogs({
                 client: options.client,
                 env: options.env,
                 buildUrl: activeBuild.buildUrl,
@@ -293,7 +325,7 @@ export async function runBuild(options: BuildOptions): Promise<BuildRunResult> {
         if (action === "history") {
           const result = await runTrackedBuildAction("history", () =>
             runMenuAction(async () => {
-              const historyResult = await runHistory({
+              const historyResult = await deps.runHistory({
                 client: options.client,
                 env: options.env,
                 jobUrl: resolvedJobUrl,
@@ -316,7 +348,7 @@ export async function runBuild(options: BuildOptions): Promise<BuildRunResult> {
           const result = await runTrackedBuildAction("cancel", () =>
             runMenuAction(async () => {
               const cancelTarget = resolveCancelTarget(activeBuild);
-              await runCancel({
+              await deps.runCancel({
                 client: options.client,
                 env: options.env,
                 buildUrl: cancelTarget.buildUrl,
@@ -350,7 +382,7 @@ export async function runBuild(options: BuildOptions): Promise<BuildRunResult> {
               const branchValue = params[branchParam];
               if (branchValue) {
                 try {
-                  await recordBranchSelection({
+                  await deps.recordBranchSelection({
                     env: options.env,
                     jobUrl: resolvedJobUrl,
                     branch: branchValue,
@@ -360,7 +392,7 @@ export async function runBuild(options: BuildOptions): Promise<BuildRunResult> {
                 }
               }
               try {
-                await recordRecentJob({
+                await deps.recordRecentJob({
                   env: options.env,
                   jobUrl: resolvedJobUrl,
                 });
@@ -438,7 +470,12 @@ export async function runBuild(options: BuildOptions): Promise<BuildRunResult> {
     const postBuildResult = await runFlow({
       definition: flows.buildPost,
       handlers: buildFlowHandlers,
-      prompts: { confirm, isCancel, select, text },
+      prompts: {
+        confirm: deps.confirm,
+        isCancel: deps.isCancel,
+        select: deps.select,
+        text: deps.text,
+      },
       context: flowContext,
     });
 
@@ -499,6 +536,7 @@ async function runBuildOnce(options: {
   branchParam: string;
   watch?: boolean;
 }): Promise<void> {
+  const deps = activeBuildDeps;
   const { jobUrl, jobLabel, matchedFromSearch } = await resolveJobTarget({
     client: options.client,
     env: options.env,
@@ -541,7 +579,7 @@ async function runBuildOnce(options: {
 
   if (triggerConfig.branch) {
     try {
-      await recordBranchSelection({
+      await deps.recordBranchSelection({
         env: options.env,
         jobUrl,
         branch: triggerConfig.branch,
@@ -552,7 +590,7 @@ async function runBuildOnce(options: {
   }
 
   try {
-    await recordRecentJob({
+    await deps.recordRecentJob({
       env: options.env,
       jobUrl,
     });
@@ -589,7 +627,7 @@ async function runBuildOnce(options: {
       return;
     }
     if (!finalStatus.cancelIssued) {
-      await notifyBuildComplete({
+      await deps.notifyBuildComplete({
         message: formatNotificationMessage({
           jobLabel: displayJob,
           buildNumber: finalStatus.buildNumber,
@@ -820,20 +858,21 @@ async function resolveWatchDecision(options: {
   env: EnvConfig;
   nonInteractive: boolean;
 }): Promise<boolean> {
+  const deps = activeBuildDeps;
   if (typeof options.watch === "boolean") {
     return options.watch;
   }
   if (options.nonInteractive) {
     return false;
   }
-  const response = await confirm({
+  const response = await deps.confirm({
     message: withPromptTarget(
       "Watch build status until completion?",
       options.env,
     ),
     initialValue: true,
   });
-  if (isCancel(response)) {
+  if (deps.isCancel(response)) {
     throw new CliError("Operation cancelled.");
   }
   return Boolean(response);
@@ -853,10 +892,11 @@ async function watchBuildStatus(options: {
   cancelled?: boolean;
   cancelIssued?: boolean;
 }> {
+  const deps = activeBuildDeps;
   const pollIntervalMs = DEFAULT_WATCH_INTERVAL_MS;
   markAnalyticsPollingCommand();
   const useSpinner = Boolean(process.stdout.isTTY);
-  const statusSpinner = useSpinner ? spinner() : null;
+  const statusSpinner = useSpinner ? deps.spinner() : null;
   const cancelSignal = createWatchControlSignal();
   const watchStartMs = Date.now();
   const watchPrompt = cancelSignal
@@ -1225,27 +1265,28 @@ async function resolveInteractiveBuildSelection(options: {
   customParams: Record<string, string>;
   defaultBranch: boolean;
 }> {
+  const deps = activeBuildDeps;
   const providedUrl = options.jobUrl?.trim() ?? "";
   if (providedUrl) {
     ensureValidUrl(providedUrl, "job-url");
   }
 
   const query = options.job?.trim() ?? "";
-  let jobs: Awaited<ReturnType<typeof loadJobs>> = [];
+  let jobs: Awaited<ReturnType<typeof defaultBuildDeps.loadJobs>> = [];
   let recentJobs: { url: string; label: string }[] = [];
   let selectedJobLabel = providedUrl || undefined;
 
   if (!providedUrl) {
-    jobs = await loadJobs({
+    jobs = await deps.loadJobs({
       client: options.client,
       env: options.env,
       nonInteractive: false,
       confirmRefresh: async (reason) => {
-        const response = await confirm({
+        const response = await deps.confirm({
           message: withPromptTarget(`${reason} Refresh now?`, options.env),
           initialValue: true,
         });
-        if (isCancel(response)) {
+        if (deps.isCancel(response)) {
           throw new CliError("Operation cancelled.");
         }
         return response;
@@ -1258,7 +1299,7 @@ async function resolveInteractiveBuildSelection(options: {
       ]);
     }
 
-    recentJobs = query ? [] : await loadRecentJobs({ env: options.env });
+    recentJobs = query ? [] : await deps.loadRecentJobs({ env: options.env });
   }
 
   const context: BuildPreContext = {
@@ -1289,7 +1330,12 @@ async function resolveInteractiveBuildSelection(options: {
   const result = await runFlow({
     definition: flows.buildPre,
     handlers: buildPreFlowHandlers,
-    prompts: { confirm, isCancel, select, text },
+    prompts: {
+      confirm: deps.confirm,
+      isCancel: deps.isCancel,
+      select: deps.select,
+      text: deps.text,
+    },
     context,
     ...(providedUrl ? { startStateId: "prepare_branch" } : {}),
   });
@@ -1329,6 +1375,7 @@ async function resolveJobTarget(options: {
   jobUrl?: string;
   nonInteractive: boolean;
 }): Promise<{ jobUrl: string; jobLabel: string; matchedFromSearch: boolean }> {
+  const deps = activeBuildDeps;
   const providedUrl = options.jobUrl?.trim() ?? "";
   if (providedUrl) {
     ensureValidUrl(providedUrl, "job-url");
@@ -1339,16 +1386,16 @@ async function resolveJobTarget(options: {
     };
   }
 
-  const jobs = await loadJobs({
+  const jobs = await deps.loadJobs({
     client: options.client,
     env: options.env,
     nonInteractive: options.nonInteractive,
     confirmRefresh: async (reason) => {
-      const response = await confirm({
+      const response = await deps.confirm({
         message: withPromptTarget(`${reason} Refresh now?`, options.env),
         initialValue: true,
       });
-      if (isCancel(response)) {
+      if (deps.isCancel(response)) {
         throw new CliError("Operation cancelled.");
       }
       return response;
@@ -1368,7 +1415,7 @@ async function resolveJobTarget(options: {
     ]);
   }
 
-  const selectedJob = await resolveJobMatch({
+  const selectedJob = await deps.resolveJobMatch({
     query,
     jobs,
     nonInteractive: options.nonInteractive,
@@ -1376,7 +1423,7 @@ async function resolveJobTarget(options: {
 
   return {
     jobUrl: selectedJob.url,
-    jobLabel: getJobDisplayName(selectedJob),
+    jobLabel: deps.getJobDisplayName(selectedJob),
     matchedFromSearch: true,
   };
 }
@@ -1388,6 +1435,7 @@ async function resolveBranchValue(options: {
   defaultBranch?: boolean;
   nonInteractive?: boolean;
 }): Promise<string> {
+  const deps = activeBuildDeps;
   let branch = options.branch?.trim() ?? "";
   if (options.defaultBranch || branch) {
     return branch;
@@ -1395,12 +1443,12 @@ async function resolveBranchValue(options: {
   if (options.nonInteractive) {
     return "";
   }
-  const cachedBranches = await loadCachedBranches({
+  const cachedBranches = await deps.loadCachedBranches({
     env: options.env,
     jobUrl: options.jobUrl,
   });
   if (cachedBranches.length > 0) {
-    const removableBranches = await loadCachedBranchHistory({
+    const removableBranches = await deps.loadCachedBranchHistory({
       env: options.env,
       jobUrl: options.jobUrl,
     });
@@ -1421,6 +1469,7 @@ async function promptForBranchSelection(options: {
   choices: string[];
   removableBranches: string[];
 }): Promise<string> {
+  const deps = activeBuildDeps;
   let choices = dedupeCaseInsensitive(options.choices);
   let removableBranches = dedupeCaseInsensitive(options.removableBranches);
 
@@ -1438,12 +1487,12 @@ async function promptForBranchSelection(options: {
         label: "Type a different branch",
       },
     ];
-    const response = await select({
+    const response = await deps.select({
       message: withPromptTarget("Branch name", options.env),
       options: selectOptions,
     });
 
-    if (isCancel(response)) {
+    if (deps.isCancel(response)) {
       throw new CliError("Operation cancelled.");
     }
 
@@ -1452,7 +1501,7 @@ async function promptForBranchSelection(options: {
         removableBranches,
         options.env,
       );
-      const removed = await removeCachedBranch({
+      const removed = await deps.removeCachedBranch({
         env: options.env,
         jobUrl: options.jobUrl,
         branch: toRemove,
@@ -1476,14 +1525,15 @@ async function promptForBranchRemoval(
   removableBranches: string[],
   env: EnvConfig,
 ): Promise<string> {
-  const response = await select({
+  const deps = activeBuildDeps;
+  const response = await deps.select({
     message: withPromptTarget("Remove cached branch", env),
     options: removableBranches.map((branch) => ({
       value: branch,
       label: branch,
     })),
   });
-  if (isCancel(response)) {
+  if (deps.isCancel(response)) {
     throw new CliError("Operation cancelled.");
   }
   return String(response).trim();
@@ -1509,11 +1559,12 @@ function removeBranch(entries: string[], target: string): string[] {
 }
 
 async function promptForBranchEntry(env: EnvConfig): Promise<string> {
-  const response = await text({
+  const deps = activeBuildDeps;
+  const response = await deps.text({
     message: withPromptTarget("Branch name", env),
     placeholder: "e.g. main",
   });
-  if (isCancel(response)) {
+  if (deps.isCancel(response)) {
     throw new CliError("Operation cancelled.");
   }
   return String(response).trim();

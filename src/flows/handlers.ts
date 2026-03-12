@@ -25,6 +25,24 @@ import {
   SEARCH_ALL_JOBS_VALUE,
 } from "./constants";
 
+const defaultBuildPreFlowDeps = {
+  loadCachedBranchHistory,
+  loadCachedBranches,
+  removeCachedBranch,
+  getJobDisplayName,
+  resolveJobCandidates,
+};
+
+let activeBuildPreFlowDeps = defaultBuildPreFlowDeps;
+
+export function setBuildPreFlowDepsForTesting(
+  overrides?: Partial<typeof defaultBuildPreFlowDeps>,
+): void {
+  activeBuildPreFlowDeps = overrides
+    ? { ...defaultBuildPreFlowDeps, ...overrides }
+    : defaultBuildPreFlowDeps;
+}
+
 type SelectEvent = `select:${string}`;
 
 function resolveSelectEvent<T extends string>(input: T): `select:${T}` {
@@ -152,9 +170,10 @@ function selectRecentJobHandler({
     return "select:search_all";
   }
   const matchingJob = context.jobs.find((job) => job.url === recent.url);
+  const deps = activeBuildPreFlowDeps;
   context.selectedJobUrl = recent.url;
   context.selectedJobLabel = matchingJob
-    ? getJobDisplayName(matchingJob)
+    ? deps.getJobDisplayName(matchingJob)
     : recent.label;
   context.searchQuery = "";
   context.searchCandidates = [];
@@ -178,10 +197,11 @@ function submitSearchHandler({
   }
 
   try {
-    const candidates = resolveJobCandidates(query, context.jobs);
+    const deps = activeBuildPreFlowDeps;
+    const candidates = deps.resolveJobCandidates(query, context.jobs);
     if (candidates.length === 1 && candidates[0]) {
       context.selectedJobUrl = candidates[0].url;
-      context.selectedJobLabel = getJobDisplayName(candidates[0]);
+      context.selectedJobLabel = deps.getJobDisplayName(candidates[0]);
       context.searchCandidates = [];
       context.buildModePrompted = false;
       return "search:auto";
@@ -212,8 +232,9 @@ function selectSearchCandidateHandler({
   if (!selected) {
     return "select:search_again";
   }
+  const deps = activeBuildPreFlowDeps;
   context.selectedJobUrl = selected.url;
-  context.selectedJobLabel = getJobDisplayName(selected);
+  context.selectedJobLabel = deps.getJobDisplayName(selected);
   context.searchCandidates = [];
   context.buildModePrompted = false;
   return "select:job";
@@ -298,14 +319,15 @@ async function prepareBranchHandler({
     return "branch:error";
   }
 
+  const deps = activeBuildPreFlowDeps;
   const choices = dedupeCaseInsensitive(
-    await loadCachedBranches({
+    await deps.loadCachedBranches({
       env: context.env,
       jobUrl,
     }),
   );
   const removableBranches = dedupeCaseInsensitive(
-    await loadCachedBranchHistory({
+    await deps.loadCachedBranchHistory({
       env: context.env,
       jobUrl,
     }),
@@ -373,7 +395,7 @@ async function removeBranchHandler({
     return "remove:done";
   }
 
-  const removed = await removeCachedBranch({
+  const removed = await activeBuildPreFlowDeps.removeCachedBranch({
     env: context.env,
     jobUrl,
     branch,

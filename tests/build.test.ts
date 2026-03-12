@@ -10,6 +10,10 @@ import {
 import type { EnvConfig } from "../src/env";
 import { BUILD_WITHOUT_PARAMS_VALUE } from "../src/flows/constants";
 import type { JenkinsClient } from "../src/jenkins/client";
+import {
+  runBuild,
+  setBuildDepsForTesting,
+} from "../src/commands/build";
 
 const confirmMock = mock(async () => false);
 const selectMock = mock(async () => "done");
@@ -25,32 +29,6 @@ const runCancelMock = mock(async (..._args: unknown[]) => undefined);
 const runHistoryMock = mock(async () => ({}));
 const runLogsMock = mock(async () => undefined);
 const notifyBuildCompleteMock = mock(async () => undefined);
-
-mock.module("@clack/prompts", () => ({
-  confirm: confirmMock,
-  select: selectMock,
-  text: textMock,
-  isCancel: isCancelMock,
-  spinner: spinnerMock,
-}));
-
-mock.module("../src/commands/cancel", () => ({
-  runCancel: runCancelMock,
-}));
-
-mock.module("../src/commands/history", () => ({
-  runHistory: runHistoryMock,
-}));
-
-mock.module("../src/commands/logs", () => ({
-  runLogs: runLogsMock,
-}));
-
-mock.module("../src/notify", () => ({
-  notifyBuildComplete: notifyBuildCompleteMock,
-}));
-
-const { runBuild } = await import("../src/commands/build");
 
 const JOB_URL = "https://jenkins.example.com/job/crypto-order-matching-engine/";
 const BUILD_URL =
@@ -96,13 +74,25 @@ describe("build command", () => {
     notifyBuildCompleteMock.mockReset();
     notifyBuildCompleteMock.mockImplementation(async () => undefined);
 
+    setBuildDepsForTesting({
+      confirm: confirmMock,
+      select: selectMock,
+      text: textMock,
+      isCancel: isCancelMock,
+      spinner: spinnerMock,
+      runCancel: runCancelMock,
+      runHistory: runHistoryMock,
+      runLogs: runLogsMock,
+      notifyBuildComplete: notifyBuildCompleteMock,
+    });
+
     process.argv = [...originalArgv];
     process.argv[1] = "jenkins-cli";
   });
 
   afterEach(() => {
     process.argv = [...originalArgv];
-    mock.restore();
+    setBuildDepsForTesting();
   });
 
   test("cancel action passes only build URL when build and queue URLs are both present", async () => {
@@ -225,6 +215,7 @@ describe("build command", () => {
       );
 
     expect(commandLine).toContain("jenkins-cli build --non-interactive");
+    logSpy.mockRestore();
   });
 
   test("watch cancellation still opens post-build action menu", async () => {
@@ -344,6 +335,7 @@ describe("build command", () => {
 
     expect(commandLine).toContain("--without-params");
     expect(commandLine).toContain("--watch");
+    logSpy.mockRestore();
   });
 
   test("tip command prints repeatable --param flags for custom parameters", async () => {
@@ -382,6 +374,7 @@ describe("build command", () => {
 
     expect(commandLine).toContain("--param 'DEPLOY_ENV=staging'");
     expect(commandLine).toContain("--param 'FORCE=true'");
+    logSpy.mockRestore();
   });
 
   test("non-interactive build without branch triggers without parameters", async () => {
