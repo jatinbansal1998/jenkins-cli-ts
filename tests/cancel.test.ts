@@ -1,5 +1,4 @@
 import {
-  afterEach,
   beforeEach,
   describe,
   expect,
@@ -18,10 +17,6 @@ function createClient(stubs: Partial<JenkinsClient>): JenkinsClient {
 describe("runCancel", () => {
   beforeEach(() => {
     mock.clearAllMocks();
-  });
-
-  afterEach(() => {
-    mock.restore();
   });
 
   test("waits for Jenkins to confirm a build was aborted before printing success", async () => {
@@ -69,6 +64,8 @@ describe("runCancel", () => {
     );
     expect(messages.some((message) => message.includes("ABORTED"))).toBe(true);
     expect(messages.some((message) => message.includes("RUNNING"))).toBe(true);
+    sleepSpy.mockRestore();
+    logSpy.mockRestore();
   });
 
   test("stops watching once Jenkins reports a terminal post-cancel status", async () => {
@@ -99,5 +96,6 @@ describe("runCancel", () => {
       "OK: Cancellation requested for build: https://jenkins.example.com/job/my-job/123/",
     );
     expect(messages.some((message) => message.includes("SUCCESS"))).toBe(true);
+    logSpy.mockRestore();
   });
 });

@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, mock, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import type { EnvConfig } from "../src/env";
 import {
   BUILD_WITH_CUSTOM_PARAMS_VALUE,
@@ -7,6 +7,11 @@ import {
   SEARCH_ALL_JOBS_VALUE,
 } from "../src/flows/constants";
 import type { JenkinsClient } from "../src/jenkins/client";
+import {
+  runBuild,
+  setBuildDepsForTesting,
+} from "../src/commands/build";
+import { setBuildPreFlowDepsForTesting } from "../src/flows/handlers";
 
 const CANCEL = "__mock_cancel__";
 const JOB_URL = "https://jenkins.example.com/job/alpha/";
@@ -35,52 +40,6 @@ const recordBranchSelectionMock = mock(
 );
 const removeCachedBranchMock = mock(async () => true);
 const loadJobsMock = mock(async () => [{ name: "alpha", url: JOB_URL }]);
-
-mock.module("@clack/prompts", () => ({
-  confirm: confirmMock,
-  select: selectMock,
-  text: textMock,
-  isCancel: isCancelMock,
-  spinner: spinnerMock,
-}));
-
-mock.module("../src/commands/cancel", () => ({
-  runCancel: runCancelMock,
-}));
-
-mock.module("../src/commands/logs", () => ({
-  runLogs: runLogsMock,
-}));
-
-mock.module("../src/notify", () => ({
-  notifyBuildComplete: notifyBuildCompleteMock,
-}));
-
-mock.module("../src/recent-jobs.ts", () => ({
-  loadRecentJobs: loadRecentJobsMock,
-  recordRecentJob: recordRecentJobMock,
-}));
-
-mock.module("../src/branches.ts", () => ({
-  loadCachedBranches: loadCachedBranchesMock,
-  loadCachedBranchHistory: loadCachedBranchHistoryMock,
-  recordBranchSelection: recordBranchSelectionMock,
-  removeCachedBranch: removeCachedBranchMock,
-}));
-
-mock.module("../src/jobs", () => ({
-  getJobDisplayName: (job: { name: string; fullName?: string }) =>
-    job.fullName || job.name,
-  loadJobs: loadJobsMock,
-  resolveJobCandidates: (
-    _query: string,
-    jobs: { name: string; url: string }[],
-  ) => jobs,
-  resolveJobMatch: async (options: { jobs: { name: string; url: string }[] }) =>
-    options.jobs[0],
-}));
-
-const { runBuild } = await import("../src/commands/build");
 
 function createClient(stubs: Partial<JenkinsClient>): JenkinsClient {
   return stubs as JenkinsClient;
@@ -143,6 +102,45 @@ describe("build command navigation", () => {
     loadJobsMock.mockImplementation(async () => [
       { name: "alpha", url: JOB_URL },
     ]);
+
+    setBuildDepsForTesting({
+      confirm: confirmMock,
+      select: selectMock,
+      text: textMock,
+      isCancel: isCancelMock,
+      spinner: spinnerMock,
+      runCancel: runCancelMock,
+      runLogs: runLogsMock,
+      notifyBuildComplete: notifyBuildCompleteMock,
+      loadRecentJobs: loadRecentJobsMock,
+      recordRecentJob: recordRecentJobMock,
+      loadCachedBranches: loadCachedBranchesMock,
+      loadCachedBranchHistory: loadCachedBranchHistoryMock,
+      recordBranchSelection: recordBranchSelectionMock,
+      removeCachedBranch: removeCachedBranchMock,
+      loadJobs: loadJobsMock,
+      getJobDisplayName: (job: { name: string; fullName?: string }) =>
+        job.fullName || job.name,
+      resolveJobMatch: async (options: {
+        jobs: { name: string; url: string }[];
+      }) => options.jobs[0],
+    });
+    setBuildPreFlowDepsForTesting({
+      loadCachedBranches: loadCachedBranchesMock,
+      loadCachedBranchHistory: loadCachedBranchHistoryMock,
+      removeCachedBranch: removeCachedBranchMock,
+      getJobDisplayName: (job: { name: string; fullName?: string }) =>
+        job.fullName || job.name,
+      resolveJobCandidates: (
+        _query: string,
+        jobs: { name: string; url: string }[],
+      ) => jobs,
+    });
+  });
+
+  afterEach(() => {
+    setBuildDepsForTesting();
+    setBuildPreFlowDepsForTesting();
   });
 
   test("Esc in job search goes back to recent job menu", async () => {

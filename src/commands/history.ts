@@ -38,16 +38,23 @@ export type HistoryRunResult = {
   activeBuild?: HistoryActiveBuild;
 };
 
+let activeHistoryDeps = historyDeps;
+
+export function setHistoryDepsForTesting(overrides?: typeof historyDeps): void {
+  activeHistoryDeps = overrides ?? historyDeps;
+}
+
 export async function runHistory(
   options: HistoryOptions,
 ): Promise<HistoryRunResult> {
+  const deps = activeHistoryDeps;
   if (options.job && options.jobUrl) {
     throw new CliError("Provide either --job or --job-url, not both.", [
       "Remove one of the flags and try again.",
     ]);
   }
 
-  const target = await historyDeps.resolveJobTarget({
+  const target = await deps.resolveJobTarget({
     client: options.client,
     env: options.env,
     job: options.job,
@@ -79,11 +86,11 @@ export async function runHistory(
     }
 
     renderBuildHistory(page, target.jobLabel);
-    const selection = await historyDeps.select({
+    const selection = await deps.select({
       message: withPromptTarget("Select a build or action", options.env),
       options: buildHistoryOptions(page),
     });
-    if (historyDeps.isCancel(selection) || selection === BACK_VALUE) {
+    if (deps.isCancel(selection) || selection === BACK_VALUE) {
       return latestActiveBuild ? { activeBuild: latestActiveBuild } : {};
     }
     if (selection === NEXT_PAGE_VALUE) {
@@ -122,8 +129,9 @@ async function runBuildHistoryAction(options: {
   jobUrl: string;
   build: BuildHistoryEntry;
 }): Promise<HistoryRunResult> {
+  const deps = activeHistoryDeps;
   while (true) {
-    const selection = await historyDeps.select({
+    const selection = await deps.select({
       message: withPromptTarget(
         `Build #${options.build.buildNumber ?? "?"} for ${options.jobLabel}`,
         options.env,
@@ -136,7 +144,7 @@ async function runBuildHistoryAction(options: {
         { value: BACK_VALUE, label: "Back" },
       ],
     });
-    if (historyDeps.isCancel(selection) || selection === BACK_VALUE) {
+    if (deps.isCancel(selection) || selection === BACK_VALUE) {
       return {};
     }
     if (selection === URL_VALUE) {
@@ -144,7 +152,7 @@ async function runBuildHistoryAction(options: {
       continue;
     }
     if (selection === LOGS_VALUE) {
-      await historyDeps.runLogs({
+      await deps.runLogs({
         client: options.client,
         env: options.env,
         buildUrl: options.build.buildUrl,
@@ -234,6 +242,7 @@ async function runHistoryRebuildPostFlow(options: {
   branch?: string;
   activeBuild: HistoryActiveBuild;
 }): Promise<HistoryActiveBuild> {
+  const deps = activeHistoryDeps;
   let activeBuild = { ...options.activeBuild };
   const context: BuildPostContext = {
     env: options.env,
@@ -242,7 +251,7 @@ async function runHistoryRebuildPostFlow(options: {
     performAction: async (action): Promise<ActionEffectResult> => {
       if (action === "watch") {
         const result = await runHistoryMenuAction(async () =>
-          historyDeps.runWait({
+          deps.runWait({
             client: options.client,
             env: options.env,
             buildUrl: activeBuild.buildUrl,
@@ -268,7 +277,7 @@ async function runHistoryRebuildPostFlow(options: {
 
       if (action === "logs") {
         const result = await runHistoryMenuAction(async () => {
-          await historyDeps.runLogs({
+          await deps.runLogs({
             client: options.client,
             env: options.env,
             buildUrl: activeBuild.buildUrl,
@@ -303,7 +312,7 @@ async function runHistoryRebuildPostFlow(options: {
 
       if (action === "cancel") {
         const result = await runHistoryMenuAction(async () => {
-          await historyDeps.runCancel({
+          await deps.runCancel({
             client: options.client,
             env: options.env,
             buildUrl: activeBuild.buildUrl,
@@ -379,10 +388,10 @@ async function runHistoryRebuildPostFlow(options: {
     definition: flows.buildPost,
     handlers: buildFlowHandlers,
     prompts: {
-      confirm: historyDeps.confirm,
-      isCancel: historyDeps.isCancel,
-      select: historyDeps.select,
-      text: historyDeps.text,
+      confirm: deps.confirm,
+      isCancel: deps.isCancel,
+      select: deps.select,
+      text: deps.text,
     },
     context,
   });
@@ -411,8 +420,9 @@ async function recordHistoryRebuildSuccess(options: {
   jobUrl: string;
   branch?: string;
 }): Promise<void> {
+  const deps = activeHistoryDeps;
   try {
-    await historyDeps.recordRecentJob({
+    await deps.recordRecentJob({
       env: options.env,
       jobUrl: options.jobUrl,
     });
@@ -425,7 +435,7 @@ async function recordHistoryRebuildSuccess(options: {
   }
 
   try {
-    await historyDeps.recordBranchSelection({
+    await deps.recordBranchSelection({
       env: options.env,
       jobUrl: options.jobUrl,
       branch: options.branch,

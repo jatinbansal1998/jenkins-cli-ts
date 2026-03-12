@@ -9,6 +9,7 @@ import {
 } from "bun:test";
 import type { EnvConfig } from "../src/env";
 import type { JenkinsClient } from "../src/jenkins/client";
+import { runHistory, setHistoryDepsForTesting } from "../src/commands/history";
 
 const CANCEL = Symbol("cancel");
 const NEXT_PAGE_VALUE = "__jenkins_cli_history_next__";
@@ -43,35 +44,6 @@ const resolveJobTargetMock = mock(
     jobLabel: jobUrl ?? "https://jenkins.example.com/job/api/",
   }),
 );
-
-mock.module("../src/commands/history-deps", () => ({
-  historyDeps: {
-    confirm: confirmMock,
-    select: selectMock,
-    text: textMock,
-    isCancel: isCancelMock,
-    runCancel: runCancelMock,
-    runLogs: runLogsMock,
-    runWait: runWaitMock,
-    recordRecentJob: recordRecentJobMock,
-    recordBranchSelection: recordBranchSelectionMock,
-    resolveJobTarget: resolveJobTargetMock,
-  },
-}));
-
-mock.module("../src/recent-jobs", () => ({
-  loadRecentJobs: mock(async () => []),
-  recordRecentJob: recordRecentJobMock,
-}));
-
-mock.module("../src/branches", () => ({
-  loadCachedBranches: mock(async () => []),
-  loadCachedBranchHistory: mock(async () => []),
-  removeCachedBranch: mock(async () => false),
-  recordBranchSelection: recordBranchSelectionMock,
-}));
-
-const { runHistory } = await import("../src/commands/history");
 
 const TEST_ENV: EnvConfig = {
   jenkinsUrl: "https://jenkins.example.com",
@@ -122,10 +94,22 @@ describe("runHistory", () => {
         jobLabel: jobUrl ?? "https://jenkins.example.com/job/api/",
       }),
     );
+    setHistoryDepsForTesting({
+      confirm: confirmMock,
+      select: selectMock,
+      text: textMock,
+      isCancel: isCancelMock,
+      runCancel: runCancelMock,
+      runLogs: runLogsMock,
+      runWait: runWaitMock,
+      recordRecentJob: recordRecentJobMock,
+      recordBranchSelection: recordBranchSelectionMock,
+      resolveJobTarget: resolveJobTargetMock,
+    });
   });
 
   afterEach(() => {
-    mock.restore();
+    setHistoryDepsForTesting();
   });
 
   test("non-interactive prints a tabular build history page", async () => {
@@ -167,6 +151,7 @@ describe("runHistory", () => {
     expect(output).toContain("Failed Step");
     expect(output).toContain("Deploy to ECS");
     expect(output).toContain("task definition validation failed");
+    logSpy.mockRestore();
   });
 
   test("interactive supports fetching the next page of builds", async () => {
