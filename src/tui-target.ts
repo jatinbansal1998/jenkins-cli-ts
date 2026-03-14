@@ -9,7 +9,8 @@ export function formatPromptTarget(env: EnvConfig): string {
 }
 
 export function withPromptTarget(message: string, env: EnvConfig): string {
-  return `${message} [${formatPromptTarget(env)}]`;
+  void env;
+  return message;
 }
 
 function resolveHost(url: string | undefined): string {

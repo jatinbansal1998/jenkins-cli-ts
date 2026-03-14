@@ -2,7 +2,7 @@
  * Build command implementation.
  * Triggers a Jenkins build for a specified job with branch parameter support.
  */
-import { confirm, isCancel, select, spinner, text } from "@clack/prompts";
+import { confirm, isCancel, select, spinner, text } from "../clack";
 import {
   markAnalyticsPollingCommand,
   runInteractiveSubcommandWithAnalytics,

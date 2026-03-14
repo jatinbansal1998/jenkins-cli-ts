@@ -1,4 +1,4 @@
-import { confirm, isCancel, select, text } from "@clack/prompts";
+import { confirm, isCancel, select, text } from "../clack";
 import { CliError, printError, printHint } from "../cli";
 import type { EnvConfig } from "../env";
 import type { JenkinsClient } from "../jenkins/api-wrapper";

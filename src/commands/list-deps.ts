@@ -1,4 +1,4 @@
-import { confirm, isCancel, select, text } from "@clack/prompts";
+import { confirm, isCancel, select, text } from "../clack";
 import { getJobDisplayName, loadJobs, rankJobs } from "../jobs";
 import { runBuild } from "./build";
 import { runCancel } from "./cancel";
