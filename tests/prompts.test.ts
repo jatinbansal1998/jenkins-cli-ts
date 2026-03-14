@@ -1,5 +1,5 @@
-import { describe, expect, test } from "bun:test";
-import { formatCliIntro } from "../src/cli-intro";
+import { describe, expect, spyOn, test } from "bun:test";
+import { formatCliIntro, printCliIntro } from "../src/cli-intro";
 
 describe("cli intro", () => {
   test("builds the default ASCII intro message with metadata", () => {
@@ -23,5 +23,20 @@ describe("cli intro", () => {
     });
 
     expect(message).toBe("Jenkins CLI\nv0.7.4");
+  });
+
+  test("prints nothing when the banner is disabled", () => {
+    const writeSpy = spyOn(process.stderr, "write");
+
+    try {
+      printCliIntro({
+        showAsciiBanner: false,
+        version: "0.7.4",
+      });
+
+      expect(writeSpy).not.toHaveBeenCalled();
+    } finally {
+      writeSpy.mockRestore();
+    }
   });
 });

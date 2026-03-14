@@ -50,8 +50,10 @@ export function formatCliIntro(options: CliIntroOptions): string {
 }
 
 export function printCliIntro(options: CliIntroOptions): void {
-  console.log(formatCliIntro(options));
-  console.log("");
+  if (!options.showAsciiBanner) {
+    return;
+  }
+  process.stderr.write(`${formatCliIntro(options)}\n`);
 }
 
 function normalizeVersionLabel(version: string | undefined): string | null {

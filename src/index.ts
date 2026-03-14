@@ -823,12 +823,12 @@ async function runTrackedCommand(
   const interactive = !argv?.nonInteractive && isInteractiveTerminal();
   let introShown = false;
   const showIntro = (target?: string): void => {
-    if (introShown || !interactive) {
+    if (introShown || !interactive || argv?.banner === false) {
       return;
     }
     introShown = true;
     printCliIntro({
-      showAsciiBanner: argv?.banner !== false,
+      showAsciiBanner: true,
       version: VERSION,
       target,
       pendingUpdateVersion: pendingPromptIntroVersion,
