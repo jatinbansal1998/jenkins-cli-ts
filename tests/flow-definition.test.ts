@@ -125,8 +125,8 @@ describe("flow definitions", () => {
     }
 
     expect(buildOptions.options.map((option) => option.value)).toEqual([
-      "rerun",
       "rerun_last",
+      "rerun",
       "watch",
       "logs",
       "history",
