@@ -71,4 +71,78 @@ describe("flow definitions", () => {
       label: "Rerun last build",
     });
   });
+
+  test("list action menu keeps rerun last build next to build", () => {
+    const listActionMenu = flows.listInteractive.states.action_menu;
+
+    expect(listActionMenu).toBeDefined();
+
+    if (!listActionMenu) {
+      throw new Error("Expected action menu state.");
+    }
+
+    const listOptions = listActionMenu.prompt;
+
+    if (!listOptions || listOptions.kind !== "select") {
+      throw new Error("Expected select prompt for list action menu.");
+    }
+
+    expect(listOptions.options.map((option) => option.value)).toEqual([
+      "build",
+      "rerun_last",
+      "rerun",
+      "status",
+      "watch",
+      "logs",
+      "history",
+      "cancel",
+      "search",
+      "exit",
+    ]);
+  });
+
+  test("post-action menus follow the shared action ordering", () => {
+    const buildActionMenu = flows.buildPost.states.action_menu;
+    const statusActionMenu = flows.statusPost.states.action_menu;
+
+    expect(buildActionMenu).toBeDefined();
+    expect(statusActionMenu).toBeDefined();
+
+    if (!buildActionMenu || !statusActionMenu) {
+      throw new Error("Expected post-action menu states.");
+    }
+
+    const buildOptions = buildActionMenu.prompt;
+    const statusOptions = statusActionMenu.prompt;
+
+    if (
+      !buildOptions ||
+      buildOptions.kind !== "select" ||
+      !statusOptions ||
+      statusOptions.kind !== "select"
+    ) {
+      throw new Error("Expected select prompts for post-action menus.");
+    }
+
+    expect(buildOptions.options.map((option) => option.value)).toEqual([
+      "rerun",
+      "rerun_last",
+      "watch",
+      "logs",
+      "history",
+      "cancel",
+      "done",
+    ]);
+
+    expect(statusOptions.options.map((option) => option.value)).toEqual([
+      "build",
+      "rerun_last",
+      "rerun",
+      "watch",
+      "logs",
+      "history",
+      "cancel",
+      "done",
+    ]);
+  });
 });

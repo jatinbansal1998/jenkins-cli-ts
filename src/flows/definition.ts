@@ -3,6 +3,7 @@ import type {
   BuildPostContext,
   FlowDefinition,
   ListInteractiveContext,
+  PromptOption,
   StatusPostContext,
 } from "./types";
 import {
@@ -16,6 +17,36 @@ import {
   SEARCH_ALL_JOBS_VALUE,
 } from "./constants";
 import { withPromptTarget } from "../tui-target";
+
+const ACTION_MENU_ORDER = [
+  "build",
+  "rerun_last",
+  "rerun",
+  "status",
+  "watch",
+  "logs",
+  "history",
+  "cancel",
+  "search",
+  "exit",
+  "done",
+] as const;
+
+function orderActionOptions(options: PromptOption[]): PromptOption[] {
+  const optionsByValue = new Map(options.map((option) => [option.value, option]));
+  const orderedOptions = ACTION_MENU_ORDER.flatMap((value) => {
+    const option = optionsByValue.get(value);
+
+    if (!option) {
+      return [];
+    }
+
+    optionsByValue.delete(value);
+    return [option];
+  });
+
+  return [...orderedOptions, ...optionsByValue.values()];
+}
 
 export const listInteractiveFlow: FlowDefinition<ListInteractiveContext> = {
   id: "listInteractive",
@@ -54,18 +85,18 @@ export const listInteractiveFlow: FlowDefinition<ListInteractiveContext> = {
             `Action for ${context.selectedJob?.fullName || context.selectedJob?.name || "job"}`,
             context.env,
           ),
-        options: [
+        options: orderActionOptions([
           { value: "build", label: "Build" },
-          { value: "status", label: "Status" },
-          { value: "history", label: "Build history" },
-          { value: "watch", label: "Watch" },
-          { value: "logs", label: "Logs" },
-          { value: "cancel", label: "Cancel" },
           { value: "rerun_last", label: "Rerun last build" },
           { value: "rerun", label: "Rerun last failed" },
+          { value: "status", label: "Status" },
+          { value: "watch", label: "Watch" },
+          { value: "logs", label: "Logs" },
+          { value: "history", label: "Build history" },
+          { value: "cancel", label: "Cancel" },
           { value: "search", label: "Back to search" },
           { value: "exit", label: "Exit" },
-        ],
+        ]),
       },
       onSelect: "list.selectAction",
       transitions: {
@@ -406,15 +437,15 @@ export const buildPostFlow: FlowDefinition<BuildPostContext> = {
         kind: "select",
         message: (context) =>
           withPromptTarget(`Next action for ${context.jobLabel}`, context.env),
-        options: [
-          { value: "watch", label: "Watch" },
-          { value: "history", label: "Build history" },
-          { value: "logs", label: "Logs" },
-          { value: "cancel", label: "Cancel" },
+        options: orderActionOptions([
           { value: "rerun", label: "Rerun same inputs" },
           { value: "rerun_last", label: "Rerun last build" },
+          { value: "watch", label: "Watch" },
+          { value: "logs", label: "Logs" },
+          { value: "history", label: "Build history" },
+          { value: "cancel", label: "Cancel" },
           { value: "done", label: "Done" },
-        ],
+        ]),
       },
       onSelect: "build.selectAction",
       transitions: {
@@ -484,16 +515,16 @@ export const statusPostFlow: FlowDefinition<StatusPostContext> = {
         kind: "select",
         message: (context) =>
           withPromptTarget(`Action for ${context.targetLabel}`, context.env),
-        options: [
-          { value: "watch", label: "Watch" },
-          { value: "history", label: "Build history" },
-          { value: "logs", label: "Logs" },
-          { value: "cancel", label: "Cancel running/queued build" },
+        options: orderActionOptions([
+          { value: "build", label: "Build now" },
           { value: "rerun_last", label: "Rerun last build" },
           { value: "rerun", label: "Rerun last failed build" },
-          { value: "build", label: "Build now" },
+          { value: "watch", label: "Watch" },
+          { value: "logs", label: "Logs" },
+          { value: "history", label: "Build history" },
+          { value: "cancel", label: "Cancel running/queued build" },
           { value: "done", label: "Done" },
-        ],
+        ]),
       },
       onSelect: "status.selectAction",
       transitions: {
