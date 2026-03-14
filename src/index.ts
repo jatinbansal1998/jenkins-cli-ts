@@ -876,7 +876,7 @@ async function resolvePromptIntroPendingVersion(
   return getDeferredUpdatePromptVersion(state, currentVersion) ?? undefined;
 }
 
-function parseBuildCustomParams(
+export function parseBuildCustomParams(
   value: unknown,
 ): Record<string, string> | undefined {
   const entries = Array.isArray(value)
@@ -890,7 +890,12 @@ function parseBuildCustomParams(
 
   const params: Record<string, string> = {};
   for (const entry of entries) {
-
+    if (typeof entry !== "string") {
+      throw new CliError(`Invalid --param value "${String(entry)}".`, [
+        "Expected each --param entry to be a string in KEY=VALUE format.",
+        "Use --param KEY=VALUE (example: --param DEPLOY_ENV=staging).",
+      ]);
+    }
     const equalsIndex = entry.indexOf("=");
     if (equalsIndex <= 0) {
       throw new CliError(`Invalid --param value "${entry}".`, [
@@ -915,7 +920,9 @@ function parseBuildCustomParams(
   return params;
 }
 
-main().catch((error) => {
-  handleCliError(error);
-  process.exitCode = 1;
-});
+if (import.meta.main) {
+  main().catch((error) => {
+    handleCliError(error);
+    process.exitCode = 1;
+  });
+}
