@@ -170,8 +170,7 @@ async function main(): Promise<void> {
           }),
       async (argv) => {
         await runTrackedCommand("list", argv, async ({ showIntro }) => {
-          const { env, client } = createContext(argv);
-          showIntro(formatPromptTarget(env));
+          const { env, client } = prepareContext(argv, showIntro);
           await runList({
             client,
             env,
@@ -198,8 +197,7 @@ async function main(): Promise<void> {
           }),
       async (argv) => {
         await runTrackedCommand("list", argv, async ({ showIntro }) => {
-          const { env, client } = createContext(argv);
-          showIntro(formatPromptTarget(env));
+          const { env, client } = prepareContext(argv, showIntro);
           await runList({
             client,
             env,
@@ -254,8 +252,7 @@ async function main(): Promise<void> {
           }),
       async (argv) => {
         await runTrackedCommand("build", argv, async ({ showIntro }) => {
-          const { env, client } = createContext(argv);
-          showIntro(formatPromptTarget(env));
+          const { env, client } = prepareContext(argv, showIntro);
           const rawArgs = hideBin(process.argv);
           const branchParamExplicitlyPassed = rawArgs.some(
             (arg) =>
@@ -310,8 +307,7 @@ async function main(): Promise<void> {
           }),
       async (argv) => {
         await runTrackedCommand("status", argv, async ({ showIntro }) => {
-          const { env, client } = createContext(argv);
-          showIntro(formatPromptTarget(env));
+          const { env, client } = prepareContext(argv, showIntro);
           const rawArgs = hideBin(process.argv);
           const watchExplicitlyPassed = rawArgs.some(
             (arg) =>
@@ -351,8 +347,7 @@ async function main(): Promise<void> {
           }),
       async (argv) => {
         await runTrackedCommand("history", argv, async ({ showIntro }) => {
-          const { env, client } = createContext(argv);
-          showIntro(formatPromptTarget(env));
+          const { env, client } = prepareContext(argv, showIntro);
           await runHistory({
             client,
             env,
@@ -395,8 +390,7 @@ async function main(): Promise<void> {
           }),
       async (argv) => {
         await runTrackedCommand("wait", argv, async ({ showIntro }) => {
-          const { env, client } = createContext(argv);
-          showIntro(formatPromptTarget(env));
+          const { env, client } = prepareContext(argv, showIntro);
           await runWait({
             client,
             env,
@@ -447,8 +441,7 @@ async function main(): Promise<void> {
           }),
       async (argv) => {
         await runTrackedCommand("logs", argv, async ({ showIntro }) => {
-          const { env, client } = createContext(argv);
-          showIntro(formatPromptTarget(env));
+          const { env, client } = prepareContext(argv, showIntro);
           await runLogs({
             client,
             env,
@@ -488,8 +481,7 @@ async function main(): Promise<void> {
           }),
       async (argv) => {
         await runTrackedCommand("cancel", argv, async ({ showIntro }) => {
-          const { env, client } = createContext(argv);
-          showIntro(formatPromptTarget(env));
+          const { env, client } = prepareContext(argv, showIntro);
           await runCancel({
             client,
             env,
@@ -519,8 +511,7 @@ async function main(): Promise<void> {
           }),
       async (argv) => {
         await runTrackedCommand("rerun", argv, async ({ showIntro }) => {
-          const { env, client } = createContext(argv);
-          showIntro(formatPromptTarget(env));
+          const { env, client } = prepareContext(argv, showIntro);
           await runRerun({
             client,
             env,
@@ -813,6 +804,15 @@ function createContext(argv?: {
     use_crumb: env.useCrumb,
   });
   return { env, client };
+}
+
+function prepareContext(
+  argv: Parameters<typeof createContext>[0],
+  showIntro: (target?: string) => void,
+): ReturnType<typeof createContext> {
+  const context = createContext(argv);
+  showIntro(formatPromptTarget(context.env));
+  return context;
 }
 
 async function runTrackedCommand(
