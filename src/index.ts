@@ -38,6 +38,7 @@ import {
   kickOffAutoUpdate,
   readUpdateState,
   shouldPromptForDeferredUpdate,
+  type UpdateState,
   writeUpdateState,
 } from "./update";
 import { printCliIntro } from "./cli-intro";
@@ -53,8 +54,8 @@ async function main(): Promise<void> {
   const rawArgs = hideBin(process.argv);
   kickOffMinimumVersionRefresh({ currentVersion: VERSION });
   await enforceMinimumVersionFromCache({ currentVersion: VERSION, rawArgs });
-  await promptForDeferredUpdate(VERSION, rawArgs);
-  pendingPromptIntroVersion = await resolvePromptIntroPendingVersion(VERSION);
+  const deferredUpdatePrompt = await promptForDeferredUpdate(VERSION, rawArgs);
+  pendingPromptIntroVersion = deferredUpdatePrompt.pendingPromptIntroVersion;
   kickOffAutoUpdate(VERSION, rawArgs);
 
   const parser = yargs(rawArgs)
@@ -169,16 +170,19 @@ async function main(): Promise<void> {
             describe: "Refresh the job cache from Jenkins",
           }),
       async (argv) => {
-        await runTrackedCommand("list", argv, async ({ showIntro }) => {
-          const { env, client } = prepareContext(argv, showIntro);
-          await runList({
-            client,
-            env,
-            search: typeof argv.search === "string" ? argv.search : undefined,
-            refresh: Boolean(argv.refresh),
-            nonInteractive: Boolean(argv.nonInteractive),
-          });
-        });
+        await runTrackedCommandWithContext(
+          "list",
+          argv,
+          async ({ env, client }) => {
+            await runList({
+              client,
+              env,
+              search: typeof argv.search === "string" ? argv.search : undefined,
+              refresh: Boolean(argv.refresh),
+              nonInteractive: Boolean(argv.nonInteractive),
+            });
+          },
+        );
       },
     )
     .command(
@@ -196,16 +200,19 @@ async function main(): Promise<void> {
             describe: "Refresh the job cache from Jenkins",
           }),
       async (argv) => {
-        await runTrackedCommand("list", argv, async ({ showIntro }) => {
-          const { env, client } = prepareContext(argv, showIntro);
-          await runList({
-            client,
-            env,
-            search: typeof argv.search === "string" ? argv.search : undefined,
-            refresh: Boolean(argv.refresh),
-            nonInteractive: Boolean(argv.nonInteractive),
-          });
-        });
+        await runTrackedCommandWithContext(
+          "list",
+          argv,
+          async ({ env, client }) => {
+            await runList({
+              client,
+              env,
+              search: typeof argv.search === "string" ? argv.search : undefined,
+              refresh: Boolean(argv.refresh),
+              nonInteractive: Boolean(argv.nonInteractive),
+            });
+          },
+        );
       },
     )
     .command(
@@ -251,40 +258,43 @@ async function main(): Promise<void> {
             describe: "Watch build status until completion",
           }),
       async (argv) => {
-        await runTrackedCommand("build", argv, async ({ showIntro }) => {
-          const { env, client } = prepareContext(argv, showIntro);
-          const rawArgs = hideBin(process.argv);
-          const branchParamExplicitlyPassed = rawArgs.some(
-            (arg) =>
-              arg === "--branch-param" ||
-              arg.startsWith("--branch-param=") ||
-              arg === "--branchParam" ||
-              arg.startsWith("--branchParam="),
-          );
-          const watchExplicitlyPassed = rawArgs.some(
-            (arg) =>
-              arg === "--watch" ||
-              arg === "--no-watch" ||
-              arg.startsWith("--watch=") ||
-              arg.startsWith("--no-watch="),
-          );
-          await runBuild({
-            client,
-            env,
-            job: typeof argv.job === "string" ? argv.job : undefined,
-            jobUrl: typeof argv.jobUrl === "string" ? argv.jobUrl : undefined,
-            branch: typeof argv.branch === "string" ? argv.branch : undefined,
-            customParams: parseBuildCustomParams(argv.param),
-            branchParam: branchParamExplicitlyPassed
-              ? argv.branchParam
-              : env.branchParamDefault,
-            defaultBranch:
-              Boolean(argv.nonInteractive) &&
-              (Boolean(argv.withoutParams) || Boolean(argv.defaultBranch)),
-            nonInteractive: Boolean(argv.nonInteractive),
-            watch: watchExplicitlyPassed ? Boolean(argv.watch) : undefined,
-          });
-        });
+        await runTrackedCommandWithContext(
+          "build",
+          argv,
+          async ({ env, client }) => {
+            const rawArgs = hideBin(process.argv);
+            const branchParamExplicitlyPassed = rawArgs.some(
+              (arg) =>
+                arg === "--branch-param" ||
+                arg.startsWith("--branch-param=") ||
+                arg === "--branchParam" ||
+                arg.startsWith("--branchParam="),
+            );
+            const watchExplicitlyPassed = rawArgs.some(
+              (arg) =>
+                arg === "--watch" ||
+                arg === "--no-watch" ||
+                arg.startsWith("--watch=") ||
+                arg.startsWith("--no-watch="),
+            );
+            await runBuild({
+              client,
+              env,
+              job: typeof argv.job === "string" ? argv.job : undefined,
+              jobUrl: typeof argv.jobUrl === "string" ? argv.jobUrl : undefined,
+              branch: typeof argv.branch === "string" ? argv.branch : undefined,
+              customParams: parseBuildCustomParams(argv.param),
+              branchParam: branchParamExplicitlyPassed
+                ? argv.branchParam
+                : env.branchParamDefault,
+              defaultBranch:
+                Boolean(argv.nonInteractive) &&
+                (Boolean(argv.withoutParams) || Boolean(argv.defaultBranch)),
+              nonInteractive: Boolean(argv.nonInteractive),
+              watch: watchExplicitlyPassed ? Boolean(argv.watch) : undefined,
+            });
+          },
+        );
       },
     )
     .command(
@@ -306,25 +316,28 @@ async function main(): Promise<void> {
             describe: "Watch latest build status until completion",
           }),
       async (argv) => {
-        await runTrackedCommand("status", argv, async ({ showIntro }) => {
-          const { env, client } = prepareContext(argv, showIntro);
-          const rawArgs = hideBin(process.argv);
-          const watchExplicitlyPassed = rawArgs.some(
-            (arg) =>
-              arg === "--watch" ||
-              arg === "--no-watch" ||
-              arg.startsWith("--watch=") ||
-              arg.startsWith("--no-watch="),
-          );
-          await runStatus({
-            client,
-            env,
-            job: typeof argv.job === "string" ? argv.job : undefined,
-            jobUrl: typeof argv.jobUrl === "string" ? argv.jobUrl : undefined,
-            nonInteractive: Boolean(argv.nonInteractive),
-            watch: watchExplicitlyPassed ? Boolean(argv.watch) : undefined,
-          });
-        });
+        await runTrackedCommandWithContext(
+          "status",
+          argv,
+          async ({ env, client }) => {
+            const rawArgs = hideBin(process.argv);
+            const watchExplicitlyPassed = rawArgs.some(
+              (arg) =>
+                arg === "--watch" ||
+                arg === "--no-watch" ||
+                arg.startsWith("--watch=") ||
+                arg.startsWith("--no-watch="),
+            );
+            await runStatus({
+              client,
+              env,
+              job: typeof argv.job === "string" ? argv.job : undefined,
+              jobUrl: typeof argv.jobUrl === "string" ? argv.jobUrl : undefined,
+              nonInteractive: Boolean(argv.nonInteractive),
+              watch: watchExplicitlyPassed ? Boolean(argv.watch) : undefined,
+            });
+          },
+        );
       },
     )
     .command(
@@ -346,17 +359,20 @@ async function main(): Promise<void> {
             describe: "Skip the first N builds before showing the next 5",
           }),
       async (argv) => {
-        await runTrackedCommand("history", argv, async ({ showIntro }) => {
-          const { env, client } = prepareContext(argv, showIntro);
-          await runHistory({
-            client,
-            env,
-            job: typeof argv.job === "string" ? argv.job : undefined,
-            jobUrl: typeof argv.jobUrl === "string" ? argv.jobUrl : undefined,
-            offset: argv.offset,
-            nonInteractive: Boolean(argv.nonInteractive),
-          });
-        });
+        await runTrackedCommandWithContext(
+          "history",
+          argv,
+          async ({ env, client }) => {
+            await runHistory({
+              client,
+              env,
+              job: typeof argv.job === "string" ? argv.job : undefined,
+              jobUrl: typeof argv.jobUrl === "string" ? argv.jobUrl : undefined,
+              offset: argv.offset,
+              nonInteractive: Boolean(argv.nonInteractive),
+            });
+          },
+        );
       },
     )
     .command(
@@ -389,24 +405,27 @@ async function main(): Promise<void> {
             describe: "Timeout (e.g. 30m, 2h)",
           }),
       async (argv) => {
-        await runTrackedCommand("wait", argv, async ({ showIntro }) => {
-          const { env, client } = prepareContext(argv, showIntro);
-          await runWait({
-            client,
-            env,
-            job: typeof argv.job === "string" ? argv.job : undefined,
-            jobUrl: typeof argv.jobUrl === "string" ? argv.jobUrl : undefined,
-            buildUrl:
-              typeof argv.buildUrl === "string" ? argv.buildUrl : undefined,
-            queueUrl:
-              typeof argv.queueUrl === "string" ? argv.queueUrl : undefined,
-            interval:
-              typeof argv.interval === "string" ? argv.interval : undefined,
-            timeout:
-              typeof argv.timeout === "string" ? argv.timeout : undefined,
-            nonInteractive: Boolean(argv.nonInteractive),
-          });
-        });
+        await runTrackedCommandWithContext(
+          "wait",
+          argv,
+          async ({ env, client }) => {
+            await runWait({
+              client,
+              env,
+              job: typeof argv.job === "string" ? argv.job : undefined,
+              jobUrl: typeof argv.jobUrl === "string" ? argv.jobUrl : undefined,
+              buildUrl:
+                typeof argv.buildUrl === "string" ? argv.buildUrl : undefined,
+              queueUrl:
+                typeof argv.queueUrl === "string" ? argv.queueUrl : undefined,
+              interval:
+                typeof argv.interval === "string" ? argv.interval : undefined,
+              timeout:
+                typeof argv.timeout === "string" ? argv.timeout : undefined,
+              nonInteractive: Boolean(argv.nonInteractive),
+            });
+          },
+        );
       },
     )
     .command(
@@ -440,22 +459,25 @@ async function main(): Promise<void> {
             describe: `Polling interval when following (e.g. ${DEFAULT_LOG_POLL_MS / 1000}s)`,
           }),
       async (argv) => {
-        await runTrackedCommand("logs", argv, async ({ showIntro }) => {
-          const { env, client } = prepareContext(argv, showIntro);
-          await runLogs({
-            client,
-            env,
-            job: typeof argv.job === "string" ? argv.job : undefined,
-            jobUrl: typeof argv.jobUrl === "string" ? argv.jobUrl : undefined,
-            buildUrl:
-              typeof argv.buildUrl === "string" ? argv.buildUrl : undefined,
-            queueUrl:
-              typeof argv.queueUrl === "string" ? argv.queueUrl : undefined,
-            follow: Boolean(argv.follow),
-            poll: typeof argv.poll === "string" ? argv.poll : undefined,
-            nonInteractive: Boolean(argv.nonInteractive),
-          });
-        });
+        await runTrackedCommandWithContext(
+          "logs",
+          argv,
+          async ({ env, client }) => {
+            await runLogs({
+              client,
+              env,
+              job: typeof argv.job === "string" ? argv.job : undefined,
+              jobUrl: typeof argv.jobUrl === "string" ? argv.jobUrl : undefined,
+              buildUrl:
+                typeof argv.buildUrl === "string" ? argv.buildUrl : undefined,
+              queueUrl:
+                typeof argv.queueUrl === "string" ? argv.queueUrl : undefined,
+              follow: Boolean(argv.follow),
+              poll: typeof argv.poll === "string" ? argv.poll : undefined,
+              nonInteractive: Boolean(argv.nonInteractive),
+            });
+          },
+        );
       },
     )
     .command(
@@ -480,20 +502,23 @@ async function main(): Promise<void> {
             describe: "Full Jenkins queue item URL",
           }),
       async (argv) => {
-        await runTrackedCommand("cancel", argv, async ({ showIntro }) => {
-          const { env, client } = prepareContext(argv, showIntro);
-          await runCancel({
-            client,
-            env,
-            job: typeof argv.job === "string" ? argv.job : undefined,
-            jobUrl: typeof argv.jobUrl === "string" ? argv.jobUrl : undefined,
-            buildUrl:
-              typeof argv.buildUrl === "string" ? argv.buildUrl : undefined,
-            queueUrl:
-              typeof argv.queueUrl === "string" ? argv.queueUrl : undefined,
-            nonInteractive: Boolean(argv.nonInteractive),
-          });
-        });
+        await runTrackedCommandWithContext(
+          "cancel",
+          argv,
+          async ({ env, client }) => {
+            await runCancel({
+              client,
+              env,
+              job: typeof argv.job === "string" ? argv.job : undefined,
+              jobUrl: typeof argv.jobUrl === "string" ? argv.jobUrl : undefined,
+              buildUrl:
+                typeof argv.buildUrl === "string" ? argv.buildUrl : undefined,
+              queueUrl:
+                typeof argv.queueUrl === "string" ? argv.queueUrl : undefined,
+              nonInteractive: Boolean(argv.nonInteractive),
+            });
+          },
+        );
       },
     )
     .command(
@@ -510,16 +535,19 @@ async function main(): Promise<void> {
             describe: "Full Jenkins job URL",
           }),
       async (argv) => {
-        await runTrackedCommand("rerun", argv, async ({ showIntro }) => {
-          const { env, client } = prepareContext(argv, showIntro);
-          await runRerun({
-            client,
-            env,
-            job: typeof argv.job === "string" ? argv.job : undefined,
-            jobUrl: typeof argv.jobUrl === "string" ? argv.jobUrl : undefined,
-            nonInteractive: Boolean(argv.nonInteractive),
-          });
-        });
+        await runTrackedCommandWithContext(
+          "rerun",
+          argv,
+          async ({ env, client }) => {
+            await runRerun({
+              client,
+              env,
+              job: typeof argv.job === "string" ? argv.job : undefined,
+              jobUrl: typeof argv.jobUrl === "string" ? argv.jobUrl : undefined,
+              nonInteractive: Boolean(argv.nonInteractive),
+            });
+          },
+        );
       },
     )
     .command(
@@ -744,15 +772,13 @@ Run "$0 <command> --help" for full details.`,
 async function promptForDeferredUpdate(
   currentVersion: string,
   rawArgs: string[],
-): Promise<void> {
-  if (!shouldPromptForDeferredUpdate(rawArgs)) {
-    return;
-  }
-
+): Promise<{
+  pendingPromptIntroVersion: string | undefined;
+}> {
   const state = await readUpdateState();
-  const pendingVersion = getDeferredUpdatePromptVersion(state, currentVersion);
-  if (!pendingVersion) {
-    return;
+  const pendingVersion = resolvePromptIntroPendingVersion(currentVersion, state);
+  if (!shouldPromptForDeferredUpdate(rawArgs) || !pendingVersion) {
+    return { pendingPromptIntroVersion: pendingVersion };
   }
 
   const response = await confirm({
@@ -761,18 +787,26 @@ async function promptForDeferredUpdate(
   });
 
   if (isCancel(response) || !response) {
-    await writeUpdateState({
+    const nextState = {
       ...state,
       dismissedVersion: pendingVersion,
-    });
-    return;
+    };
+    await writeUpdateState(nextState);
+    return {
+      pendingPromptIntroVersion: resolvePromptIntroPendingVersion(
+        currentVersion,
+        nextState,
+      ),
+    };
   }
 
   try {
     await runUpdate({ currentVersion });
+    return { pendingPromptIntroVersion: undefined };
   } catch (error) {
     handleCliError(error);
     printHint("Continuing with the requested command.");
+    return { pendingPromptIntroVersion: pendingVersion };
   }
 }
 
@@ -843,6 +877,31 @@ async function runTrackedCommand(
   );
 }
 
+type ContextualCommandArgv = Parameters<typeof createContext>[0] & {
+  nonInteractive?: unknown;
+  banner?: unknown;
+};
+
+async function runTrackedCommandWithContext<TArgv extends ContextualCommandArgv>(
+  command: string,
+  argv: TArgv,
+  action: (
+    helpers: ReturnType<typeof createContext> & {
+      argv: TArgv;
+      showIntro: (target?: string) => void;
+    },
+  ) => Promise<void>,
+): Promise<void> {
+  await runTrackedCommand(command, argv, async ({ showIntro }) => {
+    const context = prepareContext(argv, showIntro);
+    await action({
+      ...context,
+      argv,
+      showIntro,
+    });
+  });
+}
+
 function toOptionalString(value: unknown): string | undefined {
   return typeof value === "string" ? value : undefined;
 }
@@ -869,10 +928,10 @@ function hasCredentialOverrides(
   );
 }
 
-async function resolvePromptIntroPendingVersion(
+function resolvePromptIntroPendingVersion(
   currentVersion: string,
-): Promise<string | undefined> {
-  const state = await readUpdateState();
+  state: UpdateState,
+): string | undefined {
   return getDeferredUpdatePromptVersion(state, currentVersion) ?? undefined;
 }
 
