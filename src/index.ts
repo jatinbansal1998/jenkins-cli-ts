@@ -40,17 +40,26 @@ import {
   shouldPromptForDeferredUpdate,
   writeUpdateState,
 } from "./update";
+import { printCliIntro } from "./cli-intro";
+import { formatPromptTarget } from "./tui-target";
 import packageJson from "../package.json";
 
 const VERSION = packageJson.version;
+let pendingPromptIntroVersion: string | undefined;
 
 const scriptName = getScriptName();
 
+/**
+ * Initialize the CLI: perform update/version checks, register commands and global options, and parse the command-line arguments.
+ *
+ * Sets up middleware, command handlers, analytics/intro/update flows, and then invokes the yargs parser to execute the requested command.
+ */
 async function main(): Promise<void> {
   const rawArgs = hideBin(process.argv);
   kickOffMinimumVersionRefresh({ currentVersion: VERSION });
   await enforceMinimumVersionFromCache({ currentVersion: VERSION, rawArgs });
   await promptForDeferredUpdate(VERSION, rawArgs);
+  pendingPromptIntroVersion = await resolvePromptIntroPendingVersion(VERSION);
   kickOffAutoUpdate(VERSION, rawArgs);
 
   const parser = yargs(rawArgs)
@@ -60,6 +69,11 @@ async function main(): Promise<void> {
       type: "boolean",
       default: false,
       describe: "Disable prompts and fail fast",
+    })
+    .option("banner", {
+      type: "boolean",
+      default: true,
+      describe: "Show the interactive ASCII intro banner",
     })
     .option("debug", {
       type: "boolean",
@@ -123,7 +137,8 @@ async function main(): Promise<void> {
             describe: "Profile name to create or update",
           }),
       async (argv) => {
-        await runTrackedCommand("login", argv, async () => {
+        await runTrackedCommand("login", argv, async ({ showIntro }) => {
+          showIntro();
           await runLogin({
             url: typeof argv.url === "string" ? argv.url : undefined,
             user: typeof argv.user === "string" ? argv.user : undefined,
@@ -159,8 +174,9 @@ async function main(): Promise<void> {
             describe: "Refresh the job cache from Jenkins",
           }),
       async (argv) => {
-        await runTrackedCommand("list", argv, async () => {
+        await runTrackedCommand("list", argv, async ({ showIntro }) => {
           const { env, client } = createContext(argv);
+          showIntro(formatPromptTarget(env));
           await runList({
             client,
             env,
@@ -186,8 +202,9 @@ async function main(): Promise<void> {
             describe: "Refresh the job cache from Jenkins",
           }),
       async (argv) => {
-        await runTrackedCommand("list", argv, async () => {
+        await runTrackedCommand("list", argv, async ({ showIntro }) => {
           const { env, client } = createContext(argv);
+          showIntro(formatPromptTarget(env));
           await runList({
             client,
             env,
@@ -241,8 +258,9 @@ async function main(): Promise<void> {
             describe: "Watch build status until completion",
           }),
       async (argv) => {
-        await runTrackedCommand("build", argv, async () => {
+        await runTrackedCommand("build", argv, async ({ showIntro }) => {
           const { env, client } = createContext(argv);
+          showIntro(formatPromptTarget(env));
           const rawArgs = hideBin(process.argv);
           const branchParamExplicitlyPassed = rawArgs.some(
             (arg) =>
@@ -296,8 +314,9 @@ async function main(): Promise<void> {
             describe: "Watch latest build status until completion",
           }),
       async (argv) => {
-        await runTrackedCommand("status", argv, async () => {
+        await runTrackedCommand("status", argv, async ({ showIntro }) => {
           const { env, client } = createContext(argv);
+          showIntro(formatPromptTarget(env));
           const rawArgs = hideBin(process.argv);
           const watchExplicitlyPassed = rawArgs.some(
             (arg) =>
@@ -336,14 +355,15 @@ async function main(): Promise<void> {
             describe: "Skip the first N builds before showing the next 5",
           }),
       async (argv) => {
-        await runTrackedCommand("history", argv, async () => {
+        await runTrackedCommand("history", argv, async ({ showIntro }) => {
           const { env, client } = createContext(argv);
+          showIntro(formatPromptTarget(env));
           await runHistory({
             client,
             env,
             job: typeof argv.job === "string" ? argv.job : undefined,
             jobUrl: typeof argv.jobUrl === "string" ? argv.jobUrl : undefined,
-            offset: typeof argv.offset === "number" ? argv.offset : undefined,
+            offset: argv.offset,
             nonInteractive: Boolean(argv.nonInteractive),
           });
         });
@@ -379,8 +399,9 @@ async function main(): Promise<void> {
             describe: "Timeout (e.g. 30m, 2h)",
           }),
       async (argv) => {
-        await runTrackedCommand("wait", argv, async () => {
+        await runTrackedCommand("wait", argv, async ({ showIntro }) => {
           const { env, client } = createContext(argv);
+          showIntro(formatPromptTarget(env));
           await runWait({
             client,
             env,
@@ -430,8 +451,9 @@ async function main(): Promise<void> {
             describe: `Polling interval when following (e.g. ${DEFAULT_LOG_POLL_MS / 1000}s)`,
           }),
       async (argv) => {
-        await runTrackedCommand("logs", argv, async () => {
+        await runTrackedCommand("logs", argv, async ({ showIntro }) => {
           const { env, client } = createContext(argv);
+          showIntro(formatPromptTarget(env));
           await runLogs({
             client,
             env,
@@ -470,8 +492,9 @@ async function main(): Promise<void> {
             describe: "Full Jenkins queue item URL",
           }),
       async (argv) => {
-        await runTrackedCommand("cancel", argv, async () => {
+        await runTrackedCommand("cancel", argv, async ({ showIntro }) => {
           const { env, client } = createContext(argv);
+          showIntro(formatPromptTarget(env));
           await runCancel({
             client,
             env,
@@ -500,8 +523,9 @@ async function main(): Promise<void> {
             describe: "Full Jenkins job URL",
           }),
       async (argv) => {
-        await runTrackedCommand("rerun", argv, async () => {
+        await runTrackedCommand("rerun", argv, async ({ showIntro }) => {
           const { env, client } = createContext(argv);
+          showIntro(formatPromptTarget(env));
           await runRerun({
             client,
             env,
@@ -532,7 +556,7 @@ async function main(): Promise<void> {
         await runTrackedCommand(
           `profile:${action || "unknown"}`,
           argv,
-          async () => {
+          async ({ showIntro }) => {
             switch (action) {
               case "list":
                 await runProfileList();
@@ -553,6 +577,7 @@ async function main(): Promise<void> {
                     ["Run `jenkins-cli profile delete <name>`."],
                   );
                 }
+                showIntro();
                 await runProfileDelete({
                   name,
                   nonInteractive: Boolean(argv.nonInteractive),
@@ -795,17 +820,37 @@ function createContext(argv?: {
   return { env, client };
 }
 
+/**
+ * Runs a CLI command under analytics tracking and provides a helper to optionally display the introductory banner.
+ *
+ * @param command - Identifier used for analytics tracking of the command being executed
+ * @param argv - Optional CLI arguments slice; recognizes `nonInteractive` (if truthy, suppresses interactive prompts and the intro) and `banner` (if `false`, disables the ASCII banner)
+ * @param action - Async function that performs the command; receives a helpers object with `showIntro(target?)` to display the intro banner once for this command
+ */
 async function runTrackedCommand(
   command: string,
-  argv: { nonInteractive?: unknown } | undefined,
-  action: () => Promise<void>,
+  argv: { nonInteractive?: unknown; banner?: unknown } | undefined,
+  action: (helpers: { showIntro: (target?: string) => void }) => Promise<void>,
 ): Promise<void> {
+  let introShown = false;
+  const showIntro = (target?: string): void => {
+    if (introShown || Boolean(argv?.nonInteractive)) {
+      return;
+    }
+    introShown = true;
+    printCliIntro({
+      showAsciiBanner: argv?.banner !== false,
+      version: VERSION,
+      target,
+      pendingUpdateVersion: pendingPromptIntroVersion,
+    });
+  };
   await runWithAnalytics(
     {
       command,
-      interactive: !argv?.nonInteractive,
+      interactive: !Boolean(argv?.nonInteractive),
     },
-    action,
+    async () => action({ showIntro }),
   );
 }
 
@@ -813,6 +858,12 @@ function toOptionalString(value: unknown): string | undefined {
   return typeof value === "string" ? value : undefined;
 }
 
+/**
+ * Check whether the provided argv contains any credential overrides.
+ *
+ * @param argv - Optional CLI arguments object that may include `url`, `user`, `token`, or `apiToken`
+ * @returns `true` if any of `url`, `user`, `token`, or `apiToken` is provided as a string, `false` otherwise.
+ */
 function hasCredentialOverrides(
   argv:
     | {
@@ -831,6 +882,26 @@ function hasCredentialOverrides(
   );
 }
 
+/**
+ * Resolve a deferred intro prompt version applicable to the provided CLI version.
+ *
+ * @param currentVersion - The current CLI version to evaluate against any deferred prompt state
+ * @returns The pending version to prompt the user for, or `undefined` if no deferred prompt exists
+ */
+async function resolvePromptIntroPendingVersion(
+  currentVersion: string,
+): Promise<string | undefined> {
+  const state = await readUpdateState();
+  return getDeferredUpdatePromptVersion(state, currentVersion) ?? undefined;
+}
+
+/**
+ * Parses CLI --param arguments into a mapping of parameter names to values.
+ *
+ * @param value - The raw value(s) passed to `--param`; may be a string or an array of strings as provided by the CLI parser.
+ * @returns A record mapping each parameter name to its value, or `undefined` if no parameters were provided.
+ * @throws CliError if any entry is not in `KEY=VALUE` form, if a parameter name is empty, or if a parameter name is repeated.
+ */
 function parseBuildCustomParams(
   value: unknown,
 ): Record<string, string> | undefined {
@@ -863,7 +934,7 @@ function parseBuildCustomParams(
         "Parameter name cannot be empty.",
       ]);
     }
-    if (Object.prototype.hasOwnProperty.call(params, key)) {
+    if (Object.hasOwn(params, key)) {
       throw new CliError(`Duplicate --param key "${key}".`, [
         "Use unique parameter names when passing --param multiple times.",
       ]);
