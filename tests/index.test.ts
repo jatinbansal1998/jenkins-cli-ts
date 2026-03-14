@@ -219,6 +219,18 @@ describe("cli default command", () => {
 });
 
 describe("parseBuildCustomParams", () => {
+  test("returns undefined for empty input", () => {
+    expect(parseBuildCustomParams([])).toBeUndefined();
+    expect(parseBuildCustomParams(undefined)).toBeUndefined();
+  });
+
+  test("parses multiple KEY=VALUE entries", () => {
+    expect(parseBuildCustomParams(["FOO=bar", "BAZ=qux"])).toEqual({
+      FOO: "bar",
+      BAZ: "qux",
+    });
+  });
+
   test("throws a CliError when a param entry is not a string", () => {
     try {
       parseBuildCustomParams(["DEPLOY_ENV=staging", 42]);
@@ -233,5 +245,37 @@ describe("parseBuildCustomParams", () => {
         "Use --param KEY=VALUE (example: --param DEPLOY_ENV=staging).",
       );
     }
+  });
+
+  test("throws a CliError when a param entry is missing an equals sign", () => {
+    try {
+      parseBuildCustomParams(["INVALID"]);
+      throw new Error("Expected parseBuildCustomParams to throw");
+    } catch (error) {
+      expect(error).toBeInstanceOf(CliError);
+      expect((error as CliError).message).toBe('Invalid --param value "INVALID".');
+      expect((error as CliError).hints).toEqual([
+        "Use --param KEY=VALUE (example: --param DEPLOY_ENV=staging).",
+      ]);
+    }
+  });
+
+  test("throws a CliError when duplicate keys are provided", () => {
+    try {
+      parseBuildCustomParams(["KEY=a", "KEY=b"]);
+      throw new Error("Expected parseBuildCustomParams to throw");
+    } catch (error) {
+      expect(error).toBeInstanceOf(CliError);
+      expect((error as CliError).message).toBe('Duplicate --param key "KEY".');
+      expect((error as CliError).hints).toEqual([
+        "Use unique parameter names when passing --param multiple times.",
+      ]);
+    }
+  });
+
+  test("allows empty values", () => {
+    expect(parseBuildCustomParams(["EMPTY="])).toEqual({
+      EMPTY: "",
+    });
   });
 });

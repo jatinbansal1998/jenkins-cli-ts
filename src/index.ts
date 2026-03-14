@@ -780,7 +780,8 @@ async function promptForDeferredUpdate(
   }
 
   const state = await readUpdateState();
-  const pendingVersion = resolvePromptIntroPendingVersion(currentVersion, state);
+  const pendingVersion =
+    getDeferredUpdatePromptVersion(state, currentVersion) ?? undefined;
   if (!pendingVersion) {
     return { pendingPromptIntroVersion: pendingVersion };
   }
@@ -797,10 +798,8 @@ async function promptForDeferredUpdate(
     };
     await writeUpdateState(nextState);
     return {
-      pendingPromptIntroVersion: resolvePromptIntroPendingVersion(
-        currentVersion,
-        nextState,
-      ),
+      pendingPromptIntroVersion:
+        getDeferredUpdatePromptVersion(nextState, currentVersion) ?? undefined,
     };
   }
 
@@ -930,13 +929,6 @@ function hasCredentialOverrides(
     typeof argv?.token === "string" ||
     typeof argv?.apiToken === "string"
   );
-}
-
-function resolvePromptIntroPendingVersion(
-  currentVersion: string,
-  state: UpdateState,
-): string | undefined {
-  return getDeferredUpdatePromptVersion(state, currentVersion) ?? undefined;
 }
 
 export function parseBuildCustomParams(

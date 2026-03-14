@@ -39,4 +39,22 @@ describe("cli intro", () => {
       writeSpy.mockRestore();
     }
   });
+
+  test("prints banner when enabled", () => {
+    const writeSpy = spyOn(process.stderr, "write");
+    writeSpy.mockImplementation(() => true);
+
+    try {
+      printCliIntro({
+        showAsciiBanner: true,
+        version: "0.7.4",
+      });
+
+      expect(writeSpy).toHaveBeenCalled();
+      expect(writeSpy).toHaveBeenCalledWith(expect.stringContaining("CLI | v0.7.4"));
+      expect(writeSpy).toHaveBeenCalledWith(expect.stringContaining("███████"));
+    } finally {
+      writeSpy.mockRestore();
+    }
+  });
 });
