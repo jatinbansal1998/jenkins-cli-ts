@@ -253,7 +253,9 @@ describe("parseBuildCustomParams", () => {
       throw new Error("Expected parseBuildCustomParams to throw");
     } catch (error) {
       expect(error).toBeInstanceOf(CliError);
-      expect((error as CliError).message).toBe('Invalid --param value "INVALID".');
+      expect((error as CliError).message).toBe(
+        'Invalid --param value "INVALID".',
+      );
       expect((error as CliError).hints).toEqual([
         "Use --param KEY=VALUE (example: --param DEPLOY_ENV=staging).",
       ]);

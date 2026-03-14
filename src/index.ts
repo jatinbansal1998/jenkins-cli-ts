@@ -885,7 +885,9 @@ type ContextualCommandArgv = Parameters<typeof createContext>[0] & {
   banner?: unknown;
 };
 
-async function runTrackedCommandWithContext<TArgv extends ContextualCommandArgv>(
+async function runTrackedCommandWithContext<
+  TArgv extends ContextualCommandArgv,
+>(
   command: string,
   argv: TArgv,
   action: (
