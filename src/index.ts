@@ -775,9 +775,13 @@ async function promptForDeferredUpdate(
 ): Promise<{
   pendingPromptIntroVersion: string | undefined;
 }> {
+  if (!shouldPromptForDeferredUpdate(rawArgs)) {
+    return { pendingPromptIntroVersion: undefined };
+  }
+
   const state = await readUpdateState();
   const pendingVersion = resolvePromptIntroPendingVersion(currentVersion, state);
-  if (!shouldPromptForDeferredUpdate(rawArgs) || !pendingVersion) {
+  if (!pendingVersion) {
     return { pendingPromptIntroVersion: pendingVersion };
   }
 
