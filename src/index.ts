@@ -40,9 +40,12 @@ import {
   shouldPromptForDeferredUpdate,
   writeUpdateState,
 } from "./update";
+import { printCliIntro } from "./cli-intro";
+import { formatPromptTarget } from "./tui-target";
 import packageJson from "../package.json";
 
 const VERSION = packageJson.version;
+let pendingPromptIntroVersion: string | undefined;
 
 const scriptName = getScriptName();
 
@@ -51,6 +54,7 @@ async function main(): Promise<void> {
   kickOffMinimumVersionRefresh({ currentVersion: VERSION });
   await enforceMinimumVersionFromCache({ currentVersion: VERSION, rawArgs });
   await promptForDeferredUpdate(VERSION, rawArgs);
+  pendingPromptIntroVersion = await resolvePromptIntroPendingVersion(VERSION);
   kickOffAutoUpdate(VERSION, rawArgs);
 
   const parser = yargs(rawArgs)
@@ -60,6 +64,11 @@ async function main(): Promise<void> {
       type: "boolean",
       default: false,
       describe: "Disable prompts and fail fast",
+    })
+    .option("banner", {
+      type: "boolean",
+      default: true,
+      describe: "Show the interactive ASCII intro banner",
     })
     .option("debug", {
       type: "boolean",
@@ -123,7 +132,8 @@ async function main(): Promise<void> {
             describe: "Profile name to create or update",
           }),
       async (argv) => {
-        await runTrackedCommand("login", argv, async () => {
+        await runTrackedCommand("login", argv, async ({ showIntro }) => {
+          showIntro();
           await runLogin({
             url: typeof argv.url === "string" ? argv.url : undefined,
             user: typeof argv.user === "string" ? argv.user : undefined,
@@ -159,8 +169,9 @@ async function main(): Promise<void> {
             describe: "Refresh the job cache from Jenkins",
           }),
       async (argv) => {
-        await runTrackedCommand("list", argv, async () => {
+        await runTrackedCommand("list", argv, async ({ showIntro }) => {
           const { env, client } = createContext(argv);
+          showIntro(formatPromptTarget(env));
           await runList({
             client,
             env,
@@ -186,8 +197,9 @@ async function main(): Promise<void> {
             describe: "Refresh the job cache from Jenkins",
           }),
       async (argv) => {
-        await runTrackedCommand("list", argv, async () => {
+        await runTrackedCommand("list", argv, async ({ showIntro }) => {
           const { env, client } = createContext(argv);
+          showIntro(formatPromptTarget(env));
           await runList({
             client,
             env,
@@ -241,8 +253,9 @@ async function main(): Promise<void> {
             describe: "Watch build status until completion",
           }),
       async (argv) => {
-        await runTrackedCommand("build", argv, async () => {
+        await runTrackedCommand("build", argv, async ({ showIntro }) => {
           const { env, client } = createContext(argv);
+          showIntro(formatPromptTarget(env));
           const rawArgs = hideBin(process.argv);
           const branchParamExplicitlyPassed = rawArgs.some(
             (arg) =>
@@ -296,8 +309,9 @@ async function main(): Promise<void> {
             describe: "Watch latest build status until completion",
           }),
       async (argv) => {
-        await runTrackedCommand("status", argv, async () => {
+        await runTrackedCommand("status", argv, async ({ showIntro }) => {
           const { env, client } = createContext(argv);
+          showIntro(formatPromptTarget(env));
           const rawArgs = hideBin(process.argv);
           const watchExplicitlyPassed = rawArgs.some(
             (arg) =>
@@ -336,14 +350,15 @@ async function main(): Promise<void> {
             describe: "Skip the first N builds before showing the next 5",
           }),
       async (argv) => {
-        await runTrackedCommand("history", argv, async () => {
+        await runTrackedCommand("history", argv, async ({ showIntro }) => {
           const { env, client } = createContext(argv);
+          showIntro(formatPromptTarget(env));
           await runHistory({
             client,
             env,
             job: typeof argv.job === "string" ? argv.job : undefined,
             jobUrl: typeof argv.jobUrl === "string" ? argv.jobUrl : undefined,
-            offset: typeof argv.offset === "number" ? argv.offset : undefined,
+            offset: argv.offset,
             nonInteractive: Boolean(argv.nonInteractive),
           });
         });
@@ -379,8 +394,9 @@ async function main(): Promise<void> {
             describe: "Timeout (e.g. 30m, 2h)",
           }),
       async (argv) => {
-        await runTrackedCommand("wait", argv, async () => {
+        await runTrackedCommand("wait", argv, async ({ showIntro }) => {
           const { env, client } = createContext(argv);
+          showIntro(formatPromptTarget(env));
           await runWait({
             client,
             env,
@@ -430,8 +446,9 @@ async function main(): Promise<void> {
             describe: `Polling interval when following (e.g. ${DEFAULT_LOG_POLL_MS / 1000}s)`,
           }),
       async (argv) => {
-        await runTrackedCommand("logs", argv, async () => {
+        await runTrackedCommand("logs", argv, async ({ showIntro }) => {
           const { env, client } = createContext(argv);
+          showIntro(formatPromptTarget(env));
           await runLogs({
             client,
             env,
@@ -470,8 +487,9 @@ async function main(): Promise<void> {
             describe: "Full Jenkins queue item URL",
           }),
       async (argv) => {
-        await runTrackedCommand("cancel", argv, async () => {
+        await runTrackedCommand("cancel", argv, async ({ showIntro }) => {
           const { env, client } = createContext(argv);
+          showIntro(formatPromptTarget(env));
           await runCancel({
             client,
             env,
@@ -500,8 +518,9 @@ async function main(): Promise<void> {
             describe: "Full Jenkins job URL",
           }),
       async (argv) => {
-        await runTrackedCommand("rerun", argv, async () => {
+        await runTrackedCommand("rerun", argv, async ({ showIntro }) => {
           const { env, client } = createContext(argv);
+          showIntro(formatPromptTarget(env));
           await runRerun({
             client,
             env,
@@ -532,7 +551,7 @@ async function main(): Promise<void> {
         await runTrackedCommand(
           `profile:${action || "unknown"}`,
           argv,
-          async () => {
+          async ({ showIntro }) => {
             switch (action) {
               case "list":
                 await runProfileList();
@@ -553,6 +572,7 @@ async function main(): Promise<void> {
                     ["Run `jenkins-cli profile delete <name>`."],
                   );
                 }
+                showIntro();
                 await runProfileDelete({
                   name,
                   nonInteractive: Boolean(argv.nonInteractive),
@@ -797,15 +817,28 @@ function createContext(argv?: {
 
 async function runTrackedCommand(
   command: string,
-  argv: { nonInteractive?: unknown } | undefined,
-  action: () => Promise<void>,
+  argv: { nonInteractive?: unknown; banner?: unknown } | undefined,
+  action: (helpers: { showIntro: (target?: string) => void }) => Promise<void>,
 ): Promise<void> {
+  let introShown = false;
+  const showIntro = (target?: string): void => {
+    if (introShown || Boolean(argv?.nonInteractive)) {
+      return;
+    }
+    introShown = true;
+    printCliIntro({
+      showAsciiBanner: argv?.banner !== false,
+      version: VERSION,
+      target,
+      pendingUpdateVersion: pendingPromptIntroVersion,
+    });
+  };
   await runWithAnalytics(
     {
       command,
-      interactive: !argv?.nonInteractive,
+      interactive: !Boolean(argv?.nonInteractive),
     },
-    action,
+    async () => action({ showIntro }),
   );
 }
 
@@ -829,6 +862,13 @@ function hasCredentialOverrides(
     typeof argv?.token === "string" ||
     typeof argv?.apiToken === "string"
   );
+}
+
+async function resolvePromptIntroPendingVersion(
+  currentVersion: string,
+): Promise<string | undefined> {
+  const state = await readUpdateState();
+  return getDeferredUpdatePromptVersion(state, currentVersion) ?? undefined;
 }
 
 function parseBuildCustomParams(
@@ -863,7 +903,7 @@ function parseBuildCustomParams(
         "Parameter name cannot be empty.",
       ]);
     }
-    if (Object.prototype.hasOwnProperty.call(params, key)) {
+    if (Object.hasOwn(params, key)) {
       throw new CliError(`Duplicate --param key "${key}".`, [
         "Use unique parameter names when passing --param multiple times.",
       ]);

@@ -25,6 +25,11 @@ At runtime, commands call `runFlow(...)` and pass:
 - `prompts`: concrete prompt functions (`select`, `confirm`, `text`, `isCancel`)
 - `context`: mutable flow state
 
+Interactive prompt functions are routed through `src/clack.ts`, which wraps
+`@clack/prompts`. The CLI intro banner is formatted in `src/cli-intro.ts` and
+printed explicitly from `src/index.ts` before an interactive command starts,
+instead of being triggered implicitly by the first prompt call.
+
 ## 2) Prompt types
 
 Prompt kinds are defined in `src/flows/types.ts`:
@@ -59,12 +64,7 @@ For each state in `runFlow(...)`:
 - `@clack/prompts` (`package.json`)
   - Actual terminal UI prompt implementation (`select`, `confirm`, `text`,
     `multiselect`, `spinner`, `isCancel`).
-  - Used directly in prompt-driven commands like:
-    - `src/commands/build.ts`
-    - `src/commands/status.ts`
-    - `src/commands/list-deps.ts`
-    - `src/commands/cancel.ts`
-    - `src/commands/login.ts`
+  - Imported via `src/clack.ts` so interactive prompt usage stays centralized.
 - `yargs` (`package.json`)
   - CLI argument parsing and command routing.
   - Indirectly affects prompts by deciding interactive vs non-interactive paths.
@@ -81,6 +81,10 @@ For each state in `runFlow(...)`:
   - Generic flow execution engine.
 - `src/flows/validate.ts`
   - Validates flow definitions before first run.
+- `src/clack.ts`
+  - Shared `@clack/prompts` facade.
+- `src/cli-intro.ts`
+  - CLI intro banner formatter/printer helpers.
 - `src/commands/list-deps.ts`
   - Adapter surface used by `list` for prompts and delegated actions.
 

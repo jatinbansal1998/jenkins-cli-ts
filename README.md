@@ -119,6 +119,8 @@ Output format notes:
 
 - Commands return parseable output prefixed with `OK:` and `HINT:` where relevant.
 - Running `jenkins-cli` with no command defaults to `list`.
+- Interactive commands show an ASCII intro banner by default. Use `--no-banner`
+  to disable it for a single run.
 
 List jobs (uses local cache by default):
 

@@ -2,7 +2,7 @@
  * Login command implementation.
  * Prompts for Jenkins credentials, saves config, and prints export commands.
  */
-import { confirm, isCancel, password, text } from "@clack/prompts";
+import { confirm, isCancel, password, text } from "../clack";
 import { CliError, printOk } from "../cli";
 import {
   CONFIG_FILE,

@@ -1,4 +1,4 @@
-import { confirm, isCancel } from "@clack/prompts";
+import { confirm, isCancel } from "../clack";
 import { CliError, printOk } from "../cli";
 import {
   migrateLegacyConfigIfNeeded,

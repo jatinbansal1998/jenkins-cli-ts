@@ -2,7 +2,13 @@
  * Status command implementation.
  * Shows the last build status (number, result, URL) for a job.
  */
-import { confirm, isCancel, select, text, multiselect } from "@clack/prompts";
+import {
+  confirm,
+  isCancel,
+  multiselect,
+  select,
+  text,
+} from "../clack";
 import { runInteractiveSubcommandWithAnalytics } from "../analytics";
 import { CliError, printError, printHint, printOk } from "../cli";
 import { runBuild } from "./build";

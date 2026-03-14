@@ -1,4 +1,4 @@
-import { spinner } from "@clack/prompts";
+import { spinner } from "../clack";
 import { markAnalyticsPollingCommand } from "../analytics";
 import { CliError, printError, printHint, printOk } from "../cli";
 import type { EnvConfig } from "../env";
