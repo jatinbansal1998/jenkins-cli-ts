@@ -33,7 +33,9 @@ const ACTION_MENU_ORDER = [
 ] as const;
 
 function orderActionOptions(options: PromptOption[]): PromptOption[] {
-  const optionsByValue = new Map(options.map((option) => [option.value, option]));
+  const optionsByValue = new Map(
+    options.map((option) => [option.value, option]),
+  );
   const orderedOptions = ACTION_MENU_ORDER.flatMap((value) => {
     const option = optionsByValue.get(value);
 

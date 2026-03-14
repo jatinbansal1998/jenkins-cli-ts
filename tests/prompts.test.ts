@@ -51,7 +51,9 @@ describe("cli intro", () => {
       });
 
       expect(writeSpy).toHaveBeenCalled();
-      expect(writeSpy).toHaveBeenCalledWith(expect.stringContaining("CLI | v0.7.4"));
+      expect(writeSpy).toHaveBeenCalledWith(
+        expect.stringContaining("CLI | v0.7.4"),
+      );
       expect(writeSpy).toHaveBeenCalledWith(expect.stringContaining("███████"));
     } finally {
       writeSpy.mockRestore();

@@ -1,11 +1,4 @@
-import {
-  beforeEach,
-  describe,
-  expect,
-  mock,
-  spyOn,
-  test,
-} from "bun:test";
+import { beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
 import type { EnvConfig } from "../src/env";
 import type { JenkinsClient } from "../src/jenkins/client";
 import { runCancel } from "../src/commands/cancel-core";

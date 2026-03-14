@@ -7,10 +7,7 @@ import {
   SEARCH_ALL_JOBS_VALUE,
 } from "../src/flows/constants";
 import type { JenkinsClient } from "../src/jenkins/client";
-import {
-  runBuild,
-  setBuildDepsForTesting,
-} from "../src/commands/build";
+import { runBuild, setBuildDepsForTesting } from "../src/commands/build";
 import { setBuildPreFlowDepsForTesting } from "../src/flows/handlers";
 
 const CANCEL = "__mock_cancel__";
