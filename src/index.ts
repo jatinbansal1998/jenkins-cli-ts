@@ -820,9 +820,10 @@ async function runTrackedCommand(
   argv: { nonInteractive?: unknown; banner?: unknown } | undefined,
   action: (helpers: { showIntro: (target?: string) => void }) => Promise<void>,
 ): Promise<void> {
+  const interactive = !argv?.nonInteractive && isInteractiveTerminal();
   let introShown = false;
   const showIntro = (target?: string): void => {
-    if (introShown || Boolean(argv?.nonInteractive)) {
+    if (introShown || !interactive) {
       return;
     }
     introShown = true;
@@ -836,7 +837,7 @@ async function runTrackedCommand(
   await runWithAnalytics(
     {
       command,
-      interactive: !Boolean(argv?.nonInteractive),
+      interactive,
     },
     async () => action({ showIntro }),
   );
@@ -844,6 +845,10 @@ async function runTrackedCommand(
 
 function toOptionalString(value: unknown): string | undefined {
   return typeof value === "string" ? value : undefined;
+}
+
+function isInteractiveTerminal(): boolean {
+  return Boolean(process.stdin.isTTY) && Boolean(process.stdout.isTTY);
 }
 
 function hasCredentialOverrides(
@@ -885,11 +890,7 @@ function parseBuildCustomParams(
 
   const params: Record<string, string> = {};
   for (const entry of entries) {
-    if (typeof entry !== "string") {
-      throw new CliError("Invalid --param value.", [
-        "Use --param KEY=VALUE (example: --param DEPLOY_ENV=staging).",
-      ]);
-    }
+
     const equalsIndex = entry.indexOf("=");
     if (equalsIndex <= 0) {
       throw new CliError(`Invalid --param value "${entry}".`, [
