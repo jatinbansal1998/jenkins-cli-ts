@@ -179,7 +179,7 @@ jenkins-cli build --job "api-prod" --without-params
 jenkins-cli build --job-url "https://jenkins.example/job/api-prod/" --non-interactive --without-params
 ```
 
-In interactive mode, choose **Build without parameters** from the build mode prompt.
+In interactive mode, choose **Run with default parameters** from the build mode prompt.
 
 Trigger a build with custom parameters:
 
@@ -195,9 +195,9 @@ jenkins-cli build --job "api-prod" --branch main --param DEPLOY_ENV=staging
 
 In interactive mode, build mode now offers:
 
-- **Build with branch parameter**
-- **Build with custom parameters**
-- **Build without parameters**
+- **Select a branch**
+- **Enter custom parameters**
+- **Run with default parameters**
 
 Check status:
 

@@ -12,6 +12,9 @@ import {
   BUILD_WITH_CUSTOM_PARAMS_VALUE,
   BUILD_WITHOUT_PARAMS_VALUE,
   BUILD_WITH_PARAMS_VALUE,
+  CUSTOM_MORE_ADD_VALUE,
+  CUSTOM_MORE_BUILD_VALUE,
+  CUSTOM_MORE_CANCEL_VALUE,
   EXIT_VALUE,
   SEARCH_AGAIN_VALUE,
   SEARCH_ALL_JOBS_VALUE,
@@ -247,15 +250,15 @@ export const buildPreFlow: FlowDefinition<BuildPreContext> = {
         options: [
           {
             value: BUILD_WITH_PARAMS_VALUE,
-            label: "Build with branch parameter",
+            label: "Select a branch",
           },
           {
             value: BUILD_WITH_CUSTOM_PARAMS_VALUE,
-            label: "Build with custom parameters",
+            label: "Enter custom parameters",
           },
           {
             value: BUILD_WITHOUT_PARAMS_VALUE,
-            label: "Build without parameters",
+            label: "Run with default parameters",
           },
         ],
       },
@@ -297,14 +300,14 @@ export const buildPreFlow: FlowDefinition<BuildPreContext> = {
             context.env,
           ),
         options: (context) => [
-          ...(context.removableBranches.length > 0
-            ? [{ value: BRANCH_REMOVE_VALUE, label: "Remove cached branch" }]
-            : []),
           ...context.branchChoices.map((branch) => ({
             value: branch,
             label: branch,
           })),
           { value: BRANCH_CUSTOM_VALUE, label: "Type a different branch" },
+          ...(context.removableBranches.length > 0
+            ? [{ value: BRANCH_REMOVE_VALUE, label: "Remove cached branch" }]
+            : []),
         ],
       },
       onSelect: "buildPre.selectBranch",
@@ -394,6 +397,10 @@ export const buildPreFlow: FlowDefinition<BuildPreContext> = {
               : "Parameter value",
             context.env,
           ),
+        initialValue: (context) => {
+          const key = context.pendingCustomParamKey?.trim() ?? "";
+          return key ? context.customParams[key] ?? "" : "";
+        },
       },
       onSelect: "buildPre.submitCustomParamValue",
       transitions: {
@@ -402,18 +409,40 @@ export const buildPreFlow: FlowDefinition<BuildPreContext> = {
         "param:added": "custom_more",
       },
     },
-    /** Repeats custom parameter entry until the user is done. */
+    /** Next-step menu after adding a custom parameter. */
     custom_more: {
       prompt: {
-        kind: "confirm",
+        kind: "select",
         message: (context) =>
-          withPromptTarget("Add another custom parameter?", context.env),
-        initialValue: false,
+          withPromptTarget("Custom parameter options", context.env),
+        options: [
+          {
+            value: CUSTOM_MORE_ADD_VALUE,
+            label: "Add another parameter",
+          },
+          {
+            value: CUSTOM_MORE_BUILD_VALUE,
+            label: "Start build",
+          },
+          {
+            value: CUSTOM_MORE_CANCEL_VALUE,
+            label: "Cancel build",
+          },
+        ],
       },
       transitions: {
-        esc: "custom_cancel",
-        "confirm:yes": "custom_key",
-        "confirm:no": "complete",
+        esc: "custom_more_back",
+        [`select:${CUSTOM_MORE_ADD_VALUE}`]: "custom_key",
+        [`select:${CUSTOM_MORE_BUILD_VALUE}`]: "complete",
+        [`select:${CUSTOM_MORE_CANCEL_VALUE}`]: "exit_command",
+      },
+    },
+    /** Restores the last parameter value prompt when backing out of the menu. */
+    custom_more_back: {
+      onEnter: "buildPre.revisitLastCustomParam",
+      transitions: {
+        "custom:last_value": "custom_value",
+        "custom:key": "custom_key",
       },
     },
     /** Handles Esc behavior for custom-parameter entry states. */
@@ -421,6 +450,7 @@ export const buildPreFlow: FlowDefinition<BuildPreContext> = {
       onEnter: "buildPre.cancelCustomParamEntry",
       transitions: {
         "custom:mode": "branch_mode",
+        "custom:review": "custom_more",
         "custom:done": "complete",
       },
     },

@@ -124,7 +124,7 @@ Assume user does:
 2. Selects `Search all jobs`
 3. Types `api prod`
 4. Selects job `api-prod`
-5. Selects build mode `Build with branch parameter`
+5. Selects build mode `Select a branch`
 6. Selects branch `development`
 7. Chooses to add custom parameter `DEPLOY_ENV=staging`
 8. Chooses `Watch`
