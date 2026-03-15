@@ -3,8 +3,8 @@
  * Caches jobs locally in an OS-specific cache directory and provides
  * natural language search with scoring for job lookups.
  */
-import { mkdir, readFile, writeFile } from "node:fs/promises";
-import { createHash } from "node:crypto";
+import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { createHash, randomUUID } from "node:crypto";
 import os from "node:os";
 import path from "node:path";
 import { CliError } from "./cli";
@@ -152,10 +152,7 @@ async function fetchAndCacheJobs(
   const jobs = await client.listJobs();
   const existingCache = await readJobCache(env);
   const cachedJobs = mergeCachedBranches(jobs, existingCache);
-  const recentJobs =
-    existingCache && cacheMatchesEnv(existingCache, env)
-      ? existingCache.recentJobs
-      : undefined;
+  const recentJobs = mergeRecentJobs(jobs, existingCache, env);
   const payload: JobCache = {
     jenkinsUrl: env.jenkinsUrl,
     user: env.jenkinsUser,
@@ -186,7 +183,14 @@ async function writeCacheToPath(
   cache: JobCache,
 ): Promise<void> {
   await mkdir(CACHE_DIR, { recursive: true });
-  await writeFile(cachePath, JSON.stringify(cache, null, 2), "utf-8");
+  const tempPath = `${cachePath}.${randomUUID()}.tmp`;
+  try {
+    await writeFile(tempPath, JSON.stringify(cache, null, 2), "utf-8");
+    await rename(tempPath, cachePath);
+  } catch (error) {
+    await rm(tempPath, { force: true }).catch(() => undefined);
+    throw error;
+  }
 }
 
 function cacheMatchesEnv(cache: JobCache, env: EnvConfig): boolean {
@@ -248,7 +252,49 @@ function mergeCachedBranches(
   });
 }
 
+function mergeRecentJobs(
+  jobs: JenkinsJob[],
+  existingCache: JobCache | null,
+  env: EnvConfig,
+): string[] | undefined {
+  if (!existingCache || !cacheMatchesEnv(existingCache, env)) {
+    return undefined;
+  }
+
+  const activeUrls = new Set(jobs.map((job) => job.url.toLowerCase()));
+  const recentJobs = normalizeRecentJobs(existingCache.recentJobs).filter(
+    (jobUrl) => activeUrls.has(jobUrl.toLowerCase()),
+  );
+
+  return recentJobs.length > 0 ? recentJobs : undefined;
+}
+
 function normalizeBranches(entries: unknown[]): string[] {
+  const deduped = new Set<string>();
+  const normalized: string[] = [];
+  for (const entry of entries) {
+    if (typeof entry !== "string") {
+      continue;
+    }
+    const trimmed = entry.trim();
+    if (!trimmed) {
+      continue;
+    }
+    const key = trimmed.toLowerCase();
+    if (deduped.has(key)) {
+      continue;
+    }
+    deduped.add(key);
+    normalized.push(trimmed);
+  }
+  return normalized;
+}
+
+function normalizeRecentJobs(entries: unknown[] | undefined): string[] {
+  if (!Array.isArray(entries)) {
+    return [];
+  }
+
   const deduped = new Set<string>();
   const normalized: string[] = [];
   for (const entry of entries) {
