@@ -201,6 +201,39 @@ describe("job cache refresh", () => {
     expect(cache?.recentJobs).toEqual(["https://jenkins.example.com/job/keep"]);
   });
 
+  test("refresh keeps recent jobs when live job URLs only differ by trailing slash", async () => {
+    const cachePath = jobsModule.getJobCachePath(env.jenkinsUrl);
+    files.set(
+      cachePath,
+      JSON.stringify({
+        jenkinsUrl: env.jenkinsUrl,
+        user: env.jenkinsUser,
+        fetchedAt: "2026-02-12T00:00:00.000Z",
+        jobs: [{ name: "keep", url: "https://jenkins.example.com/job/keep" }],
+        recentJobs: ["https://jenkins.example.com/job/keep"],
+      }),
+    );
+
+    const refreshedJobs: JenkinsJob[] = [
+      { name: "keep", url: " https://jenkins.example.com/job/keep/ " },
+    ];
+
+    const result = await jobsModule.loadJobs({
+      client: {
+        listJobs: mock(async () => refreshedJobs),
+      } as unknown as JenkinsClient,
+      env,
+      refresh: true,
+      nonInteractive: true,
+    });
+
+    expect(result).toEqual(refreshedJobs);
+
+    const cache = await jobsModule.readJobCache(env);
+    expect(cache).not.toBeNull();
+    expect(cache?.recentJobs).toEqual(["https://jenkins.example.com/job/keep"]);
+  });
+
   test("failed cache write preserves the existing cache", async () => {
     const cachePath = jobsModule.getJobCachePath(env.jenkinsUrl);
     const previousCache = JSON.stringify({

@@ -261,7 +261,9 @@ function mergeRecentJobs(
     return undefined;
   }
 
-  const activeUrls = new Set(jobs.map((job) => job.url.toLowerCase()));
+  const activeUrls = new Set(
+    jobs.map((job) => normalizeRecentJobUrl(job.url).toLowerCase()),
+  );
   const recentJobs = normalizeRecentJobs(existingCache.recentJobs).filter(
     (jobUrl) => activeUrls.has(jobUrl.toLowerCase()),
   );
@@ -305,8 +307,7 @@ function normalizeRecentJobs(entries: unknown[] | undefined): string[] {
     if (!trimmed) {
       continue;
     }
-    const canonical =
-      trimmed.endsWith("/") && trimmed !== "/" ? trimmed.slice(0, -1) : trimmed;
+    const canonical = normalizeRecentJobUrl(trimmed);
     const key = canonical.toLowerCase();
     if (deduped.has(key)) {
       continue;
@@ -315,6 +316,11 @@ function normalizeRecentJobs(entries: unknown[] | undefined): string[] {
     normalized.push(canonical);
   }
   return normalized;
+}
+
+function normalizeRecentJobUrl(value: string): string {
+  const trimmed = value.trim();
+  return trimmed.endsWith("/") && trimmed !== "/" ? trimmed.slice(0, -1) : trimmed;
 }
 
 export type RankedJob = {
