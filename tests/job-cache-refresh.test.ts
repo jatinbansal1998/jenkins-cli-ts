@@ -1,4 +1,13 @@
-import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import {
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  mock,
+  spyOn,
+  test,
+} from "bun:test";
+import fs from "node:fs";
 import type { EnvConfig } from "../src/env";
 import type { JenkinsClient } from "../src/jenkins/api-wrapper";
 import type { JenkinsJob } from "../src/types/jenkins";
@@ -9,17 +18,7 @@ const realOs = await import("node:os");
 const files = new Map<string, string>();
 const tempHome = "/tmp/jenkins-cli-cache-tests";
 
-const mkdirMock = mock(async () => undefined);
-const readFileMock = mock(async (filePath: string) => {
-  const value = files.get(filePath);
-  if (value !== undefined) {
-    return value;
-  }
-  throw createErrno("ENOENT");
-});
-const writeFileMock = mock(async (filePath: string, data: string) => {
-  files.set(filePath, data);
-});
+const mkdirMock = mock(fs.promises.mkdir);
 const renameMock = mock(async (fromPath: string, toPath: string) => {
   const value = files.get(fromPath);
   if (value === undefined) {
@@ -35,10 +34,8 @@ const rmMock = mock(async (filePath: string) => {
 mock.module("node:fs/promises", () => ({
   ...realFsPromises,
   mkdir: mkdirMock,
-  readFile: readFileMock,
   rename: renameMock,
   rm: rmMock,
-  writeFile: writeFileMock,
 }));
 
 mock.module("node:os", () => ({
@@ -51,24 +48,41 @@ const jobsModule = await import("../src/jobs");
 const env = {
   jenkinsUrl: "https://jenkins.example.com",
   jenkinsUser: "ci-user",
-} as EnvConfig;
+} satisfies Pick<EnvConfig, "jenkinsUrl" | "jenkinsUser">;
+
+const loadEnv: EnvConfig = {
+  ...env,
+  jenkinsApiToken: "test-token",
+  branchParamDefault: "BRANCH",
+  useCrumb: false,
+};
+
+const realBunFile = Bun.file;
+const bunFileSpy = spyOn(Bun, "file");
 
 describe("job cache refresh", () => {
   beforeEach(() => {
     files.clear();
     mock.clearAllMocks();
+    bunFileSpy.mockImplementation(((filePath: string | URL) => {
+      const resolvedPath =
+        typeof filePath === "string" ? filePath : filePath.toString();
+      return {
+        text: async () => {
+          const value = files.get(resolvedPath);
+          if (value !== undefined) {
+            return value;
+          }
+          throw createErrno("ENOENT");
+        },
+        write: async (data: string) => {
+          files.set(resolvedPath, data);
+          return data.length;
+        },
+      } as Bun.BunFile;
+    }) as typeof Bun.file);
 
     mkdirMock.mockImplementation(async () => undefined);
-    readFileMock.mockImplementation(async (filePath: string) => {
-      const value = files.get(filePath);
-      if (value !== undefined) {
-        return value;
-      }
-      throw createErrno("ENOENT");
-    });
-    writeFileMock.mockImplementation(async (filePath: string, data: string) => {
-      files.set(filePath, data);
-    });
     renameMock.mockImplementation(async (fromPath: string, toPath: string) => {
       const value = files.get(fromPath);
       if (value === undefined) {
@@ -83,7 +97,12 @@ describe("job cache refresh", () => {
   });
 
   afterEach(() => {
-    mock.restore();
+    // Reset leaked module mocks back to the real fs so later test files that
+    // import node:fs/promises do not inherit our in-memory cache shim.
+    mkdirMock.mockImplementation(fs.promises.mkdir);
+    renameMock.mockImplementation(fs.promises.rename);
+    rmMock.mockImplementation(fs.promises.rm);
+    bunFileSpy.mockImplementation(realBunFile);
     files.clear();
   });
 
@@ -123,7 +142,7 @@ describe("job cache refresh", () => {
       client: {
         listJobs: mock(async () => refreshedJobs),
       } as unknown as JenkinsClient,
-      env,
+      env: loadEnv,
       refresh: true,
       nonInteractive: true,
     });
@@ -143,6 +162,42 @@ describe("job cache refresh", () => {
         url: "https://jenkins.example.com/job/fresh",
       },
     ]);
+    expect(cache?.recentJobs).toEqual(["https://jenkins.example.com/job/keep"]);
+  });
+
+  test("refresh canonicalizes trailing slashes in recent jobs before dedupe", async () => {
+    const cachePath = jobsModule.getJobCachePath(env.jenkinsUrl);
+    files.set(
+      cachePath,
+      JSON.stringify({
+        jenkinsUrl: env.jenkinsUrl,
+        user: env.jenkinsUser,
+        fetchedAt: "2026-02-12T00:00:00.000Z",
+        jobs: [{ name: "keep", url: "https://jenkins.example.com/job/keep" }],
+        recentJobs: [
+          "https://jenkins.example.com/job/keep/",
+          " https://jenkins.example.com/job/keep ",
+        ],
+      }),
+    );
+
+    const refreshedJobs: JenkinsJob[] = [
+      { name: "keep", url: "https://jenkins.example.com/job/keep" },
+    ];
+
+    const result = await jobsModule.loadJobs({
+      client: {
+        listJobs: mock(async () => refreshedJobs),
+      } as unknown as JenkinsClient,
+      env: loadEnv,
+      refresh: true,
+      nonInteractive: true,
+    });
+
+    expect(result).toEqual(refreshedJobs);
+
+    const cache = await jobsModule.readJobCache(env);
+    expect(cache).not.toBeNull();
     expect(cache?.recentJobs).toEqual(["https://jenkins.example.com/job/keep"]);
   });
 
@@ -177,7 +232,7 @@ describe("job cache refresh", () => {
             { name: "fresh", url: "https://jenkins.example.com/job/fresh" },
           ]),
         } as unknown as JenkinsClient,
-        env,
+        env: loadEnv,
         refresh: true,
         nonInteractive: true,
       }),

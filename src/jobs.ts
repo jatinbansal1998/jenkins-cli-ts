@@ -3,7 +3,7 @@
  * Caches jobs locally in an OS-specific cache directory and provides
  * natural language search with scoring for job lookups.
  */
-import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { mkdir, rename, rm } from "node:fs/promises";
 import { createHash, randomUUID } from "node:crypto";
 import os from "node:os";
 import path from "node:path";
@@ -166,7 +166,7 @@ async function fetchAndCacheJobs(
 
 async function readCacheFromPath(cachePath: string): Promise<JobCache | null> {
   try {
-    const raw = await readFile(cachePath, "utf-8");
+    const raw = await Bun.file(cachePath).text();
     const parsed = JSON.parse(raw) as unknown;
     if (!isValidCache(parsed)) {
       return null;
@@ -185,7 +185,7 @@ async function writeCacheToPath(
   await mkdir(CACHE_DIR, { recursive: true });
   const tempPath = `${cachePath}.${randomUUID()}.tmp`;
   try {
-    await writeFile(tempPath, JSON.stringify(cache, null, 2), "utf-8");
+    await Bun.file(tempPath).write(JSON.stringify(cache, null, 2));
     await rename(tempPath, cachePath);
   } catch (error) {
     await rm(tempPath, { force: true }).catch(() => undefined);
@@ -305,12 +305,14 @@ function normalizeRecentJobs(entries: unknown[] | undefined): string[] {
     if (!trimmed) {
       continue;
     }
-    const key = trimmed.toLowerCase();
+    const canonical =
+      trimmed.endsWith("/") && trimmed !== "/" ? trimmed.slice(0, -1) : trimmed;
+    const key = canonical.toLowerCase();
     if (deduped.has(key)) {
       continue;
     }
     deduped.add(key);
-    normalized.push(trimmed);
+    normalized.push(canonical);
   }
   return normalized;
 }

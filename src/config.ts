@@ -1,5 +1,5 @@
 import fs from "node:fs";
-import { chmod, mkdir, readFile, writeFile } from "node:fs/promises";
+import { chmod, mkdir } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { CliError } from "./cli";
@@ -82,7 +82,7 @@ export function readConfigSync(): LoadedConfig | null {
 
 export async function readConfig(): Promise<LoadedConfig | null> {
   try {
-    const raw = await readFile(CONFIG_FILE, "utf8");
+    const raw = await Bun.file(CONFIG_FILE).text();
     return parseConfigContents(raw, CONFIG_FILE);
   } catch (error) {
     if (
@@ -414,7 +414,7 @@ async function writeNormalizedConfigAsync(
 ): Promise<void> {
   await mkdir(CONFIG_DIR, { recursive: true, mode: 0o700 });
   const contents = `${JSON.stringify(config, null, 2)}\n`;
-  await writeFile(CONFIG_FILE, contents, { encoding: "utf8", mode: 0o600 });
+  await Bun.file(CONFIG_FILE).write(contents);
   try {
     await chmod(CONFIG_FILE, 0o600);
   } catch {
