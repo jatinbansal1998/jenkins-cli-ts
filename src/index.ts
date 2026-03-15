@@ -38,7 +38,6 @@ import {
   kickOffAutoUpdate,
   readUpdateState,
   shouldPromptForDeferredUpdate,
-  type UpdateState,
   writeUpdateState,
 } from "./update";
 import { printCliIntro } from "./cli-intro";

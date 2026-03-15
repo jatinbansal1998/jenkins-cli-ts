@@ -1,34 +1,59 @@
-import { beforeEach, describe, expect, mock, test } from "bun:test";
+import {
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  mock,
+  spyOn,
+  test,
+} from "bun:test";
 
 const mkdirMock = mock(async () => undefined);
-const writeFileMock = mock(async (..._args: unknown[]) => undefined);
 const chmodMock = mock(async () => undefined);
-const readFileMock = mock(async (): Promise<string> => {
-  throw new Error("missing");
-});
 
 mock.module("node:fs/promises", () => ({
   chmod: chmodMock,
   mkdir: mkdirMock,
-  readFile: readFileMock,
-  writeFile: writeFileMock,
 }));
 
-const { writeConfigFile } = await import("../src/config");
+const { CONFIG_FILE, writeConfigFile } = await import("../src/config");
+const realBunFile = Bun.file;
+const bunFileSpy = spyOn(Bun, "file");
+const fileContents = new Map<string, string>();
 
 beforeEach(() => {
   mock.clearAllMocks();
   mkdirMock.mockImplementation(async () => undefined);
-  writeFileMock.mockImplementation(async () => undefined);
   chmodMock.mockImplementation(async () => undefined);
-  readFileMock.mockImplementation(async () => {
-    throw new Error("missing");
-  });
+  fileContents.clear();
+  bunFileSpy.mockImplementation(((filePath: string | URL) => {
+    const resolvedPath =
+      typeof filePath === "string" ? filePath : filePath.toString();
+    return {
+      text: async () => {
+        const value = fileContents.get(resolvedPath);
+        if (value !== undefined) {
+          return value;
+        }
+        throw Object.assign(new Error("missing"), { code: "ENOENT" });
+      },
+      write: async (data: string) => {
+        fileContents.set(resolvedPath, data);
+        return data.length;
+      },
+    } as Bun.BunFile;
+  }) as typeof Bun.file);
+});
+
+afterEach(() => {
+  bunFileSpy.mockImplementation(realBunFile);
+  fileContents.clear();
 });
 
 describe("writeConfigFile", () => {
   test("preserves useCrumb, debug, and analyticsDisabled from existing config", async () => {
-    readFileMock.mockImplementation(async () =>
+    fileContents.set(
+      CONFIG_FILE,
       JSON.stringify({
         jenkinsUrl: "https://old-jenkins.example.com",
         jenkinsUser: "old-user",
@@ -46,12 +71,9 @@ describe("writeConfigFile", () => {
       branchParam: "BRANCH",
     });
 
-    const writeCall = writeFileMock.mock.calls[0];
-    expect(writeCall).toBeDefined();
-    if (!writeCall) {
-      throw new Error("Expected writeFile to be called.");
-    }
-    const payload = JSON.parse(String(writeCall[1]));
+    const payload = JSON.parse(
+      fileContents.get(CONFIG_FILE) ?? "",
+    );
 
     expect(payload.defaultProfile).toBe("default");
     expect(payload.profiles.default.useCrumb).toBeTrue();
@@ -66,7 +88,8 @@ describe("writeConfigFile", () => {
   });
 
   test("supports legacy key formats when preserving settings", async () => {
-    readFileMock.mockImplementation(async () =>
+    fileContents.set(
+      CONFIG_FILE,
       JSON.stringify({
         JENKINS_URL: "https://old-jenkins.example.com",
         JENKINS_USER: "old-user",
@@ -84,12 +107,9 @@ describe("writeConfigFile", () => {
       debug: false,
     });
 
-    const writeCall = writeFileMock.mock.calls[0];
-    expect(writeCall).toBeDefined();
-    if (!writeCall) {
-      throw new Error("Expected writeFile to be called.");
-    }
-    const payload = JSON.parse(String(writeCall[1]));
+    const payload = JSON.parse(
+      fileContents.get(CONFIG_FILE) ?? "",
+    );
 
     expect(payload.profiles.default.useCrumb).toBeFalse();
     expect(payload.debug).toBeFalse();
