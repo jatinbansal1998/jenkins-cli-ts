@@ -255,6 +255,7 @@ function selectBuildModeHandler({
     context.branch = "";
     context.customParams = {};
     context.pendingCustomParamKey = undefined;
+    context.lastAddedCustomParamKey = undefined;
     return "mode:without_params";
   }
   if (value === BUILD_WITH_CUSTOM_PARAMS_VALUE) {
@@ -264,6 +265,7 @@ function selectBuildModeHandler({
     context.branch = "";
     context.customParams = {};
     context.pendingCustomParamKey = undefined;
+    context.lastAddedCustomParamKey = undefined;
     return "mode:with_custom";
   }
   if (value === BUILD_WITH_PARAMS_VALUE) {
@@ -273,6 +275,7 @@ function selectBuildModeHandler({
     context.branch = "";
     context.customParams = {};
     context.pendingCustomParamKey = undefined;
+    context.lastAddedCustomParamKey = undefined;
     return "mode:with_branch";
   }
   context.parameterMode = "branch";
@@ -470,6 +473,7 @@ function submitCustomParamValueHandler({
   }
   context.customParams[key] = String(input ?? "");
   context.pendingCustomParamKey = undefined;
+  context.lastAddedCustomParamKey = key;
   return "param:added";
 }
 
@@ -487,7 +491,23 @@ function cancelCustomParamEntryHandler({
     context.buildModePrompted = false;
     return "custom:mode";
   }
+  if (Object.keys(context.customParams).length > 0) {
+    return "custom:review";
+  }
   return "custom:done";
+}
+
+function revisitLastCustomParamHandler({
+  context,
+}: {
+  context: BuildPreContext;
+}): EventId {
+  const key = context.lastAddedCustomParamKey?.trim() ?? "";
+  if (key) {
+    context.pendingCustomParamKey = key;
+    return "custom:last_value";
+  }
+  return "custom:key";
 }
 
 function selectStatusActionHandler({
@@ -545,6 +565,7 @@ export const buildPreFlowHandlers = {
   "buildPre.submitCustomParamKey": submitCustomParamKeyHandler,
   "buildPre.submitCustomParamValue": submitCustomParamValueHandler,
   "buildPre.cancelCustomParamEntry": cancelCustomParamEntryHandler,
+  "buildPre.revisitLastCustomParam": revisitLastCustomParamHandler,
 } satisfies FlowHandlerRegistry<BuildPreContext>;
 
 export const statusFlowHandlers = {

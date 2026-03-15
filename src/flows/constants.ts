@@ -9,3 +9,6 @@ export const BUILD_WITH_CUSTOM_PARAMS_VALUE =
   "__jenkins_cli_build_with_custom_params__";
 export const BUILD_WITHOUT_PARAMS_VALUE =
   "__jenkins_cli_build_without_params__";
+export const CUSTOM_MORE_ADD_VALUE = "__jenkins_cli_custom_more_add__";
+export const CUSTOM_MORE_BUILD_VALUE = "__jenkins_cli_custom_more_build__";
+export const CUSTOM_MORE_CANCEL_VALUE = "__jenkins_cli_custom_more_cancel__";

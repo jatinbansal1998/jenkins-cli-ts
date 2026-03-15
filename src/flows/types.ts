@@ -159,6 +159,7 @@ export type BuildPreContext = {
   removableBranches: string[];
   pendingBranchRemoval?: string;
   pendingCustomParamKey?: string;
+  lastAddedCustomParamKey?: string;
 };
 
 /** Runtime context for `statusPost` flow. */

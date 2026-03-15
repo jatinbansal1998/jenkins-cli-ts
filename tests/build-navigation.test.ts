@@ -4,6 +4,8 @@ import {
   BUILD_WITH_CUSTOM_PARAMS_VALUE,
   BUILD_WITHOUT_PARAMS_VALUE,
   BUILD_WITH_PARAMS_VALUE,
+  CUSTOM_MORE_BUILD_VALUE,
+  CUSTOM_MORE_CANCEL_VALUE,
   SEARCH_ALL_JOBS_VALUE,
 } from "../src/flows/constants";
 import type { JenkinsClient } from "../src/jenkins/client";
@@ -293,7 +295,8 @@ describe("build command navigation", () => {
 
     selectMock
       .mockImplementationOnce(async () => JOB_URL)
-      .mockImplementationOnce(async () => BUILD_WITH_CUSTOM_PARAMS_VALUE);
+      .mockImplementationOnce(async () => BUILD_WITH_CUSTOM_PARAMS_VALUE)
+      .mockImplementationOnce(async () => CUSTOM_MORE_BUILD_VALUE);
     textMock
       .mockImplementationOnce(async () => "DEPLOY_ENV")
       .mockImplementationOnce(async () => "staging");
@@ -311,6 +314,71 @@ describe("build command navigation", () => {
     expect(triggerBuild).toHaveBeenCalledTimes(1);
     expect(triggerBuild).toHaveBeenCalledWith(JOB_URL, {
       DEPLOY_ENV: "staging",
+    });
+  });
+
+  test("custom-params menu can cancel the build before submission", async () => {
+    const getJobStatus = mock(async () => ({ lastBuildNumber: 41 }));
+    const triggerBuild = mock(async () => ({
+      buildUrl: BUILD_URL,
+      buildNumber: 42,
+      queueUrl: QUEUE_URL,
+      jobUrl: JOB_URL,
+    }));
+
+    selectMock
+      .mockImplementationOnce(async () => JOB_URL)
+      .mockImplementationOnce(async () => BUILD_WITH_CUSTOM_PARAMS_VALUE)
+      .mockImplementationOnce(async () => CUSTOM_MORE_CANCEL_VALUE);
+    textMock
+      .mockImplementationOnce(async () => "DEPLOY_ENV")
+      .mockImplementationOnce(async () => "staging");
+
+    await runBuild({
+      client: createClient({
+        getJobStatus,
+        triggerBuild,
+      }),
+      env: {} as EnvConfig,
+      nonInteractive: false,
+      watch: false,
+    });
+
+    expect(triggerBuild).not.toHaveBeenCalled();
+  });
+
+  test("Esc in custom-params menu returns to the previous value prompt", async () => {
+    const getJobStatus = mock(async () => ({ lastBuildNumber: 41 }));
+    const triggerBuild = mock(async () => ({
+      buildUrl: BUILD_URL,
+      buildNumber: 42,
+      queueUrl: QUEUE_URL,
+      jobUrl: JOB_URL,
+    }));
+
+    selectMock
+      .mockImplementationOnce(async () => JOB_URL)
+      .mockImplementationOnce(async () => BUILD_WITH_CUSTOM_PARAMS_VALUE)
+      .mockImplementationOnce(async () => CANCEL)
+      .mockImplementationOnce(async () => CUSTOM_MORE_BUILD_VALUE);
+    textMock
+      .mockImplementationOnce(async () => "DEPLOY_ENV")
+      .mockImplementationOnce(async () => "staging")
+      .mockImplementationOnce(async () => "production");
+
+    await runBuild({
+      client: createClient({
+        getJobStatus,
+        triggerBuild,
+      }),
+      env: {} as EnvConfig,
+      nonInteractive: false,
+      watch: false,
+    });
+
+    expect(triggerBuild).toHaveBeenCalledTimes(1);
+    expect(triggerBuild).toHaveBeenCalledWith(JOB_URL, {
+      DEPLOY_ENV: "production",
     });
   });
 
@@ -355,7 +423,8 @@ describe("build command navigation", () => {
     selectMock
       .mockImplementationOnce(async () => JOB_URL)
       .mockImplementationOnce(async () => BUILD_WITH_PARAMS_VALUE)
-      .mockImplementationOnce(async () => "development");
+      .mockImplementationOnce(async () => "development")
+      .mockImplementationOnce(async () => CUSTOM_MORE_BUILD_VALUE);
     confirmMock
       .mockImplementationOnce(async () => true)
       .mockImplementationOnce(async () => false);

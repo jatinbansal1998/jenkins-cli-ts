@@ -1,4 +1,8 @@
 import { describe, expect, test } from "bun:test";
+import {
+  BRANCH_CUSTOM_VALUE,
+  BRANCH_REMOVE_VALUE,
+} from "../src/flows/constants";
 import { flows } from "../src/flows/definition";
 import { validateFlowDefinition } from "../src/flows/validate";
 
@@ -143,6 +147,36 @@ describe("flow definitions", () => {
       "history",
       "cancel",
       "done",
+    ]);
+  });
+
+  test("branch selection keeps destructive actions at the bottom", () => {
+    const branchSelect = flows.buildPre.states.branch_select;
+
+    expect(branchSelect).toBeDefined();
+
+    if (!branchSelect) {
+      throw new Error("Expected branch selection state.");
+    }
+
+    const prompt = branchSelect.prompt;
+
+    if (!prompt || prompt.kind !== "select" || typeof prompt.options !== "function") {
+      throw new Error("Expected select prompt with dynamic options.");
+    }
+
+    const options = prompt.options({
+      branchChoices: ["feature/payments", "development", "master"],
+      removableBranches: ["feature/payments"],
+      env: {} as never,
+    });
+
+    expect(options.map((option) => option.value)).toEqual([
+      "feature/payments",
+      "development",
+      "master",
+      BRANCH_CUSTOM_VALUE,
+      BRANCH_REMOVE_VALUE,
     ]);
   });
 });

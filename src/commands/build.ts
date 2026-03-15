@@ -1325,6 +1325,7 @@ async function resolveInteractiveBuildSelection(options: {
     buildModePrompted: false,
     branchChoices: [],
     removableBranches: [],
+    lastAddedCustomParamKey: undefined,
   };
 
   const result = await runFlow({
@@ -1475,9 +1476,6 @@ async function promptForBranchSelection(options: {
 
   while (true) {
     const selectOptions = [
-      ...(removableBranches.length > 0
-        ? [{ value: BRANCH_REMOVE_VALUE, label: "Remove cached branch" }]
-        : []),
       ...choices.map((choice) => ({
         value: choice,
         label: choice,
@@ -1486,6 +1484,9 @@ async function promptForBranchSelection(options: {
         value: BRANCH_CUSTOM_VALUE,
         label: "Type a different branch",
       },
+      ...(removableBranches.length > 0
+        ? [{ value: BRANCH_REMOVE_VALUE, label: "Remove cached branch" }]
+        : []),
     ];
     const response = await deps.select({
       message: withPromptTarget("Branch name", options.env),
