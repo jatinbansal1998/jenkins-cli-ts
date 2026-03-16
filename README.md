@@ -1,22 +1,37 @@
 # Jenkins CLI
 
-Minimal Jenkins CLI for listing jobs, triggering builds, checking status, and
-inspecting recent build history. Built for interactive use and automation with
-clear, parseable output.
-
-## Demo
-
-![Jenkins CLI demo](docs/media/jenkins-cli-demo.gif)
+Jenkins CLI for listing jobs, triggering builds, checking status, streaming
+logs, inspecting build history, and managing multiple Jenkins profiles from the
+terminal. Built for interactive use and automation with clear, parseable
+output.
 
 ## Install
 
 Installs `jenkins-cli` to your PATH (defaults to `$HOME/.bun/bin`). It will install
 Bun if it is missing.
 
-Install (standalone script):
+Primary install URL:
 
 ```bash
 curl -fsSL http://jatinbansal.com/jenkins-cli/install/ | bash
+```
+
+## Supported Features
+
+| Feature | Supported | Notes |
+| --- | --- | --- |
+| Multi-profile configuration | Yes | Store multiple Jenkins profiles and switch the default profile |
+| Job listing and search | Yes | Cached job listing with refresh and natural-language search |
+| Build triggers | Yes | Supports branch builds, default-parameter runs, and custom parameters |
+| Status and watch mode | Yes | Track the latest build and watch until completion |
+| Build history | Yes | Jenkins-style recent build history table |
+| Logs, cancel, and rerun | Yes | Inspect recent logs and manage existing builds |
+| One-off credentials | Yes | Override profile config with `--url`, `--user`, and `--token` |
+| Script-friendly output | Yes | Parseable `OK:` and `HINT:` output for automation |
+
+GitHub install mirror:
+
+```bash
 curl -fsSL https://raw.githubusercontent.com/jatinbansal1998/jenkins-cli-ts/main/install | bash
 ```
 
@@ -42,9 +57,22 @@ brew upgrade jenkins-cli
 
 Maintainers: see `docs/homebrew.md` for tap publishing steps.
 
+## Demo
+
+![Jenkins CLI demo](docs/media/jenkins-cli-demo.gif)
+
+## Quick Start
+
+```bash
+jenkins-cli login --profile work --url https://jenkins.example.com --user ci --token <token>
+jenkins-cli list --profile work
+jenkins-cli build --job "api-prod" --branch main --profile work
+```
+
 ## Setup
 
-Config file:
+### Config File
+
 `~/.config/jenkins-cli/jenkins-cli-config.json`
 
 ```json
@@ -64,7 +92,7 @@ Config file:
 }
 ```
 
-Add credentials:
+### Add Credentials
 
 ```bash
 jenkins-cli login
@@ -72,7 +100,7 @@ jenkins-cli login --profile work
 jenkins-cli login --profile prod --url https://jenkins-prod.example.com --user ci --token <token>
 ```
 
-Manage profiles:
+### Manage Profiles
 
 ```bash
 jenkins-cli profile list
@@ -80,21 +108,23 @@ jenkins-cli profile use prod
 jenkins-cli profile delete work
 ```
 
-Selection behavior:
+### Credential Selection Order
 
 - If you pass `--url --user --token`, those one-off credentials are used for that command.
 - Else if you pass `--profile`, that profile is used and env credentials are ignored.
 - Else the CLI uses `defaultProfile`.
 - If no profiles exist, the CLI falls back to environment variables.
 
-Environment variable fallback (single account only):
+### Environment Variable Fallback
+
+Single-account fallback only:
 
 - `JENKINS_URL` (e.g., `https://jenkins.example.com`)
 - `JENKINS_USER`
 - `JENKINS_API_TOKEN`
 - Optional: `JENKINS_USE_CRUMB` (`true` to enable; default: disabled)
 
-Analytics:
+### Analytics
 
 - Analytics is disabled by default.
 - Set `"analyticsDisabled": false` in `~/.config/jenkins-cli/jenkins-cli-config.json` to enable the bundled PostHog analytics.
@@ -105,7 +135,7 @@ Analytics:
 - Optional: `JENKINS_ANALYTICS_DISABLED=true` to force-disable analytics entirely
 - Optional config: set `"analyticsDisabled": true` to force-disable analytics entirely
 
-Privacy guardrails:
+### Privacy Guardrails
 
 - Analytics never sends Jenkins usernames, API tokens, Jenkins URLs, job names, job URLs, build URLs, queue URLs, branch names, raw search text, build parameter names or values, or log output.
 - Analytics only sends anonymous install ID, CLI version, command names, interactivity/TTY flags, high-level outcomes, exact command durations in milliseconds, and coarse Jenkins API health counts.
@@ -115,14 +145,16 @@ Privacy guardrails:
 If you have not installed the global CLI, replace `jenkins-cli` with
 `bun run src/index.ts`.
 
-Output format notes:
+### Output Format Notes
 
 - Commands return parseable output prefixed with `OK:` and `HINT:` where relevant.
 - Running `jenkins-cli` with no command defaults to `list`.
 - Interactive commands show an ASCII intro banner by default. Use `--no-banner`
   to disable it for a single run.
 
-List jobs (uses local cache by default):
+### List Jobs
+
+Uses the local cache by default:
 
 ```bash
 jenkins-cli list
@@ -156,6 +188,8 @@ Run any command with direct one-off credentials:
 ```bash
 jenkins-cli list --url https://jenkins.example.com --user ci-user --token <token>
 ```
+
+### Trigger Builds
 
 Trigger a build with a branch:
 
@@ -199,6 +233,8 @@ In interactive mode, build mode now offers:
 - **Enter custom parameters**
 - **Run with default parameters**
 
+### Check Status
+
 Check status:
 
 ```bash
@@ -210,6 +246,8 @@ Watch the latest build status from status command:
 ```bash
 jenkins-cli status --job "api-prod" --watch
 ```
+
+### Build History
 
 Show recent build history in a Jenkins-style table:
 
@@ -228,6 +266,8 @@ In interactive mode, build history lets you:
 - Jump into logs for the selected build
 - Inspect failed step and failure reason when Jenkins exposes them
 
+### Wait For Completion
+
 Wait for a build to finish:
 
 ```bash
@@ -235,6 +275,8 @@ jenkins-cli wait --job "api-prod" --timeout 30m --interval 5s
 jenkins-cli wait --build-url "https://jenkins.example.com/job/api-prod/184/"
 jenkins-cli wait --queue-url "https://jenkins.example.com/queue/item/123/"
 ```
+
+### Stream Logs
 
 Stream logs:
 
@@ -244,6 +286,8 @@ jenkins-cli logs --job "api-prod" --follow --poll 1s
 jenkins-cli logs --build-url "https://jenkins.example.com/job/api-prod/184/" --no-follow
 ```
 
+### Cancel Work
+
 Cancel queued or running work:
 
 ```bash
@@ -251,6 +295,8 @@ jenkins-cli cancel --job "api-prod"
 jenkins-cli cancel --queue-url "https://jenkins.example.com/queue/item/123/"
 jenkins-cli cancel --build-url "https://jenkins.example.com/job/api-prod/184/"
 ```
+
+### Rerun Failed Builds
 
 Rerun from last failed build:
 
