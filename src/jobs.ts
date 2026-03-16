@@ -320,7 +320,9 @@ function normalizeRecentJobs(entries: unknown[] | undefined): string[] {
 
 function normalizeRecentJobUrl(value: string): string {
   const trimmed = value.trim();
-  return trimmed.endsWith("/") && trimmed !== "/" ? trimmed.slice(0, -1) : trimmed;
+  return trimmed.endsWith("/") && trimmed !== "/"
+    ? trimmed.slice(0, -1)
+    : trimmed;
 }
 
 export type RankedJob = {

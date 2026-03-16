@@ -18,16 +18,16 @@ curl -fsSL http://jatinbansal.com/jenkins-cli/install/ | bash
 
 ## Supported Features
 
-| Feature | Supported | Notes |
-| --- | --- | --- |
-| Multi-profile configuration | Yes | Store multiple Jenkins profiles and switch the default profile |
-| Job listing and search | Yes | Cached job listing with refresh and natural-language search |
-| Build triggers | Yes | Supports branch builds, default-parameter runs, and custom parameters |
-| Status and watch mode | Yes | Track the latest build and watch until completion |
-| Build history | Yes | Jenkins-style recent build history table |
-| Logs, cancel, and rerun | Yes | Inspect recent logs and manage existing builds |
-| One-off credentials | Yes | Override profile config with `--url`, `--user`, and `--token` |
-| Script-friendly output | Yes | Parseable `OK:` and `HINT:` output for automation |
+| Feature                     | Supported | Notes                                                                 |
+| --------------------------- | --------- | --------------------------------------------------------------------- |
+| Multi-profile configuration | Yes       | Store multiple Jenkins profiles and switch the default profile        |
+| Job listing and search      | Yes       | Cached job listing with refresh and natural-language search           |
+| Build triggers              | Yes       | Supports branch builds, default-parameter runs, and custom parameters |
+| Status and watch mode       | Yes       | Track the latest build and watch until completion                     |
+| Build history               | Yes       | Jenkins-style recent build history table                              |
+| Logs, cancel, and rerun     | Yes       | Inspect recent logs and manage existing builds                        |
+| One-off credentials         | Yes       | Override profile config with `--url`, `--user`, and `--token`         |
+| Script-friendly output      | Yes       | Parseable `OK:` and `HINT:` output for automation                     |
 
 GitHub install mirror:
 

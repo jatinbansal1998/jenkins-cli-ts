@@ -10,10 +10,7 @@ import {
 import type { EnvConfig } from "../src/env";
 import { BUILD_WITHOUT_PARAMS_VALUE } from "../src/flows/constants";
 import type { JenkinsClient } from "../src/jenkins/client";
-import {
-  runBuild,
-  setBuildDepsForTesting,
-} from "../src/commands/build";
+import { runBuild, setBuildDepsForTesting } from "../src/commands/build";
 
 const confirmMock = mock(async () => false);
 const selectMock = mock(async () => "done");

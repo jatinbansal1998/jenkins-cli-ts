@@ -3,7 +3,7 @@ import fs from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { CliError } from "../src/cli";
-import { parseBuildCustomParams } from "../src/index";
+import { parseBuildCustomParams } from "../src";
 
 describe("cli default command", () => {
   test("defaults to list flow when no command is provided", () => {
@@ -253,7 +253,9 @@ describe("parseBuildCustomParams", () => {
       throw new Error("Expected parseBuildCustomParams to throw");
     } catch (error) {
       expect(error).toBeInstanceOf(CliError);
-      expect((error as CliError).message).toBe('Invalid --param value "INVALID".');
+      expect((error as CliError).message).toBe(
+        'Invalid --param value "INVALID".',
+      );
       expect((error as CliError).hints).toEqual([
         "Use --param KEY=VALUE (example: --param DEPLOY_ENV=staging).",
       ]);

@@ -36,7 +36,9 @@ const ACTION_MENU_ORDER = [
 ] as const;
 
 function orderActionOptions(options: PromptOption[]): PromptOption[] {
-  const optionsByValue = new Map(options.map((option) => [option.value, option]));
+  const optionsByValue = new Map(
+    options.map((option) => [option.value, option]),
+  );
   const orderedOptions = ACTION_MENU_ORDER.flatMap((value) => {
     const option = optionsByValue.get(value);
 
@@ -399,7 +401,7 @@ export const buildPreFlow: FlowDefinition<BuildPreContext> = {
           ),
         initialValue: (context) => {
           const key = context.pendingCustomParamKey?.trim() ?? "";
-          return key ? context.customParams[key] ?? "" : "";
+          return key ? (context.customParams[key] ?? "") : "";
         },
       },
       onSelect: "buildPre.submitCustomParamValue",

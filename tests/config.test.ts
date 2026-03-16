@@ -71,9 +71,7 @@ describe("writeConfigFile", () => {
       branchParam: "BRANCH",
     });
 
-    const payload = JSON.parse(
-      fileContents.get(CONFIG_FILE) ?? "",
-    );
+    const payload = JSON.parse(fileContents.get(CONFIG_FILE) ?? "");
 
     expect(payload.defaultProfile).toBe("default");
     expect(payload.profiles.default.useCrumb).toBeTrue();
@@ -107,9 +105,7 @@ describe("writeConfigFile", () => {
       debug: false,
     });
 
-    const payload = JSON.parse(
-      fileContents.get(CONFIG_FILE) ?? "",
-    );
+    const payload = JSON.parse(fileContents.get(CONFIG_FILE) ?? "");
 
     expect(payload.profiles.default.useCrumb).toBeFalse();
     expect(payload.debug).toBeFalse();

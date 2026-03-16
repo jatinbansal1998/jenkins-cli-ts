@@ -157,7 +157,9 @@ export async function requestCancellationForWatchTarget(options: {
     const queueItems = await options.client.listQueueItems();
     const queueItem = findQueueItemForJob(queueItems, jobUrl);
     if (queueItem) {
-      const cancelled = await options.client.cancelQueueItem(queueItem.queueUrl);
+      const cancelled = await options.client.cancelQueueItem(
+        queueItem.queueUrl,
+      );
       if (cancelled) {
         return {
           kind: "queue",
@@ -168,9 +170,10 @@ export async function requestCancellationForWatchTarget(options: {
     }
   }
 
-  throw new CliError("No running or queued build found for the current watch.", [
-    "The build may have already completed.",
-  ]);
+  throw new CliError(
+    "No running or queued build found for the current watch.",
+    ["The build may have already completed."],
+  );
 }
 
 function findQueueItemForJob(

@@ -161,7 +161,11 @@ describe("flow definitions", () => {
 
     const prompt = branchSelect.prompt;
 
-    if (!prompt || prompt.kind !== "select" || typeof prompt.options !== "function") {
+    if (
+      !prompt ||
+      prompt.kind !== "select" ||
+      typeof prompt.options !== "function"
+    ) {
       throw new Error("Expected select prompt with dynamic options.");
     }
 
