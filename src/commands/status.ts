@@ -12,6 +12,10 @@ import { runLogs } from "./logs";
 import { runRerun, runRerunLastBuild } from "./rerun";
 import { runWait } from "./wait";
 import {
+  getKnownStageTotal,
+  recordKnownStageTotal,
+} from "../stage-count-cache";
+import {
   formatStatusDetails,
   formatStatusSummary,
   toStatusDetailsFromJob,
@@ -157,13 +161,30 @@ export async function runStatus(options: StatusOptions): Promise<void> {
 
       const result = status.building ? "RUNNING" : status.result || "UNKNOWN";
       const url = status.lastBuildUrl || target.jobUrl;
+      const knownTotalStages = await getKnownStageTotal({
+        env: options.env,
+        jobUrl: target.jobUrl,
+        buildUrl: url,
+      });
       const summary = formatStatusSummary({
         jobLabel: target.jobLabel || target.jobUrl,
         buildNumber: status.lastBuildNumber,
         result,
       });
-      const details = formatStatusDetails(toStatusDetailsFromJob(status), url);
+      const details = formatStatusDetails(
+        toStatusDetailsFromJob(status, { knownTotalStages }),
+        url,
+      );
       printOk(details ? `${summary}\n${details}` : summary);
+      if (!status.building && result === "SUCCESS") {
+        await persistKnownTotalStages({
+          env: options.env,
+          jobUrl: target.jobUrl,
+          buildUrl: url,
+          totalStages: status.stages?.length,
+          jobLabel: target.jobLabel,
+        });
+      }
 
       if (options.watch) {
         await runWait({
@@ -375,13 +396,30 @@ async function runStatusOnce(options: StatusOptions): Promise<void> {
 
   const result = status.building ? "RUNNING" : status.result || "UNKNOWN";
   const url = status.lastBuildUrl || jobUrl;
+  const knownTotalStages = await getKnownStageTotal({
+    env: options.env,
+    jobUrl,
+    buildUrl: url,
+  });
   const summary = formatStatusSummary({
     jobLabel: jobLabel || jobUrl,
     buildNumber: status.lastBuildNumber,
     result,
   });
-  const details = formatStatusDetails(toStatusDetailsFromJob(status), url);
+  const details = formatStatusDetails(
+    toStatusDetailsFromJob(status, { knownTotalStages }),
+    url,
+  );
   printOk(details ? `${summary}\n${details}` : summary);
+  if (!status.building && result === "SUCCESS") {
+    await persistKnownTotalStages({
+      env: options.env,
+      jobUrl,
+      buildUrl: url,
+      totalStages: status.stages?.length,
+      jobLabel,
+    });
+  }
 
   if (options.watch) {
     await runWait({
@@ -399,6 +437,26 @@ async function runTrackedStatusAction<T>(
   action: () => Promise<T>,
 ): Promise<T> {
   return await runInteractiveSubcommandWithAnalytics(command, action);
+}
+
+async function persistKnownTotalStages(options: {
+  env: EnvConfig;
+  jobUrl?: string;
+  buildUrl?: string;
+  totalStages?: number;
+  jobLabel: string;
+}): Promise<void> {
+  try {
+    await recordKnownStageTotal({
+      env: options.env,
+      jobUrl: options.jobUrl,
+      buildUrl: options.buildUrl,
+      totalStages: options.totalStages,
+      jobName: options.jobLabel,
+    });
+  } catch {
+    // Ignore stage cache write failures for status output.
+  }
 }
 
 async function promptForJobSelection(

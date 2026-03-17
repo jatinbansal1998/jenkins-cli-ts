@@ -7,9 +7,21 @@ export type JenkinsBuildParameter = {
   value: string;
 };
 
+export type JenkinsPipelineLinks = {
+  self?: { href?: string };
+  log?: { href?: string };
+  changesets?: { href?: string };
+};
+
 export type JenkinsPipelineStage = {
+  _links?: JenkinsPipelineLinks;
+  id?: string | number;
   name?: string;
+  execNode?: string;
   status?: string;
+  startTimeMillis?: number;
+  durationMillis?: number;
+  pauseDurationMillis?: number;
 };
 
 export type JenkinsBuildFailure = {
@@ -36,7 +48,7 @@ export type JobStatus = {
   queueTimeMs?: number;
   parameters?: JenkinsBuildParameter[];
   branch?: string;
-  stage?: JenkinsPipelineStage;
+  stages?: JenkinsPipelineStage[];
 };
 
 export type BuildStatus = {
@@ -50,7 +62,7 @@ export type BuildStatus = {
   queueTimeMs?: number;
   parameters?: JenkinsBuildParameter[];
   branch?: string;
-  stage?: JenkinsPipelineStage;
+  stages?: JenkinsPipelineStage[];
 };
 
 export type BuildHistoryEntry = {
@@ -63,7 +75,7 @@ export type BuildHistoryEntry = {
   estimatedDurationMs?: number;
   parameters?: JenkinsBuildParameter[];
   branch?: string;
-  stage?: JenkinsPipelineStage;
+  stages?: JenkinsPipelineStage[];
   failure?: JenkinsBuildFailure;
 };
 
@@ -113,8 +125,16 @@ export type TriggerBuildResult = {
 };
 
 export type PipelineInfo = {
-  stage?: JenkinsPipelineStage;
-  queueDurationMs?: number;
+  _links?: JenkinsPipelineLinks;
+  id?: string | number;
+  name?: string;
+  status?: string;
+  startTimeMillis?: number;
+  endTimeMillis?: number;
+  durationMillis?: number;
+  queueDurationMillis?: number;
+  pauseDurationMillis?: number;
+  stages?: JenkinsPipelineStage[];
   failure?: JenkinsBuildFailure;
 };
 

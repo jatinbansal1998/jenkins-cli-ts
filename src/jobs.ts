@@ -18,12 +18,19 @@ export type CachedJob = JenkinsJob & {
   branches?: string[];
 };
 
+export type CachedStageTotal = {
+  totalStages: number;
+  updatedAt: string;
+  jobName?: string;
+};
+
 export type JobCache = {
   jenkinsUrl: string;
   user: string;
   fetchedAt: string;
   jobs: CachedJob[];
   recentJobs?: string[];
+  knownStageTotals?: Record<string, CachedStageTotal>;
 };
 
 const CACHE_DIR = resolveCacheDir();
@@ -159,6 +166,7 @@ async function fetchAndCacheJobs(
     fetchedAt: new Date().toISOString(),
     jobs: cachedJobs,
     recentJobs,
+    knownStageTotals: existingCache?.knownStageTotals,
   };
   await writeJobCache(payload);
   return jobs;
@@ -172,6 +180,9 @@ async function readCacheFromPath(cachePath: string): Promise<JobCache | null> {
       return null;
     }
     normalizeCachedJobs(parsed.jobs);
+    parsed.knownStageTotals = normalizeKnownStageTotals(
+      parsed.knownStageTotals,
+    );
     return parsed;
   } catch {
     return null;
@@ -227,6 +238,39 @@ function isValidCache(cache: unknown): cache is JobCache {
     typeof record.fetchedAt !== "string" ||
     !Array.isArray(record.jobs)
   );
+}
+
+function normalizeKnownStageTotals(
+  value: unknown,
+): Record<string, CachedStageTotal> | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return undefined;
+  }
+  const normalized: Record<string, CachedStageTotal> = {};
+  for (const [jobUrl, entry] of Object.entries(value)) {
+    if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
+      continue;
+    }
+    const record = entry as Record<string, unknown>;
+    const totalStages = record.totalStages;
+    const updatedAt = record.updatedAt;
+    if (
+      typeof totalStages !== "number" ||
+      !Number.isFinite(totalStages) ||
+      totalStages <= 0 ||
+      typeof updatedAt !== "string"
+    ) {
+      continue;
+    }
+    normalized[jobUrl] = {
+      totalStages,
+      updatedAt,
+      ...(typeof record.jobName === "string" && record.jobName.trim()
+        ? { jobName: record.jobName.trim() }
+        : {}),
+    };
+  }
+  return Object.keys(normalized).length > 0 ? normalized : undefined;
 }
 
 function normalizeCachedJobs(jobs: CachedJob[]): void {

@@ -8,6 +8,7 @@ export type {
   JenkinsBuildParameter,
   JenkinsClientOptions,
   JenkinsJob,
+  JenkinsPipelineLinks,
   JenkinsPipelineStage,
   JobStatus,
   LastFailedBuildReference,

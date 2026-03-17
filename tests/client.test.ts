@@ -389,17 +389,25 @@ describe("JenkinsClient listBuildHistory", () => {
         stepName: "Deploy to ECS",
         reason: "task definition validation failed",
       },
-      stage: {
-        name: "Deploy",
-        status: "FAILED",
-      },
+      stages: [
+        {
+          name: "Build",
+          status: "SUCCESS",
+        },
+        {
+          name: "Deploy",
+          status: "FAILED",
+        },
+      ],
     });
     expect(page.builds[1]).toMatchObject({
       buildNumber: 101,
-      stage: {
-        name: "Deploy",
-        status: "SUCCESS",
-      },
+      stages: [
+        {
+          name: "Deploy",
+          status: "SUCCESS",
+        },
+      ],
     });
   });
 });

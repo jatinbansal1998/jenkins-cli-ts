@@ -27,6 +27,10 @@ import type { JenkinsClient } from "../jenkins/api-wrapper";
 import type { BuildStatus, JobStatus } from "../types/jenkins";
 import { getJobDisplayName, loadJobs, resolveJobMatch } from "../jobs";
 import { notifyBuildComplete } from "../notify";
+import {
+  getKnownStageTotal,
+  recordKnownStageTotal,
+} from "../stage-count-cache";
 import { runCancel } from "./cancel";
 import { runHistory } from "./history";
 import { runLogs } from "./logs";
@@ -241,6 +245,7 @@ export async function runBuild(options: BuildOptions): Promise<BuildRunResult> {
     if (shouldWatch) {
       const finalStatus = await watchBuildStatus({
         client: options.client,
+        env: options.env,
         jobUrl: resolvedJobUrl,
         jobLabel: displayJob,
         buildUrl: activeBuild.buildUrl,
@@ -272,6 +277,7 @@ export async function runBuild(options: BuildOptions): Promise<BuildRunResult> {
             runMenuAction(async () =>
               watchBuildStatus({
                 client: options.client,
+                env: options.env,
                 jobUrl: resolvedJobUrl,
                 jobLabel: displayJob,
                 buildUrl: activeBuild.buildUrl,
@@ -616,6 +622,7 @@ async function runBuildOnce(options: {
   if (shouldWatch) {
     const finalStatus = await watchBuildStatus({
       client: options.client,
+      env: options.env,
       jobUrl,
       jobLabel: displayJob,
       buildUrl: result.buildUrl,
@@ -880,6 +887,7 @@ async function resolveWatchDecision(options: {
 
 async function watchBuildStatus(options: {
   client: JenkinsClient;
+  env: EnvConfig;
   jobUrl: string;
   jobLabel: string;
   buildUrl?: string;
@@ -916,6 +924,11 @@ async function watchBuildStatus(options: {
 
   let baselineBuildNumber = options.baselineBuildNumber;
   let targetBuildNumber: number | undefined;
+  let knownTotalStages = await getKnownStageTotal({
+    env: options.env,
+    jobUrl: options.jobUrl,
+    buildUrl,
+  });
 
   try {
     if (!buildUrl && baselineBuildNumber === undefined) {
@@ -988,7 +1001,7 @@ async function watchBuildStatus(options: {
       if (buildUrl) {
         const status = await options.client.getBuildStatus(buildUrl);
         const result = status.building ? "RUNNING" : status.result || "UNKNOWN";
-        const details = toStatusDetailsFromBuild(status);
+        const details = toStatusDetailsFromBuild(status, knownTotalStages);
         const message = formatWatchMessage({
           jobLabel: options.jobLabel,
           buildNumber: status.buildNumber ?? buildNumber,
@@ -1006,6 +1019,15 @@ async function watchBuildStatus(options: {
             result,
           });
           const url = status.buildUrl || buildUrl;
+          if (result === "SUCCESS") {
+            await persistKnownTotalStages({
+              env: options.env,
+              jobUrl: options.jobUrl,
+              buildUrl: url,
+              totalStages: status.stages?.length,
+              jobLabel: options.jobLabel,
+            });
+          }
           const detailsText = formatStatusDetails(details, url);
           printOk(detailsText ? `${summary}\n${detailsText}` : summary);
           return {
@@ -1019,6 +1041,13 @@ async function watchBuildStatus(options: {
         if (queueItem?.buildUrl) {
           buildUrl = queueItem.buildUrl;
           buildNumber = queueItem.buildNumber;
+          if (knownTotalStages === undefined) {
+            knownTotalStages = await getKnownStageTotal({
+              env: options.env,
+              jobUrl: options.jobUrl,
+              buildUrl,
+            });
+          }
           continue;
         }
         const fallbackStatus = await options.client.getJobStatus(
@@ -1078,7 +1107,7 @@ async function watchBuildStatus(options: {
           const result = status.building
             ? "RUNNING"
             : status.result || "UNKNOWN";
-          const details = toStatusDetailsFromJob(status);
+          const details = toStatusDetailsFromJob(status, knownTotalStages);
           const message = formatWatchMessage({
             jobLabel: options.jobLabel,
             buildNumber: currentNumber,
@@ -1096,6 +1125,15 @@ async function watchBuildStatus(options: {
               result,
             });
             const url = status.lastBuildUrl || options.jobUrl;
+            if (result === "SUCCESS") {
+              await persistKnownTotalStages({
+                env: options.env,
+                jobUrl: options.jobUrl,
+                buildUrl: url,
+                totalStages: status.stages?.length,
+                jobLabel: options.jobLabel,
+              });
+            }
             const detailsText = formatStatusDetails(details, url);
             printOk(detailsText ? `${summary}\n${detailsText}` : summary);
             return { result, buildNumber: currentNumber, cancelIssued };
@@ -1207,7 +1245,10 @@ function formatNotificationMessage(options: {
   return options.jobLabel ? `${base} (${options.jobLabel})` : base;
 }
 
-function toStatusDetailsFromBuild(status: BuildStatus): StatusDetails {
+function toStatusDetailsFromBuild(
+  status: BuildStatus,
+  knownTotalStages?: number,
+): StatusDetails {
   return {
     building: status.building,
     timestampMs: status.timestampMs,
@@ -1215,11 +1256,15 @@ function toStatusDetailsFromBuild(status: BuildStatus): StatusDetails {
     estimatedDurationMs: status.estimatedDurationMs,
     queueTimeMs: status.queueTimeMs,
     parameters: status.parameters,
-    stage: status.stage,
+    stages: status.stages,
+    knownTotalStages,
   };
 }
 
-function toStatusDetailsFromJob(status: JobStatus): StatusDetails {
+function toStatusDetailsFromJob(
+  status: JobStatus,
+  knownTotalStages?: number,
+): StatusDetails {
   return {
     building: status.building,
     timestampMs: status.lastBuildTimestamp,
@@ -1227,8 +1272,29 @@ function toStatusDetailsFromJob(status: JobStatus): StatusDetails {
     estimatedDurationMs: status.lastBuildEstimatedDurationMs,
     queueTimeMs: status.queueTimeMs,
     parameters: status.parameters,
-    stage: status.stage,
+    stages: status.stages,
+    knownTotalStages,
   };
+}
+
+async function persistKnownTotalStages(options: {
+  env: EnvConfig;
+  jobUrl?: string;
+  buildUrl?: string;
+  totalStages?: number;
+  jobLabel: string;
+}): Promise<void> {
+  try {
+    await recordKnownStageTotal({
+      env: options.env,
+      jobUrl: options.jobUrl,
+      buildUrl: options.buildUrl,
+      totalStages: options.totalStages,
+      jobName: options.jobLabel,
+    });
+  } catch {
+    // Ignore stage cache write failures for watch output.
+  }
 }
 
 function formatDuration(durationMs: number): string {

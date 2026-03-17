@@ -5,6 +5,10 @@ import type { EnvConfig } from "../env";
 import type { JenkinsClient } from "../jenkins/api-wrapper";
 import type { BuildStatus, JobStatus } from "../types/jenkins";
 import {
+  getKnownStageTotal,
+  recordKnownStageTotal,
+} from "../stage-count-cache";
+import {
   formatCompactStatus,
   formatStatusDetails,
   toStatusDetailsFromBuild,
@@ -75,6 +79,7 @@ export async function runWait(options: WaitOptions): Promise<WaitResult> {
   const resolved = await resolveWaitTarget(options);
   const result = await waitForBuild({
     client: options.client,
+    env: options.env,
     jobUrl: resolved.jobUrl,
     jobLabel: resolved.jobLabel,
     buildUrl: resolved.buildUrl,
@@ -160,6 +165,7 @@ async function resolveWaitTarget(options: WaitOptions): Promise<{
 
 export async function waitForBuild(options: {
   client: JenkinsClient;
+  env?: EnvConfig;
   jobUrl?: string;
   jobLabel: string;
   buildUrl?: string;
@@ -190,6 +196,11 @@ export async function waitForBuild(options: {
   let queueUrl = options.queueUrl;
   let baselineBuildNumber: number | undefined;
   let targetBuildNumber: number | undefined;
+  let knownTotalStages = await getKnownStageTotal({
+    env: options.env,
+    jobUrl: options.jobUrl,
+    buildUrl,
+  });
 
   try {
     if (!buildUrl && !queueUrl && options.jobUrl) {
@@ -200,11 +211,23 @@ export async function waitForBuild(options: {
           statusSpinner.stop("Build already completed.");
         }
         const finalBuildUrl = initialStatus.lastBuildUrl || options.jobUrl;
+        const resolvedTotalStages =
+          initialStatus.stages?.length || knownTotalStages;
+        if (initialStatus.result === "SUCCESS") {
+          await persistKnownTotalStages({
+            env: options.env,
+            jobUrl: options.jobUrl,
+            buildUrl: finalBuildUrl,
+            stages: initialStatus.stages,
+            jobLabel: options.jobLabel,
+          });
+        }
         printFinalJobStatus(
           options.jobLabel,
           initialStatus.lastBuildNumber,
           initialStatus,
           finalBuildUrl,
+          resolvedTotalStages,
         );
         return {
           result: initialStatus.result || "UNKNOWN",
@@ -212,9 +235,7 @@ export async function waitForBuild(options: {
           buildUrl: finalBuildUrl,
           durationMs: initialStatus.lastBuildDurationMs,
           queueTimeMs: initialStatus.queueTimeMs,
-          hadStageInfo: Boolean(
-            initialStatus.stage?.name || initialStatus.stage?.status,
-          ),
+          hadStageInfo: Boolean(initialStatus.stages?.length),
         };
       }
       if (initialStatus.building && initialStatus.lastBuildNumber) {
@@ -313,6 +334,13 @@ export async function waitForBuild(options: {
           buildUrl = queued.buildUrl;
           buildNumber = queued.buildNumber;
           queueUrl = undefined;
+          if (knownTotalStages === undefined) {
+            knownTotalStages = await getKnownStageTotal({
+              env: options.env,
+              jobUrl: options.jobUrl,
+              buildUrl,
+            });
+          }
           continue;
         }
         if (options.jobUrl) {
@@ -356,6 +384,7 @@ export async function waitForBuild(options: {
           status.buildNumber ?? buildNumber,
           currentResult,
           status,
+          knownTotalStages,
         );
         emitProgress({ spinnerInstance: statusSpinner, message });
         if (!status.building) {
@@ -363,7 +392,22 @@ export async function waitForBuild(options: {
             statusSpinner.stop("Build completed.");
           }
           const finalBuildUrl = status.buildUrl || buildUrl;
-          printFinalStatus(options.jobLabel, status, finalBuildUrl);
+          const resolvedTotalStages = status.stages?.length || knownTotalStages;
+          if (currentResult === "SUCCESS") {
+            await persistKnownTotalStages({
+              env: options.env,
+              jobUrl: options.jobUrl,
+              buildUrl: finalBuildUrl,
+              stages: status.stages,
+              jobLabel: options.jobLabel,
+            });
+          }
+          printFinalStatus(
+            options.jobLabel,
+            status,
+            finalBuildUrl,
+            resolvedTotalStages,
+          );
           return {
             result: currentResult,
             buildNumber: status.buildNumber ?? buildNumber,
@@ -371,7 +415,7 @@ export async function waitForBuild(options: {
             cancelIssued,
             durationMs: status.durationMs,
             queueTimeMs: status.queueTimeMs,
-            hadStageInfo: Boolean(status.stage?.name || status.stage?.status),
+            hadStageInfo: Boolean(status.stages?.length),
           };
         }
       } else if (options.jobUrl) {
@@ -392,6 +436,13 @@ export async function waitForBuild(options: {
           typeof targetBuildNumber === "number" &&
           currentNumber === targetBuildNumber
         ) {
+          if (knownTotalStages === undefined) {
+            knownTotalStages = await getKnownStageTotal({
+              env: options.env,
+              jobUrl: options.jobUrl,
+              buildUrl: status.lastBuildUrl,
+            });
+          }
           const currentResult = status.building
             ? "RUNNING"
             : status.result || "UNKNOWN";
@@ -400,6 +451,7 @@ export async function waitForBuild(options: {
             currentNumber,
             currentResult,
             status,
+            knownTotalStages,
           );
           emitProgress({ spinnerInstance: statusSpinner, message });
           if (!status.building) {
@@ -407,11 +459,23 @@ export async function waitForBuild(options: {
               statusSpinner.stop("Build completed.");
             }
             const finalBuildUrl = status.lastBuildUrl || options.jobUrl;
+            const resolvedTotalStages =
+              status.stages?.length || knownTotalStages;
+            if (currentResult === "SUCCESS") {
+              await persistKnownTotalStages({
+                env: options.env,
+                jobUrl: options.jobUrl,
+                buildUrl: finalBuildUrl,
+                stages: status.stages,
+                jobLabel: options.jobLabel,
+              });
+            }
             printFinalJobStatus(
               options.jobLabel,
               currentNumber,
               status,
               finalBuildUrl,
+              resolvedTotalStages,
             );
             return {
               result: currentResult,
@@ -420,7 +484,7 @@ export async function waitForBuild(options: {
               cancelIssued,
               durationMs: status.lastBuildDurationMs,
               queueTimeMs: status.queueTimeMs,
-              hadStageInfo: Boolean(status.stage?.name || status.stage?.status),
+              hadStageInfo: Boolean(status.stages?.length),
             };
           }
         } else {
@@ -471,11 +535,12 @@ function formatBuildProgress(
   buildNumber: number | undefined,
   result: string,
   status: BuildStatus,
+  knownTotalStages?: number,
 ): string {
   return `${jobLabel}: ${formatCompactStatus({
     buildNumber,
     result,
-    status: toStatusDetailsFromBuild(status),
+    status: toStatusDetailsFromBuild(status, { knownTotalStages }),
   })}`;
 }
 
@@ -484,11 +549,12 @@ function formatJobProgress(
   buildNumber: number,
   result: string,
   status: JobStatus,
+  knownTotalStages?: number,
 ): string {
   return `${jobLabel}: ${formatCompactStatus({
     buildNumber,
     result,
-    status: toStatusDetailsFromJob(status),
+    status: toStatusDetailsFromJob(status, { knownTotalStages }),
   })}`;
 }
 
@@ -496,13 +562,14 @@ function printFinalStatus(
   jobLabel: string,
   status: BuildStatus,
   buildUrl: string,
+  knownTotalStages?: number,
 ): void {
   const result = status.result || "UNKNOWN";
   const buildNumberText =
     typeof status.buildNumber === "number" ? ` #${status.buildNumber}` : "";
   const summary = `Build for ${jobLabel}${buildNumberText}: ${result}`;
   const details = formatStatusDetails(
-    toStatusDetailsFromBuild(status),
+    toStatusDetailsFromBuild(status, { knownTotalStages }),
     buildUrl,
   );
   printOk(details ? `${summary}\n${details}` : summary);
@@ -513,11 +580,35 @@ function printFinalJobStatus(
   buildNumber: number,
   status: JobStatus,
   buildUrl: string,
+  knownTotalStages?: number,
 ): void {
   const result = status.result || "UNKNOWN";
   const summary = `Build for ${jobLabel} #${buildNumber}: ${result}`;
-  const details = formatStatusDetails(toStatusDetailsFromJob(status), buildUrl);
+  const details = formatStatusDetails(
+    toStatusDetailsFromJob(status, { knownTotalStages }),
+    buildUrl,
+  );
   printOk(details ? `${summary}\n${details}` : summary);
+}
+
+async function persistKnownTotalStages(options: {
+  env?: EnvConfig;
+  jobUrl?: string;
+  buildUrl?: string;
+  stages?: BuildStatus["stages"] | JobStatus["stages"];
+  jobLabel: string;
+}): Promise<void> {
+  try {
+    await recordKnownStageTotal({
+      env: options.env,
+      jobUrl: options.jobUrl,
+      buildUrl: options.buildUrl,
+      totalStages: options.stages?.length,
+      jobName: options.jobLabel,
+    });
+  } catch {
+    // Ignore stage cache write failures while printing status.
+  }
 }
 
 function formatDuration(durationMs: number): string {
