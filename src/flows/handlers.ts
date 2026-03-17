@@ -83,7 +83,7 @@ function selectJobHandler({
   const value = getPromptSelectionValue(input);
   const search = getPromptSearchValue(input);
   if (typeof search === "string") {
-    context.searchQuery = search;
+    context.searchQuery = search.trim();
   }
   if (value === SEARCH_AGAIN_VALUE) {
     return "select:search_again";
