@@ -213,7 +213,10 @@ export async function waitForBuild(options: {
         const finalBuildUrl = initialStatus.lastBuildUrl || options.jobUrl;
         const resolvedTotalStages =
           initialStatus.stages?.length || knownTotalStages;
-        if (initialStatus.result === "SUCCESS") {
+        if (
+          initialStatus.result === "SUCCESS" ||
+          initialStatus.result === "UNSTABLE"
+        ) {
           await persistKnownTotalStages({
             env: options.env,
             jobUrl: options.jobUrl,
@@ -393,7 +396,7 @@ export async function waitForBuild(options: {
           }
           const finalBuildUrl = status.buildUrl || buildUrl;
           const resolvedTotalStages = status.stages?.length || knownTotalStages;
-          if (currentResult === "SUCCESS") {
+          if (currentResult === "SUCCESS" || currentResult === "UNSTABLE") {
             await persistKnownTotalStages({
               env: options.env,
               jobUrl: options.jobUrl,
@@ -461,7 +464,7 @@ export async function waitForBuild(options: {
             const finalBuildUrl = status.lastBuildUrl || options.jobUrl;
             const resolvedTotalStages =
               status.stages?.length || knownTotalStages;
-            if (currentResult === "SUCCESS") {
+            if (currentResult === "SUCCESS" || currentResult === "UNSTABLE") {
               await persistKnownTotalStages({
                 env: options.env,
                 jobUrl: options.jobUrl,

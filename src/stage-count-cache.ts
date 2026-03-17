@@ -1,5 +1,5 @@
 import type { EnvConfig } from "./env";
-import { readJobCache, writeJobCache } from "./jobs";
+import { readJobCache, writeJobCache, type JobCache } from "./jobs";
 
 export async function getKnownStageTotal(options: {
   env?: EnvConfig;
@@ -42,13 +42,22 @@ export async function recordKnownStageTotal(options: {
     return;
   }
   const cache = await readJobCache(options.env);
-  if (!cache || !cacheMatchesEnv(cache, options.env)) {
+  if (cache && !cacheMatchesEnv(cache, options.env)) {
     return;
   }
+  const baseCache: JobCache =
+    cache ??
+    ({
+      jenkinsUrl: options.env.jenkinsUrl,
+      user: options.env.jenkinsUser,
+      fetchedAt: new Date().toISOString(),
+      jobs: [],
+      knownStageTotals: {},
+    } satisfies JobCache);
   const newCache = {
-    ...cache,
+    ...baseCache,
     knownStageTotals: {
-      ...cache.knownStageTotals,
+      ...baseCache.knownStageTotals,
       [jobUrl]: {
         totalStages: options.totalStages,
         updatedAt: new Date().toISOString(),

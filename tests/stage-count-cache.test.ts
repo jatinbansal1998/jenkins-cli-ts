@@ -100,6 +100,36 @@ describe("stage count cache", () => {
     ).toBe(2);
   });
 
+  test("recordKnownStageTotal creates a cache entry when no cache exists yet", async () => {
+    spyOn(jobsModule, "readJobCache").mockResolvedValue(null);
+    const writeJobCacheSpy = spyOn(
+      jobsModule,
+      "writeJobCache",
+    ).mockResolvedValue();
+
+    await stageCountCacheModule.recordKnownStageTotal({
+      env,
+      jobUrl: "https://jenkins.example.com/job/demo/",
+      totalStages: 4,
+      jobName: "demo",
+    });
+
+    expect(writeJobCacheSpy).toHaveBeenCalledTimes(1);
+    expect(writeJobCacheSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        jenkinsUrl: env.jenkinsUrl,
+        user: env.jenkinsUser,
+        jobs: [],
+        knownStageTotals: {
+          "https://jenkins.example.com/job/demo/": expect.objectContaining({
+            totalStages: 4,
+            jobName: "demo",
+          }),
+        },
+      }),
+    );
+  });
+
   test("resolveStageCacheJobUrl normalizes explicit and derived URLs", () => {
     expect(
       stageCountCacheModule.resolveStageCacheJobUrl({

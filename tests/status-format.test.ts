@@ -57,6 +57,23 @@ describe("status formatting", () => {
     expect(message).toContain("[2/2] Declarative: Post Actions (SUCCESS)");
   });
 
+  test("ignores skipped trailing stages when choosing the last executed stage", () => {
+    const message = formatCompactStatus({
+      buildNumber: 696,
+      result: "SUCCESS",
+      status: {
+        durationMs: 32_000,
+        stages: [
+          { id: "1", name: "Build", status: "SUCCESS" },
+          { id: "2", name: "Deploy", status: "SKIPPED_FOR_CONDITIONAL" },
+        ],
+      },
+    });
+
+    expect(message).toContain("[1/2] Build (SUCCESS)");
+    expect(message).not.toContain("Deploy");
+  });
+
   test("formats stage details with a single label", () => {
     const message = formatStatusDetails(
       {

@@ -222,7 +222,7 @@ describe("job cache refresh", () => {
       client: {
         listJobs: mock(async () => refreshedJobs),
       } as unknown as JenkinsClient,
-      env,
+      env: loadEnv,
       refresh: true,
       nonInteractive: true,
     });

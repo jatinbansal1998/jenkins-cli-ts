@@ -265,12 +265,18 @@ function resolveStageDisplay(stages: JenkinsPipelineStage[] | undefined): {
     };
   }
 
-  const completedStageCount = stages.filter((stage) =>
-    isTerminalStageStatus(stage.status),
+  const executedStages = stages.filter((stage) =>
+    isExecutedStageStatus(stage.status),
+  );
+  const completedStageCount = executedStages.filter((stage) =>
+    isCompletedStageStatus(stage.status),
   ).length;
   const lastStage =
-    stages.findLast((stage) => Boolean(stage.name || stage.status)) ??
-    stages.at(-1);
+    executedStages.findLast((stage) => Boolean(stage.name || stage.status)) ??
+    executedStages.at(-1);
+  if (!lastStage) {
+    return {};
+  }
   return {
     stage: lastStage,
     stageNumber:
@@ -286,17 +292,19 @@ function isActiveStageStatus(status: string | undefined): boolean {
   return normalized === "IN_PROGRESS" || normalized === "PAUSED_PENDING_INPUT";
 }
 
-function isTerminalStageStatus(status: string | undefined): boolean {
+function isCompletedStageStatus(status: string | undefined): boolean {
   const normalized = (status ?? "").trim().toUpperCase();
   return (
     normalized === "SUCCESS" ||
     normalized === "UNSTABLE" ||
     normalized === "FAILED" ||
     normalized === "FAILURE" ||
-    normalized === "ABORTED" ||
-    normalized === "NOT_EXECUTED" ||
-    normalized === "SKIPPED_FOR_CONDITIONAL"
+    normalized === "ABORTED"
   );
+}
+
+function isExecutedStageStatus(status: string | undefined): boolean {
+  return isActiveStageStatus(status) || isCompletedStageStatus(status);
 }
 
 function resolveKnownTotalStages(options: {

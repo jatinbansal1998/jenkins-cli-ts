@@ -11,10 +11,19 @@ import { CliError } from "../src/cli";
 import type { EnvConfig } from "../src/env";
 import type { JenkinsClient } from "../src/jenkins/client";
 import { runWait, waitForBuild } from "../src/commands/wait";
+import * as stageCountCacheModule from "../src/stage-count-cache";
 
 function createClient(stubs: Partial<JenkinsClient>): JenkinsClient {
   return stubs as JenkinsClient;
 }
+
+const env: EnvConfig = {
+  jenkinsUrl: "https://jenkins.example.com",
+  jenkinsUser: "ci-user",
+  jenkinsApiToken: "test-token",
+  branchParamDefault: "BRANCH",
+  useCrumb: false,
+};
 
 describe("wait command", () => {
   const originalExitCode = process.exitCode;
@@ -30,13 +39,18 @@ describe("wait command", () => {
   });
 
   test("waitForBuild returns immediately when latest build is already complete", async () => {
+    const persistKnownTotalStagesSpy = spyOn(
+      stageCountCacheModule,
+      "persistKnownTotalStages",
+    ).mockResolvedValue();
     const getJobStatus = mock(async () => ({
       lastBuildNumber: 42,
       lastBuildUrl: "https://jenkins.example.com/job/api/42/",
-      result: "SUCCESS",
+      result: "UNSTABLE",
       building: false,
       lastBuildTimestamp: 1700000000000,
       lastBuildDurationMs: 25_000,
+      stages: [{ id: "1", name: "Deploy", status: "UNSTABLE" }],
     }));
     const getBuildStatus = mock(async () => {
       throw new Error("should not fetch build status for completed build");
@@ -55,12 +69,13 @@ describe("wait command", () => {
     });
 
     expect(result).toMatchObject({
-      result: "SUCCESS",
+      result: "UNSTABLE",
       buildNumber: 42,
       buildUrl: "https://jenkins.example.com/job/api/42/",
     });
     expect(getJobStatus).toHaveBeenCalledTimes(1);
     expect(getBuildStatus).toHaveBeenCalledTimes(0);
+    expect(persistKnownTotalStagesSpy).toHaveBeenCalledTimes(1);
   });
 
   test("waitForBuild falls back from queue lookup to job/build status", async () => {
@@ -132,6 +147,48 @@ describe("wait command", () => {
     });
     expect(process.exitCode).toBe(0);
     expect(getBuildStatus).toHaveBeenCalledTimes(1);
+  });
+
+  test("waitForBuild persists stage totals for unstable build results", async () => {
+    const persistKnownTotalStagesSpy = spyOn(
+      stageCountCacheModule,
+      "persistKnownTotalStages",
+    ).mockResolvedValue();
+    const getBuildStatus = mock(async () => ({
+      buildNumber: 9,
+      buildUrl: "https://jenkins.example.com/job/api/9/",
+      result: "UNSTABLE",
+      building: false,
+      timestampMs: 1700000000000,
+      durationMs: 5_000,
+      stages: [{ id: "1", name: "Deploy", status: "UNSTABLE" }],
+    }));
+
+    const result = await waitForBuild({
+      client: createClient({
+        getBuildStatus,
+      }),
+      env,
+      buildUrl: "https://jenkins.example.com/job/api/9/",
+      jobUrl: "https://jenkins.example.com/job/api/",
+      jobLabel: "api",
+      intervalMs: 1,
+      nonInteractive: true,
+    });
+
+    expect(result).toMatchObject({
+      result: "UNSTABLE",
+      buildNumber: 9,
+      buildUrl: "https://jenkins.example.com/job/api/9/",
+    });
+    expect(persistKnownTotalStagesSpy).toHaveBeenCalledTimes(1);
+    expect(persistKnownTotalStagesSpy).toHaveBeenCalledWith({
+      env,
+      jobUrl: "https://jenkins.example.com/job/api/",
+      buildUrl: "https://jenkins.example.com/job/api/9/",
+      stages: [{ id: "1", name: "Deploy", status: "UNSTABLE" }],
+      jobLabel: "api",
+    });
   });
 
   test("waitForBuild can cancel the watched build directly with C", async () => {

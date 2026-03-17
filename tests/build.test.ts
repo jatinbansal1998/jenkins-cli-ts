@@ -7,20 +7,31 @@ import {
   spyOn,
   test,
 } from "bun:test";
+import * as clack from "../src/clack";
 import type { EnvConfig } from "../src/env";
 import { BUILD_WITHOUT_PARAMS_VALUE } from "../src/flows/constants";
 import type { JenkinsClient } from "../src/jenkins/client";
 import { runBuild, setBuildDepsForTesting } from "../src/commands/build";
 
 const confirmMock = mock(async () => false);
-const selectMock = mock(async () => "done");
+const selectMock = mock(async (..._args: unknown[]) => "done");
 const textMock = mock(async () => "");
-const isCancelMock = mock(() => false);
-const spinnerMock = mock(() => ({
+const isCancelMock = mock((..._args: unknown[]) => false);
+const spinnerMock = mock((..._args: unknown[]) => ({
   start: () => undefined,
   stop: () => undefined,
   message: () => undefined,
+  cancel: () => undefined,
+  error: () => undefined,
+  clear: () => undefined,
+  isCancelled: false,
 }));
+const selectPrompt = ((options: Parameters<typeof clack.select>[0]) =>
+  selectMock(options)) as typeof clack.select;
+const isCancelPrompt = ((value: unknown): value is symbol =>
+  Boolean(isCancelMock(value))) as typeof clack.isCancel;
+const spinnerPrompt = ((options?: Parameters<typeof clack.spinner>[0]) =>
+  spinnerMock(options)) as typeof clack.spinner;
 
 const runCancelMock = mock(async (..._args: unknown[]) => undefined);
 const runHistoryMock = mock(async () => ({}));
@@ -57,6 +68,10 @@ describe("build command", () => {
       start: () => undefined,
       stop: () => undefined,
       message: () => undefined,
+      cancel: () => undefined,
+      error: () => undefined,
+      clear: () => undefined,
+      isCancelled: false,
     }));
 
     runCancelMock.mockReset();
@@ -73,10 +88,10 @@ describe("build command", () => {
 
     setBuildDepsForTesting({
       confirm: confirmMock,
-      select: selectMock,
+      select: selectPrompt,
       text: textMock,
-      isCancel: isCancelMock,
-      spinner: spinnerMock,
+      isCancel: isCancelPrompt,
+      spinner: spinnerPrompt,
       runCancel: runCancelMock,
       runHistory: runHistoryMock,
       runLogs: runLogsMock,
