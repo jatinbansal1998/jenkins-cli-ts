@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { formatCompactStatus, formatStatusDetails } from "../src/status-format";
 
 describe("status formatting", () => {
-  test("shows stage ordinal without a denominator when total is unknown", () => {
+  test("shows only stage content without an ordinal when total is unknown", () => {
     const message = formatCompactStatus({
       buildNumber: 417,
       result: "RUNNING",
@@ -17,7 +17,7 @@ describe("status formatting", () => {
       },
     });
 
-    expect(message).toContain("#417 | RUNNING | 2: Maven Build (IN_PROGRESS)");
+    expect(message).toContain("#417 | RUNNING | Maven Build (IN_PROGRESS)");
   });
 
   test("shows cached total stages for running builds when known", () => {
@@ -88,6 +88,7 @@ describe("status formatting", () => {
 
     expect(message).toContain("Stage:");
     expect(message).not.toContain("Stage: Stage:");
-    expect(message).toContain("2: Maven Build (IN_PROGRESS)");
+    expect(message).toContain("Maven Build (IN_PROGRESS)");
+    expect(message).not.toContain("Stage: 2:");
   });
 });

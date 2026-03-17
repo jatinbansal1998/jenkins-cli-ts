@@ -224,9 +224,6 @@ function formatStageText(options: {
     ) {
       return `[${stageDisplay.stageNumber}/${knownTotalStages}] ${stageDisplay.stage.name}${stageStatus}`;
     }
-    if (typeof stageDisplay.stageNumber === "number") {
-      return `${stageDisplay.stageNumber}: ${stageDisplay.stage.name}${stageStatus}`;
-    }
     return `${stageDisplay.stage.name}${stageStatus}`;
   }
 
