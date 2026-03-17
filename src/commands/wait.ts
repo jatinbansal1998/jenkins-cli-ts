@@ -6,7 +6,7 @@ import type { JenkinsClient } from "../jenkins/api-wrapper";
 import type { BuildStatus, JobStatus } from "../types/jenkins";
 import {
   getKnownStageTotal,
-  recordKnownStageTotal,
+  persistKnownTotalStages,
 } from "../stage-count-cache";
 import {
   formatCompactStatus,
@@ -589,26 +589,6 @@ function printFinalJobStatus(
     buildUrl,
   );
   printOk(details ? `${summary}\n${details}` : summary);
-}
-
-async function persistKnownTotalStages(options: {
-  env?: EnvConfig;
-  jobUrl?: string;
-  buildUrl?: string;
-  stages?: BuildStatus["stages"] | JobStatus["stages"];
-  jobLabel: string;
-}): Promise<void> {
-  try {
-    await recordKnownStageTotal({
-      env: options.env,
-      jobUrl: options.jobUrl,
-      buildUrl: options.buildUrl,
-      totalStages: options.stages?.length,
-      jobName: options.jobLabel,
-    });
-  } catch {
-    // Ignore stage cache write failures while printing status.
-  }
 }
 
 function formatDuration(durationMs: number): string {

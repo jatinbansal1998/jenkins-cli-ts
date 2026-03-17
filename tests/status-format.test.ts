@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { formatCompactStatus } from "../src/status-format";
+import { formatCompactStatus, formatStatusDetails } from "../src/status-format";
 
 describe("status formatting", () => {
   test("shows stage ordinal without a denominator when total is unknown", () => {
@@ -17,9 +17,7 @@ describe("status formatting", () => {
       },
     });
 
-    expect(message).toContain(
-      "#417 | RUNNING | Stage 2: Maven Build (IN_PROGRESS)",
-    );
+    expect(message).toContain("#417 | RUNNING | 2: Maven Build (IN_PROGRESS)");
   });
 
   test("shows cached total stages for running builds when known", () => {
@@ -39,7 +37,7 @@ describe("status formatting", () => {
     });
 
     expect(message).toContain(
-      "#421 | RUNNING | Stage: [2/10] Cloning Tools (IN_PROGRESS)",
+      "#421 | RUNNING | [2/10] Cloning Tools (IN_PROGRESS)",
     );
   });
 
@@ -57,5 +55,22 @@ describe("status formatting", () => {
     });
 
     expect(message).toContain("[2/2] Declarative: Post Actions (SUCCESS)");
+  });
+
+  test("formats stage details with a single label", () => {
+    const message = formatStatusDetails(
+      {
+        building: true,
+        stages: [
+          { id: "9", name: "Checkout", status: "SUCCESS" },
+          { id: "22", name: "Maven Build", status: "IN_PROGRESS" },
+        ],
+      },
+      "https://jenkins.example/job/demo/417/",
+    );
+
+    expect(message).toContain("Stage:");
+    expect(message).not.toContain("Stage: Stage:");
+    expect(message).toContain("2: Maven Build (IN_PROGRESS)");
   });
 });

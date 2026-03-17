@@ -222,12 +222,12 @@ function formatStageText(options: {
       typeof knownTotalStages === "number" &&
       knownTotalStages > 1
     ) {
-      return `Stage: [${stageDisplay.stageNumber}/${knownTotalStages}] ${stageDisplay.stage.name}${stageStatus}`;
+      return `[${stageDisplay.stageNumber}/${knownTotalStages}] ${stageDisplay.stage.name}${stageStatus}`;
     }
     if (typeof stageDisplay.stageNumber === "number") {
-      return `Stage ${stageDisplay.stageNumber}: ${stageDisplay.stage.name}${stageStatus}`;
+      return `${stageDisplay.stageNumber}: ${stageDisplay.stage.name}${stageStatus}`;
     }
-    return `Stage: ${stageDisplay.stage.name}${stageStatus}`;
+    return `${stageDisplay.stage.name}${stageStatus}`;
   }
 
   const totalStages =

@@ -45,26 +45,49 @@ export async function recordKnownStageTotal(options: {
   if (!cache || !cacheMatchesEnv(cache, options.env)) {
     return;
   }
-  cache.knownStageTotals = {
-    ...cache.knownStageTotals,
-    [jobUrl]: {
-      totalStages: options.totalStages,
-      updatedAt: new Date().toISOString(),
-      ...(options.jobName ? { jobName: options.jobName } : {}),
+  const newCache = {
+    ...cache,
+    knownStageTotals: {
+      ...cache.knownStageTotals,
+      [jobUrl]: {
+        totalStages: options.totalStages,
+        updatedAt: new Date().toISOString(),
+        ...(options.jobName ? { jobName: options.jobName } : {}),
+      },
     },
   };
-  await writeJobCache(cache);
+  await writeJobCache(newCache);
+}
+
+export async function persistKnownTotalStages(options: {
+  env?: EnvConfig;
+  jobUrl?: string;
+  buildUrl?: string;
+  stages?: { length?: number };
+  jobLabel: string;
+}): Promise<void> {
+  try {
+    await recordKnownStageTotal({
+      env: options.env,
+      jobUrl: options.jobUrl,
+      buildUrl: options.buildUrl,
+      totalStages: options.stages?.length,
+      jobName: options.jobLabel,
+    });
+  } catch {
+    // Ignore stage cache write failures for status output.
+  }
 }
 
 export function resolveStageCacheJobUrl(options: {
   jobUrl?: string;
   buildUrl?: string;
 }): string | undefined {
-  const explicitJobUrl = normalizeUrl(options.jobUrl);
+  const explicitJobUrl = normalizeStageUrl(options.jobUrl);
   if (explicitJobUrl) {
     return explicitJobUrl;
   }
-  const buildUrl = normalizeUrl(options.buildUrl);
+  const buildUrl = normalizeStageUrl(options.buildUrl);
   if (!buildUrl) {
     return undefined;
   }
@@ -84,7 +107,7 @@ export function resolveStageCacheJobUrl(options: {
   }
 }
 
-function normalizeUrl(value: string | undefined): string | undefined {
+function normalizeStageUrl(value: string | undefined): string | undefined {
   if (typeof value !== "string") {
     return undefined;
   }

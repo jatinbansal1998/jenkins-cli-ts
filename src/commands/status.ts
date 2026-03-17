@@ -13,7 +13,7 @@ import { runRerun, runRerunLastBuild } from "./rerun";
 import { runWait } from "./wait";
 import {
   getKnownStageTotal,
-  recordKnownStageTotal,
+  persistKnownTotalStages,
 } from "../stage-count-cache";
 import {
   formatStatusDetails,
@@ -176,12 +176,12 @@ export async function runStatus(options: StatusOptions): Promise<void> {
         url,
       );
       printOk(details ? `${summary}\n${details}` : summary);
-      if (!status.building && result === "SUCCESS") {
+      if (!status.building && (result === "SUCCESS" || result === "UNSTABLE")) {
         await persistKnownTotalStages({
           env: options.env,
           jobUrl: target.jobUrl,
           buildUrl: url,
-          totalStages: status.stages?.length,
+          stages: status.stages,
           jobLabel: target.jobLabel,
         });
       }
@@ -411,12 +411,12 @@ async function runStatusOnce(options: StatusOptions): Promise<void> {
     url,
   );
   printOk(details ? `${summary}\n${details}` : summary);
-  if (!status.building && result === "SUCCESS") {
+  if (!status.building && (result === "SUCCESS" || result === "UNSTABLE")) {
     await persistKnownTotalStages({
       env: options.env,
       jobUrl,
       buildUrl: url,
-      totalStages: status.stages?.length,
+      stages: status.stages,
       jobLabel,
     });
   }
@@ -437,26 +437,6 @@ async function runTrackedStatusAction<T>(
   action: () => Promise<T>,
 ): Promise<T> {
   return await runInteractiveSubcommandWithAnalytics(command, action);
-}
-
-async function persistKnownTotalStages(options: {
-  env: EnvConfig;
-  jobUrl?: string;
-  buildUrl?: string;
-  totalStages?: number;
-  jobLabel: string;
-}): Promise<void> {
-  try {
-    await recordKnownStageTotal({
-      env: options.env,
-      jobUrl: options.jobUrl,
-      buildUrl: options.buildUrl,
-      totalStages: options.totalStages,
-      jobName: options.jobLabel,
-    });
-  } catch {
-    // Ignore stage cache write failures for status output.
-  }
 }
 
 async function promptForJobSelection(

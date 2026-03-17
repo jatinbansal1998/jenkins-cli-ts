@@ -24,12 +24,11 @@ import {
 import { loadRecentJobs, recordRecentJob } from "../recent-jobs.ts";
 import type { EnvConfig } from "../env";
 import type { JenkinsClient } from "../jenkins/api-wrapper";
-import type { BuildStatus, JobStatus } from "../types/jenkins";
 import { getJobDisplayName, loadJobs, resolveJobMatch } from "../jobs";
 import { notifyBuildComplete } from "../notify";
 import {
   getKnownStageTotal,
-  recordKnownStageTotal,
+  persistKnownTotalStages,
 } from "../stage-count-cache";
 import { runCancel } from "./cancel";
 import { runHistory } from "./history";
@@ -40,6 +39,8 @@ import {
   formatStatusDetails,
   formatStatusSummary,
   type StatusDetails,
+  toStatusDetailsFromBuild,
+  toStatusDetailsFromJob,
 } from "../status-format";
 import {
   createWatchControlSignal,
@@ -1001,7 +1002,7 @@ async function watchBuildStatus(options: {
       if (buildUrl) {
         const status = await options.client.getBuildStatus(buildUrl);
         const result = status.building ? "RUNNING" : status.result || "UNKNOWN";
-        const details = toStatusDetailsFromBuild(status, knownTotalStages);
+        const details = toStatusDetailsFromBuild(status, { knownTotalStages });
         const message = formatWatchMessage({
           jobLabel: options.jobLabel,
           buildNumber: status.buildNumber ?? buildNumber,
@@ -1024,7 +1025,7 @@ async function watchBuildStatus(options: {
               env: options.env,
               jobUrl: options.jobUrl,
               buildUrl: url,
-              totalStages: status.stages?.length,
+              stages: status.stages,
               jobLabel: options.jobLabel,
             });
           }
@@ -1107,7 +1108,7 @@ async function watchBuildStatus(options: {
           const result = status.building
             ? "RUNNING"
             : status.result || "UNKNOWN";
-          const details = toStatusDetailsFromJob(status, knownTotalStages);
+          const details = toStatusDetailsFromJob(status, { knownTotalStages });
           const message = formatWatchMessage({
             jobLabel: options.jobLabel,
             buildNumber: currentNumber,
@@ -1130,7 +1131,7 @@ async function watchBuildStatus(options: {
                 env: options.env,
                 jobUrl: options.jobUrl,
                 buildUrl: url,
-                totalStages: status.stages?.length,
+                stages: status.stages,
                 jobLabel: options.jobLabel,
               });
             }
@@ -1243,58 +1244,6 @@ function formatNotificationMessage(options: {
       ? `Build #${options.buildNumber} ${options.result}`
       : `Build ${options.result}`;
   return options.jobLabel ? `${base} (${options.jobLabel})` : base;
-}
-
-function toStatusDetailsFromBuild(
-  status: BuildStatus,
-  knownTotalStages?: number,
-): StatusDetails {
-  return {
-    building: status.building,
-    timestampMs: status.timestampMs,
-    durationMs: status.durationMs,
-    estimatedDurationMs: status.estimatedDurationMs,
-    queueTimeMs: status.queueTimeMs,
-    parameters: status.parameters,
-    stages: status.stages,
-    knownTotalStages,
-  };
-}
-
-function toStatusDetailsFromJob(
-  status: JobStatus,
-  knownTotalStages?: number,
-): StatusDetails {
-  return {
-    building: status.building,
-    timestampMs: status.lastBuildTimestamp,
-    durationMs: status.lastBuildDurationMs,
-    estimatedDurationMs: status.lastBuildEstimatedDurationMs,
-    queueTimeMs: status.queueTimeMs,
-    parameters: status.parameters,
-    stages: status.stages,
-    knownTotalStages,
-  };
-}
-
-async function persistKnownTotalStages(options: {
-  env: EnvConfig;
-  jobUrl?: string;
-  buildUrl?: string;
-  totalStages?: number;
-  jobLabel: string;
-}): Promise<void> {
-  try {
-    await recordKnownStageTotal({
-      env: options.env,
-      jobUrl: options.jobUrl,
-      buildUrl: options.buildUrl,
-      totalStages: options.totalStages,
-      jobName: options.jobLabel,
-    });
-  } catch {
-    // Ignore stage cache write failures for watch output.
-  }
 }
 
 function formatDuration(durationMs: number): string {

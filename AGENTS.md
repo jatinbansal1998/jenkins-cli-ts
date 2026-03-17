@@ -36,6 +36,18 @@ test("hello world", () => {
 });
 ```
 
+## Validation
+
+After making code changes, always run the relevant validation commands before finishing:
+
+- `bun run format`
+- `bun run lint`
+- `bun run typecheck`
+- Relevant targeted tests with `bun test`
+- `bun run build` when the change could affect compilation or packaging
+
+If any of these fail, report the failure clearly and do not claim the work is fully validated.
+
 ## Frontend
 
 Use HTML imports with `Bun.serve()`. Don't use `vite`. HTML imports fully support React, CSS, Tailwind.

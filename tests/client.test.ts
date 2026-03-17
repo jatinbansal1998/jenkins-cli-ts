@@ -193,6 +193,89 @@ describe("JenkinsClient triggerBuild", () => {
   });
 });
 
+describe("JenkinsClient pipeline stage cloning", () => {
+  test("clones nested stage links before returning build history", async () => {
+    const pipelineData = {
+      stages: [
+        {
+          name: "Deploy",
+          status: "FAILED",
+          _links: {
+            self: {
+              href: "/job/my-job/102/execution/node/12/wfapi/describe",
+            },
+          },
+        },
+      ],
+    };
+
+    const fetchMock = mock(async (input: FetchInput, _init?: FetchInit) => {
+      const url = String(input);
+      if (
+        url ===
+        "https://jenkins.example.com/job/my-job/api/json?tree=builds[number,url,result,building,timestamp,duration,estimatedDuration,actions[parameters[name,value]]]"
+      ) {
+        return new Response(
+          JSON.stringify({
+            builds: [
+              {
+                number: 102,
+                url: "https://jenkins.example.com/job/my-job/102/",
+                result: "FAILURE",
+              },
+            ],
+          }),
+          { status: 200 },
+        );
+      }
+      if (url === "https://jenkins.example.com/job/my-job/102/wfapi/describe") {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => pipelineData,
+        } as Response;
+      }
+      if (
+        url ===
+        "https://jenkins.example.com/job/my-job/102/execution/node/12/wfapi/describe"
+      ) {
+        return new Response(
+          JSON.stringify({
+            name: "Deploy",
+            status: "FAILED",
+          }),
+          { status: 200 },
+        );
+      }
+      return new Response("", { status: 404 });
+    });
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+    const client = new JenkinsClient({
+      baseUrl: "https://jenkins.example.com",
+      user: "user",
+      apiToken: "token",
+      timeoutMs: 1_000,
+    });
+
+    const page = await client.listBuildHistory(
+      "https://jenkins.example.com/job/my-job/",
+      {
+        offset: 0,
+        limit: 1,
+      },
+    );
+
+    if (page.builds[0]?.stages?.[0]?._links?.self) {
+      page.builds[0].stages[0]._links.self.href = "/mutated";
+    }
+
+    expect(pipelineData.stages[0]?._links?.self?.href).toBe(
+      "/job/my-job/102/execution/node/12/wfapi/describe",
+    );
+  });
+});
+
 describe("JenkinsClient POST with crumb", () => {
   test("refreshes crumb and retries stopBuild when first attempt gets 403", async () => {
     let crumbRequestCount = 0;

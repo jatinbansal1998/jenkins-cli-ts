@@ -833,7 +833,20 @@ export class JenkinsClient {
         pauseDurationMillis: data.pauseDurationMillis,
         stages:
           Array.isArray(data.stages) && data.stages.length > 0
-            ? data.stages.map((stage) => ({ ...stage }))
+            ? data.stages.map((stage) => ({
+                ...stage,
+                _links: stage._links
+                  ? {
+                      ...stage._links,
+                      ...(stage._links.self
+                        ? { self: { ...stage._links.self } }
+                        : {}),
+                      ...(stage._links.log
+                        ? { log: { ...stage._links.log } }
+                        : {}),
+                    }
+                  : undefined,
+              }))
             : undefined,
         failure,
       };
