@@ -25,7 +25,6 @@ export async function recordKnownStageTotal(options: {
   jobUrl?: string;
   buildUrl?: string;
   totalStages?: number;
-  jobName?: string;
 }): Promise<void> {
   if (!options.env) {
     return;
@@ -61,7 +60,6 @@ export async function recordKnownStageTotal(options: {
       [jobUrl]: {
         totalStages: options.totalStages,
         updatedAt: new Date().toISOString(),
-        ...(options.jobName ? { jobName: options.jobName } : {}),
       },
     },
   };
@@ -81,7 +79,6 @@ export async function persistKnownTotalStages(options: {
       jobUrl: options.jobUrl,
       buildUrl: options.buildUrl,
       totalStages: options.stages?.length,
-      jobName: options.jobLabel,
     });
   } catch {
     // Ignore stage cache write failures for status output.

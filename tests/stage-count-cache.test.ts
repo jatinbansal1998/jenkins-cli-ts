@@ -38,7 +38,6 @@ describe("stage count cache", () => {
         "https://jenkins.example.com/job/demo/": {
           totalStages: 3,
           updatedAt: "2026-03-16T00:00:00.000Z",
-          jobName: "demo",
         },
       },
     };
@@ -54,7 +53,6 @@ describe("stage count cache", () => {
         env,
         jobUrl: " https://jenkins.example.com/job/demo/ ",
         totalStages: 5,
-        jobName: "demo",
       }),
     ).rejects.toThrow("write failed");
 
@@ -111,7 +109,6 @@ describe("stage count cache", () => {
       env,
       jobUrl: "https://jenkins.example.com/job/demo/",
       totalStages: 4,
-      jobName: "demo",
     });
 
     expect(writeJobCacheSpy).toHaveBeenCalledTimes(1);
@@ -123,7 +120,6 @@ describe("stage count cache", () => {
         knownStageTotals: {
           "https://jenkins.example.com/job/demo/": expect.objectContaining({
             totalStages: 4,
-            jobName: "demo",
           }),
         },
       }),

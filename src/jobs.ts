@@ -21,7 +21,6 @@ export type CachedJob = JenkinsJob & {
 export type CachedStageTotal = {
   totalStages: number;
   updatedAt: string;
-  jobName?: string;
 };
 
 export type JobCache = {
@@ -287,9 +286,6 @@ function normalizeKnownStageTotals(
     normalized[jobUrl] = {
       totalStages,
       updatedAt,
-      ...(typeof record.jobName === "string" && record.jobName.trim()
-        ? { jobName: record.jobName.trim() }
-        : {}),
     };
   }
   return Object.keys(normalized).length > 0 ? normalized : undefined;
