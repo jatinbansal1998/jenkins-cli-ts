@@ -39,6 +39,19 @@ function resolveValue<Ctx, T>(
   return value;
 }
 
+function isAutocompletePromptValue(
+  value: unknown,
+): value is AutocompletePromptValue {
+  return Boolean(
+    value &&
+      typeof value === "object" &&
+      "value" in value &&
+      "userInput" in value &&
+      typeof (value as AutocompletePromptValue).value === "string" &&
+      typeof (value as AutocompletePromptValue).userInput === "string",
+  );
+}
+
 async function resolvePromptValue<Ctx>(
   prompt: PromptSpec<Ctx>,
   context: Ctx,
@@ -108,6 +121,9 @@ async function resolvePromptValue<Ctx>(
     });
     if (prompts.isCancel(response)) {
       return ESC_SENTINEL;
+    }
+    if (isAutocompletePromptValue(response)) {
+      return response;
     }
     return {
       value: String(response),

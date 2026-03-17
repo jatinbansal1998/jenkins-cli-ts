@@ -8,6 +8,7 @@ import {
 import { SEARCH_ALL_JOBS_VALUE } from "../src/flows/constants";
 import { runFlow } from "../src/flows/runner";
 import type {
+  AutocompletePromptResult,
   BuildPreContext,
   BuildPostContext,
   ListInteractiveContext,
@@ -24,10 +25,13 @@ const TEST_ENV: EnvConfig = {
   useCrumb: false,
 };
 
-function createPromptAdapter(responses: unknown[]) {
+function createPromptAdapter(
+  responses: Array<AutocompletePromptResult | typeof CANCEL | unknown>,
+) {
   let cursor = 0;
   return {
-    autocomplete: async () => responses[cursor++],
+    autocomplete: async () =>
+      responses[cursor++] as AutocompletePromptResult,
     select: async () => responses[cursor++],
     confirm: async () => responses[cursor++],
     text: async () => responses[cursor++],

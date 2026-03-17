@@ -55,13 +55,14 @@ export async function runList(options: ListOptions): Promise<void> {
     return;
   }
 
-  const listAction = await runListActionMenu({
-    client: options.client,
-    env: options.env,
-    jobs,
-    searchQuery: options.search?.trim() ?? "",
-  });
-  if (listAction === "exit") {
+  if (
+    (await runListActionMenu({
+      client: options.client,
+      env: options.env,
+      jobs,
+      searchQuery: options.search?.trim() ?? "",
+    })) === "exit"
+  ) {
     return;
   }
 }
@@ -78,7 +79,7 @@ function getFilteredJobs(jobs: JenkinsJob[], search: string): JenkinsJob[] {
 
 async function runListActionMenu(
   options: ListActionMenuOptions & { searchQuery: string },
-): Promise<"search" | "exit"> {
+): Promise<"exit" | void> {
   const context: ListInteractiveContext = {
     env: options.env,
     jobs: options.jobs,
@@ -103,7 +104,6 @@ async function runListActionMenu(
   if (result.terminal === "exit_command") {
     return "exit";
   }
-  return "search";
 }
 
 async function confirmRefresh(

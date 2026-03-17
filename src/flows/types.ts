@@ -31,6 +31,9 @@ export type AutocompletePromptValue = {
 /** Primitive prompt values returned by the prompt adapter. */
 export type FlowPromptValue = string | boolean | AutocompletePromptValue;
 
+/** Autocomplete can also surface the prompt library's cancel token. */
+export type AutocompletePromptResult = FlowPromptValue | symbol;
+
 /** Select-option shape used by `select` prompts. */
 export type PromptOption = {
   value: string;
@@ -133,7 +136,7 @@ export type PromptAdapter = {
     validate?: (
       value: string | string[] | undefined,
     ) => string | Error | undefined;
-  }) => Promise<unknown>;
+  }) => Promise<AutocompletePromptResult>;
   confirm: (options: {
     message: string;
     initialValue?: boolean;

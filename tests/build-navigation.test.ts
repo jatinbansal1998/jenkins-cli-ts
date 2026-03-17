@@ -9,6 +9,7 @@ import {
   CUSTOM_MORE_CANCEL_VALUE,
   SEARCH_ALL_JOBS_VALUE,
 } from "../src/flows/constants";
+import type { FlowPromptValue } from "../src/flows/types";
 import type { JenkinsClient } from "../src/jenkins/client";
 import type { JenkinsJob } from "../src/types/jenkins";
 import { runBuild, setBuildDepsForTesting } from "../src/commands/build";
@@ -19,9 +20,19 @@ const JOB_URL = "https://jenkins.example.com/job/alpha/";
 const BUILD_URL = "https://jenkins.example.com/job/alpha/42/";
 const QUEUE_URL = "https://jenkins.example.com/queue/item/123/";
 
+function createAutocompleteSelection(userInput = "alpha") {
+  return {
+    value: JOB_URL,
+    userInput,
+  };
+}
+
 const confirmMock = mock(async () => false);
-const autocompleteMock = mock(async () => JOB_URL);
-const selectMock = mock(async () => "done");
+const autocompleteMock = mock(
+  async (): Promise<FlowPromptValue | typeof CANCEL> =>
+    createAutocompleteSelection(),
+);
+const selectMock = mock(async (): Promise<string | typeof CANCEL> => "done");
 const textMock = mock(async () => "");
 const isCancelMock = mock((value: unknown) => value === CANCEL);
 const spinnerMock = mock((..._args: unknown[]) => ({
@@ -65,10 +76,15 @@ describe("build command navigation", () => {
     confirmMock.mockImplementation(async () => false);
 
     autocompleteMock.mockReset();
-    autocompleteMock.mockImplementation(async () => JOB_URL);
+    autocompleteMock.mockImplementation(
+      async (): Promise<FlowPromptValue | typeof CANCEL> =>
+        createAutocompleteSelection(),
+    );
 
     selectMock.mockReset();
-    selectMock.mockImplementation(async () => "done");
+    selectMock.mockImplementation(
+      async (): Promise<string | typeof CANCEL> => "done",
+    );
 
     textMock.mockReset();
     textMock.mockImplementation(
@@ -240,6 +256,39 @@ describe("build command navigation", () => {
 
     expect(triggerBuild).toHaveBeenCalledTimes(1);
     expect(triggerBuild).toHaveBeenCalledWith(JOB_URL, {});
+  });
+
+  test("structured autocomplete payload preserves user input when returning to search", async () => {
+    loadRecentJobsMock.mockImplementationOnce(async () => []);
+    autocompleteMock
+      .mockImplementationOnce(async () => createAutocompleteSelection("alp"))
+      .mockImplementationOnce(async () => CANCEL);
+    selectMock.mockImplementationOnce(async () => CANCEL);
+
+    await runBuild({
+      client: createClient({
+        getJobStatus: mock(async () => ({ lastBuildNumber: 41 })),
+        triggerBuild: mock(async () => ({
+          buildUrl: BUILD_URL,
+          buildNumber: 42,
+          queueUrl: QUEUE_URL,
+          jobUrl: JOB_URL,
+        })),
+      }),
+      env: {} as EnvConfig,
+      nonInteractive: false,
+      watch: false,
+    });
+
+    const autocompleteCalls = autocompleteMock.mock.calls as unknown as Array<
+      Array<unknown>
+    >;
+    expect(autocompleteMock).toHaveBeenCalledTimes(2);
+    expect(autocompleteCalls[1]?.[0]).toEqual(
+      expect.objectContaining({
+        initialUserInput: "alp",
+      }),
+    );
   });
 
   test("interactive build with parameters retries on blank branch", async () => {

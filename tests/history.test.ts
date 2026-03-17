@@ -9,6 +9,7 @@ import {
 } from "bun:test";
 import * as clack from "../src/clack";
 import type { EnvConfig } from "../src/env";
+import type { FlowPromptValue } from "../src/flows/types";
 import type { JenkinsClient } from "../src/jenkins/client";
 import { runHistory, setHistoryDepsForTesting } from "../src/commands/history";
 
@@ -17,7 +18,9 @@ const NEXT_PAGE_VALUE = "__jenkins_cli_history_next__";
 const REBUILD_VALUE = "__jenkins_cli_history_rebuild__";
 const RERUN_LAST_VALUE = "__jenkins_cli_history_rerun_last__";
 
-const autocompleteMock = mock(async (): Promise<unknown> => CANCEL);
+const autocompleteMock = mock(
+  async (): Promise<FlowPromptValue | typeof CANCEL> => CANCEL,
+);
 const confirmMock = mock(async (): Promise<boolean> => false);
 const selectMock = mock(
   async (..._args: unknown[]): Promise<unknown> => CANCEL,
@@ -65,7 +68,9 @@ describe("runHistory", () => {
   beforeEach(() => {
     mock.clearAllMocks();
     autocompleteMock.mockReset();
-    autocompleteMock.mockImplementation(async (): Promise<unknown> => CANCEL);
+    autocompleteMock.mockImplementation(
+      async (): Promise<FlowPromptValue | typeof CANCEL> => CANCEL,
+    );
     confirmMock.mockReset();
     confirmMock.mockImplementation(async (): Promise<boolean> => false);
     selectMock.mockReset();
@@ -187,8 +192,12 @@ describe("runHistory", () => {
     } as unknown as JenkinsClient;
 
     selectMock
-      .mockImplementationOnce(async (): Promise<unknown> => NEXT_PAGE_VALUE)
-      .mockImplementationOnce(async (): Promise<unknown> => CANCEL);
+      .mockImplementationOnce(
+        async (): Promise<FlowPromptValue | typeof CANCEL> => NEXT_PAGE_VALUE,
+      )
+      .mockImplementationOnce(
+        async (): Promise<FlowPromptValue | typeof CANCEL> => CANCEL,
+      );
 
     await runHistory({
       client,
@@ -240,7 +249,8 @@ describe("runHistory", () => {
 
     selectMock
       .mockImplementationOnce(
-        async (): Promise<unknown> => "https://jenkins.example.com/job/api/57/",
+        async (): Promise<FlowPromptValue | typeof CANCEL> =>
+          "https://jenkins.example.com/job/api/57/",
       )
       .mockImplementationOnce(async (): Promise<unknown> => REBUILD_VALUE)
       .mockImplementationOnce(async (): Promise<unknown> => CANCEL);
@@ -298,7 +308,8 @@ describe("runHistory", () => {
 
     selectMock
       .mockImplementationOnce(
-        async (): Promise<unknown> => "https://jenkins.example.com/job/api/57/",
+        async (): Promise<FlowPromptValue | typeof CANCEL> =>
+          "https://jenkins.example.com/job/api/57/",
       )
       .mockImplementationOnce(async (): Promise<unknown> => RERUN_LAST_VALUE)
       .mockImplementationOnce(async (): Promise<unknown> => CANCEL);
@@ -350,7 +361,8 @@ describe("runHistory", () => {
 
     selectMock
       .mockImplementationOnce(
-        async (): Promise<unknown> => "https://jenkins.example.com/job/api/57/",
+        async (): Promise<FlowPromptValue | typeof CANCEL> =>
+          "https://jenkins.example.com/job/api/57/",
       )
       .mockImplementationOnce(async (): Promise<unknown> => REBUILD_VALUE)
       .mockImplementationOnce(async (): Promise<unknown> => "done")
@@ -402,7 +414,8 @@ describe("runHistory", () => {
 
     selectMock
       .mockImplementationOnce(
-        async (): Promise<unknown> => "https://jenkins.example.com/job/api/57/",
+        async (): Promise<FlowPromptValue | typeof CANCEL> =>
+          "https://jenkins.example.com/job/api/57/",
       )
       .mockImplementationOnce(async (): Promise<unknown> => REBUILD_VALUE)
       .mockImplementationOnce(async (): Promise<unknown> => "watch")
