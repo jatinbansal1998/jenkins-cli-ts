@@ -14,7 +14,10 @@ function isTerminalState(value: string): value is TerminalState {
 }
 
 function getStaticOptions<Ctx>(
-  options: PromptOption[] | ((context: Ctx) => PromptOption[]),
+  options:
+    | PromptOption[]
+    | ((context: Ctx) => PromptOption[])
+    | ((context: Ctx, search: string) => PromptOption[]),
 ): PromptOption[] | null {
   if (Array.isArray(options)) {
     return options;
@@ -42,7 +45,10 @@ export function validateFlowDefinition<Ctx>(
       );
     }
 
-    if (state.prompt?.kind === "select") {
+    if (
+      state.prompt?.kind === "select" ||
+      state.prompt?.kind === "autocomplete"
+    ) {
       const staticOptions = getStaticOptions(state.prompt.options);
       if (staticOptions) {
         const seen = new Set<string>();

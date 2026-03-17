@@ -19,6 +19,7 @@ const jobs: JenkinsJob[] = [
 ];
 
 const loadJobsMock = mock(async () => jobs);
+const autocompleteMock = mock(async () => EXIT_VALUE);
 const confirmMock = mock(() => true);
 const isCancelMock = mock(() => false);
 const selectMock = mock(async () => EXIT_VALUE);
@@ -35,6 +36,7 @@ const runRerunLastBuildMock = mock(async () => undefined);
 
 mock.module("../src/commands/list-deps", () => ({
   listDeps: {
+    autocomplete: autocompleteMock,
     confirm: confirmMock,
     isCancel: isCancelMock,
     select: selectMock,
@@ -46,6 +48,12 @@ mock.module("../src/commands/list-deps", () => ({
       entries
         .filter((job) => job.name.includes(query))
         .map((job) => ({ job, score: 100 })),
+    sortJobsByDisplayName: (entries: { name: string; fullName?: string }[]) =>
+      entries
+        .slice()
+        .sort((a, b) =>
+          (a.fullName || a.name).localeCompare(b.fullName || b.name),
+        ),
     runBuild: runBuildMock,
     runHistory: runHistoryMock,
     runStatus: runStatusMock,
@@ -64,6 +72,8 @@ describe("runList", () => {
     mock.clearAllMocks();
     loadJobsMock.mockReset();
     loadJobsMock.mockImplementation(async () => jobs);
+    autocompleteMock.mockReset();
+    autocompleteMock.mockImplementation(async () => EXIT_VALUE);
     confirmMock.mockReset();
     confirmMock.mockImplementation(() => true);
     isCancelMock.mockReset();
@@ -107,6 +117,7 @@ describe("runList", () => {
     });
 
     expect(textMock).toHaveBeenCalledTimes(0);
+    expect(autocompleteMock).toHaveBeenCalledTimes(0);
     expect(selectMock).toHaveBeenCalledTimes(0);
     expect(logSpy).toHaveBeenCalledTimes(1);
     expect(logSpy.mock.calls[0]?.[0]).toBe(
@@ -115,8 +126,10 @@ describe("runList", () => {
   });
 
   test("interactive uses initial search and exits from menu", async () => {
-    const logSpy = spyOn(console, "log");
-    selectMock.mockImplementationOnce(async () => EXIT_VALUE);
+    autocompleteMock.mockImplementationOnce(
+      async () => "https://jenkins.example.com/job/beta",
+    );
+    selectMock.mockImplementationOnce(async () => "exit");
 
     await runList({
       client: {} as JenkinsClient,
@@ -128,21 +141,24 @@ describe("runList", () => {
 
     expect(textMock).toHaveBeenCalledTimes(0);
     expect(selectMock).toHaveBeenCalledTimes(1);
-    expect(logSpy).toHaveBeenCalledTimes(1);
-    expect(logSpy.mock.calls[0]?.[0]).toBe(
-      "beta  https://jenkins.example.com/job/beta",
+    expect(autocompleteMock).toHaveBeenCalledTimes(1);
+    const autocompleteCalls = autocompleteMock.mock.calls as unknown as Array<
+      Array<unknown>
+    >;
+    expect(autocompleteCalls[0]?.[0]).toEqual(
+      expect.objectContaining({
+        initialUserInput: "beta",
+      }),
     );
   });
 
   test("interactive routes selected action to watch command", async () => {
-    const logSpy = spyOn(console, "log");
-    textMock
-      .mockImplementationOnce(async () => "alpha")
-      .mockImplementationOnce(async () => "q");
-    selectMock
+    autocompleteMock
       .mockImplementationOnce(
         async () => "https://jenkins.example.com/job/alpha",
       )
+      .mockImplementationOnce(async () => EXIT_VALUE);
+    selectMock
       .mockImplementationOnce(async () => "watch")
       .mockImplementationOnce(async () => "search");
 
@@ -159,19 +175,16 @@ describe("runList", () => {
         jobUrl: "https://jenkins.example.com/job/alpha",
       }),
     );
-    expect(logSpy).toHaveBeenCalledWith(
-      "alpha  https://jenkins.example.com/job/alpha",
-    );
+    expect(autocompleteMock).toHaveBeenCalledTimes(2);
   });
 
   test("interactive routes selected action to build history command", async () => {
-    textMock
-      .mockImplementationOnce(async () => "alpha")
-      .mockImplementationOnce(async () => "q");
-    selectMock
+    autocompleteMock
       .mockImplementationOnce(
         async () => "https://jenkins.example.com/job/alpha",
       )
+      .mockImplementationOnce(async () => EXIT_VALUE);
+    selectMock
       .mockImplementationOnce(async () => "history")
       .mockImplementationOnce(async () => "search");
 
@@ -191,13 +204,12 @@ describe("runList", () => {
   });
 
   test("interactive routes selected action to rerun last build", async () => {
-    textMock
-      .mockImplementationOnce(async () => "alpha")
-      .mockImplementationOnce(async () => "q");
-    selectMock
+    autocompleteMock
       .mockImplementationOnce(
         async () => "https://jenkins.example.com/job/alpha",
       )
+      .mockImplementationOnce(async () => EXIT_VALUE);
+    selectMock
       .mockImplementationOnce(async () => "rerun_last")
       .mockImplementationOnce(async () => "search");
 
@@ -219,13 +231,12 @@ describe("runList", () => {
   test("interactive action errors are shown and menu continues", async () => {
     const errorSpy = spyOn(console, "error");
 
-    textMock
-      .mockImplementationOnce(async () => "alpha")
-      .mockImplementationOnce(async () => "q");
-    selectMock
+    autocompleteMock
       .mockImplementationOnce(
         async () => "https://jenkins.example.com/job/alpha",
       )
+      .mockImplementationOnce(async () => EXIT_VALUE);
+    selectMock
       .mockImplementationOnce(async () => "cancel")
       .mockImplementationOnce(async () => "search");
 

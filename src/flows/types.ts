@@ -23,14 +23,30 @@ export type TerminalState =
   | "root"
   | "complete";
 
+export type AutocompletePromptValue = {
+  value: string;
+  userInput: string;
+};
+
 /** Primitive prompt values returned by the prompt adapter. */
-export type FlowPromptValue = string | boolean;
+export type FlowPromptValue = string | boolean | AutocompletePromptValue;
 
 /** Select-option shape used by `select` prompts. */
 export type PromptOption = {
   value: string;
   label: string;
 };
+
+type PromptFilterOption = {
+  value: string;
+  label?: string;
+  hint?: string;
+  disabled?: boolean;
+};
+
+type PromptAutocompleteOptions<Ctx> =
+  | PromptOption[]
+  | ((context: Ctx, search: string) => PromptOption[]);
 
 /** Declarative prompt spec for a flow state. */
 export type PromptSpec<Ctx> =
@@ -52,6 +68,22 @@ export type PromptSpec<Ctx> =
       message: string | ((context: Ctx) => string);
       placeholder?: string | ((context: Ctx) => string);
       initialValue?: string | ((context: Ctx) => string);
+    }
+  | {
+      /** Searchable type-ahead selector. */
+      kind: "autocomplete";
+      message: string | ((context: Ctx) => string);
+      options: PromptAutocompleteOptions<Ctx>;
+      maxItems?: number | ((context: Ctx) => number);
+      placeholder?: string | ((context: Ctx) => string);
+      initialValue?: string | ((context: Ctx) => string);
+      initialUserInput?: string | ((context: Ctx) => string);
+      validate?:
+        | ((
+            value: string | string[] | undefined,
+            context: Ctx,
+          ) => string | Error | undefined)
+        | undefined;
     };
 
 /** Single state in a flow state machine. */
@@ -90,6 +122,18 @@ export type PromptAdapter = {
     message: string;
     options: PromptOption[];
   }) => Promise<unknown>;
+  autocomplete: (options: {
+    message: string;
+    options: PromptOption[] | ((this: { userInput: string }) => PromptOption[]);
+    filter?: (search: string, option: PromptFilterOption) => boolean;
+    maxItems?: number;
+    placeholder?: string;
+    initialValue?: string;
+    initialUserInput?: string;
+    validate?: (
+      value: string | string[] | undefined,
+    ) => string | Error | undefined;
+  }) => Promise<unknown>;
   confirm: (options: {
     message: string;
     initialValue?: boolean;
@@ -122,6 +166,7 @@ export type ActionEffectResult =
 export type ListInteractiveContext = {
   env: EnvConfig;
   jobs: JenkinsJob[];
+  searchQuery: string;
   selectedJob?: JenkinsJob;
   selectedAction?: string;
   performAction: (
@@ -146,7 +191,6 @@ export type BuildPreContext = {
   recentJobs: { url: string; label: string }[];
   jobSelectionLocked: boolean;
   searchQuery: string;
-  searchCandidates: JenkinsJob[];
   selectedJobUrl?: string;
   selectedJobLabel?: string;
   branchParam: string;

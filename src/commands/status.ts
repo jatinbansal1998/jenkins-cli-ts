@@ -2,7 +2,14 @@
  * Status command implementation.
  * Shows the last build status (number, result, URL) for a job.
  */
-import { confirm, isCancel, multiselect, select, text } from "../clack";
+import {
+  autocomplete,
+  confirm,
+  isCancel,
+  multiselect,
+  select,
+  text,
+} from "../clack";
 import { runInteractiveSubcommandWithAnalytics } from "../analytics";
 import { CliError, printError, printHint, printOk } from "../cli";
 import { runBuild } from "./build";
@@ -317,7 +324,7 @@ export async function runStatus(options: StatusOptions): Promise<void> {
     const postResult = await runFlow({
       definition: flows.statusPost,
       handlers: statusFlowHandlers,
-      prompts: { confirm, isCancel, select, text },
+      prompts: { autocomplete, confirm, isCancel, select, text },
       context: postContext,
       ...(primaryTarget ? {} : { startStateId: "again_confirm" }),
     });

@@ -1,5 +1,10 @@
-import { confirm, isCancel, select, text } from "../clack";
-import { getJobDisplayName, loadJobs, rankJobs } from "../jobs";
+import { autocomplete, confirm, isCancel, select, text } from "../clack";
+import {
+  getJobDisplayName,
+  loadJobs,
+  rankJobs,
+  sortJobsByDisplayName,
+} from "../jobs";
 import { runBuild } from "./build";
 import { runCancel } from "./cancel";
 import { runHistory } from "./history";
@@ -9,6 +14,7 @@ import { runStatus } from "./status";
 import { runWait } from "./wait";
 
 export const listDeps = {
+  autocomplete,
   confirm,
   isCancel,
   select,
@@ -16,6 +22,7 @@ export const listDeps = {
   getJobDisplayName,
   loadJobs,
   rankJobs,
+  sortJobsByDisplayName,
   runBuild,
   runHistory,
   runStatus,

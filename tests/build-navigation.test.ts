@@ -20,12 +20,9 @@ const BUILD_URL = "https://jenkins.example.com/job/alpha/42/";
 const QUEUE_URL = "https://jenkins.example.com/queue/item/123/";
 
 const confirmMock = mock(async () => false);
-const selectMock = mock(
-  async (..._args: unknown[]): Promise<unknown> => "done",
-);
-const textMock = mock(
-  async (..._args: unknown[]): Promise<string | symbol> => "",
-);
+const autocompleteMock = mock(async () => JOB_URL);
+const selectMock = mock(async () => "done");
+const textMock = mock(async () => "");
 const isCancelMock = mock((value: unknown) => value === CANCEL);
 const spinnerMock = mock((..._args: unknown[]) => ({
   start: () => undefined,
@@ -66,6 +63,9 @@ describe("build command navigation", () => {
   beforeEach(() => {
     confirmMock.mockReset();
     confirmMock.mockImplementation(async () => false);
+
+    autocompleteMock.mockReset();
+    autocompleteMock.mockImplementation(async () => JOB_URL);
 
     selectMock.mockReset();
     selectMock.mockImplementation(async () => "done");
@@ -127,6 +127,7 @@ describe("build command navigation", () => {
     ]);
 
     setBuildDepsForTesting({
+      autocomplete: autocompleteMock,
       confirm: confirmMock,
       select: selectPrompt,
       text: textPrompt,
@@ -163,10 +164,6 @@ describe("build command navigation", () => {
       removeCachedBranch: removeCachedBranchMock,
       getJobDisplayName: (job: { name: string; fullName?: string }) =>
         job.fullName || job.name,
-      resolveJobCandidates: (
-        _query: string,
-        jobs: { name: string; url: string }[],
-      ) => jobs,
     });
   });
 
@@ -188,9 +185,7 @@ describe("build command navigation", () => {
       .mockImplementationOnce(async () => SEARCH_ALL_JOBS_VALUE)
       .mockImplementationOnce(async () => JOB_URL)
       .mockImplementationOnce(async () => BUILD_WITHOUT_PARAMS_VALUE);
-    textMock.mockImplementationOnce(
-      async (..._args: unknown[]): Promise<string | symbol> => CANCEL,
-    );
+    autocompleteMock.mockImplementationOnce(async () => CANCEL);
 
     await runBuild({
       client: createClient({
@@ -215,6 +210,7 @@ describe("build command navigation", () => {
         message: expect.stringContaining("Recent jobs"),
       }),
     );
+    expect(autocompleteMock).toHaveBeenCalledTimes(1);
     expect(triggerBuild).toHaveBeenCalledTimes(1);
     expect(triggerBuild).toHaveBeenCalledWith(JOB_URL, {});
   });

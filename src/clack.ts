@@ -1,11 +1,10 @@
-import {
+export {
   confirm,
   isCancel,
-  multiselect,
   password,
+  multiselect,
   select,
-  spinner,
   text,
+  autocomplete,
+  spinner,
 } from "@clack/prompts";
-
-export { confirm, isCancel, multiselect, password, select, spinner, text };

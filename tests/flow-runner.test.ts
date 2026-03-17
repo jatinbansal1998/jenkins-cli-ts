@@ -11,6 +11,7 @@ import type {
   BuildPreContext,
   BuildPostContext,
   ListInteractiveContext,
+  PromptAdapter,
 } from "../src/flows/types";
 import type { EnvConfig } from "../src/env";
 
@@ -26,6 +27,7 @@ const TEST_ENV: EnvConfig = {
 function createPromptAdapter(responses: unknown[]) {
   let cursor = 0;
   return {
+    autocomplete: async () => responses[cursor++],
     select: async () => responses[cursor++],
     confirm: async () => responses[cursor++],
     text: async () => responses[cursor++],
@@ -71,10 +73,11 @@ describe("flow runner", () => {
     expect(result.terminal).toBe("exit_command");
   });
 
-  test("watch cancellation routes to root", async () => {
+  test("watch cancellation returns to job search", async () => {
     const context: ListInteractiveContext = {
       env: TEST_ENV,
       jobs: [{ name: "api", url: "https://jenkins.example.com/job/api/" }],
+      searchQuery: "",
       performAction: async () => "watch_cancelled",
     };
 
@@ -84,17 +87,19 @@ describe("flow runner", () => {
       prompts: createPromptAdapter([
         "https://jenkins.example.com/job/api/",
         "watch",
+        CANCEL,
       ]),
       context,
     });
 
-    expect(result.terminal).toBe("root");
+    expect(result.terminal).toBe("exit_command");
   });
 
-  test("action error routes to root", async () => {
+  test("action error returns to job search", async () => {
     const context: ListInteractiveContext = {
       env: TEST_ENV,
       jobs: [{ name: "api", url: "https://jenkins.example.com/job/api/" }],
+      searchQuery: "",
       performAction: async () => "action_error",
     };
 
@@ -104,11 +109,12 @@ describe("flow runner", () => {
       prompts: createPromptAdapter([
         "https://jenkins.example.com/job/api/",
         "logs",
+        CANCEL,
       ]),
       context,
     });
 
-    expect(result.terminal).toBe("root");
+    expect(result.terminal).toBe("exit_command");
   });
 
   test("explicit done and confirm yes returns repeat", async () => {
@@ -138,7 +144,6 @@ describe("flow runner", () => {
       ],
       jobSelectionLocked: false,
       searchQuery: "",
-      searchCandidates: [],
       branchParam: "BRANCH",
       customParams: {},
       defaultBranch: false,
@@ -154,5 +159,64 @@ describe("flow runner", () => {
     });
 
     expect(result.terminal).toBe("exit_command");
+  });
+
+  test("dynamic autocomplete prompts bypass clack's default text filter", async () => {
+    const prompts: PromptAdapter = {
+      autocomplete: async (options) => {
+        const option = {
+          value:
+            "https://jenkins.example.com/job/crypto-order-matching-engine/",
+          label: "crypto-order-matching-engine",
+        };
+
+        expect(options.filter?.("matching engine", option)).toBeTrue();
+        const resolvedOptions =
+          typeof options.options === "function"
+            ? options.options.call({ userInput: "matching engine" })
+            : options.options;
+
+        expect(resolvedOptions).toContainEqual(option);
+        return option.value;
+      },
+      select: async () => "",
+      confirm: async () => false,
+      text: async () => "",
+      isCancel: () => false,
+    };
+
+    const result = await runFlow({
+      definition: {
+        id: "listInteractive",
+        initialState: "search",
+        states: {
+          search: {
+            prompt: {
+              kind: "autocomplete",
+              message: "Search",
+              options: (_context, search) =>
+                search === "matching engine"
+                  ? [
+                      {
+                        value:
+                          "https://jenkins.example.com/job/crypto-order-matching-engine/",
+                        label: "crypto-order-matching-engine",
+                      },
+                    ]
+                  : [],
+            },
+            transitions: {
+              "select:https://jenkins.example.com/job/crypto-order-matching-engine/":
+                "complete",
+            },
+          },
+        },
+      },
+      handlers: {},
+      prompts,
+      context: {},
+    });
+
+    expect(result.terminal).toBe("complete");
   });
 });

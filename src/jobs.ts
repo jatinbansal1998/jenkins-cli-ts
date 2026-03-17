@@ -99,6 +99,28 @@ export function getJobDisplayName(job: JenkinsJob): string {
   return job.fullName || job.name;
 }
 
+export function sortJobsByDisplayName(jobs: JenkinsJob[]): JenkinsJob[] {
+  return jobs
+    .slice()
+    .sort((a, b) => getJobDisplayName(a).localeCompare(getJobDisplayName(b)));
+}
+
+export function getSuggestedJobs(
+  query: string,
+  jobs: JenkinsJob[],
+  options?: { limit?: number },
+): JenkinsJob[] {
+  const limit = options?.limit ?? MAX_OPTIONS;
+  const trimmedQuery = query.trim();
+  if (!trimmedQuery) {
+    return sortJobsByDisplayName(jobs).slice(0, limit);
+  }
+  return rankJobs(trimmedQuery, jobs)
+    .filter((match) => match.score >= MIN_SCORE)
+    .slice(0, limit)
+    .map((match) => match.job);
+}
+
 export async function loadJobs(options: {
   client: JenkinsClient;
   env: EnvConfig;
@@ -668,7 +690,6 @@ function scoreTokenOverlap(
   candidateTokens: string[],
   tokenFrequencies?: Map<string, number>,
 ): number {
-  const candidateTokenSet = new Set(candidateTokens);
   let weightedOverlap = 0;
   let totalWeight = 0;
 
@@ -677,8 +698,9 @@ function scoreTokenOverlap(
     const weight = 1.1 - frequency;
     totalWeight += weight;
 
-    if (candidateTokenSet.has(queryToken)) {
-      weightedOverlap += weight;
+    const overlapCredit = getTokenOverlapCredit(queryToken, candidateTokens);
+    if (overlapCredit > 0) {
+      weightedOverlap += weight * overlapCredit;
     }
   }
 
@@ -688,4 +710,25 @@ function scoreTokenOverlap(
 
   const weightedRatio = weightedOverlap / totalWeight;
   return Math.round(weightedRatio * 40);
+}
+
+function getTokenOverlapCredit(
+  queryToken: string,
+  candidateTokens: string[],
+): number {
+  let bestCredit = 0;
+
+  for (const candidateToken of candidateTokens) {
+    if (candidateToken === queryToken) {
+      return 1;
+    }
+    if (candidateToken.startsWith(queryToken)) {
+      bestCredit = Math.max(
+        bestCredit,
+        queryToken.length / candidateToken.length,
+      );
+    }
+  }
+
+  return bestCredit;
 }

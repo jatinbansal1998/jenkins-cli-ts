@@ -17,6 +17,7 @@ const NEXT_PAGE_VALUE = "__jenkins_cli_history_next__";
 const REBUILD_VALUE = "__jenkins_cli_history_rebuild__";
 const RERUN_LAST_VALUE = "__jenkins_cli_history_rerun_last__";
 
+const autocompleteMock = mock(async (): Promise<unknown> => CANCEL);
 const confirmMock = mock(async (): Promise<boolean> => false);
 const selectMock = mock(
   async (..._args: unknown[]): Promise<unknown> => CANCEL,
@@ -63,6 +64,8 @@ const TEST_ENV: EnvConfig = {
 describe("runHistory", () => {
   beforeEach(() => {
     mock.clearAllMocks();
+    autocompleteMock.mockReset();
+    autocompleteMock.mockImplementation(async (): Promise<unknown> => CANCEL);
     confirmMock.mockReset();
     confirmMock.mockImplementation(async (): Promise<boolean> => false);
     selectMock.mockReset();
@@ -102,6 +105,7 @@ describe("runHistory", () => {
       }),
     );
     setHistoryDepsForTesting({
+      autocomplete: autocompleteMock,
       confirm: confirmMock,
       select: selectPrompt,
       text: textMock,

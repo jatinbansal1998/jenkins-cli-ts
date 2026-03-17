@@ -234,6 +234,28 @@ describe("job fuzzy matching", () => {
       expect(results[0]?.job.name).toBe("api-gateway-deploy");
     });
 
+    test("partial token prefixes still score above threshold", () => {
+      const results = rankJobs("analytics pipelin", jobs);
+      const topMatch = results[0];
+
+      expect(topMatch?.job.name).toBe("data-analytics-ml-pipeline-prod");
+      expect(topMatch?.score).toBeGreaterThanOrEqual(MIN_SCORE);
+    });
+
+    test("exact token beats partial token prefix", () => {
+      const partialScore = scoreFor(
+        rankJobs("analytics pipelin", jobs),
+        "data-analytics-ml-pipeline-prod",
+      );
+      const exactScore = scoreFor(
+        rankJobs("analytics pipeline", jobs),
+        "data-analytics-ml-pipeline-prod",
+      );
+
+      expect(partialScore).toBeGreaterThanOrEqual(MIN_SCORE);
+      expect(partialScore).toBeLessThan(exactScore);
+    });
+
     /**
      * Query: "order service staging"
      * Expected: Matches "order-service-staging"

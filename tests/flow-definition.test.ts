@@ -4,7 +4,7 @@ import {
   BRANCH_REMOVE_VALUE,
 } from "../src/flows/constants";
 import { flows } from "../src/flows/definition";
-import type { BuildPreContext, PromptOption } from "../src/flows/types";
+import type { BuildPreContext } from "../src/flows/types";
 import { validateFlowDefinition } from "../src/flows/validate";
 
 describe("flow definitions", () => {
@@ -92,13 +92,17 @@ describe("flow definitions", () => {
       throw new Error("Expected select prompt for list action menu.");
     }
 
-    if (typeof listOptions.options === "function") {
-      throw new Error("Expected static options for list action menu.");
-    }
+    const options =
+      typeof listOptions.options === "function"
+        ? listOptions.options({
+            env: {} as never,
+            jobs: [],
+            searchQuery: "",
+            performAction: async () => "action_ok",
+          })
+        : listOptions.options;
 
-    expect(
-      listOptions.options.map((option: PromptOption) => option.value),
-    ).toEqual([
+    expect(options.map((option) => option.value)).toEqual([
       "build",
       "rerun_last",
       "rerun",
@@ -135,16 +139,25 @@ describe("flow definitions", () => {
       throw new Error("Expected select prompts for post-action menus.");
     }
 
-    if (
-      typeof buildOptions.options === "function" ||
+    const buildMenuOptions =
+      typeof buildOptions.options === "function"
+        ? buildOptions.options({
+            env: {} as never,
+            jobLabel: "job",
+            returnToCaller: false,
+            performAction: async () => "action_ok",
+          })
+        : buildOptions.options;
+    const statusMenuOptions =
       typeof statusOptions.options === "function"
-    ) {
-      throw new Error("Expected static options for post-action menus.");
-    }
+        ? statusOptions.options({
+            env: {} as never,
+            targetLabel: "job",
+            performAction: async () => "action_ok",
+          })
+        : statusOptions.options;
 
-    expect(
-      buildOptions.options.map((option: PromptOption) => option.value),
-    ).toEqual([
+    expect(buildMenuOptions.map((option) => option.value)).toEqual([
       "rerun_last",
       "rerun",
       "watch",
@@ -154,9 +167,7 @@ describe("flow definitions", () => {
       "done",
     ]);
 
-    expect(
-      statusOptions.options.map((option: PromptOption) => option.value),
-    ).toEqual([
+    expect(statusMenuOptions.map((option) => option.value)).toEqual([
       "build",
       "rerun_last",
       "rerun",
@@ -188,17 +199,24 @@ describe("flow definitions", () => {
     }
 
     const options = prompt.options({
-      branchChoices: ["feature/payments", "development", "master"],
-      removableBranches: ["feature/payments"],
-      env: {} as never,
       jobs: [],
       recentJobs: [],
       jobSelectionLocked: false,
       searchQuery: "",
-      searchCandidates: [],
+      selectedJobUrl: undefined,
+      selectedJobLabel: undefined,
       branchParam: "BRANCH",
+      branch: undefined,
       customParams: {},
       defaultBranch: false,
+      parameterMode: undefined,
+      buildModePrompted: false,
+      branchChoices: ["feature/payments", "development", "master"],
+      removableBranches: ["feature/payments"],
+      env: {} as never,
+      pendingBranchRemoval: undefined,
+      pendingCustomParamKey: undefined,
+      lastAddedCustomParamKey: undefined,
     } satisfies BuildPreContext);
 
     expect(options.map((option) => option.value)).toEqual([

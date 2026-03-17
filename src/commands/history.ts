@@ -388,6 +388,7 @@ async function runHistoryRebuildPostFlow(options: {
     definition: flows.buildPost,
     handlers: buildFlowHandlers,
     prompts: {
+      autocomplete: deps.autocomplete,
       confirm: deps.confirm,
       isCancel: deps.isCancel,
       select: deps.select,

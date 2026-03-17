@@ -1,4 +1,5 @@
 import type {
+  AutocompletePromptValue,
   ActionEffectResult,
   BuildPreContext,
   BuildPostContext,
@@ -7,13 +8,13 @@ import type {
   ListInteractiveContext,
   StatusPostContext,
 } from "./types";
-import { CliError, printError, printHint } from "../cli";
+import { printError, printHint } from "../cli";
 import {
   loadCachedBranchHistory,
   loadCachedBranches,
   removeCachedBranch,
 } from "../branches";
-import { getJobDisplayName, resolveJobCandidates } from "../jobs";
+import { getJobDisplayName } from "../jobs";
 import {
   BRANCH_CUSTOM_VALUE,
   BRANCH_REMOVE_VALUE,
@@ -30,7 +31,6 @@ const defaultBuildPreFlowDeps = {
   loadCachedBranches,
   removeCachedBranch,
   getJobDisplayName,
-  resolveJobCandidates,
 };
 
 let activeBuildPreFlowDeps = defaultBuildPreFlowDeps;
@@ -49,6 +49,30 @@ function resolveSelectEvent<T extends string>(input: T): `select:${T}` {
   return `select:${input}`;
 }
 
+function getPromptSelectionValue(input?: unknown): string {
+  if (
+    input &&
+    typeof input === "object" &&
+    "value" in input &&
+    typeof (input as AutocompletePromptValue).value === "string"
+  ) {
+    return (input as AutocompletePromptValue).value;
+  }
+  return String(input);
+}
+
+function getPromptSearchValue(input?: unknown): string | undefined {
+  if (
+    input &&
+    typeof input === "object" &&
+    "userInput" in input &&
+    typeof (input as AutocompletePromptValue).userInput === "string"
+  ) {
+    return (input as AutocompletePromptValue).userInput;
+  }
+  return undefined;
+}
+
 function selectJobHandler({
   context,
   input,
@@ -56,7 +80,11 @@ function selectJobHandler({
   context: ListInteractiveContext;
   input?: unknown;
 }): SelectEvent {
-  const value = String(input);
+  const value = getPromptSelectionValue(input);
+  const search = getPromptSearchValue(input);
+  if (typeof search === "string") {
+    context.searchQuery = search;
+  }
   if (value === SEARCH_AGAIN_VALUE) {
     return "select:search_again";
   }
@@ -161,7 +189,7 @@ function selectRecentJobHandler({
   context: BuildPreContext;
   input?: unknown;
 }): EventId {
-  const value = String(input);
+  const value = getPromptSelectionValue(input);
   if (value === SEARCH_ALL_JOBS_VALUE) {
     return "select:search_all";
   }
@@ -176,48 +204,8 @@ function selectRecentJobHandler({
     ? deps.getJobDisplayName(matchingJob)
     : recent.label;
   context.searchQuery = "";
-  context.searchCandidates = [];
   context.buildModePrompted = false;
   return "select:recent";
-}
-
-function submitSearchHandler({
-  context,
-  input,
-}: {
-  context: BuildPreContext;
-  input?: unknown;
-}): EventId {
-  const query = String(input ?? "").trim();
-  context.searchQuery = query;
-  if (!query) {
-    printError("Job name is required.");
-    printHint("Type part of the job name or description to continue.");
-    return "search:retry";
-  }
-
-  try {
-    const deps = activeBuildPreFlowDeps;
-    const candidates = deps.resolveJobCandidates(query, context.jobs);
-    if (candidates.length === 1 && candidates[0]) {
-      context.selectedJobUrl = candidates[0].url;
-      context.selectedJobLabel = deps.getJobDisplayName(candidates[0]);
-      context.searchCandidates = [];
-      context.buildModePrompted = false;
-      return "search:auto";
-    }
-    context.searchCandidates = candidates;
-    return "search:candidates";
-  } catch (error) {
-    if (error instanceof CliError && shouldRetryJobSearch(error)) {
-      printError(error.message);
-      for (const hint of error.hints) {
-        printHint(hint);
-      }
-      return "search:retry";
-    }
-    throw error;
-  }
 }
 
 function selectSearchCandidateHandler({
@@ -227,15 +215,18 @@ function selectSearchCandidateHandler({
   context: BuildPreContext;
   input?: unknown;
 }): EventId {
-  const value = String(input);
-  const selected = context.searchCandidates.find((job) => job.url === value);
+  const value = getPromptSelectionValue(input);
+  const search = getPromptSearchValue(input);
+  if (typeof search === "string") {
+    context.searchQuery = search.trim();
+  }
+  const selected = context.jobs.find((job) => job.url === value);
   if (!selected) {
     return "select:search_again";
   }
   const deps = activeBuildPreFlowDeps;
   context.selectedJobUrl = selected.url;
   context.selectedJobLabel = deps.getJobDisplayName(selected);
-  context.searchCandidates = [];
   context.buildModePrompted = false;
   return "select:job";
 }
@@ -553,7 +544,6 @@ export const buildFlowHandlers = {
 export const buildPreFlowHandlers = {
   "buildPre.entry": buildPreEntryHandler,
   "buildPre.selectRecentJob": selectRecentJobHandler,
-  "buildPre.submitSearch": submitSearchHandler,
   "buildPre.selectSearchCandidate": selectSearchCandidateHandler,
   "buildPre.selectBuildMode": selectBuildModeHandler,
   "buildPre.leaveBuildMode": leaveBuildModeHandler,
@@ -573,13 +563,6 @@ export const statusFlowHandlers = {
   "status.runAction": runStatusActionHandler,
   "status.repeatConfirm": repeatConfirmHandler,
 } satisfies FlowHandlerRegistry<StatusPostContext>;
-
-function shouldRetryJobSearch(error: CliError): boolean {
-  if (error.message === "Job name is required.") {
-    return true;
-  }
-  return error.message.startsWith("No jobs match ");
-}
 
 function dedupeCaseInsensitive(entries: string[]): string[] {
   const seen = new Set<string>();
