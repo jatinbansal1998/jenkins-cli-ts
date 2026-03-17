@@ -213,7 +213,12 @@ async function resolveEventFromPrompt<Ctx>(
     return `select:${String(input)}`;
   }
   if (prompt.kind === "autocomplete") {
-    return `select:${String((input as AutocompletePromptValue).value)}`;
+    if (isAutocompletePromptValue(input)) {
+      return `select:${input.value}`;
+    }
+    throw new Error(
+      `Flow ${definition.id} state "${stateId}" expected resolvePromptValue to return an AutocompletePromptValue for autocomplete prompt resolution.`,
+    );
   }
   return "text:submit";
 }
