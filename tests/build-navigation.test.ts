@@ -9,7 +9,7 @@ import {
   CUSTOM_MORE_CANCEL_VALUE,
   SEARCH_ALL_JOBS_VALUE,
 } from "../src/flows/constants";
-import type { FlowPromptValue } from "../src/flows/types";
+import type { AutocompletePromptResult } from "../src/flows/types";
 import type { JenkinsClient } from "../src/jenkins/client";
 import type { JenkinsJob } from "../src/types/jenkins";
 import { runBuild, setBuildDepsForTesting } from "../src/commands/build";
@@ -29,8 +29,7 @@ function createAutocompleteSelection(userInput = "alpha") {
 
 const confirmMock = mock(async () => false);
 const autocompleteMock = mock(
-  async (): Promise<FlowPromptValue | typeof CANCEL> =>
-    createAutocompleteSelection(),
+  async (): Promise<AutocompletePromptResult> => createAutocompleteSelection(),
 );
 const selectMock = mock(async (): Promise<string | typeof CANCEL> => "done");
 const textMock = mock(async () => "");
@@ -77,7 +76,7 @@ describe("build command navigation", () => {
 
     autocompleteMock.mockReset();
     autocompleteMock.mockImplementation(
-      async (): Promise<FlowPromptValue | typeof CANCEL> =>
+      async (): Promise<AutocompletePromptResult> =>
         createAutocompleteSelection(),
     );
 

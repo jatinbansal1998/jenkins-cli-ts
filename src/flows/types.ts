@@ -32,7 +32,10 @@ export type AutocompletePromptValue = {
 export type FlowPromptValue = string | boolean | AutocompletePromptValue;
 
 /** Autocomplete can also surface the prompt library's cancel token. */
-export type AutocompletePromptResult = FlowPromptValue | symbol;
+export type AutocompletePromptResult =
+  | string
+  | AutocompletePromptValue
+  | symbol;
 
 /** Select-option shape used by `select` prompts. */
 export type PromptOption = {

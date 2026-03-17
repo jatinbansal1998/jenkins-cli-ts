@@ -6,11 +6,16 @@ import {
   listFlowHandlers,
 } from "../src/flows/handlers";
 import { SEARCH_ALL_JOBS_VALUE } from "../src/flows/constants";
-import { runFlow } from "../src/flows/runner";
+import {
+  resetValidatedFlowsForTesting,
+  runFlow,
+} from "../src/flows/runner";
 import type {
+  AutocompletePromptValue,
   AutocompletePromptResult,
   BuildPreContext,
   BuildPostContext,
+  FlowPromptValue,
   ListInteractiveContext,
   PromptAdapter,
 } from "../src/flows/types";
@@ -166,6 +171,7 @@ describe("flow runner", () => {
   });
 
   test("dynamic autocomplete prompts bypass clack's default text filter", async () => {
+    resetValidatedFlowsForTesting();
     const prompts: PromptAdapter = {
       autocomplete: async (options) => {
         const option = {
@@ -222,5 +228,77 @@ describe("flow runner", () => {
     });
 
     expect(result.terminal).toBe("complete");
+  });
+
+  test("static autocomplete prompts preserve the current user input", async () => {
+    resetValidatedFlowsForTesting();
+    type CaptureContext = { captured?: AutocompletePromptValue };
+    const context: CaptureContext = {};
+    const prompts: PromptAdapter = {
+      autocomplete: async (options) => {
+        const resolvedOptions =
+          typeof options.options === "function"
+            ? options.options.call({ userInput: "matching engine" })
+            : options.options;
+
+        expect(resolvedOptions).toContainEqual({
+          value:
+            "https://jenkins.example.com/job/crypto-order-matching-engine/",
+          label: "crypto-order-matching-engine",
+        });
+        return "https://jenkins.example.com/job/crypto-order-matching-engine/";
+      },
+      select: async () => "",
+      confirm: async () => false,
+      text: async () => "",
+      isCancel: () => false,
+    };
+
+    const result = await runFlow({
+      definition: {
+        id: "listInteractive",
+        initialState: "search",
+        states: {
+          search: {
+            prompt: {
+              kind: "autocomplete",
+              message: "Search",
+              options: [
+                {
+                  value:
+                    "https://jenkins.example.com/job/crypto-order-matching-engine/",
+                  label: "crypto-order-matching-engine",
+                },
+              ],
+            },
+            onSelect: "capture",
+            transitions: {
+              "select:https://jenkins.example.com/job/crypto-order-matching-engine/":
+                "complete",
+            },
+          },
+        },
+      },
+      handlers: {
+        capture: ({
+          context,
+          input,
+        }: {
+          context: CaptureContext;
+          input?: FlowPromptValue;
+        }) => {
+          context.captured = input as AutocompletePromptValue;
+          return `select:${context.captured.value}`;
+        },
+      },
+      prompts,
+      context,
+    });
+
+    expect(result.terminal).toBe("complete");
+    expect(context.captured).toEqual({
+      value: "https://jenkins.example.com/job/crypto-order-matching-engine/",
+      userInput: "matching engine",
+    });
   });
 });

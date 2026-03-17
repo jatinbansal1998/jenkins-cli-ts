@@ -16,6 +16,10 @@ import { validateFlowDefinition } from "./validate";
 const VALIDATED_FLOWS = new Set<string>();
 const ESC_SENTINEL = Symbol("flow_esc");
 
+export function resetValidatedFlowsForTesting(): void {
+  VALIDATED_FLOWS.clear();
+}
+
 const TERMINAL_STATES = new Set<TerminalState>([
   "exit_command",
   "return_to_caller",
@@ -86,7 +90,10 @@ async function resolvePromptValue<Ctx>(
     const response = await prompts.autocomplete({
       message: resolveValue(prompt.message, context),
       options: Array.isArray(prompt.options)
-        ? prompt.options
+        ? function (this: { userInput: string }): PromptOption[] {
+            latestSearch = this.userInput;
+            return prompt.options as PromptOption[];
+          }
         : function (this: { userInput: string }): PromptOption[] {
             latestSearch = this.userInput;
             return (
