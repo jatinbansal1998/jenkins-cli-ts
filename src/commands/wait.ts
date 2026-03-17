@@ -210,36 +210,33 @@ export async function waitForBuild(options: {
         if (statusSpinner) {
           statusSpinner.stop("Build already completed.");
         }
+        const finalBuildNumber = initialStatus.lastBuildNumber;
         const finalBuildUrl = initialStatus.lastBuildUrl || options.jobUrl;
-        const resolvedTotalStages =
-          initialStatus.stages?.length || knownTotalStages;
-        if (
-          initialStatus.result === "SUCCESS" ||
-          initialStatus.result === "UNSTABLE"
-        ) {
-          await persistKnownTotalStages({
-            env: options.env,
-            jobUrl: options.jobUrl,
-            buildUrl: finalBuildUrl,
-            stages: initialStatus.stages,
-            jobLabel: options.jobLabel,
-          });
-        }
-        printFinalJobStatus(
-          options.jobLabel,
-          initialStatus.lastBuildNumber,
+        return finalizeJobCompletion({
           initialStatus,
+          knownTotalStages,
+          env: options.env,
+          jobUrl: options.jobUrl,
           finalBuildUrl,
-          resolvedTotalStages,
-        );
-        return {
-          result: initialStatus.result || "UNKNOWN",
-          buildNumber: initialStatus.lastBuildNumber,
-          buildUrl: finalBuildUrl,
-          durationMs: initialStatus.lastBuildDurationMs,
-          queueTimeMs: initialStatus.queueTimeMs,
-          hadStageInfo: Boolean(initialStatus.stages?.length),
-        };
+          jobLabel: options.jobLabel,
+          renderFinalStatus: (resolvedTotalStages) => {
+            printFinalJobStatus(
+              options.jobLabel,
+              finalBuildNumber,
+              initialStatus,
+              finalBuildUrl,
+              resolvedTotalStages,
+            );
+          },
+          buildResult: (result) => ({
+            result,
+            buildNumber: finalBuildNumber,
+            buildUrl: finalBuildUrl,
+            durationMs: initialStatus.lastBuildDurationMs,
+            queueTimeMs: initialStatus.queueTimeMs,
+            hadStageInfo: Boolean(initialStatus.stages?.length),
+          }),
+        });
       }
       if (initialStatus.building && initialStatus.lastBuildNumber) {
         targetBuildNumber = initialStatus.lastBuildNumber;
@@ -395,31 +392,31 @@ export async function waitForBuild(options: {
             statusSpinner.stop("Build completed.");
           }
           const finalBuildUrl = status.buildUrl || buildUrl;
-          const resolvedTotalStages = status.stages?.length || knownTotalStages;
-          if (currentResult === "SUCCESS" || currentResult === "UNSTABLE") {
-            await persistKnownTotalStages({
-              env: options.env,
-              jobUrl: options.jobUrl,
-              buildUrl: finalBuildUrl,
-              stages: status.stages,
-              jobLabel: options.jobLabel,
-            });
-          }
-          printFinalStatus(
-            options.jobLabel,
-            status,
+          return finalizeJobCompletion({
+            initialStatus: status,
+            knownTotalStages,
+            env: options.env,
+            jobUrl: options.jobUrl,
             finalBuildUrl,
-            resolvedTotalStages,
-          );
-          return {
-            result: currentResult,
-            buildNumber: status.buildNumber ?? buildNumber,
-            buildUrl: finalBuildUrl,
-            cancelIssued,
-            durationMs: status.durationMs,
-            queueTimeMs: status.queueTimeMs,
-            hadStageInfo: Boolean(status.stages?.length),
-          };
+            jobLabel: options.jobLabel,
+            renderFinalStatus: (resolvedTotalStages) => {
+              printFinalStatus(
+                options.jobLabel,
+                status,
+                finalBuildUrl,
+                resolvedTotalStages,
+              );
+            },
+            buildResult: (result) => ({
+              result,
+              buildNumber: status.buildNumber ?? buildNumber,
+              buildUrl: finalBuildUrl,
+              cancelIssued,
+              durationMs: status.durationMs,
+              queueTimeMs: status.queueTimeMs,
+              hadStageInfo: Boolean(status.stages?.length),
+            }),
+          });
         }
       } else if (options.jobUrl) {
         const status = await options.client.getJobStatus(options.jobUrl);
@@ -462,33 +459,32 @@ export async function waitForBuild(options: {
               statusSpinner.stop("Build completed.");
             }
             const finalBuildUrl = status.lastBuildUrl || options.jobUrl;
-            const resolvedTotalStages =
-              status.stages?.length || knownTotalStages;
-            if (currentResult === "SUCCESS" || currentResult === "UNSTABLE") {
-              await persistKnownTotalStages({
-                env: options.env,
-                jobUrl: options.jobUrl,
-                buildUrl: finalBuildUrl,
-                stages: status.stages,
-                jobLabel: options.jobLabel,
-              });
-            }
-            printFinalJobStatus(
-              options.jobLabel,
-              currentNumber,
-              status,
+            return finalizeJobCompletion({
+              initialStatus: status,
+              knownTotalStages,
+              env: options.env,
+              jobUrl: options.jobUrl,
               finalBuildUrl,
-              resolvedTotalStages,
-            );
-            return {
-              result: currentResult,
-              buildNumber: currentNumber,
-              buildUrl: finalBuildUrl,
-              cancelIssued,
-              durationMs: status.lastBuildDurationMs,
-              queueTimeMs: status.queueTimeMs,
-              hadStageInfo: Boolean(status.stages?.length),
-            };
+              jobLabel: options.jobLabel,
+              renderFinalStatus: (resolvedTotalStages) => {
+                printFinalJobStatus(
+                  options.jobLabel,
+                  currentNumber,
+                  status,
+                  finalBuildUrl,
+                  resolvedTotalStages,
+                );
+              },
+              buildResult: (result) => ({
+                result,
+                buildNumber: currentNumber,
+                buildUrl: finalBuildUrl,
+                cancelIssued,
+                durationMs: status.lastBuildDurationMs,
+                queueTimeMs: status.queueTimeMs,
+                hadStageInfo: Boolean(status.stages?.length),
+              }),
+            });
           }
         } else {
           emitProgress({
@@ -559,6 +555,39 @@ function formatJobProgress(
     result,
     status: toStatusDetailsFromJob(status, { knownTotalStages }),
   })}`;
+}
+
+async function finalizeJobCompletion<
+  TStatus extends {
+    result?: string | null;
+    stages?: { length?: number };
+  },
+>(options: {
+  initialStatus: TStatus;
+  knownTotalStages?: number;
+  env?: EnvConfig;
+  jobUrl?: string;
+  finalBuildUrl: string;
+  jobLabel: string;
+  renderFinalStatus: (resolvedTotalStages?: number) => void;
+  buildResult: (result: string) => WaitResult;
+}): Promise<WaitResult> {
+  const resolvedTotalStages =
+    options.initialStatus.stages?.length || options.knownTotalStages;
+  const result = options.initialStatus.result || "UNKNOWN";
+
+  if (result === "SUCCESS" || result === "UNSTABLE") {
+    await persistKnownTotalStages({
+      env: options.env,
+      jobUrl: options.jobUrl,
+      buildUrl: options.finalBuildUrl,
+      stages: options.initialStatus.stages,
+      jobLabel: options.jobLabel,
+    });
+  }
+
+  options.renderFinalStatus(resolvedTotalStages);
+  return options.buildResult(result);
 }
 
 function printFinalStatus(
