@@ -14,7 +14,8 @@ import type { JenkinsClient } from "../src/jenkins/client";
 import { runBuild, setBuildDepsForTesting } from "../src/commands/build";
 
 const confirmMock = mock(async () => false);
-const selectMock = mock(async (..._args: unknown[]) => "done");
+const autocompleteMock = mock(async () => JOB_URL);
+const selectMock = mock(async () => "done");
 const textMock = mock(async () => "");
 const isCancelMock = mock((..._args: unknown[]) => false);
 const spinnerMock = mock((..._args: unknown[]) => ({
@@ -54,6 +55,9 @@ describe("build command", () => {
     confirmMock.mockReset();
     confirmMock.mockImplementation(async () => false);
 
+    autocompleteMock.mockReset();
+    autocompleteMock.mockImplementation(async () => JOB_URL);
+
     selectMock.mockReset();
     selectMock.mockImplementation(async () => "done");
 
@@ -87,6 +91,7 @@ describe("build command", () => {
     notifyBuildCompleteMock.mockImplementation(async () => undefined);
 
     setBuildDepsForTesting({
+      autocomplete: autocompleteMock,
       confirm: confirmMock,
       select: selectPrompt,
       text: textMock,
@@ -407,6 +412,7 @@ describe("build command", () => {
     });
 
     expect(triggerBuild).toHaveBeenCalledTimes(1);
+    expect(autocompleteMock).toHaveBeenCalledTimes(0);
     const triggerCalls = triggerBuild.mock.calls as unknown as Array<
       Array<unknown>
     >;

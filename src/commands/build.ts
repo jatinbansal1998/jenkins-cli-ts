@@ -2,7 +2,14 @@
  * Build command implementation.
  * Triggers a Jenkins build for a specified job with branch parameter support.
  */
-import { confirm, isCancel, select, spinner, text } from "../clack";
+import {
+  autocomplete,
+  confirm,
+  isCancel,
+  select,
+  spinner,
+  text,
+} from "../clack";
 import {
   markAnalyticsPollingCommand,
   runInteractiveSubcommandWithAnalytics,
@@ -56,6 +63,7 @@ import type {
   ActionEffectResult,
   BuildPostContext,
   BuildPreContext,
+  PromptAdapter,
 } from "../flows/types";
 import { withPromptTarget } from "../tui-target";
 
@@ -84,7 +92,37 @@ export type BuildRunResult = {
   rootRequested?: boolean;
 };
 
-const defaultBuildDeps = {
+type BuildSpinner = {
+  start: (message: string) => void;
+  stop: (message?: string) => void;
+  message: (message: string) => void;
+  error: (message: string) => void;
+};
+
+type BuildDeps = {
+  autocomplete: PromptAdapter["autocomplete"];
+  confirm: PromptAdapter["confirm"];
+  isCancel: PromptAdapter["isCancel"];
+  select: PromptAdapter["select"];
+  spinner: () => BuildSpinner;
+  text: PromptAdapter["text"];
+  loadCachedBranchHistory: typeof loadCachedBranchHistory;
+  loadCachedBranches: typeof loadCachedBranches;
+  recordBranchSelection: typeof recordBranchSelection;
+  removeCachedBranch: typeof removeCachedBranch;
+  loadRecentJobs: typeof loadRecentJobs;
+  recordRecentJob: typeof recordRecentJob;
+  getJobDisplayName: typeof getJobDisplayName;
+  loadJobs: typeof loadJobs;
+  resolveJobMatch: typeof resolveJobMatch;
+  notifyBuildComplete: typeof notifyBuildComplete;
+  runCancel: typeof runCancel;
+  runHistory: typeof runHistory;
+  runLogs: typeof runLogs;
+};
+
+const defaultBuildDeps: BuildDeps = {
+  autocomplete,
   confirm,
   isCancel,
   select,
@@ -105,11 +143,9 @@ const defaultBuildDeps = {
   runLogs,
 };
 
-let activeBuildDeps = defaultBuildDeps;
+let activeBuildDeps: BuildDeps = defaultBuildDeps;
 
-export function setBuildDepsForTesting(
-  overrides?: Partial<typeof defaultBuildDeps>,
-): void {
+export function setBuildDepsForTesting(overrides?: Partial<BuildDeps>): void {
   activeBuildDeps = overrides
     ? { ...defaultBuildDeps, ...overrides }
     : defaultBuildDeps;
@@ -478,6 +514,7 @@ export async function runBuild(options: BuildOptions): Promise<BuildRunResult> {
       definition: flows.buildPost,
       handlers: buildFlowHandlers,
       prompts: {
+        autocomplete: deps.autocomplete,
         confirm: deps.confirm,
         isCancel: deps.isCancel,
         select: deps.select,
@@ -1164,7 +1201,7 @@ async function watchBuildStatus(options: {
 }
 
 function emitWatchMessage(options: {
-  spinner: ReturnType<typeof spinner> | null;
+  spinner: BuildSpinner | null;
   message: string;
 }): void {
   if (options.spinner) {
@@ -1175,7 +1212,7 @@ function emitWatchMessage(options: {
 }
 
 function persistWatchMessage(options: {
-  spinner: ReturnType<typeof spinner> | null;
+  spinner: BuildSpinner | null;
   watchPrompt: string;
   message: string;
 }): void {
@@ -1304,7 +1341,7 @@ async function resolveInteractiveBuildSelection(options: {
         if (deps.isCancel(response)) {
           throw new CliError("Operation cancelled.");
         }
-        return response;
+        return Boolean(response);
       },
     });
 
@@ -1323,7 +1360,6 @@ async function resolveInteractiveBuildSelection(options: {
     recentJobs,
     jobSelectionLocked: Boolean(providedUrl),
     searchQuery: query,
-    searchCandidates: [],
     selectedJobUrl: providedUrl || undefined,
     selectedJobLabel,
     branchParam: options.branchParam,
@@ -1347,6 +1383,7 @@ async function resolveInteractiveBuildSelection(options: {
     definition: flows.buildPre,
     handlers: buildPreFlowHandlers,
     prompts: {
+      autocomplete: deps.autocomplete,
       confirm: deps.confirm,
       isCancel: deps.isCancel,
       select: deps.select,
@@ -1414,7 +1451,7 @@ async function resolveJobTarget(options: {
       if (deps.isCancel(response)) {
         throw new CliError("Operation cancelled.");
       }
-      return response;
+      return Boolean(response);
     },
   });
 

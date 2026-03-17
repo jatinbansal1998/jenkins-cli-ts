@@ -1,10 +1,12 @@
 import type {
+  AutocompletePromptValue,
   EventId,
   FlowDefinition,
   FlowHandlerRegistry,
   FlowPromptValue,
   FlowRunResult,
   PromptAdapter,
+  PromptOption,
   PromptSpec,
   StateId,
   TerminalState,
@@ -13,6 +15,10 @@ import { validateFlowDefinition } from "./validate";
 
 const VALIDATED_FLOWS = new Set<string>();
 const ESC_SENTINEL = Symbol("flow_esc");
+
+export function resetValidatedFlowsForTesting(): void {
+  VALIDATED_FLOWS.clear();
+}
 
 const TERMINAL_STATES = new Set<TerminalState>([
   "exit_command",
@@ -35,6 +41,19 @@ function resolveValue<Ctx, T>(
     return (value as (context: Ctx) => T)(context);
   }
   return value;
+}
+
+function isAutocompletePromptValue(
+  value: unknown,
+): value is AutocompletePromptValue {
+  return Boolean(
+    value &&
+      typeof value === "object" &&
+      "value" in value &&
+      "userInput" in value &&
+      typeof (value as AutocompletePromptValue).value === "string" &&
+      typeof (value as AutocompletePromptValue).userInput === "string",
+  );
 }
 
 async function resolvePromptValue<Ctx>(
@@ -64,6 +83,59 @@ async function resolvePromptValue<Ctx>(
       return ESC_SENTINEL;
     }
     return Boolean(response);
+  }
+
+  if (prompt.kind === "autocomplete") {
+    let latestSearch = resolveValue(prompt.initialUserInput ?? "", context);
+    const response = await prompts.autocomplete({
+      message: resolveValue(prompt.message, context),
+      options: Array.isArray(prompt.options)
+        ? function (this: { userInput: string }): PromptOption[] {
+            latestSearch = this.userInput;
+            return prompt.options as PromptOption[];
+          }
+        : function (this: { userInput: string }): PromptOption[] {
+            latestSearch = this.userInput;
+            return (
+              prompt.options as (context: Ctx, search: string) => PromptOption[]
+            )(context, latestSearch);
+          },
+      ...(!Array.isArray(prompt.options)
+        ? {
+            // Dynamic option resolvers already apply fuzzy ranking, so disable
+            // Clack's default substring filter to avoid double-filtering.
+            filter: () => true,
+          }
+        : {}),
+      ...(typeof prompt.maxItems !== "undefined"
+        ? { maxItems: resolveValue(prompt.maxItems, context) }
+        : {}),
+      ...(typeof prompt.placeholder !== "undefined"
+        ? { placeholder: resolveValue(prompt.placeholder, context) }
+        : {}),
+      ...(typeof prompt.initialValue !== "undefined"
+        ? { initialValue: resolveValue(prompt.initialValue, context) }
+        : {}),
+      ...(typeof prompt.initialUserInput !== "undefined"
+        ? { initialUserInput: resolveValue(prompt.initialUserInput, context) }
+        : {}),
+      ...(typeof prompt.validate !== "undefined"
+        ? {
+            validate: (value: string | string[] | undefined) =>
+              prompt.validate?.(value, context),
+          }
+        : {}),
+    });
+    if (prompts.isCancel(response)) {
+      return ESC_SENTINEL;
+    }
+    if (isAutocompletePromptValue(response)) {
+      return response;
+    }
+    return {
+      value: String(response),
+      userInput: latestSearch,
+    } satisfies AutocompletePromptValue;
   }
 
   const response = await prompts.text({
@@ -139,6 +211,14 @@ async function resolveEventFromPrompt<Ctx>(
   }
   if (prompt.kind === "select") {
     return `select:${String(input)}`;
+  }
+  if (prompt.kind === "autocomplete") {
+    if (isAutocompletePromptValue(input)) {
+      return `select:${input.value}`;
+    }
+    throw new Error(
+      `Flow ${definition.id} state "${stateId}" expected resolvePromptValue to return an AutocompletePromptValue for autocomplete prompt resolution.`,
+    );
   }
   return "text:submit";
 }

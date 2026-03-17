@@ -55,41 +55,21 @@ export async function runList(options: ListOptions): Promise<void> {
     return;
   }
 
-  let pendingSearch = options.search?.trim() ?? "";
-  while (true) {
-    const search = await promptSearch(pendingSearch, options.env);
-    pendingSearch = "";
-    if (isExitToken(search)) {
-      return;
-    }
-
-    const filteredJobs = getFilteredJobs(jobs, search);
-    if (filteredJobs.length === 0) {
-      printOk(`No jobs match "${search}".`);
-      continue;
-    }
-    printJobs(filteredJobs, search);
-
-    const listAction = await runListActionMenu({
+  if (
+    (await runListActionMenu({
       client: options.client,
       env: options.env,
-      jobs: filteredJobs,
-    });
-    if (listAction === "exit") {
-      return;
-    }
+      jobs,
+      searchQuery: options.search?.trim() ?? "",
+    })) === "exit"
+  ) {
+    return;
   }
 }
 
 function getFilteredJobs(jobs: JenkinsJob[], search: string): JenkinsJob[] {
   if (!search) {
-    return jobs
-      .slice()
-      .sort((a, b) =>
-        listDeps
-          .getJobDisplayName(a)
-          .localeCompare(listDeps.getJobDisplayName(b)),
-      );
+    return listDeps.sortJobsByDisplayName(jobs);
   }
   return listDeps
     .rankJobs(search, jobs)
@@ -97,29 +77,13 @@ function getFilteredJobs(jobs: JenkinsJob[], search: string): JenkinsJob[] {
     .map((match) => match.job);
 }
 
-async function promptSearch(
-  initialSearch: string,
-  env: EnvConfig,
-): Promise<string> {
-  if (initialSearch) {
-    return initialSearch;
-  }
-  const response = await listDeps.text({
-    message: withPromptTarget("Search jobs (optional, q to exit)", env),
-    placeholder: "e.g. api prod",
-  });
-  if (listDeps.isCancel(response)) {
-    throw new CliError("Operation cancelled.");
-  }
-  return String(response).trim();
-}
-
 async function runListActionMenu(
-  options: ListActionMenuOptions,
-): Promise<"search" | "exit"> {
+  options: ListActionMenuOptions & { searchQuery: string },
+): Promise<"exit" | void> {
   const context: ListInteractiveContext = {
     env: options.env,
     jobs: options.jobs,
+    searchQuery: options.searchQuery,
     performAction: (action, selectedJob) =>
       performListAction(options, action, selectedJob),
   };
@@ -128,6 +92,7 @@ async function runListActionMenu(
     definition: flows.listInteractive,
     handlers: listFlowHandlers,
     prompts: {
+      autocomplete: listDeps.autocomplete,
       select: listDeps.select,
       confirm: listDeps.confirm,
       text: listDeps.text,
@@ -139,7 +104,6 @@ async function runListActionMenu(
   if (result.terminal === "exit_command") {
     return "exit";
   }
-  return "search";
 }
 
 async function confirmRefresh(
@@ -165,11 +129,6 @@ function printJobs(entries: JenkinsJob[], search: string): void {
   for (const job of entries) {
     console.log(`${listDeps.getJobDisplayName(job)}  ${job.url}`);
   }
-}
-
-function isExitToken(value: string): boolean {
-  const normalized = value.trim().toLowerCase();
-  return normalized === "q" || normalized === "quit" || normalized === "exit";
 }
 
 async function performListAction(

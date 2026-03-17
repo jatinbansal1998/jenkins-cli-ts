@@ -6,6 +6,7 @@ import type {
   PromptOption,
   StatusPostContext,
 } from "./types";
+import { getSuggestedJobs } from "../jobs";
 import {
   BRANCH_CUSTOM_VALUE,
   BRANCH_REMOVE_VALUE,
@@ -16,7 +17,6 @@ import {
   CUSTOM_MORE_BUILD_VALUE,
   CUSTOM_MORE_CANCEL_VALUE,
   EXIT_VALUE,
-  SEARCH_AGAIN_VALUE,
   SEARCH_ALL_JOBS_VALUE,
 } from "./constants";
 import { withPromptTarget } from "../tui-target";
@@ -57,25 +57,30 @@ export const listInteractiveFlow: FlowDefinition<ListInteractiveContext> = {
   id: "listInteractive",
   initialState: "select_job",
   states: {
-    /** Root selector for choosing a job, searching again, or exiting. */
+    /** Root type-ahead selector for choosing a job. */
     select_job: {
       root: true,
       prompt: {
-        kind: "select",
+        kind: "autocomplete",
         message: (context) =>
-          withPromptTarget("Select a job to operate on", context.env),
-        options: (context) => [
-          ...context.jobs.map((job) => ({
+          withPromptTarget("Search jobs and select one", context.env),
+        placeholder: "e.g. api prod deploy",
+        initialUserInput: (context) => context.searchQuery,
+        maxItems: 10,
+        validate: (value) => (value ? undefined : "Select a job to continue."),
+        options: (context, search) => {
+          if (["q", "quit", "exit"].includes(search.trim().toLowerCase())) {
+            return [{ value: EXIT_VALUE, label: "Exit" }];
+          }
+          return getSuggestedJobs(search, context.jobs).map((job) => ({
             value: job.url,
             label: job.fullName || job.name,
-          })),
-          { value: SEARCH_AGAIN_VALUE, label: "Search again" },
-          { value: EXIT_VALUE, label: "Exit" },
-        ],
+          }));
+        },
       },
       onSelect: "list.selectJob",
       transitions: {
-        esc: "root",
+        esc: "exit_command",
         "select:search_again": "root",
         "select:exit": "exit_command",
         "select:job": "action_menu",
@@ -106,7 +111,7 @@ export const listInteractiveFlow: FlowDefinition<ListInteractiveContext> = {
       onSelect: "list.selectAction",
       transitions: {
         esc: "select_job",
-        "select:search": "root",
+        "select:search": "select_job",
         "select:exit": "exit_command",
         "select:build": "run_action",
         "select:status": "run_action",
@@ -123,9 +128,9 @@ export const listInteractiveFlow: FlowDefinition<ListInteractiveContext> = {
       onEnter: "list.runAction",
       transitions: {
         action_ok: "action_menu",
-        watch_cancelled: "root",
-        action_error: "root",
-        root: "root",
+        watch_cancelled: "select_job",
+        action_error: "select_job",
+        root: "select_job",
         exit: "exit_command",
       },
     },
@@ -168,78 +173,46 @@ export const buildPreFlow: FlowDefinition<BuildPreContext> = {
     /** Search prompt reached from the recent-jobs menu. */
     search_from_recent: {
       prompt: {
-        kind: "text",
+        kind: "autocomplete",
         message: (context) =>
           withPromptTarget("Job name or description", context.env),
         placeholder: "e.g. api prod deploy",
-        initialValue: (context) => context.searchQuery,
+        initialUserInput: (context) => context.searchQuery,
+        maxItems: 10,
+        validate: (value) => (value ? undefined : "Select a job to continue."),
+        options: (context, search) =>
+          getSuggestedJobs(search, context.jobs).map((job) => ({
+            value: job.url,
+            label: job.fullName || job.name,
+          })),
       },
-      onSelect: "buildPre.submitSearch",
+      onSelect: "buildPre.selectSearchCandidate",
       transitions: {
         esc: "recent_menu",
-        "search:retry": "search_from_recent",
-        "search:candidates": "results_from_recent",
-        "search:auto": "prepare_branch",
+        "select:search_again": "search_from_recent",
+        "select:job": "prepare_branch",
       },
     },
     /** Root search prompt used when build starts without a preset job. */
     search_direct: {
       root: true,
       prompt: {
-        kind: "text",
+        kind: "autocomplete",
         message: (context) =>
           withPromptTarget("Job name or description", context.env),
         placeholder: "e.g. api prod deploy",
-        initialValue: (context) => context.searchQuery,
+        initialUserInput: (context) => context.searchQuery,
+        maxItems: 10,
+        validate: (value) => (value ? undefined : "Select a job to continue."),
+        options: (context, search) =>
+          getSuggestedJobs(search, context.jobs).map((job) => ({
+            value: job.url,
+            label: job.fullName || job.name,
+          })),
       },
-      onSelect: "buildPre.submitSearch",
+      onSelect: "buildPre.selectSearchCandidate",
       transitions: {
         esc: "exit_command",
-        "search:retry": "search_direct",
-        "search:candidates": "results_direct",
-        "search:auto": "prepare_branch",
-      },
-    },
-    /** Candidate list after searching from the recent-jobs path. */
-    results_from_recent: {
-      prompt: {
-        kind: "select",
-        message: (context) =>
-          withPromptTarget(
-            "Select a job (press Esc to search again)",
-            context.env,
-          ),
-        options: (context) =>
-          context.searchCandidates.map((job) => ({
-            value: job.url,
-            label: job.fullName || job.name,
-          })),
-      },
-      onSelect: "buildPre.selectSearchCandidate",
-      transitions: {
-        esc: "search_from_recent",
-        "select:search_again": "search_from_recent",
-        "select:job": "prepare_branch",
-      },
-    },
-    /** Candidate list after searching from the direct-search path. */
-    results_direct: {
-      prompt: {
-        kind: "select",
-        message: (context) =>
-          withPromptTarget(
-            "Select a job (press Esc to search again)",
-            context.env,
-          ),
-        options: (context) =>
-          context.searchCandidates.map((job) => ({
-            value: job.url,
-            label: job.fullName || job.name,
-          })),
-      },
-      onSelect: "buildPre.selectSearchCandidate",
-      transitions: {
-        esc: "search_direct",
         "select:search_again": "search_direct",
         "select:job": "prepare_branch",
       },
