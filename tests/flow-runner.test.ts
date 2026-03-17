@@ -6,10 +6,7 @@ import {
   listFlowHandlers,
 } from "../src/flows/handlers";
 import { SEARCH_ALL_JOBS_VALUE } from "../src/flows/constants";
-import {
-  resetValidatedFlowsForTesting,
-  runFlow,
-} from "../src/flows/runner";
+import { resetValidatedFlowsForTesting, runFlow } from "../src/flows/runner";
 import type {
   AutocompletePromptValue,
   AutocompletePromptResult,
@@ -35,8 +32,7 @@ function createPromptAdapter(
 ) {
   let cursor = 0;
   return {
-    autocomplete: async () =>
-      responses[cursor++] as AutocompletePromptResult,
+    autocomplete: async () => responses[cursor++] as AutocompletePromptResult,
     select: async () => responses[cursor++],
     confirm: async () => responses[cursor++],
     text: async () => responses[cursor++],
