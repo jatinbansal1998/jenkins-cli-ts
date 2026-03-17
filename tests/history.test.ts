@@ -7,6 +7,7 @@ import {
   spyOn,
   test,
 } from "bun:test";
+import * as clack from "../src/clack";
 import type { EnvConfig } from "../src/env";
 import type { JenkinsClient } from "../src/jenkins/client";
 import { runHistory, setHistoryDepsForTesting } from "../src/commands/history";
@@ -17,9 +18,15 @@ const REBUILD_VALUE = "__jenkins_cli_history_rebuild__";
 const RERUN_LAST_VALUE = "__jenkins_cli_history_rerun_last__";
 
 const confirmMock = mock(async (): Promise<boolean> => false);
-const selectMock = mock(async (): Promise<unknown> => CANCEL);
+const selectMock = mock(
+  async (..._args: unknown[]): Promise<unknown> => CANCEL,
+);
 const textMock = mock(async (): Promise<string> => "");
 const isCancelMock = mock((value: unknown) => value === CANCEL);
+const selectPrompt = ((options: Parameters<typeof clack.select>[0]) =>
+  selectMock(options)) as typeof clack.select;
+const isCancelPrompt = ((value: unknown): value is symbol =>
+  Boolean(isCancelMock(value))) as typeof clack.isCancel;
 const runCancelMock = mock(async () => undefined);
 const runLogsMock = mock(async () => undefined);
 const runWaitMock = mock(
@@ -96,9 +103,9 @@ describe("runHistory", () => {
     );
     setHistoryDepsForTesting({
       confirm: confirmMock,
-      select: selectMock,
+      select: selectPrompt,
       text: textMock,
-      isCancel: isCancelMock,
+      isCancel: isCancelPrompt,
       runCancel: runCancelMock,
       runLogs: runLogsMock,
       runWait: runWaitMock,

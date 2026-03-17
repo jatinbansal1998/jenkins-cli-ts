@@ -4,6 +4,7 @@ import {
   BRANCH_REMOVE_VALUE,
 } from "../src/flows/constants";
 import { flows } from "../src/flows/definition";
+import type { BuildPreContext, PromptOption } from "../src/flows/types";
 import { validateFlowDefinition } from "../src/flows/validate";
 
 describe("flow definitions", () => {
@@ -91,7 +92,13 @@ describe("flow definitions", () => {
       throw new Error("Expected select prompt for list action menu.");
     }
 
-    expect(listOptions.options.map((option) => option.value)).toEqual([
+    if (typeof listOptions.options === "function") {
+      throw new Error("Expected static options for list action menu.");
+    }
+
+    expect(
+      listOptions.options.map((option: PromptOption) => option.value),
+    ).toEqual([
       "build",
       "rerun_last",
       "rerun",
@@ -128,7 +135,16 @@ describe("flow definitions", () => {
       throw new Error("Expected select prompts for post-action menus.");
     }
 
-    expect(buildOptions.options.map((option) => option.value)).toEqual([
+    if (
+      typeof buildOptions.options === "function" ||
+      typeof statusOptions.options === "function"
+    ) {
+      throw new Error("Expected static options for post-action menus.");
+    }
+
+    expect(
+      buildOptions.options.map((option: PromptOption) => option.value),
+    ).toEqual([
       "rerun_last",
       "rerun",
       "watch",
@@ -138,7 +154,9 @@ describe("flow definitions", () => {
       "done",
     ]);
 
-    expect(statusOptions.options.map((option) => option.value)).toEqual([
+    expect(
+      statusOptions.options.map((option: PromptOption) => option.value),
+    ).toEqual([
       "build",
       "rerun_last",
       "rerun",
@@ -173,7 +191,15 @@ describe("flow definitions", () => {
       branchChoices: ["feature/payments", "development", "master"],
       removableBranches: ["feature/payments"],
       env: {} as never,
-    });
+      jobs: [],
+      recentJobs: [],
+      jobSelectionLocked: false,
+      searchQuery: "",
+      searchCandidates: [],
+      branchParam: "BRANCH",
+      customParams: {},
+      defaultBranch: false,
+    } satisfies BuildPreContext);
 
     expect(options.map((option) => option.value)).toEqual([
       "feature/payments",

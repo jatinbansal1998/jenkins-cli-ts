@@ -1,4 +1,8 @@
-import type { BuildStatus, JobStatus } from "./types/jenkins";
+import type {
+  BuildStatus,
+  JenkinsPipelineStage,
+  JobStatus,
+} from "./types/jenkins";
 
 const ANSI_BOLD = "\u001b[1m";
 const ANSI_RESET = "\u001b[0m";
@@ -10,10 +14,14 @@ export type StatusDetails = {
   estimatedDurationMs?: number;
   queueTimeMs?: number;
   parameters?: { name: string; value: string }[];
-  stage?: { name?: string; status?: string };
+  stages?: JenkinsPipelineStage[];
+  knownTotalStages?: number;
 };
 
-export function toStatusDetailsFromBuild(status: BuildStatus): StatusDetails {
+export function toStatusDetailsFromBuild(
+  status: BuildStatus,
+  options: { knownTotalStages?: number } = {},
+): StatusDetails {
   return {
     building: status.building,
     timestampMs: status.timestampMs,
@@ -21,11 +29,15 @@ export function toStatusDetailsFromBuild(status: BuildStatus): StatusDetails {
     estimatedDurationMs: status.estimatedDurationMs,
     queueTimeMs: status.queueTimeMs,
     parameters: status.parameters,
-    stage: status.stage,
+    stages: status.stages,
+    knownTotalStages: options.knownTotalStages,
   };
 }
 
-export function toStatusDetailsFromJob(status: JobStatus): StatusDetails {
+export function toStatusDetailsFromJob(
+  status: JobStatus,
+  options: { knownTotalStages?: number } = {},
+): StatusDetails {
   return {
     building: status.building,
     timestampMs: status.lastBuildTimestamp,
@@ -33,7 +45,8 @@ export function toStatusDetailsFromJob(status: JobStatus): StatusDetails {
     estimatedDurationMs: status.lastBuildEstimatedDurationMs,
     queueTimeMs: status.queueTimeMs,
     parameters: status.parameters,
-    stage: status.stage,
+    stages: status.stages,
+    knownTotalStages: options.knownTotalStages,
   };
 }
 
@@ -84,15 +97,13 @@ export function formatStatusDetails(
     lines.push(timingParts.join(" | "));
   }
 
-  const stageBranchParts: string[] = [];
-  if (status.stage?.name) {
-    const stageStatus = status.stage.status ? ` (${status.stage.status})` : "";
-    stageBranchParts.push(
-      formatLabelValue("Stage:", `${status.stage.name}${stageStatus}`),
-    );
-  }
-  if (stageBranchParts.length > 0) {
-    lines.push(stageBranchParts.join(" | "));
+  const stageText = formatStageText({
+    stages: status.stages,
+    building: status.building,
+    knownTotalStages: status.knownTotalStages,
+  });
+  if (stageText) {
+    lines.push(formatLabelValue("Stage:", stageText));
   }
 
   const paramsLines = formatParams(status.parameters);
@@ -114,6 +125,15 @@ export function formatCompactStatus(options: {
   }
   parts.push(options.result);
 
+  const stageText = formatStageText({
+    stages: options.status.stages,
+    building: options.status.building,
+    knownTotalStages: options.status.knownTotalStages,
+  });
+  if (stageText) {
+    parts.push(stageText);
+  }
+
   const duration = resolveDurationMs(options.status);
   if (duration > 0) {
     const label = options.status.building ? "Elapsed" : "Duration";
@@ -126,13 +146,6 @@ export function formatCompactStatus(options: {
       durationValue += ` (est ${formatDuration(options.status.estimatedDurationMs)})`;
     }
     parts.push(`${label}: ${durationValue}`);
-  }
-
-  if (options.status.stage?.name) {
-    const stageStatus = options.status.stage.status
-      ? ` (${options.status.stage.status})`
-      : "";
-    parts.push(`Stage: ${options.status.stage.name}${stageStatus}`);
   }
 
   return parts.join(" | ");
@@ -184,6 +197,137 @@ function formatParams(
     const label = index === 0 ? prefix : indent;
     return `${label}${chunk.join(", ")}`;
   });
+}
+
+function formatStageText(options: {
+  stages: JenkinsPipelineStage[] | undefined;
+  building?: boolean;
+  knownTotalStages?: number;
+}): string | undefined {
+  const stageDisplay = resolveStageDisplay(options.stages);
+  if (!stageDisplay.stage?.name) {
+    return undefined;
+  }
+  const stageStatus = stageDisplay.stage.status
+    ? ` (${stageDisplay.stage.status})`
+    : "";
+  if (options.building) {
+    const knownTotalStages = resolveKnownTotalStages({
+      knownTotalStages: options.knownTotalStages,
+      observedStageCount: options.stages?.length,
+      stageNumber: stageDisplay.stageNumber,
+    });
+    if (
+      typeof stageDisplay.stageNumber === "number" &&
+      typeof knownTotalStages === "number" &&
+      knownTotalStages > 1
+    ) {
+      return `[${stageDisplay.stageNumber}/${knownTotalStages}] ${stageDisplay.stage.name}${stageStatus}`;
+    }
+    return `${stageDisplay.stage.name}${stageStatus}`;
+  }
+
+  const totalStages =
+    stageDisplay.totalStages ??
+    resolveKnownTotalStages({
+      knownTotalStages: options.knownTotalStages,
+      observedStageCount: options.stages?.length,
+      stageNumber: stageDisplay.stageNumber,
+    });
+  const progressPrefix =
+    typeof stageDisplay.stageNumber === "number" &&
+    typeof totalStages === "number" &&
+    totalStages > 1
+      ? `[${stageDisplay.stageNumber}/${totalStages}] `
+      : "";
+  return `${progressPrefix}${stageDisplay.stage.name}${stageStatus}`;
+}
+
+function resolveStageDisplay(stages: JenkinsPipelineStage[] | undefined): {
+  stage?: JenkinsPipelineStage;
+  stageNumber?: number;
+  totalStages?: number;
+} {
+  if (!Array.isArray(stages) || stages.length === 0) {
+    return {};
+  }
+  const activeStageIndex = stages.findIndex((stage) =>
+    isActiveStageStatus(stage.status),
+  );
+  if (activeStageIndex >= 0) {
+    return {
+      stage: stages[activeStageIndex],
+      stageNumber: activeStageIndex + 1,
+      totalStages: stages.length,
+    };
+  }
+
+  const executedStages = stages.filter((stage) =>
+    isExecutedStageStatus(stage.status),
+  );
+  const completedStageCount = executedStages.filter((stage) =>
+    isCompletedStageStatus(stage.status),
+  ).length;
+  const lastStage =
+    executedStages.findLast((stage) => Boolean(stage.name || stage.status)) ??
+    executedStages.at(-1);
+  if (!lastStage) {
+    return {};
+  }
+  return {
+    stage: lastStage,
+    stageNumber:
+      completedStageCount > 0
+        ? Math.min(completedStageCount, stages.length)
+        : 1,
+    totalStages: stages.length,
+  };
+}
+
+function isActiveStageStatus(status: string | undefined): boolean {
+  const normalized = (status ?? "").trim().toUpperCase();
+  return normalized === "IN_PROGRESS" || normalized === "PAUSED_PENDING_INPUT";
+}
+
+function isCompletedStageStatus(status: string | undefined): boolean {
+  const normalized = (status ?? "").trim().toUpperCase();
+  return (
+    normalized === "SUCCESS" ||
+    normalized === "UNSTABLE" ||
+    normalized === "FAILED" ||
+    normalized === "FAILURE" ||
+    normalized === "ABORTED"
+  );
+}
+
+function isExecutedStageStatus(status: string | undefined): boolean {
+  return isActiveStageStatus(status) || isCompletedStageStatus(status);
+}
+
+function resolveKnownTotalStages(options: {
+  knownTotalStages?: number;
+  observedStageCount?: number;
+  stageNumber?: number;
+}): number | undefined {
+  if (
+    typeof options.knownTotalStages !== "number" ||
+    options.knownTotalStages <= 0
+  ) {
+    return undefined;
+  }
+  if (
+    typeof options.observedStageCount === "number" &&
+    options.knownTotalStages < options.observedStageCount
+  ) {
+    return undefined;
+  }
+  if (
+    typeof options.stageNumber === "number" &&
+    options.knownTotalStages < options.stageNumber
+  ) {
+    return undefined;
+  }
+  return options.knownTotalStages;
 }
 
 function sanitizeInline(value: string): string {

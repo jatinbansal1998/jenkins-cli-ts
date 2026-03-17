@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import * as clack from "../src/clack";
 import type { EnvConfig } from "../src/env";
 import {
   BUILD_WITH_CUSTOM_PARAMS_VALUE,
@@ -9,23 +10,40 @@ import {
   SEARCH_ALL_JOBS_VALUE,
 } from "../src/flows/constants";
 import type { JenkinsClient } from "../src/jenkins/client";
+import type { JenkinsJob } from "../src/types/jenkins";
 import { runBuild, setBuildDepsForTesting } from "../src/commands/build";
 import { setBuildPreFlowDepsForTesting } from "../src/flows/handlers";
 
-const CANCEL = "__mock_cancel__";
+const CANCEL = Symbol("cancel");
 const JOB_URL = "https://jenkins.example.com/job/alpha/";
 const BUILD_URL = "https://jenkins.example.com/job/alpha/42/";
 const QUEUE_URL = "https://jenkins.example.com/queue/item/123/";
 
 const confirmMock = mock(async () => false);
-const selectMock = mock(async () => "done");
-const textMock = mock(async () => "");
+const selectMock = mock(
+  async (..._args: unknown[]): Promise<unknown> => "done",
+);
+const textMock = mock(
+  async (..._args: unknown[]): Promise<string | symbol> => "",
+);
 const isCancelMock = mock((value: unknown) => value === CANCEL);
-const spinnerMock = mock(() => ({
+const spinnerMock = mock((..._args: unknown[]) => ({
   start: () => undefined,
   stop: () => undefined,
   message: () => undefined,
+  cancel: () => undefined,
+  error: () => undefined,
+  clear: () => undefined,
+  isCancelled: false,
 }));
+const selectPrompt = ((options: Parameters<typeof clack.select>[0]) =>
+  selectMock(options)) as typeof clack.select;
+const textPrompt = ((options: Parameters<typeof clack.text>[0]) =>
+  textMock(options)) as typeof clack.text;
+const isCancelPrompt = ((value: unknown): value is symbol =>
+  Boolean(isCancelMock(value))) as typeof clack.isCancel;
+const spinnerPrompt = ((options?: Parameters<typeof clack.spinner>[0]) =>
+  spinnerMock(options)) as typeof clack.spinner;
 
 const runCancelMock = mock(async (..._args: unknown[]) => undefined);
 const runLogsMock = mock(async () => undefined);
@@ -53,7 +71,9 @@ describe("build command navigation", () => {
     selectMock.mockImplementation(async () => "done");
 
     textMock.mockReset();
-    textMock.mockImplementation(async () => "");
+    textMock.mockImplementation(
+      async (..._args: unknown[]): Promise<string | symbol> => "",
+    );
 
     isCancelMock.mockReset();
     isCancelMock.mockImplementation((value: unknown) => value === CANCEL);
@@ -63,6 +83,10 @@ describe("build command navigation", () => {
       start: () => undefined,
       stop: () => undefined,
       message: () => undefined,
+      cancel: () => undefined,
+      error: () => undefined,
+      clear: () => undefined,
+      isCancelled: false,
     }));
 
     runCancelMock.mockReset();
@@ -104,10 +128,10 @@ describe("build command navigation", () => {
 
     setBuildDepsForTesting({
       confirm: confirmMock,
-      select: selectMock,
-      text: textMock,
-      isCancel: isCancelMock,
-      spinner: spinnerMock,
+      select: selectPrompt,
+      text: textPrompt,
+      isCancel: isCancelPrompt,
+      spinner: spinnerPrompt,
       runCancel: runCancelMock,
       runLogs: runLogsMock,
       notifyBuildComplete: notifyBuildCompleteMock,
@@ -121,8 +145,17 @@ describe("build command navigation", () => {
       getJobDisplayName: (job: { name: string; fullName?: string }) =>
         job.fullName || job.name,
       resolveJobMatch: async (options: {
-        jobs: { name: string; url: string }[];
-      }) => options.jobs[0],
+        query: string;
+        jobs: JenkinsJob[];
+        nonInteractive: boolean;
+        selectFromOptions?: (options: JenkinsJob[]) => Promise<JenkinsJob>;
+      }) => {
+        const firstJob = options.jobs[0];
+        if (!firstJob) {
+          throw new Error("Expected at least one job");
+        }
+        return firstJob;
+      },
     });
     setBuildPreFlowDepsForTesting({
       loadCachedBranches: loadCachedBranchesMock,
@@ -155,7 +188,9 @@ describe("build command navigation", () => {
       .mockImplementationOnce(async () => SEARCH_ALL_JOBS_VALUE)
       .mockImplementationOnce(async () => JOB_URL)
       .mockImplementationOnce(async () => BUILD_WITHOUT_PARAMS_VALUE);
-    textMock.mockImplementationOnce(async () => CANCEL);
+    textMock.mockImplementationOnce(
+      async (..._args: unknown[]): Promise<string | symbol> => CANCEL,
+    );
 
     await runBuild({
       client: createClient({

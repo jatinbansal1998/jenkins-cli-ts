@@ -12,6 +12,10 @@ import { runLogs } from "./logs";
 import { runRerun, runRerunLastBuild } from "./rerun";
 import { runWait } from "./wait";
 import {
+  getKnownStageTotal,
+  persistKnownTotalStages,
+} from "../stage-count-cache";
+import {
   formatStatusDetails,
   formatStatusSummary,
   toStatusDetailsFromJob,
@@ -157,13 +161,30 @@ export async function runStatus(options: StatusOptions): Promise<void> {
 
       const result = status.building ? "RUNNING" : status.result || "UNKNOWN";
       const url = status.lastBuildUrl || target.jobUrl;
+      const knownTotalStages = await getKnownStageTotal({
+        env: options.env,
+        jobUrl: target.jobUrl,
+        buildUrl: url,
+      });
       const summary = formatStatusSummary({
         jobLabel: target.jobLabel || target.jobUrl,
         buildNumber: status.lastBuildNumber,
         result,
       });
-      const details = formatStatusDetails(toStatusDetailsFromJob(status), url);
+      const details = formatStatusDetails(
+        toStatusDetailsFromJob(status, { knownTotalStages }),
+        url,
+      );
       printOk(details ? `${summary}\n${details}` : summary);
+      if (!status.building && (result === "SUCCESS" || result === "UNSTABLE")) {
+        await persistKnownTotalStages({
+          env: options.env,
+          jobUrl: target.jobUrl,
+          buildUrl: url,
+          stages: status.stages,
+          jobLabel: target.jobLabel,
+        });
+      }
 
       if (options.watch) {
         await runWait({
@@ -375,13 +396,30 @@ async function runStatusOnce(options: StatusOptions): Promise<void> {
 
   const result = status.building ? "RUNNING" : status.result || "UNKNOWN";
   const url = status.lastBuildUrl || jobUrl;
+  const knownTotalStages = await getKnownStageTotal({
+    env: options.env,
+    jobUrl,
+    buildUrl: url,
+  });
   const summary = formatStatusSummary({
     jobLabel: jobLabel || jobUrl,
     buildNumber: status.lastBuildNumber,
     result,
   });
-  const details = formatStatusDetails(toStatusDetailsFromJob(status), url);
+  const details = formatStatusDetails(
+    toStatusDetailsFromJob(status, { knownTotalStages }),
+    url,
+  );
   printOk(details ? `${summary}\n${details}` : summary);
+  if (!status.building && (result === "SUCCESS" || result === "UNSTABLE")) {
+    await persistKnownTotalStages({
+      env: options.env,
+      jobUrl,
+      buildUrl: url,
+      stages: status.stages,
+      jobLabel,
+    });
+  }
 
   if (options.watch) {
     await runWait({

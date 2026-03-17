@@ -113,7 +113,12 @@ export type JenkinsPipelineNodeResponse = {
 
 export type JenkinsPipelineStageResponse = {
   name?: string;
+  id?: string | number;
+  execNode?: string;
   status?: string;
+  startTimeMillis?: number;
+  durationMillis?: number;
+  pauseDurationMillis?: number;
   _links?: {
     self?: JenkinsPipelineLinkResponse;
     log?: JenkinsPipelineLinkResponse;
@@ -122,6 +127,17 @@ export type JenkinsPipelineStageResponse = {
 };
 
 export type JenkinsPipelineDescribeResponse = {
+  _links?: {
+    self?: JenkinsPipelineLinkResponse;
+    changesets?: JenkinsPipelineLinkResponse;
+  };
+  id?: string | number;
+  name?: string;
+  status?: string;
+  startTimeMillis?: number;
+  endTimeMillis?: number;
+  durationMillis?: number;
+  pauseDurationMillis?: number;
   stages?: JenkinsPipelineStageResponse[];
   queueDurationMillis?: number;
 };

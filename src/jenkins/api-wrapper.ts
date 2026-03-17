@@ -118,10 +118,10 @@ export class JenkinsClient {
     const pipeline = buildUrl ? await this.getPipelineInfo(buildUrl) : null;
     let queueTimeMs: number | undefined;
     if (
-      typeof pipeline?.queueDurationMs === "number" &&
-      pipeline.queueDurationMs >= 0
+      typeof pipeline?.queueDurationMillis === "number" &&
+      pipeline.queueDurationMillis >= 0
     ) {
-      queueTimeMs = pipeline.queueDurationMs;
+      queueTimeMs = pipeline.queueDurationMillis;
     } else if (
       typeof buildDetails?.queueId === "number" &&
       typeof lastBuild.timestamp === "number"
@@ -145,7 +145,7 @@ export class JenkinsClient {
       queueTimeMs,
       parameters,
       branch,
-      stage: pipeline?.stage,
+      stages: pipeline?.stages,
     };
   }
 
@@ -162,10 +162,10 @@ export class JenkinsClient {
     const pipeline = await this.getPipelineInfo(buildUrl);
     let queueTimeMs: number | undefined;
     if (
-      typeof pipeline?.queueDurationMs === "number" &&
-      pipeline.queueDurationMs >= 0
+      typeof pipeline?.queueDurationMillis === "number" &&
+      pipeline.queueDurationMillis >= 0
     ) {
-      queueTimeMs = pipeline.queueDurationMs;
+      queueTimeMs = pipeline.queueDurationMillis;
     } else if (
       typeof buildDetails.queueId === "number" &&
       typeof buildDetails.timestamp === "number"
@@ -189,7 +189,7 @@ export class JenkinsClient {
       queueTimeMs,
       parameters,
       branch,
-      stage: pipeline?.stage,
+      stages: pipeline?.stages,
     };
   }
 
@@ -223,7 +223,7 @@ export class JenkinsClient {
         });
         return {
           ...entry,
-          ...(pipeline?.stage ? { stage: pipeline.stage } : {}),
+          ...(pipeline?.stages ? { stages: pipeline.stages } : {}),
           ...(pipeline?.failure ? { failure: pipeline.failure } : {}),
         };
       }),
@@ -818,19 +818,36 @@ export class JenkinsClient {
         return null;
       }
       const data = (await response.json()) as JenkinsPipelineDescribeResponse;
-      const stages = Array.isArray(data.stages) ? data.stages : [];
-      const activeStage = stages.find(
-        (stage) =>
-          stage.status === "IN_PROGRESS" ||
-          stage.status === "PAUSED_PENDING_INPUT",
-      );
-      const stage = activeStage ?? stages.at(-1);
       const failure = options.includeFailure
         ? await this.getPipelineFailure(data)
         : undefined;
       return {
-        stage,
-        queueDurationMs: data.queueDurationMillis,
+        _links: data._links,
+        id: data.id,
+        name: data.name,
+        status: data.status,
+        startTimeMillis: data.startTimeMillis,
+        endTimeMillis: data.endTimeMillis,
+        durationMillis: data.durationMillis,
+        queueDurationMillis: data.queueDurationMillis,
+        pauseDurationMillis: data.pauseDurationMillis,
+        stages:
+          Array.isArray(data.stages) && data.stages.length > 0
+            ? data.stages.map((stage) => ({
+                ...stage,
+                _links: stage._links
+                  ? {
+                      ...stage._links,
+                      ...(stage._links.self
+                        ? { self: { ...stage._links.self } }
+                        : {}),
+                      ...(stage._links.log
+                        ? { log: { ...stage._links.log } }
+                        : {}),
+                    }
+                  : undefined,
+              }))
+            : undefined,
         failure,
       };
     } catch {
