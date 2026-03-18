@@ -83,7 +83,7 @@ export class JenkinsClient {
     const data = await this.requestJson<JenkinsJobsResponse>(url, "list jobs");
     if (!Array.isArray(data.jobs)) {
       throw new CliError("Unexpected Jenkins response when listing jobs.", [
-        "Try `jenkins-cli list --refresh` again.",
+        "Try `jenkins-cli --refresh` again.",
       ]);
     }
 
