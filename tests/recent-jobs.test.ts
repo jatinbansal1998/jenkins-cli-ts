@@ -114,9 +114,6 @@ describe("recent jobs", () => {
   });
 
   afterEach(() => {
-    mkdirMock.mockImplementation(fs.promises.mkdir);
-    renameMock.mockImplementation(fs.promises.rename);
-    rmMock.mockImplementation(fs.promises.rm);
     bunFileSpy.mockImplementation(realBunFile);
     files.clear();
   });

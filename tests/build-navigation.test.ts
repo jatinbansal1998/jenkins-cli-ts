@@ -14,10 +14,11 @@ import type { JenkinsClient } from "../src/jenkins/client";
 import type { JenkinsJob } from "../src/types/jenkins";
 import { runBuild, setBuildDepsForTesting } from "../src/commands/build";
 import { setBuildPreFlowDepsForTesting } from "../src/flows/handlers";
+import { normalizeJobUrl } from "../src/job-url";
 
 const CANCEL = Symbol("cancel");
 const JOB_URL = "https://jenkins.example.com/job/alpha/";
-const NORMALIZED_JOB_URL = JOB_URL.replace(/\/$/, "");
+const NORMALIZED_JOB_URL = normalizeJobUrl(JOB_URL);
 const BUILD_URL = "https://jenkins.example.com/job/alpha/42/";
 const QUEUE_URL = "https://jenkins.example.com/queue/item/123/";
 

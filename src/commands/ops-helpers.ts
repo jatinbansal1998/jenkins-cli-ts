@@ -63,9 +63,20 @@ export async function resolveJobTarget(options: {
     jobs,
     nonInteractive: options.nonInteractive,
   });
+  const normalizedJobUrl = normalizeOptionalJobUrl(selectedJob.url);
+  if (!normalizedJobUrl) {
+    throw new CliError("Selected job has an invalid URL.", [
+      "Run `jenkins-cli list --refresh` to update the cache.",
+    ]);
+  }
+  ensureValidUrl(normalizedJobUrl, "job-url");
+
   return {
-    jobUrl: selectedJob.url,
-    jobLabel: getJobDisplayName(selectedJob),
+    jobUrl: normalizedJobUrl,
+    jobLabel: getJobDisplayName({
+      ...selectedJob,
+      url: normalizedJobUrl,
+    }),
   };
 }
 
