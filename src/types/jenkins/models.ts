@@ -149,4 +149,5 @@ export type JenkinsClientOptions = {
   apiToken: string;
   timeoutMs?: number;
   useCrumb?: boolean;
+  folderDepth?: number;
 };

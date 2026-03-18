@@ -82,13 +82,11 @@ export async function installApiMocks(
     const normalizedPath = parsed?.pathname.replace(/\/+$/, "") ?? "";
     const isJenkinsRequest = requestUrl.startsWith(`${jenkinsUrl}/`);
 
-    if (
-      isJenkinsRequest &&
-      (requestUrl === `${jenkinsUrl}/api/json?tree=jobs[name,fullName,url]` ||
-        (normalizedPath === "/api/json" &&
-          parsed?.searchParams.get("tree") === "jobs[name,fullName,url]"))
-    ) {
-      return jsonResponse({ jobs });
+    if (isJenkinsRequest && normalizedPath === "/api/json") {
+      const tree = parsed?.searchParams.get("tree") ?? "";
+      if (tree.startsWith("jobs[")) {
+        return jsonResponse({ jobs });
+      }
     }
 
     if (isJenkinsRequest && normalizedPath === "/crumbIssuer/api/json") {

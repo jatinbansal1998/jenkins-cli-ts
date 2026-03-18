@@ -31,6 +31,8 @@ export type EnvConfig = {
   branchParamDefault: string;
   /** Whether Jenkins CSRF crumb should be used for POST requests. */
   useCrumb: boolean;
+  /** How many levels deep to pre-fetch folder children in a single API call. */
+  folderDepth: number;
 };
 
 export function normalizeUrl(rawUrl: string): string {
@@ -86,6 +88,7 @@ export function loadEnv(options: LoadEnvOptions = {}): EnvConfig {
       jenkinsApiToken: cliToken,
       branchParamDefault: resolveBranchParamDefault(),
       useCrumb: parseUseCrumbValue(process.env[ENV_KEYS.JENKINS_USE_CRUMB]),
+      folderDepth: DEFAULT_FOLDER_DEPTH,
     };
   }
 
@@ -104,6 +107,7 @@ export function loadEnv(options: LoadEnvOptions = {}): EnvConfig {
       useCrumb: parseUseCrumbValue(
         process.env[ENV_KEYS.JENKINS_USE_CRUMB] ?? activeProfile.useCrumb,
       ),
+      folderDepth: activeProfile.folderDepth ?? DEFAULT_FOLDER_DEPTH,
     };
   }
 
@@ -137,6 +141,7 @@ export function loadEnv(options: LoadEnvOptions = {}): EnvConfig {
     jenkinsApiToken: rawToken.trim(),
     branchParamDefault: resolveBranchParamDefault(),
     useCrumb: parseUseCrumbValue(process.env[ENV_KEYS.JENKINS_USE_CRUMB]),
+    folderDepth: DEFAULT_FOLDER_DEPTH,
   };
 }
 
@@ -157,6 +162,7 @@ export function getDebugDefault(): boolean {
 
 const REQUIRED_CLI_CREDENTIAL_COUNT = 3;
 const DEFAULT_BRANCH_PARAM = "BRANCH";
+const DEFAULT_FOLDER_DEPTH = 3;
 
 function resolveActiveProfileName(
   config:

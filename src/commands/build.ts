@@ -1322,16 +1322,6 @@ async function resolveInteractiveBuildSelection(options: {
       client: options.client,
       env: options.env,
       nonInteractive: false,
-      confirmRefresh: async (reason) => {
-        const response = await deps.confirm({
-          message: withPromptTarget(`${reason} Refresh now?`, options.env),
-          initialValue: true,
-        });
-        if (deps.isCancel(response)) {
-          throw new CliError("Operation cancelled.");
-        }
-        return Boolean(response);
-      },
     });
 
     if (jobs.length === 0) {
@@ -1432,16 +1422,6 @@ async function resolveJobTarget(options: {
     client: options.client,
     env: options.env,
     nonInteractive: options.nonInteractive,
-    confirmRefresh: async (reason) => {
-      const response = await deps.confirm({
-        message: withPromptTarget(`${reason} Refresh now?`, options.env),
-        initialValue: true,
-      });
-      if (deps.isCancel(response)) {
-        throw new CliError("Operation cancelled.");
-      }
-      return Boolean(response);
-    },
   });
 
   if (jobs.length === 0) {

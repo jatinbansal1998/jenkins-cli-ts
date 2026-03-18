@@ -61,6 +61,7 @@ const loadEnv: EnvConfig = {
   jenkinsApiToken: "test-token",
   branchParamDefault: "BRANCH",
   useCrumb: false,
+  folderDepth: 3,
 };
 
 let bunFileSpy = spyOn(Bun, "file");
@@ -121,6 +122,7 @@ describe("job cache refresh", () => {
       JSON.stringify({
         jenkinsUrl: env.jenkinsUrl,
         user: env.jenkinsUser,
+        folderDepth: loadEnv.folderDepth,
         fetchedAt: "2026-02-12T00:00:00.000Z",
         jobs: [
           {
@@ -180,6 +182,7 @@ describe("job cache refresh", () => {
       JSON.stringify({
         jenkinsUrl: env.jenkinsUrl,
         user: env.jenkinsUser,
+        folderDepth: loadEnv.folderDepth,
         fetchedAt: "2026-02-12T00:00:00.000Z",
         jobs: [{ name: "keep", url: "https://jenkins.example.com/job/keep" }],
         recentJobs: [
@@ -216,6 +219,7 @@ describe("job cache refresh", () => {
       JSON.stringify({
         jenkinsUrl: env.jenkinsUrl,
         user: env.jenkinsUser,
+        folderDepth: loadEnv.folderDepth,
         fetchedAt: "2026-02-12T00:00:00.000Z",
         jobs: [{ name: "keep", url: "https://jenkins.example.com/job/keep" }],
         recentJobs: ["https://jenkins.example.com/job/keep"],
@@ -249,6 +253,7 @@ describe("job cache refresh", () => {
       JSON.stringify({
         jenkinsUrl: env.jenkinsUrl,
         user: env.jenkinsUser,
+        folderDepth: loadEnv.folderDepth,
         fetchedAt: "2026-02-12T00:00:00.000Z",
         jobs: [
           {
@@ -299,6 +304,7 @@ describe("job cache refresh", () => {
     const previousCache = JSON.stringify({
       jenkinsUrl: env.jenkinsUrl,
       user: env.jenkinsUser,
+      folderDepth: loadEnv.folderDepth,
       fetchedAt: "2026-02-12T00:00:00.000Z",
       jobs: [
         { name: "existing", url: "https://jenkins.example.com/job/existing" },

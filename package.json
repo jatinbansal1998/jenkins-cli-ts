@@ -1,6 +1,6 @@
 {
   "name": "jenkins-cli-ts",
-  "version": "0.7.10",
+  "version": "0.7.11",
   "type": "module",
   "private": true,
   "module": "src/index.ts",

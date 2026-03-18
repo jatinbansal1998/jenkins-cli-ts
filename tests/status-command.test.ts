@@ -19,6 +19,7 @@ const env: EnvConfig = {
   jenkinsApiToken: "test-token",
   branchParamDefault: "BRANCH",
   useCrumb: false,
+  folderDepth: 3,
 };
 
 function createClient(stubs: Partial<JenkinsClient>): JenkinsClient {

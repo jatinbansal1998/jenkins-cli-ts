@@ -91,6 +91,11 @@ async function main(): Promise<void> {
       alias: "api-token",
       describe: "One-off Jenkins API token override for this command",
     })
+    .option("folder-depth", {
+      type: "number",
+      describe:
+        "Folder traversal depth for job discovery (default: 3, from config)",
+    })
     .middleware((argv) => {
       // Check if --debug or --no-debug was explicitly passed
       const debugExplicitlyPassed = rawArgs.some(
@@ -818,6 +823,7 @@ function createContext(argv?: {
   user?: unknown;
   token?: unknown;
   apiToken?: unknown;
+  folderDepth?: unknown;
 }): {
   env: ReturnType<typeof loadEnv>;
   client: JenkinsClient;
@@ -828,11 +834,17 @@ function createContext(argv?: {
     user: toOptionalString(argv?.user),
     apiToken: toOptionalString(argv?.token) ?? toOptionalString(argv?.apiToken),
   });
+  const folderDepth =
+    typeof argv?.folderDepth === "number" && Number.isFinite(argv.folderDepth)
+      ? Math.max(1, Math.floor(argv.folderDepth))
+      : env.folderDepth;
+  env.folderDepth = folderDepth;
   const client = new JenkinsClient({
     baseUrl: env.jenkinsUrl,
     user: env.jenkinsUser,
     apiToken: env.jenkinsApiToken,
     useCrumb: env.useCrumb,
+    folderDepth: env.folderDepth,
   });
   updateAnalyticsContext({
     used_profile: Boolean(env.profileName),

@@ -25,6 +25,7 @@ const TEST_ENV: EnvConfig = {
   jenkinsApiToken: "test-token",
   branchParamDefault: "BRANCH",
   useCrumb: false,
+  folderDepth: 3,
 };
 
 function createPromptAdapter(

@@ -18,6 +18,7 @@ export type ConfigFileInput = {
   branchParam?: string;
   useCrumb?: boolean;
   debug?: boolean;
+  folderDepth?: number;
   makeDefault?: boolean;
 };
 
@@ -27,6 +28,7 @@ export type JenkinsProfileConfig = {
   jenkinsApiToken: string;
   branchParam?: string;
   useCrumb?: boolean;
+  folderDepth?: number;
 };
 
 export type JenkinsConfig = {
@@ -133,6 +135,19 @@ export async function writeConfigFile(input: ConfigFileInput): Promise<string> {
     typeof input.useCrumb === "boolean"
       ? input.useCrumb
       : existingProfile?.useCrumb;
+  const parsedInputFolderDepth =
+    typeof input.folderDepth === "number" &&
+    Number.isFinite(input.folderDepth) &&
+    input.folderDepth >= 1
+      ? Math.floor(input.folderDepth)
+      : undefined;
+  const parsedExistingFolderDepth =
+    typeof existingProfile?.folderDepth === "number" &&
+    Number.isFinite(existingProfile.folderDepth) &&
+    existingProfile.folderDepth >= 1
+      ? Math.floor(existingProfile.folderDepth)
+      : undefined;
+  const folderDepth = parsedInputFolderDepth ?? parsedExistingFolderDepth;
 
   const nextProfile: JenkinsProfileConfig = {
     jenkinsUrl: input.jenkinsUrl.trim(),
@@ -140,6 +155,7 @@ export async function writeConfigFile(input: ConfigFileInput): Promise<string> {
     jenkinsApiToken: input.jenkinsApiToken.trim(),
     ...(branchParam ? { branchParam } : {}),
     ...(typeof useCrumb === "boolean" ? { useCrumb } : {}),
+    ...(typeof folderDepth === "number" ? { folderDepth } : {}),
   };
 
   const profiles = {
@@ -338,6 +354,7 @@ function parseProfileRecord(
     "jenkinsUseCrumb",
     ENV_KEYS.JENKINS_USE_CRUMB,
   ]);
+  const folderDepth = firstPositiveInt(record, ["folderDepth"]);
 
   return {
     jenkinsUrl,
@@ -345,6 +362,7 @@ function parseProfileRecord(
     jenkinsApiToken,
     ...(branchParam ? { branchParam } : {}),
     ...(typeof useCrumb === "boolean" ? { useCrumb } : {}),
+    ...(typeof folderDepth === "number" ? { folderDepth } : {}),
   };
 }
 
@@ -391,6 +409,11 @@ function normalizeConfigForWrite(config: JenkinsConfig): JenkinsConfig {
         : {}),
       ...(typeof profile.useCrumb === "boolean"
         ? { useCrumb: profile.useCrumb }
+        : {}),
+      ...(typeof profile.folderDepth === "number" &&
+      Number.isFinite(profile.folderDepth) &&
+      profile.folderDepth >= 1
+        ? { folderDepth: Math.floor(profile.folderDepth) }
         : {}),
     };
   }
@@ -472,6 +495,19 @@ function parseBooleanLike(value: unknown): boolean | undefined {
   }
   if (normalized === "false" || normalized === "0") {
     return false;
+  }
+  return undefined;
+}
+
+function firstPositiveInt(
+  record: Record<string, unknown>,
+  keys: string[],
+): number | undefined {
+  for (const key of keys) {
+    const value = record[key];
+    if (typeof value === "number" && Number.isFinite(value) && value >= 1) {
+      return Math.floor(value);
+    }
   }
   return undefined;
 }

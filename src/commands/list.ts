@@ -12,7 +12,6 @@ import { listDeps } from "./list-deps";
 import { runFlow } from "../flows/runner";
 import { flows } from "../flows/definition";
 import { listFlowHandlers } from "../flows/handlers";
-import { withPromptTarget } from "../tui-target";
 import type {
   ActionEffectResult,
   ListInteractiveContext,
@@ -45,7 +44,6 @@ export async function runList(options: ListOptions): Promise<void> {
     env: options.env,
     refresh: options.refresh,
     nonInteractive: options.nonInteractive,
-    confirmRefresh: (reason) => confirmRefresh(reason, options.env),
   });
 
   if (options.nonInteractive) {
@@ -111,20 +109,6 @@ async function runListActionMenu(
   if (result.terminal === "exit_command") {
     return "exit";
   }
-}
-
-async function confirmRefresh(
-  reason: string,
-  env: EnvConfig,
-): Promise<boolean> {
-  const response = await listDeps.confirm({
-    message: withPromptTarget(`${reason} Refresh now?`, env),
-    initialValue: true,
-  });
-  if (listDeps.isCancel(response)) {
-    throw new CliError("Operation cancelled.");
-  }
-  return response;
 }
 
 function printJobs(entries: JenkinsJob[], search: string): void {

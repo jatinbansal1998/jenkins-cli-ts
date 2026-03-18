@@ -32,6 +32,7 @@ export type JobCache = {
   jobs: CachedJob[];
   recentJobs?: string[];
   knownStageTotals?: Record<string, CachedStageTotal>;
+  folderDepth?: number;
 };
 
 const CACHE_DIR = resolveCacheDir();
@@ -127,7 +128,6 @@ export async function loadJobs(options: {
   env: EnvConfig;
   refresh?: boolean;
   nonInteractive: boolean;
-  confirmRefresh?: (reason: string) => Promise<boolean>;
 }): Promise<JenkinsJob[]> {
   const cache = await readJobCache(options.env);
   const isCacheUsable = cache && cacheMatchesEnv(cache, options.env);
@@ -136,12 +136,19 @@ export async function loadJobs(options: {
     return await fetchAndCacheJobs(options.client, options.env);
   }
 
-  if (isCacheUsable) {
+  let isExpired = false;
+  if (isCacheUsable && cache.fetchedAt) {
+    const fetchedAt = new Date(cache.fetchedAt).getTime();
+    const now = Date.now();
+    isExpired = now - fetchedAt > 24 * 60 * 60 * 1000;
+  }
+
+  if (isCacheUsable && !isExpired) {
     return cache.jobs;
   }
 
   const reason = cache
-    ? "Job cache does not match the current Jenkins URL or user."
+    ? "Job cache does not match the current Jenkins URL, user, or folder depth."
     : "Job cache is missing.";
 
   const hints = [
@@ -149,18 +156,11 @@ export async function loadJobs(options: {
     "Or pass `--job-url` to skip cache matching.",
   ];
 
-  if (options.nonInteractive) {
+  if (options.nonInteractive && !isCacheUsable) {
     throw new CliError(reason, hints);
   }
 
-  if (options.confirmRefresh) {
-    const shouldRefresh = await options.confirmRefresh(reason);
-    if (shouldRefresh) {
-      return await fetchAndCacheJobs(options.client, options.env);
-    }
-  }
-
-  throw new CliError(reason, hints);
+  return await fetchAndCacheJobs(options.client, options.env);
 }
 
 export async function readJobCache(env: {
@@ -182,13 +182,12 @@ async function fetchAndCacheJobs(
   const jobs = await client.listJobs();
   const existingCache = await readJobCache(env);
   const cachedJobs = mergeCachedBranches(jobs, existingCache);
-  const recentJobs =
-    existingCache && cacheMatchesEnv(existingCache, env)
-      ? pruneRecentJobs({
-          jobs,
-          recentJobs: existingCache.recentJobs,
-        })
-      : undefined;
+  const recentJobs = existingCache?.recentJobs
+    ? pruneRecentJobs({
+        jobs,
+        recentJobs: existingCache.recentJobs,
+      })
+    : undefined;
   const payload: JobCache = {
     jenkinsUrl: env.jenkinsUrl,
     user: env.jenkinsUser,
@@ -196,6 +195,7 @@ async function fetchAndCacheJobs(
     jobs: cachedJobs,
     recentJobs,
     knownStageTotals: existingCache?.knownStageTotals,
+    folderDepth: env.folderDepth,
   };
   await writeJobCache(payload);
   return jobs;
@@ -235,7 +235,11 @@ async function writeCacheToPath(
 }
 
 function cacheMatchesEnv(cache: JobCache, env: EnvConfig): boolean {
-  return cache.jenkinsUrl === env.jenkinsUrl && cache.user === env.jenkinsUser;
+  return (
+    cache.jenkinsUrl === env.jenkinsUrl &&
+    cache.user === env.jenkinsUser &&
+    cache.folderDepth === env.folderDepth
+  );
 }
 
 function buildCacheKey(jenkinsUrl: string): string {

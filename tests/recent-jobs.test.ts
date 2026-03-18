@@ -70,6 +70,7 @@ const loadEnv: EnvConfig = {
   jenkinsApiToken: "test-token",
   branchParamDefault: "BRANCH",
   useCrumb: false,
+  folderDepth: 3,
 };
 
 const cachedJobs: JenkinsJob[] = [
