@@ -15,8 +15,8 @@ import { runBuild, setBuildDepsForTesting } from "../src/commands/build";
 
 const confirmMock = mock(async () => false);
 const autocompleteMock = mock(async () => JOB_URL);
-const selectMock = mock(async () => "done");
-const textMock = mock(async () => "");
+const selectMock = mock(async (..._args: unknown[]) => "done");
+const textMock = mock(async (..._args: unknown[]) => "");
 const isCancelMock = mock((..._args: unknown[]) => false);
 const spinnerMock = mock((..._args: unknown[]) => ({
   start: () => undefined,
@@ -40,6 +40,7 @@ const runLogsMock = mock(async () => undefined);
 const notifyBuildCompleteMock = mock(async () => undefined);
 
 const JOB_URL = "https://jenkins.example.com/job/crypto-order-matching-engine/";
+const NORMALIZED_JOB_URL = JOB_URL.replace(/\/$/, "");
 const BUILD_URL =
   "https://jenkins.example.com/job/crypto-order-matching-engine/381/";
 const QUEUE_URL = "https://jenkins.example.com/queue/item/9042/";
@@ -302,7 +303,7 @@ describe("build command", () => {
     expect(selectMock).toHaveBeenCalledWith(
       expect.objectContaining({
         message: expect.stringContaining(
-          "Next action for https://jenkins.example.com/job/crypto-order-matching-engine/",
+          "Next action for https://jenkins.example.com/job/crypto-order-matching-engine",
         ),
       }),
     );
@@ -416,7 +417,7 @@ describe("build command", () => {
     const triggerCalls = triggerBuild.mock.calls as unknown as Array<
       Array<unknown>
     >;
-    expect(triggerCalls[0]?.[0]).toBe(JOB_URL);
+    expect(triggerCalls[0]?.[0]).toBe(NORMALIZED_JOB_URL);
     expect(triggerCalls[0]?.[1]).toEqual({});
   });
 
@@ -442,7 +443,7 @@ describe("build command", () => {
     const triggerCalls = triggerBuild.mock.calls as unknown as Array<
       Array<unknown>
     >;
-    expect(triggerCalls[0]?.[0]).toBe(JOB_URL);
+    expect(triggerCalls[0]?.[0]).toBe(NORMALIZED_JOB_URL);
     expect(triggerCalls[0]?.[1]).toEqual({});
   });
 
@@ -471,7 +472,7 @@ describe("build command", () => {
     const triggerCalls = triggerBuild.mock.calls as unknown as Array<
       Array<unknown>
     >;
-    expect(triggerCalls[0]?.[0]).toBe(JOB_URL);
+    expect(triggerCalls[0]?.[0]).toBe(NORMALIZED_JOB_URL);
     expect(triggerCalls[0]?.[1]).toEqual({
       DEPLOY_ENV: "staging",
       FORCE: "true",
@@ -503,7 +504,7 @@ describe("build command", () => {
     const triggerCalls = triggerBuild.mock.calls as unknown as Array<
       Array<unknown>
     >;
-    expect(triggerCalls[0]?.[0]).toBe(JOB_URL);
+    expect(triggerCalls[0]?.[0]).toBe(NORMALIZED_JOB_URL);
     expect(triggerCalls[0]?.[1]).toEqual({
       DEPLOY_ENV: "staging",
       BRANCH: "staging",

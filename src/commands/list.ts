@@ -80,9 +80,16 @@ function getFilteredJobs(jobs: JenkinsJob[], search: string): JenkinsJob[] {
 async function runListActionMenu(
   options: ListActionMenuOptions & { searchQuery: string },
 ): Promise<"exit" | void> {
+  const preferredJobs = options.searchQuery
+    ? listDeps.sortJobsByDisplayName(options.jobs)
+    : await listDeps.loadPreferredJobs({
+        env: options.env,
+        jobs: options.jobs,
+      });
   const context: ListInteractiveContext = {
     env: options.env,
     jobs: options.jobs,
+    preferredJobs,
     searchQuery: options.searchQuery,
     performAction: (action, selectedJob) =>
       performListAction(options, action, selectedJob),

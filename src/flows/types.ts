@@ -172,6 +172,7 @@ export type ActionEffectResult =
 export type ListInteractiveContext = {
   env: EnvConfig;
   jobs: JenkinsJob[];
+  preferredJobs: JenkinsJob[];
   searchQuery: string;
   selectedJob?: JenkinsJob;
   selectedAction?: string;

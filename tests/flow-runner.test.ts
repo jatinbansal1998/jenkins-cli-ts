@@ -82,6 +82,9 @@ describe("flow runner", () => {
     const context: ListInteractiveContext = {
       env: TEST_ENV,
       jobs: [{ name: "api", url: "https://jenkins.example.com/job/api/" }],
+      preferredJobs: [
+        { name: "api", url: "https://jenkins.example.com/job/api/" },
+      ],
       searchQuery: "",
       performAction: async () => "watch_cancelled",
     };
@@ -104,6 +107,9 @@ describe("flow runner", () => {
     const context: ListInteractiveContext = {
       env: TEST_ENV,
       jobs: [{ name: "api", url: "https://jenkins.example.com/job/api/" }],
+      preferredJobs: [
+        { name: "api", url: "https://jenkins.example.com/job/api/" },
+      ],
       searchQuery: "",
       performAction: async () => "action_error",
     };

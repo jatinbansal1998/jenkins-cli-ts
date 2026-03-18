@@ -17,6 +17,7 @@ import { setBuildPreFlowDepsForTesting } from "../src/flows/handlers";
 
 const CANCEL = Symbol("cancel");
 const JOB_URL = "https://jenkins.example.com/job/alpha/";
+const NORMALIZED_JOB_URL = JOB_URL.replace(/\/$/, "");
 const BUILD_URL = "https://jenkins.example.com/job/alpha/42/";
 const QUEUE_URL = "https://jenkins.example.com/queue/item/123/";
 
@@ -31,8 +32,10 @@ const confirmMock = mock(async () => false);
 const autocompleteMock = mock(
   async (): Promise<AutocompletePromptResult> => createAutocompleteSelection(),
 );
-const selectMock = mock(async (): Promise<string | typeof CANCEL> => "done");
-const textMock = mock(async () => "");
+const selectMock = mock(
+  async (..._args: unknown[]): Promise<string | typeof CANCEL> => "done",
+);
+const textMock = mock(async (..._args: unknown[]): Promise<string> => "");
 const isCancelMock = mock((value: unknown) => value === CANCEL);
 const spinnerMock = mock((..._args: unknown[]) => ({
   start: () => undefined,
@@ -87,7 +90,7 @@ describe("build command navigation", () => {
 
     textMock.mockReset();
     textMock.mockImplementation(
-      async (..._args: unknown[]): Promise<string | symbol> => "",
+      async (..._args: unknown[]): Promise<string> => "",
     );
 
     isCancelMock.mockReset();
@@ -227,7 +230,7 @@ describe("build command navigation", () => {
     );
     expect(autocompleteMock).toHaveBeenCalledTimes(1);
     expect(triggerBuild).toHaveBeenCalledTimes(1);
-    expect(triggerBuild).toHaveBeenCalledWith(JOB_URL, {});
+    expect(triggerBuild).toHaveBeenCalledWith(NORMALIZED_JOB_URL, {});
   });
 
   test("interactive branch selection supports using job without parameters", async () => {
@@ -254,7 +257,7 @@ describe("build command navigation", () => {
     });
 
     expect(triggerBuild).toHaveBeenCalledTimes(1);
-    expect(triggerBuild).toHaveBeenCalledWith(JOB_URL, {});
+    expect(triggerBuild).toHaveBeenCalledWith(NORMALIZED_JOB_URL, {});
   });
 
   test("structured autocomplete payload preserves user input when returning to search", async () => {
@@ -318,7 +321,7 @@ describe("build command navigation", () => {
     });
 
     expect(triggerBuild).toHaveBeenCalledTimes(1);
-    expect(triggerBuild).toHaveBeenCalledWith(JOB_URL, {
+    expect(triggerBuild).toHaveBeenCalledWith(NORMALIZED_JOB_URL, {
       BRANCH: "development",
     });
   });
@@ -349,7 +352,7 @@ describe("build command navigation", () => {
     });
 
     expect(triggerBuild).toHaveBeenCalledTimes(1);
-    expect(triggerBuild).toHaveBeenCalledWith(JOB_URL, {});
+    expect(triggerBuild).toHaveBeenCalledWith(NORMALIZED_JOB_URL, {});
     const selectCalls = selectMock.mock.calls as unknown as Array<
       Array<unknown>
     >;
@@ -388,7 +391,7 @@ describe("build command navigation", () => {
     });
 
     expect(triggerBuild).toHaveBeenCalledTimes(1);
-    expect(triggerBuild).toHaveBeenCalledWith(JOB_URL, {
+    expect(triggerBuild).toHaveBeenCalledWith(NORMALIZED_JOB_URL, {
       DEPLOY_ENV: "staging",
     });
   });
@@ -453,7 +456,7 @@ describe("build command navigation", () => {
     });
 
     expect(triggerBuild).toHaveBeenCalledTimes(1);
-    expect(triggerBuild).toHaveBeenCalledWith(JOB_URL, {
+    expect(triggerBuild).toHaveBeenCalledWith(NORMALIZED_JOB_URL, {
       DEPLOY_ENV: "production",
     });
   });
@@ -519,7 +522,7 @@ describe("build command navigation", () => {
     });
 
     expect(triggerBuild).toHaveBeenCalledTimes(1);
-    expect(triggerBuild).toHaveBeenCalledWith(JOB_URL, {
+    expect(triggerBuild).toHaveBeenCalledWith(NORMALIZED_JOB_URL, {
       BRANCH: "development",
       DEPLOY_ENV: "staging",
     });

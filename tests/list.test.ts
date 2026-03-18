@@ -19,11 +19,12 @@ const jobs: JenkinsJob[] = [
 ];
 
 const loadJobsMock = mock(async () => jobs);
-const autocompleteMock = mock(async () => EXIT_VALUE);
+const loadPreferredJobsMock = mock(async () => jobs);
+const autocompleteMock = mock(async (..._args: unknown[]) => EXIT_VALUE);
 const confirmMock = mock(() => true);
 const isCancelMock = mock(() => false);
-const selectMock = mock(async () => EXIT_VALUE);
-const textMock = mock(async () => "q");
+const selectMock = mock(async (..._args: unknown[]) => EXIT_VALUE);
+const textMock = mock(async (..._args: unknown[]) => "q");
 
 const runBuildMock = mock(async () => undefined);
 const runHistoryMock = mock(async () => undefined);
@@ -42,6 +43,7 @@ mock.module("../src/commands/list-deps", () => ({
     select: selectMock,
     text: textMock,
     loadJobs: loadJobsMock,
+    loadPreferredJobs: loadPreferredJobsMock,
     getJobDisplayName: (job: { name: string; fullName?: string }) =>
       job.fullName || job.name,
     rankJobs: (query: string, entries: { name: string; url: string }[]) =>
@@ -72,6 +74,8 @@ describe("runList", () => {
     mock.clearAllMocks();
     loadJobsMock.mockReset();
     loadJobsMock.mockImplementation(async () => jobs);
+    loadPreferredJobsMock.mockReset();
+    loadPreferredJobsMock.mockImplementation(async () => jobs);
     autocompleteMock.mockReset();
     autocompleteMock.mockImplementation(async () => EXIT_VALUE);
     confirmMock.mockReset();
@@ -140,6 +144,7 @@ describe("runList", () => {
     });
 
     expect(textMock).toHaveBeenCalledTimes(0);
+    expect(loadPreferredJobsMock).toHaveBeenCalledTimes(0);
     expect(selectMock).toHaveBeenCalledTimes(1);
     expect(autocompleteMock).toHaveBeenCalledTimes(1);
     const autocompleteCalls = autocompleteMock.mock.calls as unknown as Array<
@@ -150,6 +155,42 @@ describe("runList", () => {
         initialUserInput: "beta",
       }),
     );
+  });
+
+  test("interactive blank search uses preferred jobs for default ordering", async () => {
+    loadPreferredJobsMock.mockImplementationOnce(async () => [
+      jobs[0] as JenkinsJob,
+      jobs[1] as JenkinsJob,
+    ]);
+    autocompleteMock.mockImplementationOnce(async (...args: unknown[]) => {
+      const [options] = args as [
+        {
+          options: unknown[] | ((this: { userInput: string }) => unknown[]);
+        },
+      ];
+      const resolvedOptions =
+        typeof options.options === "function"
+          ? options.options.call({ userInput: "" })
+          : options.options;
+      expect(resolvedOptions).toEqual([
+        { value: "https://jenkins.example.com/job/beta", label: "beta" },
+        { value: "https://jenkins.example.com/job/alpha", label: "alpha" },
+      ]);
+      return EXIT_VALUE;
+    });
+
+    await runList({
+      client: {} as JenkinsClient,
+      env: { branchParamDefault: "BRANCH" } as EnvConfig,
+      refresh: false,
+      nonInteractive: false,
+    });
+
+    expect(loadPreferredJobsMock).toHaveBeenCalledTimes(1);
+    expect(loadPreferredJobsMock).toHaveBeenCalledWith({
+      env: expect.objectContaining({ branchParamDefault: "BRANCH" }),
+      jobs,
+    });
   });
 
   test("interactive routes selected action to watch command", async () => {

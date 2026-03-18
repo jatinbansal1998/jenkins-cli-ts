@@ -31,6 +31,7 @@ import {
 import { loadRecentJobs, recordRecentJob } from "../recent-jobs.ts";
 import type { EnvConfig } from "../env";
 import type { JenkinsClient } from "../jenkins/api-wrapper";
+import { areSameJobUrls, normalizeOptionalJobUrl } from "../job-url";
 import { getJobDisplayName, loadJobs, resolveJobMatch } from "../jobs";
 import { notifyBuildComplete } from "../notify";
 import {
@@ -241,14 +242,10 @@ export async function runBuild(options: BuildOptions): Promise<BuildRunResult> {
       }
     }
 
-    try {
-      await deps.recordRecentJob({
-        env: options.env,
-        jobUrl: resolvedJobUrl,
-      });
-    } catch {
-      // Ignore cache write failures for build success.
-    }
+    await deps.recordRecentJob({
+      env: options.env,
+      jobUrl: resolvedJobUrl,
+    });
 
     const displayJob = jobLabel || resolvedJobUrl;
     if (result.buildUrl) {
@@ -434,14 +431,10 @@ export async function runBuild(options: BuildOptions): Promise<BuildRunResult> {
                   // Ignore cache write failures for build success.
                 }
               }
-              try {
-                await deps.recordRecentJob({
-                  env: options.env,
-                  jobUrl: resolvedJobUrl,
-                });
-              } catch {
-                // Ignore cache write failures for build success.
-              }
+              await deps.recordRecentJob({
+                env: options.env,
+                jobUrl: resolvedJobUrl,
+              });
 
               if (rerunResult.buildUrl) {
                 printOk(`Build started at ${rerunResult.buildUrl}.`);
@@ -633,14 +626,10 @@ async function runBuildOnce(options: {
     }
   }
 
-  try {
-    await deps.recordRecentJob({
-      env: options.env,
-      jobUrl,
-    });
-  } catch {
-    // Ignore cache write failures for build success.
-  }
+  await deps.recordRecentJob({
+    env: options.env,
+    jobUrl,
+  });
 
   const displayJob = jobLabel || jobUrl;
   if (result.buildUrl) {
@@ -1318,7 +1307,7 @@ async function resolveInteractiveBuildSelection(options: {
   defaultBranch: boolean;
 }> {
   const deps = activeBuildDeps;
-  const providedUrl = options.jobUrl?.trim() ?? "";
+  const providedUrl = normalizeOptionalJobUrl(options.jobUrl);
   if (providedUrl) {
     ensureValidUrl(providedUrl, "job-url");
   }
@@ -1326,7 +1315,7 @@ async function resolveInteractiveBuildSelection(options: {
   const query = options.job?.trim() ?? "";
   let jobs: Awaited<ReturnType<typeof defaultBuildDeps.loadJobs>> = [];
   let recentJobs: { url: string; label: string }[] = [];
-  let selectedJobLabel = providedUrl || undefined;
+  let selectedJobLabel = providedUrl;
 
   if (!providedUrl) {
     jobs = await deps.loadJobs({
@@ -1360,7 +1349,7 @@ async function resolveInteractiveBuildSelection(options: {
     recentJobs,
     jobSelectionLocked: Boolean(providedUrl),
     searchQuery: query,
-    selectedJobUrl: providedUrl || undefined,
+    selectedJobUrl: providedUrl,
     selectedJobLabel,
     branchParam: options.branchParam,
     branch: options.branch,
@@ -1403,13 +1392,13 @@ async function resolveInteractiveBuildSelection(options: {
     );
   }
 
-  const selectedJobUrl = context.selectedJobUrl?.trim() ?? "";
+  const selectedJobUrl = normalizeOptionalJobUrl(context.selectedJobUrl);
   if (!selectedJobUrl) {
     throw new CliError("Job name is required.");
   }
 
   const matchedFromSearch =
-    !providedUrl || selectedJobUrl.toLowerCase() !== providedUrl.toLowerCase();
+    !providedUrl || !areSameJobUrls(selectedJobUrl, providedUrl);
 
   return {
     jobUrl: selectedJobUrl,
@@ -1429,7 +1418,7 @@ async function resolveJobTarget(options: {
   nonInteractive: boolean;
 }): Promise<{ jobUrl: string; jobLabel: string; matchedFromSearch: boolean }> {
   const deps = activeBuildDeps;
-  const providedUrl = options.jobUrl?.trim() ?? "";
+  const providedUrl = normalizeOptionalJobUrl(options.jobUrl);
   if (providedUrl) {
     ensureValidUrl(providedUrl, "job-url");
     return {

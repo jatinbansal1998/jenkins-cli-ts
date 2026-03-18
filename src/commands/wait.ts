@@ -3,6 +3,7 @@ import { markAnalyticsPollingCommand } from "../analytics";
 import { CliError, printError, printHint, printOk } from "../cli";
 import type { EnvConfig } from "../env";
 import type { JenkinsClient } from "../jenkins/api-wrapper";
+import { normalizeOptionalJobUrl } from "../job-url";
 import type { BuildStatus, JobStatus } from "../types/jenkins";
 import {
   getKnownStageTotal,
@@ -146,7 +147,7 @@ async function resolveWaitTarget(options: WaitOptions): Promise<{
     return {
       queueUrl,
       jobLabel: queueUrl,
-      jobUrl: options.jobUrl?.trim() || undefined,
+      jobUrl: normalizeOptionalJobUrl(options.jobUrl),
     };
   }
 
@@ -334,13 +335,11 @@ export async function waitForBuild(options: {
           buildUrl = queued.buildUrl;
           buildNumber = queued.buildNumber;
           queueUrl = undefined;
-          if (knownTotalStages === undefined) {
-            knownTotalStages = await getKnownStageTotal({
-              env: options.env,
-              jobUrl: options.jobUrl,
-              buildUrl,
-            });
-          }
+          knownTotalStages ??= await getKnownStageTotal({
+            env: options.env,
+            jobUrl: options.jobUrl,
+            buildUrl,
+          });
           continue;
         }
         if (options.jobUrl) {
@@ -436,13 +435,11 @@ export async function waitForBuild(options: {
           typeof targetBuildNumber === "number" &&
           currentNumber === targetBuildNumber
         ) {
-          if (knownTotalStages === undefined) {
-            knownTotalStages = await getKnownStageTotal({
-              env: options.env,
-              jobUrl: options.jobUrl,
-              buildUrl: status.lastBuildUrl,
-            });
-          }
+          knownTotalStages ??= await getKnownStageTotal({
+            env: options.env,
+            jobUrl: options.jobUrl,
+            buildUrl: status.lastBuildUrl,
+          });
           const currentResult = status.building
             ? "RUNNING"
             : status.result || "UNKNOWN";

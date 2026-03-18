@@ -3,6 +3,7 @@
  * Stores recently used branches per job inside jobs.json.
  */
 import type { EnvConfig } from "./env";
+import { findJobByUrl } from "./job-url";
 import { readJobCache, writeJobCache } from "./jobs";
 
 const MAX_BRANCHES_PER_JOB = 10;
@@ -27,7 +28,7 @@ export async function loadCachedBranchHistory(options: {
   if (!cache || !cacheMatchesEnv(cache, options.env)) {
     return [];
   }
-  const job = cache.jobs.find((entry) => entry.url === options.jobUrl);
+  const job = findJobByUrl(cache.jobs, options.jobUrl);
   const entries = job?.branches;
   if (!Array.isArray(entries)) {
     return [];
@@ -53,7 +54,7 @@ export async function removeCachedBranch(options: {
   if (!cache || !cacheMatchesEnv(cache, options.env)) {
     return false;
   }
-  const job = cache.jobs.find((entry) => entry.url === options.jobUrl);
+  const job = findJobByUrl(cache.jobs, options.jobUrl);
   if (!job || !Array.isArray(job.branches) || job.branches.length === 0) {
     return false;
   }
@@ -81,7 +82,7 @@ export async function recordBranchSelection(options: {
   if (!cache || !cacheMatchesEnv(cache, options.env)) {
     return;
   }
-  const job = cache.jobs.find((entry) => entry.url === options.jobUrl);
+  const job = findJobByUrl(cache.jobs, options.jobUrl);
   if (!job) {
     return;
   }
