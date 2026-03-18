@@ -23,83 +23,95 @@ describe("runCancel", () => {
     const sleepSpy = spyOn(Bun, "sleep");
     sleepSpy.mockImplementation(async () => undefined);
 
-    const stopBuild = mock(async () => undefined);
-    const getBuildStatus = mock(async () => {
-      const callCount = getBuildStatus.mock.calls.length;
-      if (callCount === 1) {
+    try {
+      const stopBuild = mock(async () => undefined);
+      const getBuildStatus = mock(async () => {
+        const callCount = getBuildStatus.mock.calls.length;
+        if (callCount === 1) {
+          return {
+            buildUrl: "https://jenkins.example.com/job/my-job/123/",
+            buildNumber: 123,
+            building: true,
+            result: null,
+          };
+        }
         return {
           buildUrl: "https://jenkins.example.com/job/my-job/123/",
           buildNumber: 123,
-          building: true,
-          result: null,
+          building: false,
+          result: "ABORTED",
         };
-      }
-      return {
+      });
+
+      await runCancel({
+        client: createClient({
+          stopBuild,
+          getBuildStatus,
+        }),
+        env: {} as EnvConfig,
         buildUrl: "https://jenkins.example.com/job/my-job/123/",
-        buildNumber: 123,
-        building: false,
-        result: "ABORTED",
-      };
-    });
+        nonInteractive: true,
+      });
 
-    await runCancel({
-      client: createClient({
-        stopBuild,
-        getBuildStatus,
-      }),
-      env: {} as EnvConfig,
-      buildUrl: "https://jenkins.example.com/job/my-job/123/",
-      nonInteractive: true,
-    });
-
-    expect(stopBuild).toHaveBeenCalledWith(
-      "https://jenkins.example.com/job/my-job/123/",
-    );
-    expect(getBuildStatus).toHaveBeenCalledTimes(2);
-    const messages = logSpy.mock.calls
-      .map((call) => call[0])
-      .filter((entry): entry is string => typeof entry === "string");
-    expect(messages).toContain(
-      "OK: Cancellation requested for build: https://jenkins.example.com/job/my-job/123/",
-    );
-    expect(messages.some((message) => message.includes("ABORTED"))).toBe(true);
-    expect(messages.some((message) => message.includes("RUNNING"))).toBe(true);
-    logSpy.mockRestore();
-    sleepSpy.mockRestore();
-    Object.defineProperty(process.stdin, "isTTY", {
-      value: originalIsTTY,
-      configurable: true,
-    });
+      expect(stopBuild).toHaveBeenCalledWith(
+        "https://jenkins.example.com/job/my-job/123/",
+      );
+      expect(getBuildStatus).toHaveBeenCalledTimes(2);
+      const messages = logSpy.mock.calls
+        .map((call) => call[0])
+        .filter((entry): entry is string => typeof entry === "string");
+      expect(messages).toContain(
+        "OK: Cancellation requested for build: https://jenkins.example.com/job/my-job/123/",
+      );
+      expect(messages.some((message) => message.includes("ABORTED"))).toBe(
+        true,
+      );
+      expect(messages.some((message) => message.includes("RUNNING"))).toBe(
+        true,
+      );
+    } finally {
+      logSpy.mockRestore();
+      sleepSpy.mockRestore();
+      Object.defineProperty(process.stdin, "isTTY", {
+        value: originalIsTTY,
+        configurable: true,
+      });
+    }
   });
 
   test("stops watching once Jenkins reports a terminal post-cancel status", async () => {
     const logSpy = spyOn(console, "log");
-    const stopBuild = mock(async () => undefined);
-    const getBuildStatus = mock(async () => ({
-      buildUrl: "https://jenkins.example.com/job/my-job/123/",
-      buildNumber: 123,
-      building: false,
-      result: "SUCCESS",
-    }));
+    try {
+      const stopBuild = mock(async () => undefined);
+      const getBuildStatus = mock(async () => ({
+        buildUrl: "https://jenkins.example.com/job/my-job/123/",
+        buildNumber: 123,
+        building: false,
+        result: "SUCCESS",
+      }));
 
-    await runCancel({
-      client: createClient({
-        stopBuild,
-        getBuildStatus,
-      }),
-      env: {} as EnvConfig,
-      buildUrl: "https://jenkins.example.com/job/my-job/123/",
-      nonInteractive: true,
-    });
+      await runCancel({
+        client: createClient({
+          stopBuild,
+          getBuildStatus,
+        }),
+        env: {} as EnvConfig,
+        buildUrl: "https://jenkins.example.com/job/my-job/123/",
+        nonInteractive: true,
+      });
 
-    expect(getBuildStatus).toHaveBeenCalledTimes(1);
-    const messages = logSpy.mock.calls
-      .map((call) => call[0])
-      .filter((entry): entry is string => typeof entry === "string");
-    expect(messages).toContain(
-      "OK: Cancellation requested for build: https://jenkins.example.com/job/my-job/123/",
-    );
-    expect(messages.some((message) => message.includes("SUCCESS"))).toBe(true);
-    logSpy.mockRestore();
+      expect(getBuildStatus).toHaveBeenCalledTimes(1);
+      const messages = logSpy.mock.calls
+        .map((call) => call[0])
+        .filter((entry): entry is string => typeof entry === "string");
+      expect(messages).toContain(
+        "OK: Cancellation requested for build: https://jenkins.example.com/job/my-job/123/",
+      );
+      expect(messages.some((message) => message.includes("SUCCESS"))).toBe(
+        true,
+      );
+    } finally {
+      logSpy.mockRestore();
+    }
   });
 });

@@ -18,7 +18,7 @@ export function formatCliIntro(options: CliIntroOptions): string {
   const lines: string[] = [];
 
   if (options.showAsciiBanner) {
-    lines.push(ASCII_BANNER);
+    lines.push("\n", ASCII_BANNER, "\n");
   } else {
     lines.push("Jenkins CLI");
   }

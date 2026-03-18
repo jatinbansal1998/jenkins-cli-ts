@@ -93,6 +93,12 @@ export class JenkinsClient {
       await this.collectFolderJobs(item, jobs, seen);
     }
 
+    if (jobs.length === 0) {
+      throw new CliError("Unexpected Jenkins response: no valid jobs found.", [
+        "Try `jenkins-cli --refresh` again.",
+      ]);
+    }
+
     return jobs;
   }
 
@@ -130,9 +136,8 @@ export class JenkinsClient {
 
     const normalized = normalizeJob(item);
     if (!normalized) {
-      throw new CliError("Unexpected Jenkins response when listing jobs.", [
-        "Try `jenkins-cli list --refresh` again.",
-      ]);
+      console.warn("Skipping malformed job entry:", item);
+      return;
     }
     const key = normalizeUrl(normalized.url);
     if (!seen.has(key)) {
@@ -877,19 +882,19 @@ export class JenkinsClient {
         stages:
           Array.isArray(data.stages) && data.stages.length > 0
             ? data.stages.map((stage) => ({
-                ...stage,
-                _links: stage._links
-                  ? {
-                      ...stage._links,
-                      ...(stage._links.self
-                        ? { self: { ...stage._links.self } }
-                        : {}),
-                      ...(stage._links.log
-                        ? { log: { ...stage._links.log } }
-                        : {}),
-                    }
-                  : undefined,
-              }))
+              ...stage,
+              _links: stage._links
+                ? {
+                  ...stage._links,
+                  ...(stage._links.self
+                    ? { self: { ...stage._links.self } }
+                    : {}),
+                  ...(stage._links.log
+                    ? { log: { ...stage._links.log } }
+                    : {}),
+                }
+                : undefined,
+            }))
             : undefined,
         failure,
       };

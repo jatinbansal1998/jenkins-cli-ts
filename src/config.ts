@@ -135,10 +135,19 @@ export async function writeConfigFile(input: ConfigFileInput): Promise<string> {
     typeof input.useCrumb === "boolean"
       ? input.useCrumb
       : existingProfile?.useCrumb;
-  const folderDepth =
-    typeof input.folderDepth === "number"
-      ? input.folderDepth
-      : existingProfile?.folderDepth;
+  const parsedInputFolderDepth =
+    typeof input.folderDepth === "number" &&
+    Number.isFinite(input.folderDepth) &&
+    input.folderDepth >= 1
+      ? Math.floor(input.folderDepth)
+      : undefined;
+  const parsedExistingFolderDepth =
+    typeof existingProfile?.folderDepth === "number" &&
+    Number.isFinite(existingProfile.folderDepth) &&
+    existingProfile.folderDepth >= 1
+      ? Math.floor(existingProfile.folderDepth)
+      : undefined;
+  const folderDepth = parsedInputFolderDepth ?? parsedExistingFolderDepth;
 
   const nextProfile: JenkinsProfileConfig = {
     jenkinsUrl: input.jenkinsUrl.trim(),
@@ -401,8 +410,10 @@ function normalizeConfigForWrite(config: JenkinsConfig): JenkinsConfig {
       ...(typeof profile.useCrumb === "boolean"
         ? { useCrumb: profile.useCrumb }
         : {}),
-      ...(typeof profile.folderDepth === "number"
-        ? { folderDepth: profile.folderDepth }
+      ...(typeof profile.folderDepth === "number" &&
+      Number.isFinite(profile.folderDepth) &&
+      profile.folderDepth >= 1
+        ? { folderDepth: Math.floor(profile.folderDepth) }
         : {}),
     };
   }

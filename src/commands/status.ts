@@ -578,16 +578,6 @@ async function loadJobsForStatus(options: {
     client: options.client,
     env: options.env,
     nonInteractive: options.nonInteractive,
-    confirmRefresh: async (reason) => {
-      const response = await confirm({
-        message: withPromptTarget(`${reason} Refresh now?`, options.env),
-        initialValue: true,
-      });
-      if (isCancel(response)) {
-        throw new CliError("Operation cancelled.");
-      }
-      return response;
-    },
   });
 }
 

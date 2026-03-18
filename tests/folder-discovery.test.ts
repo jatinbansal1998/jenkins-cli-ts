@@ -7,7 +7,7 @@ type FetchInit = Parameters<typeof fetch>[1];
 
 afterEach(() => {
   globalThis.fetch = realFetch;
-  mock.restore();
+  mock.clearAllMocks();
 });
 
 const FOLDER_CLASS = "com.cloudbees.hudson.plugins.folder.Folder";

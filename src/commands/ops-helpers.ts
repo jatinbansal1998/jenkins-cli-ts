@@ -1,4 +1,4 @@
-import { confirm, isCancel, select, text } from "../clack";
+import { isCancel, select, text } from "../clack";
 import { CliError, printError, printHint } from "../cli";
 import type { EnvConfig } from "../env";
 import type { JenkinsClient } from "../jenkins/api-wrapper";
@@ -41,16 +41,6 @@ export async function resolveJobTarget(options: {
     client: options.client,
     env: options.env,
     nonInteractive: options.nonInteractive,
-    confirmRefresh: async (reason) => {
-      const response = await confirm({
-        message: `${reason} Refresh now?`,
-        initialValue: true,
-      });
-      if (isCancel(response)) {
-        throw new CliError("Operation cancelled.");
-      }
-      return response;
-    },
   });
   if (jobs.length === 0) {
     throw new CliError("No jobs found in cache.", [
