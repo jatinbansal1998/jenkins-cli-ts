@@ -234,6 +234,58 @@ describe("job cache refresh", () => {
     expect(cache?.recentJobs).toEqual(["https://jenkins.example.com/job/keep"]);
   });
 
+  test("refresh canonicalizes known stage totals and preserves branches across slash variants", async () => {
+    const cachePath = jobsModule.getJobCachePath(env.jenkinsUrl);
+    files.set(
+      cachePath,
+      JSON.stringify({
+        jenkinsUrl: env.jenkinsUrl,
+        user: env.jenkinsUser,
+        fetchedAt: "2026-02-12T00:00:00.000Z",
+        jobs: [
+          {
+            name: "keep",
+            url: "https://jenkins.example.com/job/keep",
+            branches: ["release"],
+          },
+        ],
+        knownStageTotals: {
+          "https://jenkins.example.com/job/keep/": {
+            totalStages: 3,
+            updatedAt: "2026-02-12T00:00:00.000Z",
+          },
+        },
+      }),
+    );
+
+    await jobsModule.loadJobs({
+      client: {
+        listJobs: mock(async () => [
+          { name: "keep", url: " https://jenkins.example.com/job/keep/ " },
+        ]),
+      } as unknown as JenkinsClient,
+      env: loadEnv,
+      refresh: true,
+      nonInteractive: true,
+    });
+
+    const cache = await jobsModule.readJobCache(env);
+    expect(cache).not.toBeNull();
+    expect(cache?.jobs).toEqual([
+      {
+        name: "keep",
+        url: "https://jenkins.example.com/job/keep",
+        branches: ["release"],
+      },
+    ]);
+    expect(cache?.knownStageTotals).toEqual({
+      "https://jenkins.example.com/job/keep": {
+        totalStages: 3,
+        updatedAt: "2026-02-12T00:00:00.000Z",
+      },
+    });
+  });
+
   test("failed cache write preserves the existing cache", async () => {
     const cachePath = jobsModule.getJobCachePath(env.jenkinsUrl);
     const previousCache = JSON.stringify({

@@ -1,4 +1,5 @@
 import { CliError } from "../cli";
+import { areSameJobUrls, normalizeOptionalJobUrl } from "../job-url";
 import type { JenkinsClient } from "../jenkins/api-wrapper";
 import type { QueueItemSummary } from "../types/jenkins";
 
@@ -141,7 +142,7 @@ export async function requestCancellationForWatchTarget(options: {
     }
   }
 
-  const jobUrl = options.jobUrl?.trim() ?? "";
+  const jobUrl = normalizeOptionalJobUrl(options.jobUrl);
   if (jobUrl) {
     const jobStatus = await options.client.getJobStatus(jobUrl);
     if (jobStatus.building && jobStatus.lastBuildUrl) {
@@ -180,9 +181,8 @@ function findQueueItemForJob(
   queueItems: QueueItemSummary[],
   jobUrl: string,
 ): QueueItemSummary | undefined {
-  const normalized = jobUrl.toLowerCase();
-  const matches = queueItems.filter(
-    (item) => item.jobUrl && item.jobUrl.toLowerCase() === normalized,
+  const matches = queueItems.filter((item) =>
+    areSameJobUrls(item.jobUrl, jobUrl),
   );
   if (matches.length === 0) {
     return undefined;

@@ -97,6 +97,7 @@ describe("flow definitions", () => {
         ? listOptions.options({
             env: {} as never,
             jobs: [],
+            preferredJobs: [],
             searchQuery: "",
             performAction: async () => "action_ok",
           })

@@ -2,6 +2,7 @@ import { confirm, isCancel, select, text } from "../clack";
 import { CliError, printError, printHint } from "../cli";
 import type { EnvConfig } from "../env";
 import type { JenkinsClient } from "../jenkins/api-wrapper";
+import { normalizeOptionalJobUrl } from "../job-url";
 import type { JenkinsJob } from "../types/jenkins";
 import {
   getJobDisplayName,
@@ -27,7 +28,7 @@ export async function resolveJobTarget(options: {
   jobUrl?: string;
   nonInteractive: boolean;
 }): Promise<{ jobUrl: string; jobLabel: string }> {
-  const providedUrl = options.jobUrl?.trim() ?? "";
+  const providedUrl = normalizeOptionalJobUrl(options.jobUrl);
   if (providedUrl) {
     ensureValidUrl(providedUrl, "job-url");
     return {
@@ -62,9 +63,20 @@ export async function resolveJobTarget(options: {
     jobs,
     nonInteractive: options.nonInteractive,
   });
+  const normalizedJobUrl = normalizeOptionalJobUrl(selectedJob.url);
+  if (!normalizedJobUrl) {
+    throw new CliError("Selected job has an invalid URL.", [
+      "Run `jenkins-cli list --refresh` to update the cache.",
+    ]);
+  }
+  ensureValidUrl(normalizedJobUrl, "job-url");
+
   return {
-    jobUrl: selectedJob.url,
-    jobLabel: getJobDisplayName(selectedJob),
+    jobUrl: normalizedJobUrl,
+    jobLabel: getJobDisplayName({
+      ...selectedJob,
+      url: normalizedJobUrl,
+    }),
   };
 }
 

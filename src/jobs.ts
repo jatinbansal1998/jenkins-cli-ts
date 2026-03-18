@@ -11,6 +11,8 @@ import { CliError } from "./cli";
 import { MIN_SCORE, AMBIGUITY_GAP, MAX_OPTIONS, SCORES } from "./config/fuzzy";
 import type { EnvConfig } from "./env";
 import type { JenkinsClient } from "./jenkins/api-wrapper";
+import { normalizeRecentJobs, pruneRecentJobs } from "./recent-job-data";
+import { findJobByUrl, getJobUrlKey, normalizeOptionalJobUrl } from "./job-url";
 import type { JenkinsJob } from "./types/jenkins";
 
 /** Cached job data with metadata. */
@@ -180,7 +182,13 @@ async function fetchAndCacheJobs(
   const jobs = await client.listJobs();
   const existingCache = await readJobCache(env);
   const cachedJobs = mergeCachedBranches(jobs, existingCache);
-  const recentJobs = mergeRecentJobs(jobs, existingCache, env);
+  const recentJobs =
+    existingCache && cacheMatchesEnv(existingCache, env)
+      ? pruneRecentJobs({
+          jobs,
+          recentJobs: existingCache.recentJobs,
+        })
+      : undefined;
   const payload: JobCache = {
     jenkinsUrl: env.jenkinsUrl,
     user: env.jenkinsUser,
@@ -201,6 +209,7 @@ async function readCacheFromPath(cachePath: string): Promise<JobCache | null> {
       return null;
     }
     normalizeCachedJobs(parsed.jobs);
+    parsed.recentJobs = normalizeRecentJobs(parsed.recentJobs);
     parsed.knownStageTotals = normalizeKnownStageTotals(
       parsed.knownStageTotals,
     );
@@ -267,7 +276,10 @@ function normalizeKnownStageTotals(
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     return undefined;
   }
-  const normalized: Record<string, CachedStageTotal> = {};
+  const normalized = new Map<
+    string,
+    { url: string; entry: CachedStageTotal }
+  >();
   for (const [jobUrl, entry] of Object.entries(value)) {
     if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
       continue;
@@ -283,16 +295,38 @@ function normalizeKnownStageTotals(
     ) {
       continue;
     }
-    normalized[jobUrl] = {
+    const canonicalUrl = normalizeOptionalJobUrl(jobUrl);
+    const key = getJobUrlKey(canonicalUrl);
+    if (!canonicalUrl || !key) {
+      continue;
+    }
+    const nextEntry = {
       totalStages,
       updatedAt,
     };
+
+    const existing = normalized.get(key);
+    if (!existing || updatedAt >= existing.entry.updatedAt) {
+      normalized.set(key, {
+        url: canonicalUrl,
+        entry: nextEntry,
+      });
+    }
   }
-  return Object.keys(normalized).length > 0 ? normalized : undefined;
+  if (normalized.size === 0) {
+    return undefined;
+  }
+
+  const result: Record<string, CachedStageTotal> = {};
+  for (const { url, entry } of normalized.values()) {
+    result[url] = entry;
+  }
+  return result;
 }
 
 function normalizeCachedJobs(jobs: CachedJob[]): void {
   for (const job of jobs) {
+    job.url = normalizeOptionalJobUrl(job.url) ?? job.url.trim();
     if (Array.isArray(job.branches)) {
       job.branches = normalizeBranches(job.branches);
     } else if (job.branches) {
@@ -306,31 +340,21 @@ function mergeCachedBranches(
   existingCache: JobCache | null,
 ): CachedJob[] {
   return jobs.map((job) => {
-    const existing = existingCache?.jobs.find((entry) => entry.url === job.url);
+    const normalizedJob = {
+      ...job,
+      url: normalizeOptionalJobUrl(job.url) ?? job.url.trim(),
+    };
+    const existing = existingCache
+      ? findJobByUrl(existingCache.jobs, normalizedJob.url)
+      : undefined;
     if (!Array.isArray(existing?.branches) || existing.branches.length === 0) {
-      return { ...job };
+      return normalizedJob;
     }
-    return { ...job, branches: normalizeBranches(existing.branches) };
+    return {
+      ...normalizedJob,
+      branches: normalizeBranches(existing.branches),
+    };
   });
-}
-
-function mergeRecentJobs(
-  jobs: JenkinsJob[],
-  existingCache: JobCache | null,
-  env: EnvConfig,
-): string[] | undefined {
-  if (!existingCache || !cacheMatchesEnv(existingCache, env)) {
-    return undefined;
-  }
-
-  const activeUrls = new Set(
-    jobs.map((job) => normalizeRecentJobUrl(job.url).toLowerCase()),
-  );
-  const recentJobs = normalizeRecentJobs(existingCache.recentJobs).filter(
-    (jobUrl) => activeUrls.has(jobUrl.toLowerCase()),
-  );
-
-  return recentJobs.length > 0 ? recentJobs : undefined;
 }
 
 function normalizeBranches(entries: unknown[]): string[] {
@@ -352,39 +376,6 @@ function normalizeBranches(entries: unknown[]): string[] {
     normalized.push(trimmed);
   }
   return normalized;
-}
-
-function normalizeRecentJobs(entries: unknown[] | undefined): string[] {
-  if (!Array.isArray(entries)) {
-    return [];
-  }
-
-  const deduped = new Set<string>();
-  const normalized: string[] = [];
-  for (const entry of entries) {
-    if (typeof entry !== "string") {
-      continue;
-    }
-    const trimmed = entry.trim();
-    if (!trimmed) {
-      continue;
-    }
-    const canonical = normalizeRecentJobUrl(trimmed);
-    const key = canonical.toLowerCase();
-    if (deduped.has(key)) {
-      continue;
-    }
-    deduped.add(key);
-    normalized.push(canonical);
-  }
-  return normalized;
-}
-
-function normalizeRecentJobUrl(value: string): string {
-  const trimmed = value.trim();
-  return trimmed.endsWith("/") && trimmed !== "/"
-    ? trimmed.slice(0, -1)
-    : trimmed;
 }
 
 export type RankedJob = {

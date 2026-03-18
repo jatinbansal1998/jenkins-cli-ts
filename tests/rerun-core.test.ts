@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, mock, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import type { EnvConfig } from "../src/env";
 import type { JenkinsClient } from "../src/jenkins/client";
 
@@ -29,6 +29,10 @@ describe("rerun-core", () => {
     recordRecentJobMock.mockImplementation(async () => undefined);
     recordBranchSelectionMock.mockReset();
     recordBranchSelectionMock.mockImplementation(async () => undefined);
+  });
+
+  afterEach(() => {
+    mock.restore();
   });
 
   test("rerunLastBuildForJob retriggers the latest build parameters", async () => {

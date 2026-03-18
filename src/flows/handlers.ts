@@ -197,12 +197,8 @@ function selectRecentJobHandler({
   if (!recent) {
     return "select:search_all";
   }
-  const matchingJob = context.jobs.find((job) => job.url === recent.url);
-  const deps = activeBuildPreFlowDeps;
   context.selectedJobUrl = recent.url;
-  context.selectedJobLabel = matchingJob
-    ? deps.getJobDisplayName(matchingJob)
-    : recent.label;
+  context.selectedJobLabel = recent.label;
   context.searchQuery = "";
   context.buildModePrompted = false;
   return "select:recent";

@@ -119,14 +119,10 @@ async function triggerBuildWithRecordedParams(options: {
   const params = toParamRecord(options.status.parameters);
   const result = await options.client.triggerBuild(options.jobUrl, params);
 
-  try {
-    await recordRecentJob({
-      env: options.env,
-      jobUrl: options.jobUrl,
-    });
-  } catch {
-    // Ignore cache write failures for rerun success.
-  }
+  await recordRecentJob({
+    env: options.env,
+    jobUrl: options.jobUrl,
+  });
 
   const branch = extractBranchParam(params);
   if (branch) {

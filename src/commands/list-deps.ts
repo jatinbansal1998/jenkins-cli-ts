@@ -5,6 +5,7 @@ import {
   rankJobs,
   sortJobsByDisplayName,
 } from "../jobs";
+import { loadPreferredJobs } from "../recent-jobs";
 import { runBuild } from "./build";
 import { runCancel } from "./cancel";
 import { runHistory } from "./history";
@@ -21,6 +22,7 @@ export const listDeps = {
   text,
   getJobDisplayName,
   loadJobs,
+  loadPreferredJobs,
   rankJobs,
   sortJobsByDisplayName,
   runBuild,

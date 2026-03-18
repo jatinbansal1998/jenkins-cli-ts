@@ -422,14 +422,10 @@ async function recordHistoryRebuildSuccess(options: {
   branch?: string;
 }): Promise<void> {
   const deps = activeHistoryDeps;
-  try {
-    await deps.recordRecentJob({
-      env: options.env,
-      jobUrl: options.jobUrl,
-    });
-  } catch {
-    // Ignore cache write failures for rebuild success.
-  }
+  await deps.recordRecentJob({
+    env: options.env,
+    jobUrl: options.jobUrl,
+  });
 
   if (!options.branch) {
     return;

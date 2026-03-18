@@ -35,7 +35,7 @@ describe("stage count cache", () => {
       fetchedAt: "2026-03-17T00:00:00.000Z",
       jobs: [],
       knownStageTotals: {
-        "https://jenkins.example.com/job/demo/": {
+        "https://jenkins.example.com/job/demo": {
           totalStages: 3,
           updatedAt: "2026-03-16T00:00:00.000Z",
         },
@@ -57,14 +57,14 @@ describe("stage count cache", () => {
     ).rejects.toThrow("write failed");
 
     expect(
-      cache.knownStageTotals["https://jenkins.example.com/job/demo/"]
+      cache.knownStageTotals["https://jenkins.example.com/job/demo"]
         ?.totalStages,
     ).toBe(3);
     expect(writeJobCacheSpy).toHaveBeenCalledTimes(1);
     expect(writeJobCacheSpy.mock.calls[0]?.[0]).not.toBe(cache);
     expect(
       writeJobCacheSpy.mock.calls[0]?.[0]?.knownStageTotals?.[
-        "https://jenkins.example.com/job/demo/"
+        "https://jenkins.example.com/job/demo"
       ]?.totalStages,
     ).toBe(5);
   });
@@ -93,7 +93,7 @@ describe("stage count cache", () => {
     expect(writeJobCacheSpy).toHaveBeenCalledTimes(1);
     expect(
       writeJobCacheSpy.mock.calls[0]?.[0]?.knownStageTotals?.[
-        "https://jenkins.example.com/job/demo/"
+        "https://jenkins.example.com/job/demo"
       ]?.totalStages,
     ).toBe(2);
   });
@@ -118,7 +118,7 @@ describe("stage count cache", () => {
         user: env.jenkinsUser,
         jobs: [],
         knownStageTotals: {
-          "https://jenkins.example.com/job/demo/": expect.objectContaining({
+          "https://jenkins.example.com/job/demo": expect.objectContaining({
             totalStages: 4,
           }),
         },
@@ -131,11 +131,11 @@ describe("stage count cache", () => {
       stageCountCacheModule.resolveStageCacheJobUrl({
         jobUrl: " https://jenkins.example.com/job/demo/// ",
       }),
-    ).toBe("https://jenkins.example.com/job/demo/");
+    ).toBe("https://jenkins.example.com/job/demo");
     expect(
       stageCountCacheModule.resolveStageCacheJobUrl({
         buildUrl: "https://jenkins.example.com/job/demo/12/",
       }),
-    ).toBe("https://jenkins.example.com/job/demo/");
+    ).toBe("https://jenkins.example.com/job/demo");
   });
 });

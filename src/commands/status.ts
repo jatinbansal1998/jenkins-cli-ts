@@ -29,6 +29,7 @@ import {
 } from "../status-format";
 import type { EnvConfig } from "../env";
 import type { JenkinsClient } from "../jenkins/api-wrapper";
+import { normalizeOptionalJobUrl } from "../job-url";
 import type { JenkinsJob } from "../types/jenkins";
 import {
   getJobDisplayName,
@@ -36,7 +37,11 @@ import {
   resolveJobCandidates,
   resolveJobMatch,
 } from "../jobs";
-import { loadRecentJobs, recordRecentJob } from "../recent-jobs";
+import {
+  loadRecentJobs,
+  recordRecentJob,
+  type RecentJob,
+} from "../recent-jobs";
 import { runFlow } from "../flows/runner";
 import { flows } from "../flows/definition";
 import { statusFlowHandlers } from "../flows/handlers";
@@ -78,7 +83,7 @@ export async function runStatus(options: StatusOptions): Promise<void> {
     return;
   }
 
-  let jobUrl = options.jobUrl?.trim() ?? "";
+  let jobUrl = normalizeOptionalJobUrl(options.jobUrl);
   let jobQuery = options.job?.trim() ?? "";
   let jobs: JenkinsJob[] | null = null;
 
@@ -108,17 +113,10 @@ export async function runStatus(options: StatusOptions): Promise<void> {
       });
 
       if (selection.kind === "recent") {
-        targets = selection.jobs.map((recentJob) => {
-          const selectedJob = loadedJobs.find(
-            (job) => job.url === recentJob.jobUrl,
-          );
-          return {
-            jobUrl: recentJob.jobUrl,
-            jobLabel: selectedJob
-              ? getJobDisplayName(selectedJob)
-              : recentJob.label,
-          };
-        });
+        targets = selection.jobs.map((recentJob) => ({
+          jobUrl: recentJob.url,
+          jobLabel: recentJob.label,
+        }));
       } else {
         try {
           const selectedJobs = await resolveJobSearch({
@@ -151,14 +149,10 @@ export async function runStatus(options: StatusOptions): Promise<void> {
         console.log("");
         console.log(SEPARATOR_LINE);
       }
-      try {
-        await recordRecentJob({
-          env: options.env,
-          jobUrl: target.jobUrl,
-        });
-      } catch {
-        // Ignore cache write failures for status output.
-      }
+      await recordRecentJob({
+        env: options.env,
+        jobUrl: target.jobUrl,
+      });
 
       const status = await options.client.getJobStatus(target.jobUrl);
       if (!status.lastBuildNumber) {
@@ -330,7 +324,7 @@ export async function runStatus(options: StatusOptions): Promise<void> {
     });
 
     if (postResult.terminal === "repeat") {
-      jobUrl = "";
+      jobUrl = undefined;
       jobQuery = "";
       continue;
     }
@@ -340,8 +334,8 @@ export async function runStatus(options: StatusOptions): Promise<void> {
 }
 
 async function runStatusOnce(options: StatusOptions): Promise<void> {
-  let jobUrl = options.jobUrl?.trim() ?? "";
-  let jobLabel = jobUrl;
+  let jobUrl = normalizeOptionalJobUrl(options.jobUrl);
+  let jobLabel = jobUrl ?? "";
 
   if (jobUrl) {
     ensureValidUrl(jobUrl, "job-url");
@@ -371,9 +365,8 @@ async function runStatusOnce(options: StatusOptions): Promise<void> {
           "Choose at least one job and try again.",
         ]);
       }
-      const selectedJob = jobs.find((job) => job.url === recentJob.jobUrl);
-      jobUrl = recentJob.jobUrl;
-      jobLabel = selectedJob ? getJobDisplayName(selectedJob) : recentJob.label;
+      jobUrl = recentJob.url;
+      jobLabel = recentJob.label;
     } else {
       const selectedJob = await resolveJobMatch({
         query: selection.query,
@@ -386,14 +379,10 @@ async function runStatusOnce(options: StatusOptions): Promise<void> {
     }
   }
 
-  try {
-    await recordRecentJob({
-      env: options.env,
-      jobUrl,
-    });
-  } catch {
-    // Ignore cache write failures for status output.
-  }
+  await recordRecentJob({
+    env: options.env,
+    jobUrl,
+  });
 
   const status = await options.client.getJobStatus(jobUrl);
   if (!status.lastBuildNumber) {
@@ -479,7 +468,7 @@ async function resolveJobSelection(options: {
   nonInteractive: boolean;
 }): Promise<
   | { kind: "query"; query: string; allowBackToRecent: boolean }
-  | { kind: "recent"; jobs: { jobUrl: string; label: string }[] }
+  | { kind: "recent"; jobs: RecentJob[] }
 > {
   const query = options.job?.trim() ?? "";
   if (query) {
@@ -521,12 +510,9 @@ async function resolveJobSelection(options: {
 }
 
 async function promptForRecentJobSelection(
-  recentJobs: { url: string; label: string }[],
+  recentJobs: RecentJob[],
   env: EnvConfig,
-): Promise<
-  | { kind: "recent"; jobs: { jobUrl: string; label: string }[] }
-  | { kind: "search" }
-> {
+): Promise<{ kind: "recent"; jobs: RecentJob[] } | { kind: "search" }> {
   while (true) {
     const mode = await select({
       message: withPromptTarget("Recent jobs", env),
@@ -562,10 +548,7 @@ async function promptForRecentJobSelection(
     if (selected.length === 0) {
       return { kind: "search" };
     }
-    return {
-      kind: "recent",
-      jobs: selected.map((job) => ({ jobUrl: job.url, label: job.label })),
-    };
+    return { kind: "recent", jobs: selected };
   }
 }
 

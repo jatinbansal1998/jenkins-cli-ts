@@ -71,10 +71,10 @@ describe("status command", () => {
     expect(persistKnownTotalStagesSpy).toHaveBeenCalledTimes(1);
     expect(persistKnownTotalStagesSpy).toHaveBeenCalledWith({
       env,
-      jobUrl: "https://jenkins.example.com/job/api/",
+      jobUrl: "https://jenkins.example.com/job/api",
       buildUrl: "https://jenkins.example.com/job/api/42/",
       stages,
-      jobLabel: "https://jenkins.example.com/job/api/",
+      jobLabel: "https://jenkins.example.com/job/api",
     });
   });
 });

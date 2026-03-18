@@ -72,7 +72,10 @@ export const listInteractiveFlow: FlowDefinition<ListInteractiveContext> = {
           if (["q", "quit", "exit"].includes(search.trim().toLowerCase())) {
             return [{ value: EXIT_VALUE, label: "Exit" }];
           }
-          return getSuggestedJobs(search, context.jobs).map((job) => ({
+          const jobs = search.trim()
+            ? getSuggestedJobs(search, context.jobs)
+            : context.preferredJobs.slice(0, 15);
+          return jobs.map((job) => ({
             value: job.url,
             label: job.fullName || job.name,
           }));

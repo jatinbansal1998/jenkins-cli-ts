@@ -1,4 +1,5 @@
 import type { EnvConfig } from "./env";
+import { normalizeOptionalJobUrl, resolveJobUrlFromBuildUrl } from "./job-url";
 import { readJobCache, writeJobCache, type JobCache } from "./jobs";
 
 export async function getKnownStageTotal(options: {
@@ -89,36 +90,11 @@ export function resolveStageCacheJobUrl(options: {
   jobUrl?: string;
   buildUrl?: string;
 }): string | undefined {
-  const explicitJobUrl = normalizeStageUrl(options.jobUrl);
+  const explicitJobUrl = normalizeOptionalJobUrl(options.jobUrl);
   if (explicitJobUrl) {
     return explicitJobUrl;
   }
-  const buildUrl = normalizeStageUrl(options.buildUrl);
-  if (!buildUrl) {
-    return undefined;
-  }
-  try {
-    const url = new URL(buildUrl);
-    const parts = url.pathname.split("/").filter(Boolean);
-    if (parts.length === 0) {
-      return undefined;
-    }
-    parts.pop();
-    url.pathname = `/${parts.join("/")}/`;
-    url.search = "";
-    url.hash = "";
-    return url.toString();
-  } catch {
-    return undefined;
-  }
-}
-
-function normalizeStageUrl(value: string | undefined): string | undefined {
-  if (typeof value !== "string") {
-    return undefined;
-  }
-  const trimmed = value.trim();
-  return trimmed ? trimmed.replace(/\/+$/, "") + "/" : undefined;
+  return resolveJobUrlFromBuildUrl(options.buildUrl);
 }
 
 function cacheMatchesEnv(

@@ -1,12 +1,18 @@
 /**
  * Recent job cache stored inside jobs.json.
  */
+import type { JenkinsJob } from "./types/jenkins";
 import type { EnvConfig } from "./env";
-import { getJobDisplayName, readJobCache, writeJobCache } from "./jobs";
+import type { JobCache } from "./jobs";
+import { getJobUrlKey } from "./job-url";
+import { readJobCache, sortJobsByDisplayName, writeJobCache } from "./jobs";
+import {
+  MAX_RECENT_JOBS,
+  normalizeRecentJobs,
+  normalizeRecentJobUrl,
+} from "./recent-job-data";
 
-const MAX_RECENT_JOBS = 15;
-
-type RecentJob = {
+export type RecentJob = {
   url: string;
   label: string;
 };
@@ -14,38 +20,71 @@ type RecentJob = {
 export async function loadRecentJobs(options: {
   env: EnvConfig;
 }): Promise<RecentJob[]> {
-  const cache = await readJobCache(options.env);
-  if (!cache || !cacheMatchesEnv(cache, options.env)) {
+  const cache = await readUsableCache(options.env);
+  if (!cache) {
     return [];
   }
-  const recentJobs = normalizeRecentJobs(cache.recentJobs);
-  if (recentJobs.length === 0) {
-    return [];
+
+  const jobsByUrl = buildJobsByUrl(cache.jobs);
+  return normalizeRecentJobs(cache.recentJobs).map((url) =>
+    toRecentJob(url, jobsByUrl),
+  );
+}
+
+export async function loadPreferredJobs(options: {
+  env: EnvConfig;
+  jobs: JenkinsJob[];
+}): Promise<JenkinsJob[]> {
+  const cache = await readUsableCache(options.env);
+  if (!cache) {
+    return sortJobsByDisplayName(options.jobs);
   }
-  return recentJobs.map((url) => ({
-    url,
-    label: resolveJobLabel(cache.jobs, url),
-  }));
+
+  const jobsByUrl = buildJobsByUrl(options.jobs);
+  const preferredJobs = normalizeRecentJobs(cache.recentJobs)
+    .map((url) => jobsByUrl.get(getJobUrlKey(url) ?? ""))
+    .filter((job): job is JenkinsJob => Boolean(job));
+  if (preferredJobs.length === 0) {
+    return sortJobsByDisplayName(options.jobs);
+  }
+
+  const seen = new Set(preferredJobs.map((job) => getJobUrlKey(job.url) ?? ""));
+  const remainingJobs = sortJobsByDisplayName(options.jobs).filter(
+    (job) => !seen.has(getJobUrlKey(job.url) ?? ""),
+  );
+  return [...preferredJobs, ...remainingJobs];
 }
 
 export async function recordRecentJob(options: {
   env: EnvConfig;
   jobUrl: string;
 }): Promise<void> {
-  const jobUrl = options.jobUrl.trim();
-  if (!jobUrl) {
-    return;
+  try {
+    const jobUrl = normalizeRecentJobUrl(options.jobUrl);
+    if (!jobUrl) {
+      return;
+    }
+
+    const cache = await readUsableCache(options.env);
+    if (!cache) {
+      return;
+    }
+
+    const jobUrlKey = getJobUrlKey(jobUrl);
+    const recentJobs = [
+      jobUrl,
+      ...normalizeRecentJobs(cache.recentJobs).filter(
+        (entry) => getJobUrlKey(entry) !== jobUrlKey,
+      ),
+    ].slice(0, MAX_RECENT_JOBS);
+
+    await writeJobCache({
+      ...cache,
+      recentJobs,
+    });
+  } catch {
+    // Ignore recent job cache write failures.
   }
-  const cache = await readJobCache(options.env);
-  if (!cache || !cacheMatchesEnv(cache, options.env)) {
-    return;
-  }
-  const existing = normalizeRecentJobs(cache.recentJobs);
-  const deduped = existing.filter(
-    (url) => url.toLowerCase() !== jobUrl.toLowerCase(),
-  );
-  cache.recentJobs = [jobUrl, ...deduped].slice(0, MAX_RECENT_JOBS);
-  await writeJobCache(cache);
 }
 
 function cacheMatchesEnv(
@@ -55,34 +94,31 @@ function cacheMatchesEnv(
   return cache.jenkinsUrl === env.jenkinsUrl && cache.user === env.jenkinsUser;
 }
 
-function normalizeRecentJobs(recentJobs: string[] | undefined): string[] {
-  if (!Array.isArray(recentJobs)) {
-    return [];
-  }
-  const normalized: string[] = [];
-  const seen = new Set<string>();
-  for (const entry of recentJobs) {
-    if (typeof entry !== "string") {
-      continue;
-    }
-    const trimmed = entry.trim();
-    if (!trimmed) {
-      continue;
-    }
-    const key = trimmed.toLowerCase();
-    if (seen.has(key)) {
-      continue;
-    }
-    seen.add(key);
-    normalized.push(trimmed);
-  }
-  return normalized;
+async function readUsableCache(env: EnvConfig): Promise<JobCache | null> {
+  const cache = await readJobCache(env);
+  return cache && cacheMatchesEnv(cache, env) ? cache : null;
 }
 
-function resolveJobLabel(
-  jobs: { url: string; name: string; fullName?: string }[],
+function buildJobsByUrl<T extends { url: string }>(jobs: T[]): Map<string, T> {
+  const jobsByUrl = new Map<string, T>();
+  for (const job of jobs) {
+    const key = getJobUrlKey(job.url);
+    if (!key) {
+      continue;
+    }
+    jobsByUrl.set(key, job);
+  }
+
+  return jobsByUrl;
+}
+
+function toRecentJob(
   url: string,
-): string {
-  const job = jobs.find((entry) => entry.url === url);
-  return job ? getJobDisplayName(job) : url;
+  jobsByUrl: Map<string, { name: string; fullName?: string }>,
+): RecentJob {
+  const job = jobsByUrl.get(getJobUrlKey(url) ?? "");
+  return {
+    url,
+    label: job ? job.fullName || job.name : url,
+  };
 }
