@@ -1,4 +1,4 @@
-import { describe, expect, spyOn, test } from "bun:test";
+import { describe, expect, test } from "bun:test";
 import { formatCliIntro, printCliIntro } from "../src/cli-intro";
 
 describe("cli intro", () => {
@@ -26,37 +26,30 @@ describe("cli intro", () => {
   });
 
   test("prints nothing when the banner is disabled", () => {
-    const writeSpy = spyOn(process.stderr, "write");
-
-    try {
-      printCliIntro({
+    const calls: string[] = [];
+    printCliIntro(
+      {
         showAsciiBanner: false,
         version: "0.7.4",
-      });
+      },
+      (text) => calls.push(text),
+    );
 
-      expect(writeSpy).not.toHaveBeenCalled();
-    } finally {
-      writeSpy.mockRestore();
-    }
+    expect(calls).toHaveLength(0);
   });
 
   test("prints banner when enabled", () => {
-    const writeSpy = spyOn(process.stderr, "write");
-    writeSpy.mockImplementation(() => true);
-
-    try {
-      printCliIntro({
+    const calls: string[] = [];
+    printCliIntro(
+      {
         showAsciiBanner: true,
         version: "0.7.4",
-      });
+      },
+      (text) => calls.push(text),
+    );
 
-      expect(writeSpy).toHaveBeenCalled();
-      expect(writeSpy).toHaveBeenCalledWith(
-        expect.stringContaining("CLI | v0.7.4"),
-      );
-      expect(writeSpy).toHaveBeenCalledWith(expect.stringContaining("███████"));
-    } finally {
-      writeSpy.mockRestore();
-    }
+    expect(calls).toHaveLength(1);
+    expect(calls[0]).toContain("CLI | v0.7.4");
+    expect(calls[0]).toContain("███████");
   });
 });

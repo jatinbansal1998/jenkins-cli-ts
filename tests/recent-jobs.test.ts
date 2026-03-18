@@ -14,6 +14,10 @@ import type { JenkinsJob } from "../src/types/jenkins";
 const realFsPromises = await import("node:fs/promises");
 const realOs = await import("node:os");
 
+// Capture the real functions before mock.module replaces the namespace.
+const realRename = realFsPromises.rename.bind(realFsPromises);
+const realRm = realFsPromises.rm.bind(realFsPromises);
+
 const files = new Map<string, string>();
 const tempHome = "/tmp/jenkins-cli-recent-jobs-tests";
 
@@ -24,7 +28,7 @@ async function renameInMemoryOrReal(fromPath: string, toPath: string) {
     files.delete(fromPath);
     return;
   }
-  return await realFsPromises.rename(fromPath, toPath);
+  return await realRename(fromPath, toPath);
 }
 
 async function rmInMemoryOrReal(
@@ -35,7 +39,7 @@ async function rmInMemoryOrReal(
     files.delete(filePath);
     return;
   }
-  return await realFsPromises.rm(filePath, options);
+  return await realRm(filePath, options);
 }
 
 const mkdirMock = mock(fs.promises.mkdir);
@@ -86,13 +90,13 @@ const cachedJobs: JenkinsJob[] = [
   },
 ];
 
-const realBunFile = Bun.file;
-const bunFileSpy = spyOn(Bun, "file");
+let bunFileSpy = spyOn(Bun, "file");
 
 describe("recent jobs", () => {
   beforeEach(() => {
     files.clear();
     mock.clearAllMocks();
+    bunFileSpy = spyOn(Bun, "file");
     bunFileSpy.mockImplementation(((filePath: string | URL) => {
       const resolvedPath =
         typeof filePath === "string" ? filePath : filePath.toString();
@@ -117,7 +121,7 @@ describe("recent jobs", () => {
   });
 
   afterEach(() => {
-    bunFileSpy.mockImplementation(realBunFile);
+    bunFileSpy.mockRestore();
     files.clear();
   });
 

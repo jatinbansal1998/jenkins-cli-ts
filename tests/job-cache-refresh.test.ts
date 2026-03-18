@@ -43,7 +43,13 @@ mock.module("node:os", () => ({
   homedir: () => tempHome,
 }));
 
-const jobsModule = await import("../src/jobs");
+// Import fresh per test (cache-busting) so concurrent test files that call
+// mock.module("../src/jobs", ...) don't mutate the reference we use here.
+let jobsModule = await loadFreshJobsModule();
+
+async function loadFreshJobsModule() {
+  return import(`../src/jobs?cache-refresh-test=${crypto.randomUUID()}`);
+}
 
 const env = {
   jenkinsUrl: "https://jenkins.example.com",
@@ -57,13 +63,14 @@ const loadEnv: EnvConfig = {
   useCrumb: false,
 };
 
-const realBunFile = Bun.file;
-const bunFileSpy = spyOn(Bun, "file");
+let bunFileSpy = spyOn(Bun, "file");
 
 describe("job cache refresh", () => {
-  beforeEach(() => {
+  beforeEach(async () => {
+    jobsModule = await loadFreshJobsModule();
     files.clear();
     mock.clearAllMocks();
+    bunFileSpy = spyOn(Bun, "file");
     bunFileSpy.mockImplementation(((filePath: string | URL) => {
       const resolvedPath =
         typeof filePath === "string" ? filePath : filePath.toString();
@@ -97,12 +104,13 @@ describe("job cache refresh", () => {
   });
 
   afterEach(() => {
+    // Restore the spy so subsequent test files get the real Bun.file back.
+    bunFileSpy.mockRestore();
     // Reset leaked module mocks back to the real fs so later test files that
     // import node:fs/promises do not inherit our in-memory cache shim.
     mkdirMock.mockImplementation(fs.promises.mkdir);
     renameMock.mockImplementation(fs.promises.rename);
     rmMock.mockImplementation(fs.promises.rm);
-    bunFileSpy.mockImplementation(realBunFile);
     files.clear();
   });
 
