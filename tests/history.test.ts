@@ -62,6 +62,7 @@ const TEST_ENV: EnvConfig = {
   jenkinsApiToken: "ci-token",
   branchParamDefault: "BRANCH",
   useCrumb: false,
+  folderDepth: 3,
 };
 
 describe("runHistory", () => {

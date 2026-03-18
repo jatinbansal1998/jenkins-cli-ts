@@ -63,6 +63,7 @@ export class JenkinsClient {
   private readonly authHeader: string;
   private readonly timeoutMs: number;
   private readonly useCrumb: boolean;
+  private readonly folderDepth: number;
   private crumbCache?: Crumb;
 
   constructor(options: JenkinsClientOptions) {
@@ -73,10 +74,12 @@ export class JenkinsClient {
     this.authHeader = `Basic ${token}`;
     this.timeoutMs = options.timeoutMs ?? 10_000;
     this.useCrumb = options.useCrumb === true;
+    this.folderDepth = options.folderDepth ?? DEFAULT_FOLDER_DEPTH;
   }
 
   async listJobs(): Promise<JenkinsJob[]> {
-    const url = this.withBase("api/json?tree=jobs[name,fullName,url]");
+    const treeFields = buildFolderTree(FOLDER_LEAF_FIELDS, this.folderDepth);
+    const url = this.withBase(`api/json?tree=jobs[${treeFields}]`);
     const data = await this.requestJson<JenkinsJobsResponse>(url, "list jobs");
     if (!Array.isArray(data.jobs)) {
       throw new CliError("Unexpected Jenkins response when listing jobs.", [
@@ -85,17 +88,57 @@ export class JenkinsClient {
     }
 
     const jobs: JenkinsJob[] = [];
+    const seen = new Set<string>();
     for (const item of data.jobs) {
-      const normalized = normalizeJob(item);
-      if (!normalized) {
-        throw new CliError("Unexpected Jenkins response when listing jobs.", [
-          "Try `jenkins-cli list --refresh` again.",
-        ]);
-      }
-      jobs.push(normalized);
+      await this.collectFolderJobs(item, jobs, seen);
     }
 
     return jobs;
+  }
+
+  private async collectFolderJobs(
+    item: JenkinsApiJob,
+    out: JenkinsJob[],
+    seen: Set<string>,
+  ): Promise<void> {
+    if (item._class === CLOUDBEES_FOLDER_CLASS) {
+      let children: JenkinsApiJob[];
+      if (Array.isArray(item.jobs)) {
+        children = item.jobs;
+      } else if (typeof item.url === "string") {
+        const treeFields = buildFolderTree(
+          FOLDER_LEAF_FIELDS,
+          this.folderDepth,
+        );
+        const folderUrl = this.withJob(
+          item.url,
+          `api/json?tree=jobs[${treeFields}]`,
+        );
+        const folderData = await this.requestJson<JenkinsJobsResponse>(
+          folderUrl,
+          `list jobs in folder ${item.fullName ?? item.name ?? item.url}`,
+        );
+        children = Array.isArray(folderData.jobs) ? folderData.jobs : [];
+      } else {
+        return;
+      }
+      for (const child of children) {
+        await this.collectFolderJobs(child, out, seen);
+      }
+      return;
+    }
+
+    const normalized = normalizeJob(item);
+    if (!normalized) {
+      throw new CliError("Unexpected Jenkins response when listing jobs.", [
+        "Try `jenkins-cli list --refresh` again.",
+      ]);
+    }
+    const key = normalizeUrl(normalized.url);
+    if (!seen.has(key)) {
+      seen.add(key);
+      out.push(normalized);
+    }
   }
 
   async getJobStatus(jobUrl: string): Promise<JobStatus> {
@@ -909,6 +952,23 @@ export class JenkinsClient {
       return null;
     }
   }
+}
+
+const CLOUDBEES_FOLDER_CLASS = "com.cloudbees.hudson.plugins.folder.Folder";
+
+const FOLDER_LEAF_FIELDS = "_class,name,fullName,url";
+const DEFAULT_FOLDER_DEPTH = 3;
+
+function buildFolderTree(fields: string, depth: number): string {
+  let tree = fields;
+  for (let i = 0; i < depth; i++) {
+    tree = `${fields},jobs[${tree}]`;
+  }
+  return tree;
+}
+
+function normalizeUrl(value: string): string {
+  return value.trim().replace(/\/+$/, "");
 }
 
 function toAnalyticsOperation(context: string): string {

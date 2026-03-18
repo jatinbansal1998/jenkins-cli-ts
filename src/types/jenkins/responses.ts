@@ -3,9 +3,11 @@
  */
 
 export type JenkinsApiJob = {
+  _class?: string;
   name?: string;
   fullName?: string;
   url?: string;
+  jobs?: JenkinsApiJob[];
 };
 
 export type JenkinsJobsResponse = {

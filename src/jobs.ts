@@ -32,6 +32,7 @@ export type JobCache = {
   jobs: CachedJob[];
   recentJobs?: string[];
   knownStageTotals?: Record<string, CachedStageTotal>;
+  folderDepth?: number;
 };
 
 const CACHE_DIR = resolveCacheDir();
@@ -196,6 +197,7 @@ async function fetchAndCacheJobs(
     jobs: cachedJobs,
     recentJobs,
     knownStageTotals: existingCache?.knownStageTotals,
+    folderDepth: env.folderDepth,
   };
   await writeJobCache(payload);
   return jobs;
@@ -235,7 +237,11 @@ async function writeCacheToPath(
 }
 
 function cacheMatchesEnv(cache: JobCache, env: EnvConfig): boolean {
-  return cache.jenkinsUrl === env.jenkinsUrl && cache.user === env.jenkinsUser;
+  return (
+    cache.jenkinsUrl === env.jenkinsUrl &&
+    cache.user === env.jenkinsUser &&
+    cache.folderDepth === env.folderDepth
+  );
 }
 
 function buildCacheKey(jenkinsUrl: string): string {

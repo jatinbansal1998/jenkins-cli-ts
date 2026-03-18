@@ -17,6 +17,7 @@ const env: EnvConfig = {
   jenkinsApiToken: "test-token",
   branchParamDefault: "BRANCH",
   useCrumb: false,
+  folderDepth: 3,
 };
 
 describe("stage count cache", () => {

@@ -13,9 +13,16 @@ describe("runCancel", () => {
   });
 
   test("waits for Jenkins to confirm a build was aborted before printing success", async () => {
+    const originalIsTTY = process.stdin.isTTY;
+    Object.defineProperty(process.stdin, "isTTY", {
+      value: false,
+      configurable: true,
+    });
+
     const logSpy = spyOn(console, "log");
     const sleepSpy = spyOn(Bun, "sleep");
     sleepSpy.mockImplementation(async () => undefined);
+
     const stopBuild = mock(async () => undefined);
     const getBuildStatus = mock(async () => {
       const callCount = getBuildStatus.mock.calls.length;
@@ -57,8 +64,12 @@ describe("runCancel", () => {
     );
     expect(messages.some((message) => message.includes("ABORTED"))).toBe(true);
     expect(messages.some((message) => message.includes("RUNNING"))).toBe(true);
-    sleepSpy.mockRestore();
     logSpy.mockRestore();
+    sleepSpy.mockRestore();
+    Object.defineProperty(process.stdin, "isTTY", {
+      value: originalIsTTY,
+      configurable: true,
+    });
   });
 
   test("stops watching once Jenkins reports a terminal post-cancel status", async () => {
