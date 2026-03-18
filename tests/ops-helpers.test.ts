@@ -54,4 +54,36 @@ describe("ops helpers", () => {
       jobLabel: "alpha",
     });
   });
+
+  test("resolveJobTarget uses an explicit jobUrl without loading jobs", async () => {
+    const result = await resolveJobTarget({
+      client: {} as JenkinsClient,
+      env: {} as EnvConfig,
+      jobUrl: " https://jenkins.example.com/job/direct/ ",
+      nonInteractive: true,
+    });
+
+    expect(result).toEqual({
+      jobUrl: "https://jenkins.example.com/job/direct",
+      jobLabel: "https://jenkins.example.com/job/direct",
+    });
+    expect(loadJobsMock).toHaveBeenCalledTimes(0);
+    expect(resolveJobMatchMock).toHaveBeenCalledTimes(0);
+  });
+
+  test("resolveJobTarget throws when the cache is empty", async () => {
+    loadJobsMock.mockImplementation(async () => [] as JenkinsJob[]);
+
+    await expect(
+      resolveJobTarget({
+        client: {} as JenkinsClient,
+        env: {} as EnvConfig,
+        job: "alpha",
+        nonInteractive: true,
+      }),
+    ).rejects.toThrow("No jobs found in cache.");
+
+    expect(loadJobsMock).toHaveBeenCalledTimes(1);
+    expect(resolveJobMatchMock).toHaveBeenCalledTimes(0);
+  });
 });

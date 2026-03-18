@@ -17,18 +17,30 @@ const realOs = await import("node:os");
 const files = new Map<string, string>();
 const tempHome = "/tmp/jenkins-cli-recent-jobs-tests";
 
-const mkdirMock = mock(fs.promises.mkdir);
-const renameMock = mock(async (fromPath: string, toPath: string) => {
+async function renameInMemoryOrReal(fromPath: string, toPath: string) {
   const value = files.get(fromPath);
-  if (value === undefined) {
-    throw createErrno("ENOENT");
+  if (value !== undefined) {
+    files.set(toPath, value);
+    files.delete(fromPath);
+    return;
   }
-  files.set(toPath, value);
-  files.delete(fromPath);
-});
-const rmMock = mock(async (filePath: string) => {
-  files.delete(filePath);
-});
+  return await realFsPromises.rename(fromPath, toPath);
+}
+
+async function rmInMemoryOrReal(
+  filePath: string,
+  options?: Parameters<typeof realFsPromises.rm>[1],
+) {
+  if (files.has(filePath)) {
+    files.delete(filePath);
+    return;
+  }
+  return await realFsPromises.rm(filePath, options);
+}
+
+const mkdirMock = mock(fs.promises.mkdir);
+const renameMock = mock(renameInMemoryOrReal);
+const rmMock = mock(rmInMemoryOrReal);
 
 mock.module("node:fs/promises", () => ({
   ...realFsPromises,
@@ -100,17 +112,8 @@ describe("recent jobs", () => {
     }) as typeof Bun.file);
 
     mkdirMock.mockImplementation(async () => undefined);
-    renameMock.mockImplementation(async (fromPath: string, toPath: string) => {
-      const value = files.get(fromPath);
-      if (value === undefined) {
-        throw createErrno("ENOENT");
-      }
-      files.set(toPath, value);
-      files.delete(fromPath);
-    });
-    rmMock.mockImplementation(async (filePath: string) => {
-      files.delete(filePath);
-    });
+    renameMock.mockImplementation(renameInMemoryOrReal);
+    rmMock.mockImplementation(rmInMemoryOrReal);
   });
 
   afterEach(() => {
