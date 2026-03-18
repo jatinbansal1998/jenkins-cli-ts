@@ -49,11 +49,14 @@ export function formatCliIntro(options: CliIntroOptions): string {
   return lines.join("\n");
 }
 
-export function printCliIntro(options: CliIntroOptions): void {
+export function printCliIntro(
+  options: CliIntroOptions,
+  write: (text: string) => void = (text) => process.stderr.write(text),
+): void {
   if (!options.showAsciiBanner) {
     return;
   }
-  process.stderr.write(`${formatCliIntro(options)}\n`);
+  write(`${formatCliIntro(options)}\n`);
 }
 
 function normalizeVersionLabel(version: string | undefined): string | null {

@@ -42,7 +42,6 @@ afterEach(() => {
   globalThis.fetch = realFetch;
   (process.stdin as { isTTY?: boolean }).isTTY = realStdinIsTTY;
   (process.stdout as { isTTY?: boolean }).isTTY = realStdoutIsTTY;
-  mock.restore();
 });
 
 describe("minimum version policy", () => {
