@@ -74,7 +74,14 @@ export class JenkinsClient {
     this.authHeader = `Basic ${token}`;
     this.timeoutMs = options.timeoutMs ?? 10_000;
     this.useCrumb = options.useCrumb === true;
-    this.folderDepth = options.folderDepth ?? DEFAULT_FOLDER_DEPTH;
+    const inDepth = options.folderDepth;
+    if (typeof inDepth !== "number" || !Number.isFinite(inDepth)) {
+      this.folderDepth = DEFAULT_FOLDER_DEPTH;
+    } else {
+      const parsedDepth = Math.max(0, Math.floor(inDepth));
+      this.folderDepth =
+        parsedDepth > MAX_FOLDER_DEPTH ? MAX_FOLDER_DEPTH : parsedDepth;
+    }
   }
 
   async listJobs(): Promise<JenkinsJob[]> {
@@ -882,19 +889,19 @@ export class JenkinsClient {
         stages:
           Array.isArray(data.stages) && data.stages.length > 0
             ? data.stages.map((stage) => ({
-              ...stage,
-              _links: stage._links
-                ? {
-                  ...stage._links,
-                  ...(stage._links.self
-                    ? { self: { ...stage._links.self } }
-                    : {}),
-                  ...(stage._links.log
-                    ? { log: { ...stage._links.log } }
-                    : {}),
-                }
-                : undefined,
-            }))
+                ...stage,
+                _links: stage._links
+                  ? {
+                      ...stage._links,
+                      ...(stage._links.self
+                        ? { self: { ...stage._links.self } }
+                        : {}),
+                      ...(stage._links.log
+                        ? { log: { ...stage._links.log } }
+                        : {}),
+                    }
+                  : undefined,
+              }))
             : undefined,
         failure,
       };
@@ -963,6 +970,7 @@ const CLOUDBEES_FOLDER_CLASS = "com.cloudbees.hudson.plugins.folder.Folder";
 
 const FOLDER_LEAF_FIELDS = "_class,name,fullName,url";
 const DEFAULT_FOLDER_DEPTH = 3;
+const MAX_FOLDER_DEPTH = 10;
 
 function buildFolderTree(fields: string, depth: number): string {
   let tree = fields;
