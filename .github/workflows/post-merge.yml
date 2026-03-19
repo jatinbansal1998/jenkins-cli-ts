@@ -198,3 +198,22 @@ jobs:
           committer: github-actions[bot] <github-actions[bot]@users.noreply.github.com>
           author: github-actions[bot] <github-actions[bot]@users.noreply.github.com>
           delete-branch: true
+
+      - name: Create version tag
+        if: steps.check-version.outputs.version_changed == 'true' && github.event.repository.fork == false
+        shell: bash
+        run: |
+          VERSION=$(bun -e "console.log(require('./package.json').version)")
+          TAG="v$VERSION"
+
+          # Skip if the tag already exists (idempotent)
+          if [ -n "$(git ls-remote --tags origin "refs/tags/${TAG}")" ]; then
+            echo "Tag $TAG already exists, skipping."
+            exit 0
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag "$TAG" HEAD
+          git push origin "$TAG"
+          echo "Created and pushed tag $TAG — release workflow will now build and publish binaries."

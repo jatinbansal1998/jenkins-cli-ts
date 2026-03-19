@@ -14,8 +14,8 @@ import {
   normalizeVersionTag,
   parseUpdateChannel,
   readUpdateState,
+  resolveReleaseAsset,
   resolveUpdateChannel,
-  resolveAssetUrl,
   resolveExecutablePath,
   type UpdateState,
   withPendingUpdateState,
@@ -150,7 +150,7 @@ export async function runUpdate(options: UpdateOptions): Promise<void> {
     }
   }
 
-  const assetUrl = resolveAssetUrl(release);
+  const asset = resolveReleaseAsset(release);
   const targetPath = resolveExecutablePath();
   if (isHomebrewManagedPath(targetPath)) {
     throw new CliError(
@@ -163,10 +163,16 @@ export async function runUpdate(options: UpdateOptions): Promise<void> {
       ],
     );
   }
-  await downloadAndInstall(assetUrl, targetPath, options.currentVersion);
+  await downloadAndInstall(asset.url, targetPath, options.currentVersion);
 
   await recordSuccessfulUpdate(release.tag_name);
   printOk(`Updated jenkins-cli to ${release.tag_name}.`);
+  if (asset.isLegacyBundle) {
+    printHint(
+      "Native binary not available for this platform/version. Installed the generic jenkins-cli bundle instead.",
+    );
+    printHint("Bun must be installed on this machine to run this CLI.");
+  }
 }
 
 function printUpdatePreferences(state: UpdateState): void {

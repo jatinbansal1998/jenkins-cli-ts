@@ -7,8 +7,8 @@ output.
 
 ## Install
 
-Installs `jenkins-cli` to your PATH (defaults to `$HOME/.bun/bin`). It will install
-Bun if it is missing.
+Installs the latest supported native `jenkins-cli` binary to your PATH
+(defaults to `$HOME/.local/bin`). Bun is not required on the target machine.
 
 Primary install URL:
 
@@ -35,12 +35,14 @@ GitHub install mirror:
 curl -fsSL https://raw.githubusercontent.com/jatinbansal1998/jenkins-cli-ts/main/install | bash
 ```
 
-Optional overrides:
+Optional override:
 
 ```bash
-JENKINS_CLI_VERSION=vX.Y.Z curl -fsSL http://jatinbansal.com/jenkins-cli/install/ | bash
 JENKINS_CLI_INSTALL_DIR="$HOME/.local/bin" curl -fsSL http://jatinbansal.com/jenkins-cli/install/ | bash
 ```
+
+Older versions are not installed through the script. If you need an older
+release, download it manually from GitHub Releases.
 
 Homebrew (tap, alternative):
 

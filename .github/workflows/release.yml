@@ -61,13 +61,10 @@ jobs:
           path: test-artifacts
           if-no-files-found: ignore
 
-      - name: Build
-        run: bun run build
+      - name: Build all platform binaries
+        run: bun run build:all
 
-      - name: Ensure executable bit
-        run: chmod +x dist/jenkins-cli
-
-      - name: Prepare Homebrew artifacts
+      - name: Prepare release artifacts
         shell: bash
         env:
           TAG_NAME: ${{ github.ref_name }}
@@ -81,18 +78,69 @@ jobs:
             exit 1
           fi
 
-          sha256="$(shasum -a 256 dist/jenkins-cli | awk '{print $1}')"
-          printf '%s  %s\n' "$sha256" "jenkins-cli" > dist/jenkins-cli.sha256
+          # Publish the linux-x64 compiled binary as the backward-compat
+          # 'jenkins-cli' asset. Old clients look for this exact name when
+          # running `jenkins-cli update`. Since the old release workflow only
+          # ever produced a linux-x64 compiled binary (built on ubuntu-latest),
+          # using the same platform binary here preserves backward compat: old
+          # users get a working compiled binary with the new platform-aware
+          # update code, and on their NEXT `jenkins-cli update` they
+          # automatically download the correct platform-specific binary.
+          cp dist/jenkins-cli-linux-x64 dist/jenkins-cli
+          chmod +x dist/jenkins-cli
 
+          # Make all platform binaries executable
+          chmod +x dist/jenkins-cli-linux-x64
+          chmod +x dist/jenkins-cli-linux-x64-baseline
+          chmod +x dist/jenkins-cli-linux-x64-musl
+          chmod +x dist/jenkins-cli-linux-arm64
+          chmod +x dist/jenkins-cli-linux-arm64-musl
+          chmod +x dist/jenkins-cli-darwin-x64
+          chmod +x dist/jenkins-cli-darwin-arm64
+
+          # Create per-platform tarballs (each contains 'jenkins-cli' for Homebrew compatibility)
+          for platform in linux-x64 linux-arm64 darwin-x64 darwin-arm64; do
+            cp "dist/jenkins-cli-${platform}" jenkins-cli
+            tar -czf "dist/jenkins-cli-${platform}.tar.gz" jenkins-cli
+            rm jenkins-cli
+          done
+
+          # Compute sha256 for each tarball (used in Homebrew formula)
+          sha_linux_x64="$(shasum -a 256 dist/jenkins-cli-linux-x64.tar.gz | awk '{print $1}')"
+          sha_linux_arm64="$(shasum -a 256 dist/jenkins-cli-linux-arm64.tar.gz | awk '{print $1}')"
+          sha_darwin_x64="$(shasum -a 256 dist/jenkins-cli-darwin-x64.tar.gz | awk '{print $1}')"
+          sha_darwin_arm64="$(shasum -a 256 dist/jenkins-cli-darwin-arm64.tar.gz | awk '{print $1}')"
+
+          # Generate multi-platform Homebrew formula (no Bun dependency — binary is self-contained)
           cat > dist/homebrew-jenkins-cli.rb <<EOF
           class JenkinsCli < Formula
             desc "Minimal Jenkins CLI for listing jobs, triggering builds, and checking status"
             homepage "https://github.com/jatinbansal1998/jenkins-cli-ts"
-            url "https://github.com/jatinbansal1998/jenkins-cli-ts/releases/download/${TAG_NAME}/jenkins-cli"
-            version "${package_version}"
-            sha256 "${sha256}"
+            version "${tag_version}"
 
-            depends_on "oven-sh/bun/bun"
+            on_macos do
+              on_arm do
+                url "https://github.com/jatinbansal1998/jenkins-cli-ts/releases/download/${TAG_NAME}/jenkins-cli-darwin-arm64.tar.gz"
+                sha256 "${sha_darwin_arm64}"
+              end
+
+              on_intel do
+                url "https://github.com/jatinbansal1998/jenkins-cli-ts/releases/download/${TAG_NAME}/jenkins-cli-darwin-x64.tar.gz"
+                sha256 "${sha_darwin_x64}"
+              end
+            end
+
+            on_linux do
+              on_arm do
+                url "https://github.com/jatinbansal1998/jenkins-cli-ts/releases/download/${TAG_NAME}/jenkins-cli-linux-arm64.tar.gz"
+                sha256 "${sha_linux_arm64}"
+              end
+
+              on_intel do
+                url "https://github.com/jatinbansal1998/jenkins-cli-ts/releases/download/${TAG_NAME}/jenkins-cli-linux-x64.tar.gz"
+                sha256 "${sha_linux_x64}"
+              end
+            end
 
             def install
               bin.install "jenkins-cli"
@@ -107,11 +155,23 @@ jobs:
       - name: Create Release
         uses: softprops/action-gh-release@v1
         with:
-          files: |
-            dist/jenkins-cli
-            dist/jenkins-cli.sha256
-            dist/homebrew-jenkins-cli.rb
           generate_release_notes: true
+          files: |
+            dist/jenkins-cli-linux-x64
+            dist/jenkins-cli-linux-x64-baseline
+            dist/jenkins-cli-linux-x64-musl
+            dist/jenkins-cli-linux-arm64
+            dist/jenkins-cli-linux-arm64-musl
+            dist/jenkins-cli-darwin-x64
+            dist/jenkins-cli-darwin-arm64
+            dist/jenkins-cli-windows-x64.exe
+            dist/jenkins-cli-windows-x64-baseline.exe
+            dist/jenkins-cli-linux-x64.tar.gz
+            dist/jenkins-cli-linux-arm64.tar.gz
+            dist/jenkins-cli-darwin-x64.tar.gz
+            dist/jenkins-cli-darwin-arm64.tar.gz
+            dist/jenkins-cli
+            dist/homebrew-jenkins-cli.rb
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 

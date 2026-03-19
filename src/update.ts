@@ -1,5 +1,6 @@
 import os from "node:os";
 import path from "node:path";
+import { readFileSync } from "node:fs";
 import { chmod, copyFile, mkdir, mkdtemp, rename, rm } from "node:fs/promises";
 import {
   CLI_FLAGS,
@@ -16,7 +17,75 @@ import {
   type GitHubReleaseInfo as ReleaseInfo,
 } from "./github/api-wrapper";
 
-const ASSET_NAME = "jenkins-cli";
+function detectMusl(): boolean {
+  try {
+    const proc = Bun.spawnSync({
+      cmd: ["ldd", "--version"],
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    const text =
+      new TextDecoder().decode(proc.stdout ?? undefined) +
+      new TextDecoder().decode(proc.stderr ?? undefined);
+    return text.toLowerCase().includes("musl");
+  } catch {
+    return false;
+  }
+}
+
+function hasAvx2(): boolean {
+  try {
+    const cpuinfo = readFileSync("/proc/cpuinfo", "utf-8");
+    return /\bavx2\b/.test(cpuinfo);
+  } catch {
+    return true; // assume capable; use standard build
+  }
+}
+
+// PF_AVX2_INSTRUCTIONS_AVAILABLE = 40 (Windows SDK processthreadsapi.h)
+const PF_AVX2_INSTRUCTIONS_AVAILABLE = 40;
+
+function hasAvx2OnWindows(): boolean {
+  try {
+    const proc = Bun.spawnSync({
+      cmd: [
+        "powershell",
+        "-NoProfile",
+        "-Command",
+        `Add-Type -TypeDefinition 'using System;using System.Runtime.InteropServices;public class K{[DllImport("kernel32")]public static extern bool IsProcessorFeaturePresent(uint f);}'; [K]::IsProcessorFeaturePresent(${PF_AVX2_INSTRUCTIONS_AVAILABLE})`,
+      ],
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    return (
+      new TextDecoder().decode(proc.stdout).trim().toLowerCase() === "true"
+    );
+  } catch {
+    return true; // assume capable; use standard build
+  }
+}
+
+export function resolveAssetName(): string {
+  const platform = process.platform;
+  const arch = process.arch;
+  if (platform === "win32") {
+    return hasAvx2OnWindows()
+      ? "jenkins-cli-windows-x64.exe"
+      : "jenkins-cli-windows-x64-baseline.exe";
+  }
+  const platStr = platform === "darwin" ? "darwin" : "linux";
+  const archStr = arch === "arm64" ? "arm64" : "x64";
+  if (platStr === "linux") {
+    if (detectMusl()) {
+      return `jenkins-cli-linux-${archStr}-musl`;
+    }
+    if (archStr === "x64" && !hasAvx2()) {
+      return "jenkins-cli-linux-x64-baseline";
+    }
+  }
+  return `jenkins-cli-${platStr}-${archStr}`;
+}
+
 const HOMEBREW_CELLAR_SEGMENT = `${path.sep}Cellar${path.sep}jenkins-cli${path.sep}`;
 const AUTO_UPDATE_INTERVAL_MS = 60 * 60 * 1000;
 const UPDATE_STATE_FILE = path.join(CONFIG_DIR, "update-state.json");
@@ -287,15 +356,40 @@ export async function fetchReleaseByTag(
   return await fetchReleaseByTagFromGitHub(normalized, options);
 }
 
-export function resolveAssetUrl(release: ReleaseInfo): string {
-  const asset = release.assets.find((item) => item.name === ASSET_NAME);
-  if (!asset) {
-    throw new CliError(
-      `Release asset "${ASSET_NAME}" not found for ${release.tag_name}.`,
-      ["Ensure the GitHub release includes the asset named jenkins-cli."],
-    );
+export type ResolvedReleaseAsset = {
+  url: string;
+  isLegacyBundle: boolean;
+};
+
+export function resolveReleaseAsset(
+  release: ReleaseInfo,
+): ResolvedReleaseAsset {
+  const assetName = resolveAssetName();
+  const platformAsset = release.assets.find((item) => item.name === assetName);
+  if (platformAsset) {
+    return {
+      url: platformAsset.browser_download_url,
+      isLegacyBundle: false,
+    };
   }
-  return asset.browser_download_url;
+
+  const legacyAsset = release.assets.find(
+    (item) => item.name === "jenkins-cli",
+  );
+  if (legacyAsset) {
+    return {
+      url: legacyAsset.browser_download_url,
+      isLegacyBundle: true,
+    };
+  }
+
+  throw new CliError(
+    `Release asset "${assetName}" not found for ${release.tag_name}.`,
+    [
+      "Ensure the GitHub release includes either a platform-specific binary or the generic jenkins-cli bundle.",
+      `Expected asset name: ${assetName}`,
+    ],
+  );
 }
 
 export async function downloadAndInstall(
@@ -422,10 +516,16 @@ async function runAutoUpdate(currentVersion: string): Promise<void> {
     }
     if (autoInstallEnabled) {
       try {
-        const assetUrl = resolveAssetUrl(release);
+        const asset = resolveReleaseAsset(release);
         const targetPath = resolveExecutablePath();
-        await downloadAndInstall(assetUrl, targetPath, currentVersion);
+        await downloadAndInstall(asset.url, targetPath, currentVersion);
         printHint(`Auto-updated jenkins-cli to ${release.tag_name}.`);
+        if (asset.isLegacyBundle) {
+          printHint(
+            "Native binary not available for this platform/version. Installed the generic jenkins-cli bundle instead.",
+          );
+          printHint("Bun must be installed on this machine to run this CLI.");
+        }
         await writeUpdateState({
           ...clearPendingUpdateState(pendingState),
           lastNotifiedVersion: release.tag_name,

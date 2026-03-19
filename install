@@ -5,33 +5,6 @@ print() {
   printf '%s\n' "$*"
 }
 
-ensure_bun() {
-  if command -v bun >/dev/null 2>&1; then
-    return 0
-  fi
-
-  print "Bun not found. Installing..."
-  if command -v curl >/dev/null 2>&1; then
-    curl -fsSL https://bun.sh/install | bash
-  elif command -v wget >/dev/null 2>&1; then
-    wget -qO- https://bun.sh/install | bash
-  else
-    print "ERROR: curl or wget is required to install Bun."
-    exit 1
-  fi
-
-  export BUN_INSTALL="${BUN_INSTALL:-$HOME/.bun}"
-  export PATH="$BUN_INSTALL/bin:$PATH"
-
-  if ! command -v bun >/dev/null 2>&1; then
-    print "ERROR: Bun installed but not on PATH."
-    print "Open a new terminal or run: export PATH=\"$HOME/.bun/bin:$PATH\""
-    exit 1
-  fi
-
-  print "Bun installed."
-}
-
 ensure_downloader() {
   if command -v curl >/dev/null 2>&1; then
     return 0
@@ -55,33 +28,67 @@ download_asset() {
   wget -qO "$out" "$url"
 }
 
+detect_asset() {
+  local os arch os_str arch_str libc_suffix baseline_suffix
+
+  os="$(uname -s)"
+  arch="$(uname -m)"
+
+  case "$os" in
+    Linux)  os_str="linux" ;;
+    Darwin) os_str="darwin" ;;
+    *)
+      print "ERROR: Unsupported OS: $os"
+      print "For Windows, download the binary manually from the GitHub releases page."
+      exit 1
+      ;;
+  esac
+
+  case "$arch" in
+    x86_64)          arch_str="x64" ;;
+    aarch64 | arm64) arch_str="arm64" ;;
+    *)
+      print "ERROR: Unsupported architecture: $arch"
+      exit 1
+      ;;
+  esac
+
+  libc_suffix=""
+  baseline_suffix=""
+  if [ "$os_str" = "linux" ]; then
+    if ldd --version 2>&1 | grep -qi musl; then
+      libc_suffix="-musl"
+    elif [ "$arch_str" = "x64" ]; then
+      if ! grep -qw avx2 /proc/cpuinfo 2>/dev/null; then
+        baseline_suffix="-baseline"
+      fi
+    fi
+  fi
+
+  echo "jenkins-cli-${os_str}-${arch_str}${libc_suffix}${baseline_suffix}"
+}
+
 print "Jenkins CLI installer"
 
-ensure_bun
 ensure_downloader
 
-version="${JENKINS_CLI_VERSION:-}"
-if [ -n "$version" ] && [ "${version#v}" = "$version" ]; then
-  version="v$version"
-fi
-
 base_url="https://github.com/jatinbansal1998/jenkins-cli-ts/releases/latest/download"
-if [ -n "$version" ]; then
-  base_url="https://github.com/jatinbansal1998/jenkins-cli-ts/releases/download/$version"
-fi
+
+asset_name="$(detect_asset)"
 
 tmp_dir="$(mktemp -d)"
 trap 'rm -rf "$tmp_dir"' EXIT
 
 tmp_file="$tmp_dir/jenkins-cli"
-url="$base_url/jenkins-cli"
+url="$base_url/$asset_name"
 if ! download_asset "$url" "$tmp_file"; then
   print "ERROR: Failed to download Jenkins CLI from $url"
-  print "HINT: Set JENKINS_CLI_VERSION to a valid tag."
+  print "HINT: This installer only supports the latest release with native binaries."
+  print "HINT: Download older versions manually from GitHub Releases."
   exit 1
 fi
 
-default_install_dir="${BUN_INSTALL:-$HOME/.bun}/bin"
+default_install_dir="$HOME/.local/bin"
 install_dir="${JENKINS_CLI_INSTALL_DIR:-$default_install_dir}"
 mkdir -p "$install_dir"
 chmod +x "$tmp_file"
