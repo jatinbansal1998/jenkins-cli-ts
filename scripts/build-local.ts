@@ -20,6 +20,7 @@ const target = `bun-${process.platform}-${process.arch}` as const;
 
 const result = await Bun.build({
   entrypoints: [ENTRY],
+  target: "bun",
   compile: { outfile: `${DIST}/jenkins-cli` },
   define: { __BUILD_TARGET__: JSON.stringify(target) },
 });

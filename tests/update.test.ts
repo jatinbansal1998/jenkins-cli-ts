@@ -21,6 +21,16 @@ import {
   withPendingUpdateState,
 } from "../src/update";
 
+const isBunAvailableMock = mock(() => true);
+mock.module("../src/update", () => ({
+  compareVersions,
+  normalizeVersionTag,
+  parseUpdateChannel,
+  resolveAssetName,
+  resolveReleaseAsset,
+  isBunAvailable: isBunAvailableMock,
+}));
+
 const realFetch = globalThis.fetch;
 type FetchInput = Parameters<typeof fetch>[0];
 type FetchInit = Parameters<typeof fetch>[1];
@@ -138,6 +148,25 @@ describe("update helpers", () => {
     expect(() =>
       resolveReleaseAsset({ tag_name: "v1.2.3", assets: [] }),
     ).toThrow(CliError);
+  });
+
+  test("resolveReleaseAsset throws when only legacy asset is present but Bun is unavailable", () => {
+    isBunAvailableMock.mockReturnValue(false);
+    try {
+      expect(() =>
+        resolveReleaseAsset({
+          tag_name: "v0.5.0",
+          assets: [
+            {
+              name: "jenkins-cli",
+              browser_download_url: "https://example.com/jenkins-cli",
+            },
+          ],
+        }),
+      ).toThrow(CliError);
+    } finally {
+      isBunAvailableMock.mockReturnValue(true);
+    }
   });
 
   test("resolveExecutablePath throws for source runs", () => {

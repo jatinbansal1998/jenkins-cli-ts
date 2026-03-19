@@ -13,7 +13,9 @@
  */
 
 import { copyFile, mkdir, writeFile, chmod, rm } from "node:fs/promises";
+import { mkdtempSync } from "node:fs";
 import { join } from "node:path";
+import { tmpdir } from "node:os";
 import { createHash } from "node:crypto";
 
 const ENTRY = "./src/index.ts";
@@ -34,6 +36,10 @@ const COMPILE_TARGETS: Target[] = [
     outfile: "jenkins-cli-linux-x64-baseline",
   },
   { target: "bun-linux-x64-musl", outfile: "jenkins-cli-linux-x64-musl" },
+  {
+    target: "bun-linux-x64-musl-baseline",
+    outfile: "jenkins-cli-linux-x64-musl-baseline",
+  },
   { target: "bun-linux-arm64", outfile: "jenkins-cli-linux-arm64" },
   { target: "bun-linux-arm64-musl", outfile: "jenkins-cli-linux-arm64-musl" },
   { target: "bun-darwin-x64", outfile: "jenkins-cli-darwin-x64" },
@@ -64,11 +70,11 @@ async function sha256(filePath: string): Promise<string> {
 }
 
 async function tar(srcFile: string, destTarGz: string): Promise<void> {
-  // Copy binary to a temp name "jenkins-cli" (Homebrew expects this inside the tarball)
-  const tmpBin = "jenkins-cli";
+  const tmpDir = mkdtempSync(join(tmpdir(), "jenkins-cli-"));
+  const tmpBin = join(tmpDir, "jenkins-cli");
   await copyFile(srcFile, tmpBin);
-  await Bun.$`tar -czf ${destTarGz} ${tmpBin}`.quiet();
-  await rm(tmpBin);
+  await Bun.$`tar -czf ${destTarGz} jenkins-cli`.cwd(tmpDir).quiet();
+  await rm(tmpDir, { recursive: true });
 }
 
 // ---------------------------------------------------------------------------

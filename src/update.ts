@@ -24,6 +24,12 @@ function detectMusl(): boolean | null {
       stdout: "pipe",
       stderr: "pipe",
     });
+    const text =
+      new TextDecoder().decode(proc.stdout ?? undefined) +
+      new TextDecoder().decode(proc.stderr ?? undefined);
+    if (text.toLowerCase().includes("musl")) {
+      return true;
+    }
     if (!proc.success) {
       try {
         const selfExe = readFileSync("/proc/self/exe", "latin1");
@@ -31,12 +37,8 @@ function detectMusl(): boolean | null {
           return true;
         }
       } catch {}
-      return null;
     }
-    const text =
-      new TextDecoder().decode(proc.stdout ?? undefined) +
-      new TextDecoder().decode(proc.stderr ?? undefined);
-    return text.toLowerCase().includes("musl");
+    return false;
   } catch {
     return null;
   }
@@ -117,6 +119,9 @@ export function resolveAssetName(): string {
       ]);
     }
     if (isMusl) {
+      if (arch === "x64" && !hasAvx2()) {
+        return "jenkins-cli-linux-x64-musl-baseline";
+      }
       return `jenkins-cli-linux-${arch}-musl`;
     }
     if (arch === "x64" && !hasAvx2()) {
