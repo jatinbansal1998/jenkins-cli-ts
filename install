@@ -126,6 +126,10 @@ chmod +x "$tmp_file"
 mv -f "$tmp_file" "$install_dir/jenkins-cli"
 
 print "Installed to $install_dir/jenkins-cli"
+installed_version="$("$install_dir/jenkins-cli" --version 2>/dev/null || true)"
+if [ -n "$installed_version" ]; then
+  print "Installed jenkins-cli: $installed_version"
+fi
 
 case ":$PATH:" in
   *":$install_dir:"*) ;;
