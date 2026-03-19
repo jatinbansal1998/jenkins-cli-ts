@@ -17,35 +17,18 @@ import { mkdtempSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { createHash } from "node:crypto";
+import {
+  HOMEBREW_RELEASE_TARGETS,
+  LEGACY_BUNDLE_ASSET_NAME,
+  LEGACY_BUNDLE_BUILD_TARGET,
+  NATIVE_RELEASE_TARGETS,
+} from "../src/release-targets";
 
 const ENTRY = "./src/index.ts";
 const DIST = "./dist";
 const RELEASE = process.argv.includes("--release");
 
 const REPO_SLUG = "jatinbansal1998/jenkins-cli-ts";
-
-interface Target {
-  target: string;
-  outfile: string;
-}
-
-const COMPILE_TARGETS: Target[] = [
-  { target: "bun-linux-x64", outfile: "jenkins-cli-linux-x64" },
-  { target: "bun-linux-x64-musl", outfile: "jenkins-cli-linux-x64-musl" },
-  { target: "bun-linux-arm64", outfile: "jenkins-cli-linux-arm64" },
-  { target: "bun-linux-arm64-musl", outfile: "jenkins-cli-linux-arm64-musl" },
-  { target: "bun-darwin-x64", outfile: "jenkins-cli-darwin-x64" },
-  { target: "bun-darwin-arm64", outfile: "jenkins-cli-darwin-arm64" },
-  { target: "bun-windows-x64", outfile: "jenkins-cli-windows-x64.exe" },
-];
-
-/** Platforms that get Homebrew-compatible tarballs. */
-const TARBALL_PLATFORMS = [
-  "linux-x64",
-  "linux-arm64",
-  "darwin-x64",
-  "darwin-arm64",
-];
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -77,7 +60,7 @@ const bundleResult = await Bun.build({
   outdir: DIST,
   naming: "jenkins-cli-bundle",
   target: "bun",
-  define: { __BUILD_TARGET__: JSON.stringify("bun-bundle") },
+  define: { __BUILD_TARGET__: JSON.stringify(LEGACY_BUNDLE_BUILD_TARGET) },
 });
 
 if (!bundleResult.success) {
@@ -88,23 +71,25 @@ console.log(`✅ bundle  (${(performance.now() - bundleStart).toFixed(0)}ms)`);
 
 // Cross-compile all platform executables in parallel
 const results = await Promise.allSettled(
-  COMPILE_TARGETS.map(async ({ target, outfile }) => {
+  NATIVE_RELEASE_TARGETS.map(async ({ compileTarget, assetName }) => {
     const start = performance.now();
-    const outpath = join(DIST, outfile);
+    const outpath = join(DIST, assetName);
 
     const result = await Bun.build({
       entrypoints: [ENTRY],
       // @ts-expect-error -- Bun compile targets are valid at runtime
-      compile: { target, outfile: outpath },
-      define: { __BUILD_TARGET__: JSON.stringify(target) },
+      compile: { target: compileTarget, outfile: outpath },
+      define: { __BUILD_TARGET__: JSON.stringify(compileTarget) },
     });
 
     if (!result.success) {
-      throw new Error(`${target}: ${result.logs.join("\n")}`);
+      throw new Error(`${compileTarget}: ${result.logs.join("\n")}`);
     }
 
     const elapsed = (performance.now() - start).toFixed(0);
-    console.log(`✅ ${target.padEnd(28)} → ${outfile}  (${elapsed}ms)`);
+    console.log(
+      `✅ ${compileTarget.padEnd(28)} → ${assetName}  (${elapsed}ms)`,
+    );
   }),
 );
 
@@ -120,7 +105,7 @@ if (failures.length > 0) {
   process.exit(1);
 }
 
-console.log(`\n🎉 All ${COMPILE_TARGETS.length + 1} builds complete`);
+console.log(`\n🎉 All ${NATIVE_RELEASE_TARGETS.length + 1} builds complete`);
 
 if (!RELEASE) process.exit(0);
 
@@ -147,26 +132,30 @@ if (pkg.version !== tagVersion) {
 }
 
 // Legacy cross-platform bundle (old update clients look for "jenkins-cli")
-await copyFile(join(DIST, "jenkins-cli-bundle"), join(DIST, "jenkins-cli"));
-await chmod(join(DIST, "jenkins-cli"), 0o755);
+await copyFile(
+  join(DIST, "jenkins-cli-bundle"),
+  join(DIST, LEGACY_BUNDLE_ASSET_NAME),
+);
+await chmod(join(DIST, LEGACY_BUNDLE_ASSET_NAME), 0o755);
 
 // Make all platform binaries executable
-for (const { outfile } of COMPILE_TARGETS) {
-  if (!outfile.endsWith(".exe")) {
-    await chmod(join(DIST, outfile), 0o755);
+for (const { assetName } of NATIVE_RELEASE_TARGETS) {
+  if (!assetName.endsWith(".exe")) {
+    await chmod(join(DIST, assetName), 0o755);
   }
 }
 
 // Per-platform tarballs (each contains "jenkins-cli" for Homebrew)
 const tarballSha: Record<string, string> = {};
 
-for (const platform of TARBALL_PLATFORMS) {
-  const src = join(DIST, `jenkins-cli-${platform}`);
-  const dest = join(DIST, `jenkins-cli-${platform}.tar.gz`);
+for (const target of HOMEBREW_RELEASE_TARGETS) {
+  const src = join(DIST, target.assetName);
+  const dest = join(DIST, target.homebrewTarballName);
   await tar(src, dest);
-  tarballSha[platform] = await sha256(dest);
+  const hash = await sha256(dest);
+  tarballSha[target.assetName] = hash;
   console.log(
-    `  📁 ${platform}.tar.gz  sha256:${tarballSha[platform].slice(0, 12)}…`,
+    `  📁 ${target.homebrewTarballName}  sha256:${hash.slice(0, 12)}…`,
   );
 }
 
@@ -181,24 +170,24 @@ const formula = [
   "  on_macos do",
   "    on_arm do",
   `      url "https://github.com/${REPO_SLUG}/releases/download/${tagName}/jenkins-cli-darwin-arm64.tar.gz"`,
-  `      sha256 "${tarballSha["darwin-arm64"]}"`,
+  `      sha256 "${tarballSha["jenkins-cli-darwin-arm64"]}"`,
   "    end",
   "",
   "    on_intel do",
   `      url "https://github.com/${REPO_SLUG}/releases/download/${tagName}/jenkins-cli-darwin-x64.tar.gz"`,
-  `      sha256 "${tarballSha["darwin-x64"]}"`,
+  `      sha256 "${tarballSha["jenkins-cli-darwin-x64"]}"`,
   "    end",
   "  end",
   "",
   "  on_linux do",
   "    on_arm do",
   `      url "https://github.com/${REPO_SLUG}/releases/download/${tagName}/jenkins-cli-linux-arm64.tar.gz"`,
-  `      sha256 "${tarballSha["linux-arm64"]}"`,
+  `      sha256 "${tarballSha["jenkins-cli-linux-arm64"]}"`,
   "    end",
   "",
   "    on_intel do",
   `      url "https://github.com/${REPO_SLUG}/releases/download/${tagName}/jenkins-cli-linux-x64.tar.gz"`,
-  `      sha256 "${tarballSha["linux-x64"]}"`,
+  `      sha256 "${tarballSha["jenkins-cli-linux-x64"]}"`,
   "    end",
   "  end",
   "",
@@ -218,9 +207,9 @@ console.log("  🍺 homebrew-jenkins-cli.rb");
 
 // Checksums for every release artifact
 const checksumFiles = [
-  ...COMPILE_TARGETS.map((t) => t.outfile),
-  ...TARBALL_PLATFORMS.map((p) => `jenkins-cli-${p}.tar.gz`),
-  "jenkins-cli",
+  ...NATIVE_RELEASE_TARGETS.map((target) => target.assetName),
+  ...HOMEBREW_RELEASE_TARGETS.map((target) => target.homebrewTarballName),
+  LEGACY_BUNDLE_ASSET_NAME,
   "homebrew-jenkins-cli.rb",
 ];
 

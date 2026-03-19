@@ -14,7 +14,7 @@ declare const __BUILD_TARGET__: string | undefined;
 /**
  * The platform target this binary was built for.
  *
- * Examples: `"bun-darwin-arm64"`, `"bun-linux-x64-baseline"`, `"source"`.
+ * Examples: `"bun-darwin-arm64"`, `"bun-linux-x64-musl"`, `"source"`.
  */
 export const BUILD_TARGET: string =
   typeof __BUILD_TARGET__ !== "undefined" ? __BUILD_TARGET__ : "source";

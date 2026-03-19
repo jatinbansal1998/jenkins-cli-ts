@@ -17,6 +17,15 @@ import {
   type GitHubReleaseInfo as ReleaseInfo,
 } from "./github/api-wrapper";
 import { BUILD_TARGET } from "./build-target";
+import {
+  isLegacyBundleBuildTarget,
+  isSupportedRuntimeArch,
+  isSupportedRuntimePlatform,
+  LEGACY_BUNDLE_ASSET_NAME,
+  resolveNativeReleaseTarget,
+} from "./release-targets";
+
+export { isLegacyBundleBuildTarget } from "./release-targets";
 
 export function parseLddProbeOutput(text: string): boolean | null {
   const normalized = text.trim().toLowerCase();
@@ -99,21 +108,15 @@ export function resolveAssetName(): string {
   const platform = process.platform;
   const arch = process.arch;
 
-  if (platform === "win32") {
-    if (arch !== "x64") {
-      throw new CliError(`Unsupported architecture on Windows: ${arch}`);
-    }
-    return "jenkins-cli-windows-x64.exe";
-  }
-
-  if (platform !== "darwin" && platform !== "linux") {
+  if (!isSupportedRuntimePlatform(platform)) {
     throw new CliError(`Unsupported platform: ${platform}`);
   }
 
-  if (arch !== "x64" && arch !== "arm64") {
+  if (!isSupportedRuntimeArch(arch)) {
     throw new CliError(`Unsupported architecture: ${arch}`);
   }
 
+  let libc: "gnu" | "musl" | undefined;
   if (platform === "linux") {
     const isMusl = detectMusl();
     if (isMusl === null) {
@@ -122,12 +125,20 @@ export function resolveAssetName(): string {
         "Please download the binary manually from GitHub Releases.",
       ]);
     }
-    if (isMusl) {
-      return `jenkins-cli-linux-${arch}-musl`;
-    }
+    libc = isMusl ? "musl" : "gnu";
   }
 
-  return `jenkins-cli-${platform}-${arch}`;
+  const target = resolveNativeReleaseTarget({
+    platform,
+    arch,
+    libc,
+  });
+  if (!target) {
+    throw new CliError(
+      `No release target found for platform ${platform} (${arch}).`,
+    );
+  }
+  return target.assetName;
 }
 
 const HOMEBREW_CELLAR_SEGMENT = `${path.sep}Cellar${path.sep}jenkins-cli${path.sep}`;
@@ -431,9 +442,8 @@ export function resolveReleaseAsset(
     };
   }
 
-  const legacyNames = ["jenkins-cli"];
-  const legacyAsset = release.assets.find((item) =>
-    legacyNames.includes(item.name),
+  const legacyAsset = release.assets.find(
+    (item) => item.name === LEGACY_BUNDLE_ASSET_NAME,
   );
   if (legacyAsset && isBunAvailable()) {
     return {
@@ -449,10 +459,6 @@ export function resolveReleaseAsset(
       `Expected asset name: ${assetName}`,
     ],
   );
-}
-
-export function isLegacyBundleBuildTarget(buildTarget: string): boolean {
-  return buildTarget.trim().toLowerCase() === "bun-bundle";
 }
 
 export function getReleaseInstallDecision(options: {
