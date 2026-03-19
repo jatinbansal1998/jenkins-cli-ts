@@ -7,6 +7,7 @@ on:
     branches: [main]
 
 permissions:
+  actions: write
   contents: write
   pull-requests: write
 
@@ -14,7 +15,7 @@ jobs:
   test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - uses: oven-sh/setup-bun@v2
         with:
@@ -66,7 +67,7 @@ jobs:
     needs: test
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 2
           token: ${{ secrets.GITHUB_TOKEN }}
@@ -202,18 +203,21 @@ jobs:
       - name: Create version tag
         if: steps.check-version.outputs.version_changed == 'true' && github.event.repository.fork == false
         shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           VERSION=$(bun -e "console.log(require('./package.json').version)")
           TAG="v$VERSION"
 
           # Skip if the tag already exists (idempotent)
           if [ -n "$(git ls-remote --tags origin "refs/tags/${TAG}")" ]; then
-            echo "Tag $TAG already exists, skipping."
-            exit 0
+            echo "Tag $TAG already exists, skipping tag creation."
+          else
+            git config user.name "github-actions[bot]"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+            git tag "$TAG" HEAD
+            git push origin "$TAG"
           fi
 
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git tag "$TAG" HEAD
-          git push origin "$TAG"
-          echo "Created and pushed tag $TAG — release workflow will now build and publish binaries."
+          gh workflow run release.yml --ref main -f tag="$TAG"
+          echo "Ensured tag $TAG exists, then dispatched release.yml as a prerelease."
