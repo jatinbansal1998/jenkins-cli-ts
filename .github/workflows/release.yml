@@ -78,15 +78,9 @@ jobs:
             exit 1
           fi
 
-          # Publish the linux-x64 compiled binary as the backward-compat
-          # 'jenkins-cli' asset. Old clients look for this exact name when
-          # running `jenkins-cli update`. Since the old release workflow only
-          # ever produced a linux-x64 compiled binary (built on ubuntu-latest),
-          # using the same platform binary here preserves backward compat: old
-          # users get a working compiled binary with the new platform-aware
-          # update code, and on their NEXT `jenkins-cli update` they
-          # automatically download the correct platform-specific binary.
-          cp dist/jenkins-cli-linux-x64 dist/jenkins-cli
+          # Preserve the legacy cross-platform bundle for backward compatibility:
+          # old clients look for the 'jenkins-cli' asset when running update.
+          cp dist/jenkins-cli-bundle dist/jenkins-cli
           chmod +x dist/jenkins-cli
 
           # Make all platform binaries executable
@@ -99,7 +93,7 @@ jobs:
           chmod +x dist/jenkins-cli-darwin-arm64
 
           # Create per-platform tarballs (each contains 'jenkins-cli' for Homebrew compatibility)
-          for platform in linux-x64 linux-arm64 darwin-x64 darwin-arm64; do
+          for platform in linux-x64 linux-x64-baseline linux-arm64 darwin-x64 darwin-arm64; do
             cp "dist/jenkins-cli-${platform}" jenkins-cli
             tar -czf "dist/jenkins-cli-${platform}.tar.gz" jenkins-cli
             rm jenkins-cli
@@ -107,6 +101,7 @@ jobs:
 
           # Compute sha256 for each tarball (used in Homebrew formula)
           sha_linux_x64="$(shasum -a 256 dist/jenkins-cli-linux-x64.tar.gz | awk '{print $1}')"
+          sha_linux_x64_baseline="$(shasum -a 256 dist/jenkins-cli-linux-x64-baseline.tar.gz | awk '{print $1}')"
           sha_linux_arm64="$(shasum -a 256 dist/jenkins-cli-linux-arm64.tar.gz | awk '{print $1}')"
           sha_darwin_x64="$(shasum -a 256 dist/jenkins-cli-darwin-x64.tar.gz | awk '{print $1}')"
           sha_darwin_arm64="$(shasum -a 256 dist/jenkins-cli-darwin-arm64.tar.gz | awk '{print $1}')"
@@ -137,8 +132,8 @@ jobs:
               end
 
               on_intel do
-                url "https://github.com/jatinbansal1998/jenkins-cli-ts/releases/download/${TAG_NAME}/jenkins-cli-linux-x64.tar.gz"
-                sha256 "${sha_linux_x64}"
+                url "https://github.com/jatinbansal1998/jenkins-cli-ts/releases/download/${TAG_NAME}/jenkins-cli-linux-x64-baseline.tar.gz"
+                sha256 "${sha_linux_x64_baseline}"
               end
             end
 
@@ -167,6 +162,7 @@ jobs:
             dist/jenkins-cli-windows-x64.exe
             dist/jenkins-cli-windows-x64-baseline.exe
             dist/jenkins-cli-linux-x64.tar.gz
+            dist/jenkins-cli-linux-x64-baseline.tar.gz
             dist/jenkins-cli-linux-arm64.tar.gz
             dist/jenkins-cli-darwin-x64.tar.gz
             dist/jenkins-cli-darwin-arm64.tar.gz

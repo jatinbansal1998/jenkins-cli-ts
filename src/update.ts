@@ -38,7 +38,7 @@ function hasAvx2(): boolean {
     const cpuinfo = readFileSync("/proc/cpuinfo", "utf-8");
     return /\bavx2\b/.test(cpuinfo);
   } catch {
-    return true; // assume capable; use standard build
+    return false;
   }
 }
 
@@ -61,29 +61,40 @@ function hasAvx2OnWindows(): boolean {
       new TextDecoder().decode(proc.stdout).trim().toLowerCase() === "true"
     );
   } catch {
-    return true; // assume capable; use standard build
+    return false;
   }
 }
 
 export function resolveAssetName(): string {
   const platform = process.platform;
   const arch = process.arch;
+
   if (platform === "win32") {
+    if (arch !== "x64") {
+      throw new CliError(`Unsupported architecture on Windows: ${arch}`);
+    }
     return hasAvx2OnWindows()
       ? "jenkins-cli-windows-x64.exe"
       : "jenkins-cli-windows-x64-baseline.exe";
   }
-  const platStr = platform === "darwin" ? "darwin" : "linux";
-  const archStr = arch === "arm64" ? "arm64" : "x64";
-  if (platStr === "linux") {
+
+  if (platform !== "darwin" && platform !== "linux") {
+    throw new CliError(`Unsupported platform: ${platform}`);
+  }
+
+  if (arch !== "x64" && arch !== "arm64") {
+    throw new CliError(`Unsupported architecture: ${arch}`);
+  }
+
+  if (platform === "linux") {
     if (detectMusl()) {
-      return `jenkins-cli-linux-${archStr}-musl`;
+      return `jenkins-cli-linux-${arch}-musl`;
     }
-    if (archStr === "x64" && !hasAvx2()) {
+    if (arch === "x64" && !hasAvx2()) {
       return "jenkins-cli-linux-x64-baseline";
     }
   }
-  return `jenkins-cli-${platStr}-${archStr}`;
+  return `jenkins-cli-${platform}-${arch}`;
 }
 
 const HOMEBREW_CELLAR_SEGMENT = `${path.sep}Cellar${path.sep}jenkins-cli${path.sep}`;
