@@ -73,17 +73,13 @@ jobs:
           overwrite_files: true
           files: |
             dist/jenkins-cli-linux-x64
-            dist/jenkins-cli-linux-x64-baseline
             dist/jenkins-cli-linux-x64-musl
-            dist/jenkins-cli-linux-x64-musl-baseline
             dist/jenkins-cli-linux-arm64
             dist/jenkins-cli-linux-arm64-musl
             dist/jenkins-cli-darwin-x64
             dist/jenkins-cli-darwin-arm64
             dist/jenkins-cli-windows-x64.exe
-            dist/jenkins-cli-windows-x64-baseline.exe
             dist/jenkins-cli-linux-x64.tar.gz
-            dist/jenkins-cli-linux-x64-baseline.tar.gz
             dist/jenkins-cli-linux-arm64.tar.gz
             dist/jenkins-cli-darwin-x64.tar.gz
             dist/jenkins-cli-darwin-arm64.tar.gz

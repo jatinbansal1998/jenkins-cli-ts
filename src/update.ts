@@ -44,38 +44,6 @@ function detectMusl(): boolean | null {
   }
 }
 
-function hasAvx2(): boolean {
-  try {
-    const cpuinfo = readFileSync("/proc/cpuinfo", "utf-8");
-    return /\bavx2\b/.test(cpuinfo);
-  } catch {
-    return false;
-  }
-}
-
-// PF_AVX2_INSTRUCTIONS_AVAILABLE = 40 (Windows SDK processthreadsapi.h)
-const PF_AVX2_INSTRUCTIONS_AVAILABLE = 40;
-
-function hasAvx2OnWindows(): boolean {
-  try {
-    const proc = Bun.spawnSync({
-      cmd: [
-        "powershell",
-        "-NoProfile",
-        "-Command",
-        `Add-Type -TypeDefinition 'using System;using System.Runtime.InteropServices;public class K{[DllImport("kernel32")]public static extern bool IsProcessorFeaturePresent(uint f);}'; [K]::IsProcessorFeaturePresent(${PF_AVX2_INSTRUCTIONS_AVAILABLE})`,
-      ],
-      stdout: "pipe",
-      stderr: "pipe",
-    });
-    return (
-      new TextDecoder().decode(proc.stdout).trim().toLowerCase() === "true"
-    );
-  } catch {
-    return false;
-  }
-}
-
 export function isBunAvailable(): boolean {
   try {
     const proc = Bun.spawnSync({
@@ -97,9 +65,7 @@ export function resolveAssetName(): string {
     if (arch !== "x64") {
       throw new CliError(`Unsupported architecture on Windows: ${arch}`);
     }
-    return hasAvx2OnWindows()
-      ? "jenkins-cli-windows-x64.exe"
-      : "jenkins-cli-windows-x64-baseline.exe";
+    return "jenkins-cli-windows-x64.exe";
   }
 
   if (platform !== "darwin" && platform !== "linux") {
@@ -119,15 +85,10 @@ export function resolveAssetName(): string {
       ]);
     }
     if (isMusl) {
-      if (arch === "x64" && !hasAvx2()) {
-        return "jenkins-cli-linux-x64-musl-baseline";
-      }
       return `jenkins-cli-linux-${arch}-musl`;
     }
-    if (arch === "x64" && !hasAvx2()) {
-      return "jenkins-cli-linux-x64-baseline";
-    }
   }
+
   return `jenkins-cli-${platform}-${arch}`;
 }
 

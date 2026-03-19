@@ -31,30 +31,17 @@ interface Target {
 
 const COMPILE_TARGETS: Target[] = [
   { target: "bun-linux-x64", outfile: "jenkins-cli-linux-x64" },
-  {
-    target: "bun-linux-x64-baseline",
-    outfile: "jenkins-cli-linux-x64-baseline",
-  },
   { target: "bun-linux-x64-musl", outfile: "jenkins-cli-linux-x64-musl" },
-  {
-    target: "bun-linux-x64-musl-baseline",
-    outfile: "jenkins-cli-linux-x64-musl-baseline",
-  },
   { target: "bun-linux-arm64", outfile: "jenkins-cli-linux-arm64" },
   { target: "bun-linux-arm64-musl", outfile: "jenkins-cli-linux-arm64-musl" },
   { target: "bun-darwin-x64", outfile: "jenkins-cli-darwin-x64" },
   { target: "bun-darwin-arm64", outfile: "jenkins-cli-darwin-arm64" },
   { target: "bun-windows-x64", outfile: "jenkins-cli-windows-x64.exe" },
-  {
-    target: "bun-windows-x64-baseline",
-    outfile: "jenkins-cli-windows-x64-baseline.exe",
-  },
 ];
 
 /** Platforms that get Homebrew-compatible tarballs. */
 const TARBALL_PLATFORMS = [
   "linux-x64",
-  "linux-x64-baseline",
   "linux-arm64",
   "darwin-x64",
   "darwin-arm64",
@@ -210,8 +197,8 @@ const formula = [
   "    end",
   "",
   "    on_intel do",
-  `      url "https://github.com/${REPO_SLUG}/releases/download/${tagName}/jenkins-cli-linux-x64-baseline.tar.gz"`,
-  `      sha256 "${tarballSha["linux-x64-baseline"]}"`,
+  `      url "https://github.com/${REPO_SLUG}/releases/download/${tagName}/jenkins-cli-linux-x64.tar.gz"`,
+  `      sha256 "${tarballSha["linux-x64"]}"`,
   "    end",
   "  end",
   "",
