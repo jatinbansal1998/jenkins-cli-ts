@@ -5,31 +5,21 @@ print() {
   printf '%s\n' "$*"
 }
 
-ensure_bun() {
-  if command -v bun >/dev/null 2>&1; then
-    return 0
-  fi
+parse_ldd_probe_output() {
+  local normalized
 
-  print "Bun not found. Installing..."
-  if command -v curl >/dev/null 2>&1; then
-    curl -fsSL https://bun.sh/install | bash
-  elif command -v wget >/dev/null 2>&1; then
-    wget -qO- https://bun.sh/install | bash
-  else
-    print "ERROR: curl or wget is required to install Bun."
-    exit 1
-  fi
-
-  export BUN_INSTALL="${BUN_INSTALL:-$HOME/.bun}"
-  export PATH="$BUN_INSTALL/bin:$PATH"
-
-  if ! command -v bun >/dev/null 2>&1; then
-    print "ERROR: Bun installed but not on PATH."
-    print "Open a new terminal or run: export PATH=\"$HOME/.bun/bin:$PATH\""
-    exit 1
-  fi
-
-  print "Bun installed."
+  normalized="$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')"
+  case "$normalized" in
+    *musl*)
+      return 0
+      ;;
+    *glibc* | *"gnu libc"* | *"gnu c library"*)
+      return 1
+      ;;
+    *)
+      return 2
+      ;;
+  esac
 }
 
 ensure_downloader() {
@@ -41,6 +31,34 @@ ensure_downloader() {
   fi
   print "ERROR: curl or wget is required to download Jenkins CLI."
   exit 1
+}
+
+has_bun() {
+  command -v bun >/dev/null 2>&1
+}
+
+ensure_bun() {
+  if has_bun; then
+    return 0
+  fi
+
+  print "Bun not found. Installing Bun for the legacy jenkins-cli fallback..."
+  if command -v curl >/dev/null 2>&1; then
+    curl -fsSL https://bun.sh/install | bash
+  else
+    wget -qO- https://bun.sh/install | bash
+  fi
+
+  export BUN_INSTALL="${BUN_INSTALL:-$HOME/.bun}"
+  export PATH="$BUN_INSTALL/bin:$PATH"
+
+  if ! has_bun; then
+    print "ERROR: Bun was installed but is not available on PATH."
+    print "HINT: Open a new terminal or run: export PATH=\"$HOME/.bun/bin:\$PATH\""
+    exit 1
+  fi
+
+  print "Bun installed."
 }
 
 download_asset() {
@@ -55,39 +73,97 @@ download_asset() {
   wget -qO "$out" "$url"
 }
 
+detect_asset() {
+  local os arch os_str arch_str libc_suffix
+
+  os="$(uname -s)"
+  arch="$(uname -m)"
+
+  case "$os" in
+    Linux)  os_str="linux" ;;
+    Darwin) os_str="darwin" ;;
+    *)
+      print "ERROR: Unsupported OS: $os"
+      print "For Windows, download the binary manually from the GitHub releases page."
+      exit 1
+      ;;
+  esac
+
+  case "$arch" in
+    x86_64)          arch_str="x64" ;;
+    aarch64 | arm64) arch_str="arm64" ;;
+    *)
+      print "ERROR: Unsupported architecture: $arch"
+      exit 1
+      ;;
+  esac
+
+  libc_suffix=""
+  if [ "$os_str" = "linux" ]; then
+    ldd_version_output="$(ldd --version 2>&1 || true)"
+    if parse_ldd_probe_output "$ldd_version_output"; then
+      libc_suffix="-musl"
+    elif [ $? -eq 2 ]; then
+      ldd_shell_output="$(ldd /bin/sh 2>&1 || true)"
+      if parse_ldd_probe_output "$ldd_shell_output"; then
+        libc_suffix="-musl"
+      elif grep -qi musl /proc/self/exe 2>/dev/null; then
+        libc_suffix="-musl"
+      elif [ $? -eq 2 ]; then
+        print "ERROR: Unable to reliably detect libc. ldd failed and no musl environment detected."
+        print "Please download the binary manually from the GitHub Releases page."
+        exit 1
+      fi
+    fi
+  fi
+
+  echo "jenkins-cli-${os_str}-${arch_str}${libc_suffix}"
+}
+
 print "Jenkins CLI installer"
 
-ensure_bun
 ensure_downloader
 
-version="${JENKINS_CLI_VERSION:-}"
-if [ -n "$version" ] && [ "${version#v}" = "$version" ]; then
-  version="v$version"
-fi
-
 base_url="https://github.com/jatinbansal1998/jenkins-cli-ts/releases/latest/download"
-if [ -n "$version" ]; then
-  base_url="https://github.com/jatinbansal1998/jenkins-cli-ts/releases/download/$version"
-fi
+
+asset_name="$(detect_asset)"
+fallback_asset_name="jenkins-cli"
+used_fallback_asset=0
 
 tmp_dir="$(mktemp -d)"
 trap 'rm -rf "$tmp_dir"' EXIT
 
 tmp_file="$tmp_dir/jenkins-cli"
-url="$base_url/jenkins-cli"
+url="$base_url/$asset_name"
 if ! download_asset "$url" "$tmp_file"; then
-  print "ERROR: Failed to download Jenkins CLI from $url"
-  print "HINT: Set JENKINS_CLI_VERSION to a valid tag."
-  exit 1
+  fallback_url="$base_url/$fallback_asset_name"
+  if download_asset "$fallback_url" "$tmp_file"; then
+    used_fallback_asset=1
+    print "HINT: Native binary $asset_name is not available in the latest release yet."
+    print "HINT: Falling back to the legacy jenkins-cli bundle."
+  else
+    print "ERROR: Failed to download Jenkins CLI from $url"
+    print "HINT: Also failed to download the legacy fallback from $fallback_url"
+    print "HINT: Download older versions manually from GitHub Releases."
+    exit 1
+  fi
 fi
 
-default_install_dir="${BUN_INSTALL:-$HOME/.bun}/bin"
+default_install_dir="$HOME/.local/bin"
 install_dir="${JENKINS_CLI_INSTALL_DIR:-$default_install_dir}"
 mkdir -p "$install_dir"
 chmod +x "$tmp_file"
 mv -f "$tmp_file" "$install_dir/jenkins-cli"
 
 print "Installed to $install_dir/jenkins-cli"
+installed_version="$("$install_dir/jenkins-cli" --version 2>/dev/null || true)"
+if [ -n "$installed_version" ]; then
+  print "Installed jenkins-cli: $installed_version"
+fi
+if [ "$used_fallback_asset" -eq 1 ]; then
+  ensure_bun
+  print "HINT: Using the legacy jenkins-cli bundle until the native binary is published."
+fi
 
 case ":$PATH:" in
   *":$install_dir:"*) ;;

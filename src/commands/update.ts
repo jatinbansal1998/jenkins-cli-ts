@@ -1,21 +1,23 @@
 /**
  * Update command implementation.
  */
+import { BUILD_TARGET } from "../build-target";
 import { CliError, printHint, printOk } from "../cli";
 import { UPDATE_COMMAND_BREW } from "../cli-constants";
 import {
   clearPendingUpdateState,
-  compareVersions,
+  describeInstalledBinary,
   downloadAndInstall,
   fetchLatestRelease,
   fetchReleaseByTag,
+  getReleaseInstallDecision,
   getPreferredUpdateCommand,
   isHomebrewManagedPath,
   normalizeVersionTag,
   parseUpdateChannel,
   readUpdateState,
+  resolveReleaseAsset,
   resolveUpdateChannel,
-  resolveAssetUrl,
   resolveExecutablePath,
   type UpdateState,
   withPendingUpdateState,
@@ -79,6 +81,13 @@ export async function runUpdate(options: UpdateOptions): Promise<void> {
       );
     }
 
+    if (options.enableAutoInstall && process.platform === "win32") {
+      throw new CliError("Auto-install is not yet supported on Windows.", [
+        "In-place binary replacement is not reliable on Windows.",
+        "Use `jenkins-cli update` to download updates manually.",
+      ]);
+    }
+
     if (options.enableAuto) {
       nextState.autoUpdate = true;
     }
@@ -110,17 +119,26 @@ export async function runUpdate(options: UpdateOptions): Promise<void> {
       channel: updateChannel,
     });
     const nowIso = new Date().toISOString();
-    const comparison = compareVersions(latest.tag_name, options.currentVersion);
+    const installDecision = getReleaseInstallDecision({
+      release: latest,
+      currentVersion: options.currentVersion,
+      currentBuildTarget: BUILD_TARGET,
+      allowNativeBinaryMigration: !homebrewManaged,
+    });
     const checkedState: UpdateState = {
       ...effectiveState,
       lastCheckedAt: nowIso,
     };
-    if (comparison !== null && comparison <= 0) {
+    if (!installDecision.shouldInstall) {
       printOk(`Already on latest version (${options.currentVersion}).`);
       await writeUpdateState(clearPendingUpdateState(checkedState));
     } else {
       printOk(`Latest version is ${latest.tag_name}.`);
-      printHint(`Run \`${preferredUpdateCommand}\` to install it.`);
+      printHint(
+        installDecision.reason === "native-binary-migration"
+          ? `Run \`${preferredUpdateCommand}\` to replace the generic bundle with the native binary for this platform.`
+          : `Run \`${preferredUpdateCommand}\` to install it.`,
+      );
       await writeUpdateState(
         withPendingUpdateState(checkedState, latest.tag_name, nowIso),
       );
@@ -138,19 +156,21 @@ export async function runUpdate(options: UpdateOptions): Promise<void> {
         currentVersion: options.currentVersion,
         channel: updateChannel,
       });
+  const installDecision = requestedVersion
+    ? undefined
+    : getReleaseInstallDecision({
+        release,
+        currentVersion: options.currentVersion,
+        currentBuildTarget: BUILD_TARGET,
+        allowNativeBinaryMigration: !homebrewManaged,
+      });
 
-  if (!requestedVersion) {
-    const comparison = compareVersions(
-      release.tag_name,
-      options.currentVersion,
-    );
-    if (comparison !== null && comparison <= 0) {
-      printOk(`Already on latest version (${options.currentVersion}).`);
-      return;
-    }
+  if (!requestedVersion && installDecision && !installDecision.shouldInstall) {
+    printOk(`Already on latest version (${options.currentVersion}).`);
+    return;
   }
 
-  const assetUrl = resolveAssetUrl(release);
+  const asset = resolveReleaseAsset(release);
   const targetPath = resolveExecutablePath();
   if (isHomebrewManagedPath(targetPath)) {
     throw new CliError(
@@ -163,10 +183,23 @@ export async function runUpdate(options: UpdateOptions): Promise<void> {
       ],
     );
   }
-  await downloadAndInstall(assetUrl, targetPath, options.currentVersion);
+  await downloadAndInstall(asset.url, targetPath, options.currentVersion);
 
   await recordSuccessfulUpdate(release.tag_name);
-  printOk(`Updated jenkins-cli to ${release.tag_name}.`);
+  const installedBinaryDescription =
+    describeInstalledBinary(targetPath) ?? release.tag_name;
+  printOk(`Updated jenkins-cli: ${installedBinaryDescription}.`);
+  if (installDecision?.reason === "native-binary-migration") {
+    printHint(
+      "Replaced the generic bundle with the native binary for this platform.",
+    );
+  }
+  if (asset.isLegacyBundle) {
+    printHint(
+      "Native binary not available for this platform/version. Installed the generic jenkins-cli bundle instead.",
+    );
+    printHint("Bun must be installed on this machine to run this CLI.");
+  }
 }
 
 function printUpdatePreferences(state: UpdateState): void {

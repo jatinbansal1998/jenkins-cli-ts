@@ -8,17 +8,32 @@ import {
   clearPendingUpdateState,
   compareVersions,
   downloadAndInstall,
+  extractInstalledBinaryVersionOutput,
   fetchLatestRelease,
+  getReleaseInstallDecision,
   getPreferredUpdateCommand,
   getDeferredUpdatePromptVersion,
+  isLegacyBundleBuildTarget,
   isHomebrewManagedPath,
   normalizeVersionTag,
+  parseLddProbeOutput,
   parseUpdateChannel,
+  resolveAssetName,
+  resolveReleaseAsset,
   resolveUpdateChannel,
-  resolveAssetUrl,
   resolveExecutablePath,
   withPendingUpdateState,
 } from "../src/update";
+
+const isBunAvailableMock = mock(() => true);
+mock.module("../src/update", () => ({
+  compareVersions,
+  normalizeVersionTag,
+  parseUpdateChannel,
+  resolveAssetName,
+  resolveReleaseAsset,
+  isBunAvailable: isBunAvailableMock,
+}));
 
 const realFetch = globalThis.fetch;
 type FetchInput = Parameters<typeof fetch>[0];
@@ -69,15 +84,67 @@ describe("update version helpers", () => {
     expect(parseUpdateChannel("nightly")).toBeNull();
   });
 
+  test("parseLddProbeOutput detects musl even when version probes fail", () => {
+    expect(parseLddProbeOutput("musl libc (x86_64)\nVersion 1.2.5")).toBeTrue();
+  });
+
+  test("parseLddProbeOutput recognizes glibc output", () => {
+    expect(
+      parseLddProbeOutput("ldd (Ubuntu GLIBC 2.39-0ubuntu8.4) 2.39"),
+    ).toBeFalse();
+  });
+
+  test("parseLddProbeOutput returns null for unrelated output", () => {
+    expect(parseLddProbeOutput("not enough information")).toBeNull();
+  });
+
   test("resolveUpdateChannel defaults to stable", () => {
     expect(resolveUpdateChannel({})).toBe("stable");
+  });
+
+  test("isLegacyBundleBuildTarget identifies bun bundle builds", () => {
+    expect(isLegacyBundleBuildTarget("bun-bundle")).toBeTrue();
+    expect(isLegacyBundleBuildTarget("bun-darwin-arm64")).toBeFalse();
+  });
+
+  test("extractInstalledBinaryVersionOutput returns the first non-empty line", () => {
+    const output = extractInstalledBinaryVersionOutput(
+      Buffer.from("\n0.7.12 (bun-darwin-arm64)\nextra"),
+      undefined,
+    );
+    expect(output).toBe("0.7.12 (bun-darwin-arm64)");
+  });
+
+  test("extractInstalledBinaryVersionOutput falls back to stderr when needed", () => {
+    const output = extractInstalledBinaryVersionOutput(
+      undefined,
+      Buffer.from("\n0.7.12 (bun-bundle)\n"),
+    );
+    expect(output).toBe("0.7.12 (bun-bundle)");
   });
 });
 
 describe("update helpers", () => {
-  test("resolveAssetUrl returns the jenkins-cli asset", () => {
-    const url = resolveAssetUrl({
-      tag_name: "v1.2.3",
+  test("resolveReleaseAsset returns the platform-specific asset for a modern release", () => {
+    const platformName = resolveAssetName();
+    const asset = resolveReleaseAsset({
+      tag_name: "v1.0.0",
+      assets: [
+        {
+          name: platformName,
+          browser_download_url: `https://example.com/${platformName}`,
+        },
+      ],
+    });
+    expect(asset).toEqual({
+      url: `https://example.com/${platformName}`,
+      isLegacyBundle: false,
+    });
+  });
+
+  test("resolveReleaseAsset falls back to generic asset for a legacy release (no platform-specific assets)", () => {
+    const asset = resolveReleaseAsset({
+      tag_name: "v0.5.0",
       assets: [
         {
           name: "jenkins-cli",
@@ -85,13 +152,147 @@ describe("update helpers", () => {
         },
       ],
     });
-    expect(url).toBe("https://example.com/jenkins-cli");
+    expect(asset).toEqual({
+      url: "https://example.com/jenkins-cli",
+      isLegacyBundle: true,
+    });
   });
 
-  test("resolveAssetUrl throws if asset is missing", () => {
-    expect(() => resolveAssetUrl({ tag_name: "v1.2.3", assets: [] })).toThrow(
-      CliError,
-    );
+  test("resolveReleaseAsset falls back to generic asset for a modern release missing the current platform asset", () => {
+    const platformName = resolveAssetName();
+    const otherAsset =
+      platformName === "jenkins-cli-linux-x64"
+        ? "jenkins-cli-darwin-arm64"
+        : "jenkins-cli-linux-x64";
+    const asset = resolveReleaseAsset({
+      tag_name: "v1.0.0",
+      assets: [
+        {
+          name: otherAsset,
+          browser_download_url: `https://example.com/${otherAsset}`,
+        },
+        {
+          name: "jenkins-cli",
+          browser_download_url: "https://example.com/jenkins-cli",
+        },
+      ],
+    });
+    expect(asset).toEqual({
+      url: "https://example.com/jenkins-cli",
+      isLegacyBundle: true,
+    });
+  });
+
+  test("resolveReleaseAsset throws if assets list is empty", () => {
+    expect(() =>
+      resolveReleaseAsset({ tag_name: "v1.2.3", assets: [] }),
+    ).toThrow(CliError);
+  });
+
+  test("resolveReleaseAsset throws when only legacy asset is present but Bun is unavailable", () => {
+    isBunAvailableMock.mockReturnValue(false);
+    try {
+      expect(() =>
+        resolveReleaseAsset({
+          tag_name: "v0.5.0",
+          assets: [
+            {
+              name: "jenkins-cli",
+              browser_download_url: "https://example.com/jenkins-cli",
+            },
+          ],
+        }),
+      ).toThrow(CliError);
+    } finally {
+      isBunAvailableMock.mockReturnValue(true);
+    }
+  });
+
+  test("getReleaseInstallDecision keeps newer releases installable", () => {
+    const platformName = resolveAssetName();
+    expect(
+      getReleaseInstallDecision({
+        release: {
+          tag_name: "v1.2.4",
+          assets: [
+            {
+              name: platformName,
+              browser_download_url: `https://example.com/${platformName}`,
+            },
+          ],
+        },
+        currentVersion: "v1.2.3",
+        currentBuildTarget: "bun-darwin-arm64",
+      }),
+    ).toEqual({
+      shouldInstall: true,
+      reason: "newer-version",
+    });
+  });
+
+  test("getReleaseInstallDecision upgrades same-version legacy bundles to native binaries", () => {
+    const platformName = resolveAssetName();
+    expect(
+      getReleaseInstallDecision({
+        release: {
+          tag_name: "v1.2.3",
+          assets: [
+            {
+              name: platformName,
+              browser_download_url: `https://example.com/${platformName}`,
+            },
+          ],
+        },
+        currentVersion: "v1.2.3",
+        currentBuildTarget: "bun-bundle",
+      }),
+    ).toEqual({
+      shouldInstall: true,
+      reason: "native-binary-migration",
+    });
+  });
+
+  test("getReleaseInstallDecision skips same-version reinstall when only legacy asset exists", () => {
+    expect(
+      getReleaseInstallDecision({
+        release: {
+          tag_name: "v1.2.3",
+          assets: [
+            {
+              name: "jenkins-cli",
+              browser_download_url: "https://example.com/jenkins-cli",
+            },
+          ],
+        },
+        currentVersion: "v1.2.3",
+        currentBuildTarget: "bun-bundle",
+      }),
+    ).toEqual({
+      shouldInstall: false,
+      reason: "up-to-date",
+    });
+  });
+
+  test("getReleaseInstallDecision skips same-version reinstall for native binaries", () => {
+    const platformName = resolveAssetName();
+    expect(
+      getReleaseInstallDecision({
+        release: {
+          tag_name: "v1.2.3",
+          assets: [
+            {
+              name: platformName,
+              browser_download_url: `https://example.com/${platformName}`,
+            },
+          ],
+        },
+        currentVersion: "v1.2.3",
+        currentBuildTarget: "bun-darwin-arm64",
+      }),
+    ).toEqual({
+      shouldInstall: false,
+      reason: "up-to-date",
+    });
   });
 
   test("resolveExecutablePath throws for source runs", () => {

@@ -13,7 +13,7 @@ Default to using Bun instead of Node.js.
 
 ## Validation
 
-After changes, always run before finishing:
+After making all changes, always ask to run:
 
 - `bun run format`
 - `bun run lint`

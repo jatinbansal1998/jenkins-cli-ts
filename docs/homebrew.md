@@ -1,7 +1,8 @@
 # Homebrew Distribution
 
-This project currently ships Homebrew using the Bun-script artifact (`dist/jenkins-cli`)
-and a formula that depends on `bun`.
+This project ships Homebrew using platform-specific native binaries packaged as
+tarballs. The formula installs the prebuilt `jenkins-cli` binary directly and
+does not depend on Bun on the target machine.
 
 ## User install
 
@@ -36,11 +37,12 @@ Users can install with `brew install jatinbansal1998/tap/jenkins-cli`.
 
 ## Release flow
 
-The release workflow (`.github/workflows/release.yml`) uploads these assets for each
-tagged release:
+The release workflow (`.github/workflows/release.yml`) uploads native binaries,
+Homebrew tarballs, checksums, and the generated formula for each tagged release.
 
-- `jenkins-cli`
-- `jenkins-cli.sha256`
+- `jenkins-cli` (legacy bundle fallback for older update clients)
+- `jenkins-cli-<platform>.tar.gz`
+- `checksums.txt`
 - `homebrew-jenkins-cli.rb`
 
 If `HOMEBREW_TAP_TOKEN` is set, the workflow automatically commits the formula to

@@ -1,5 +1,6 @@
 import os from "node:os";
 import path from "node:path";
+import { readFileSync } from "node:fs";
 import { chmod, copyFile, mkdir, mkdtemp, rename, rm } from "node:fs/promises";
 import {
   CLI_FLAGS,
@@ -15,8 +16,131 @@ import {
   fetchReleaseByTag as fetchReleaseByTagFromGitHub,
   type GitHubReleaseInfo as ReleaseInfo,
 } from "./github/api-wrapper";
+import { BUILD_TARGET } from "./build-target";
+import {
+  isLegacyBundleBuildTarget,
+  isSupportedRuntimeArch,
+  isSupportedRuntimePlatform,
+  LEGACY_BUNDLE_ASSET_NAME,
+  resolveNativeReleaseTarget,
+} from "./release-targets";
 
-const ASSET_NAME = "jenkins-cli";
+export { isLegacyBundleBuildTarget } from "./release-targets";
+
+export function parseLddProbeOutput(text: string): boolean | null {
+  const normalized = text.trim().toLowerCase();
+  if (!normalized) {
+    return null;
+  }
+  if (normalized.includes("musl")) {
+    return true;
+  }
+  if (
+    normalized.includes("glibc") ||
+    normalized.includes("gnu libc") ||
+    normalized.includes("gnu c library")
+  ) {
+    return false;
+  }
+  return null;
+}
+
+function runProbe(cmd: string[]): { success: boolean; text: string } | null {
+  try {
+    const proc = Bun.spawnSync({
+      cmd,
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    const text =
+      new TextDecoder().decode(proc.stdout ?? undefined) +
+      new TextDecoder().decode(proc.stderr ?? undefined);
+    return {
+      success: proc.success,
+      text,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function detectMusl(): boolean | null {
+  const versionProbe = runProbe(["ldd", "--version"]);
+  if (versionProbe) {
+    const parsed = parseLddProbeOutput(versionProbe.text);
+    if (parsed !== null) {
+      return parsed;
+    }
+  }
+
+  const shellProbe = runProbe(["ldd", "/bin/sh"]);
+  if (shellProbe) {
+    const parsed = parseLddProbeOutput(shellProbe.text);
+    if (parsed !== null) {
+      return parsed;
+    }
+  }
+
+  try {
+    const selfExe = readFileSync("/proc/self/exe", "latin1");
+    if (selfExe.toLowerCase().includes("musl")) {
+      return true;
+    }
+  } catch {}
+
+  return null;
+}
+
+export function isBunAvailable(): boolean {
+  try {
+    const proc = Bun.spawnSync({
+      cmd: ["bun", "--version"],
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    return proc.success;
+  } catch {
+    return false;
+  }
+}
+
+export function resolveAssetName(): string {
+  const platform = process.platform;
+  const arch = process.arch;
+
+  if (!isSupportedRuntimePlatform(platform)) {
+    throw new CliError(`Unsupported platform: ${platform}`);
+  }
+
+  if (!isSupportedRuntimeArch(arch)) {
+    throw new CliError(`Unsupported architecture: ${arch}`);
+  }
+
+  let libc: "gnu" | "musl" | undefined;
+  if (platform === "linux") {
+    const isMusl = detectMusl();
+    if (isMusl === null) {
+      throw new CliError("Unable to reliably detect libc on Linux.", [
+        "Cannot determine if the system uses glibc or musl.",
+        "Please download the binary manually from GitHub Releases.",
+      ]);
+    }
+    libc = isMusl ? "musl" : "gnu";
+  }
+
+  const target = resolveNativeReleaseTarget({
+    platform,
+    arch,
+    libc,
+  });
+  if (!target) {
+    throw new CliError(
+      `No release target found for platform ${platform} (${arch}).`,
+    );
+  }
+  return target.assetName;
+}
+
 const HOMEBREW_CELLAR_SEGMENT = `${path.sep}Cellar${path.sep}jenkins-cli${path.sep}`;
 const AUTO_UPDATE_INTERVAL_MS = 60 * 60 * 1000;
 const UPDATE_STATE_FILE = path.join(CONFIG_DIR, "update-state.json");
@@ -243,7 +367,13 @@ export function resolveExecutablePath(): string {
   if (!argv1) {
     throw new CliError("Unable to determine the CLI path.");
   }
-  const resolved = path.resolve(argv1);
+
+  // Bun compiled binaries expose an embedded entrypoint (e.g. /$bunfs/root/...)
+  // in process.argv[1], whereas process.execPath points to the actual executable.
+  const resolved = argv1.startsWith("/$bunfs/")
+    ? process.execPath
+    : path.resolve(argv1);
+
   const base = path.basename(resolved);
   const looksLikeSource =
     base === "index.ts" ||
@@ -266,7 +396,10 @@ export function getPreferredUpdateCommand(): string {
   if (!argv1) {
     return UPDATE_COMMAND_SELF;
   }
-  return isHomebrewManagedPath(argv1)
+  const resolved = argv1.startsWith("/$bunfs/")
+    ? process.execPath
+    : path.resolve(argv1);
+  return isHomebrewManagedPath(resolved)
     ? UPDATE_COMMAND_BREW
     : UPDATE_COMMAND_SELF;
 }
@@ -287,15 +420,121 @@ export async function fetchReleaseByTag(
   return await fetchReleaseByTagFromGitHub(normalized, options);
 }
 
-export function resolveAssetUrl(release: ReleaseInfo): string {
-  const asset = release.assets.find((item) => item.name === ASSET_NAME);
-  if (!asset) {
-    throw new CliError(
-      `Release asset "${ASSET_NAME}" not found for ${release.tag_name}.`,
-      ["Ensure the GitHub release includes the asset named jenkins-cli."],
-    );
+export type ResolvedReleaseAsset = {
+  url: string;
+  isLegacyBundle: boolean;
+};
+
+export type ReleaseInstallDecision = {
+  shouldInstall: boolean;
+  reason: "newer-version" | "native-binary-migration" | "up-to-date";
+};
+
+export function resolveReleaseAsset(
+  release: ReleaseInfo,
+): ResolvedReleaseAsset {
+  const assetName = resolveAssetName();
+  const platformAsset = release.assets.find((item) => item.name === assetName);
+  if (platformAsset) {
+    return {
+      url: platformAsset.browser_download_url,
+      isLegacyBundle: false,
+    };
   }
-  return asset.browser_download_url;
+
+  const legacyAsset = release.assets.find(
+    (item) => item.name === LEGACY_BUNDLE_ASSET_NAME,
+  );
+  if (legacyAsset && isBunAvailable()) {
+    return {
+      url: legacyAsset.browser_download_url,
+      isLegacyBundle: true,
+    };
+  }
+
+  throw new CliError(
+    `Release asset "${assetName}" not found for ${release.tag_name}.`,
+    [
+      "Ensure the GitHub release includes either a platform-specific binary or the generic jenkins-cli bundle.",
+      `Expected asset name: ${assetName}`,
+    ],
+  );
+}
+
+export function getReleaseInstallDecision(options: {
+  release: ReleaseInfo;
+  currentVersion: string;
+  currentBuildTarget: string;
+  allowNativeBinaryMigration?: boolean;
+}): ReleaseInstallDecision {
+  const comparison = compareVersions(
+    options.release.tag_name,
+    options.currentVersion,
+  );
+  if (comparison === null || comparison > 0) {
+    return {
+      shouldInstall: true,
+      reason: "newer-version",
+    };
+  }
+  if (comparison < 0) {
+    return {
+      shouldInstall: false,
+      reason: "up-to-date",
+    };
+  }
+
+  if (
+    options.allowNativeBinaryMigration !== false &&
+    isLegacyBundleBuildTarget(options.currentBuildTarget)
+  ) {
+    try {
+      const asset = resolveReleaseAsset(options.release);
+      if (!asset.isLegacyBundle) {
+        return {
+          shouldInstall: true,
+          reason: "native-binary-migration",
+        };
+      }
+    } catch {
+      // Missing or incompatible native assets do not require a reinstall.
+    }
+  }
+
+  return {
+    shouldInstall: false,
+    reason: "up-to-date",
+  };
+}
+
+export function extractInstalledBinaryVersionOutput(
+  stdout: Uint8Array<ArrayBufferLike> | undefined,
+  stderr: Uint8Array<ArrayBufferLike> | undefined,
+): string | null {
+  const text =
+    new TextDecoder().decode(stdout ?? undefined) +
+    new TextDecoder().decode(stderr ?? undefined);
+  const firstLine = text
+    .split(/\r?\n/u)
+    .map((line) => line.trim())
+    .find((line) => line.length > 0);
+  return firstLine ?? null;
+}
+
+export function describeInstalledBinary(executablePath: string): string | null {
+  try {
+    const proc = Bun.spawnSync({
+      cmd: [executablePath, "--version"],
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    return extractInstalledBinaryVersionOutput(
+      proc.stdout ?? undefined,
+      proc.stderr ?? undefined,
+    );
+  } catch {
+    return null;
+  }
 }
 
 export async function downloadAndInstall(
@@ -304,13 +543,28 @@ export async function downloadAndInstall(
   currentVersion: string,
 ): Promise<void> {
   const tempDir = await mkdtemp(path.join(os.tmpdir(), "jenkins-cli-"));
-  const tempFile = path.join(tempDir, "jenkins-cli");
+  const isWindows = process.platform === "win32";
+  const tempFile = path.join(
+    tempDir,
+    isWindows ? "jenkins-cli.exe" : "jenkins-cli",
+  );
   try {
     const response = await downloadReleaseAsset({
       assetUrl,
       currentVersion,
     });
     await Bun.write(tempFile, response);
+
+    if (isWindows) {
+      throw new CliError(
+        "In-place updates are not yet perfectly supported on Windows.",
+        [
+          `The update was downloaded to a temporary location: ${tempFile}`,
+          `Please close the application and replace your executable (${targetPath}) manually.`,
+        ],
+      );
+    }
+
     await chmod(tempFile, 0o755);
     try {
       await rename(tempFile, targetPath);
@@ -329,7 +583,9 @@ export async function downloadAndInstall(
       }
     }
   } finally {
-    await rm(tempDir, { recursive: true, force: true });
+    if (!isWindows) {
+      await rm(tempDir, { recursive: true, force: true });
+    }
   }
 }
 
@@ -394,8 +650,15 @@ async function runAutoUpdate(currentVersion: string): Promise<void> {
       lastCheckedAt: nowIso,
     };
 
-    const comparison = compareVersions(release.tag_name, currentVersion);
-    if (comparison !== null && comparison <= 0) {
+    const updateCommand = getPreferredUpdateCommand();
+    const homebrewManaged = updateCommand === UPDATE_COMMAND_BREW;
+    const installDecision = getReleaseInstallDecision({
+      release,
+      currentVersion,
+      currentBuildTarget: BUILD_TARGET,
+      allowNativeBinaryMigration: !homebrewManaged,
+    });
+    if (!installDecision.shouldInstall) {
       await writeUpdateState(clearPendingUpdateState(nextState));
       return;
     }
@@ -408,11 +671,11 @@ async function runAutoUpdate(currentVersion: string): Promise<void> {
       await writeUpdateState(pendingState);
       return;
     }
-    const updateCommand = getPreferredUpdateCommand();
-    const homebrewManaged = updateCommand === UPDATE_COMMAND_BREW;
     if (homebrewManaged) {
       printHint(
-        `New version available: ${release.tag_name}. Run \`${updateCommand}\`.`,
+        installDecision.reason === "native-binary-migration"
+          ? `A native binary is available for ${release.tag_name}. Run \`${updateCommand}\`.`
+          : `New version available: ${release.tag_name}. Run \`${updateCommand}\`.`,
       );
       await writeUpdateState({
         ...pendingState,
@@ -420,12 +683,25 @@ async function runAutoUpdate(currentVersion: string): Promise<void> {
       });
       return;
     }
-    if (autoInstallEnabled) {
+    if (autoInstallEnabled && process.platform !== "win32") {
       try {
-        const assetUrl = resolveAssetUrl(release);
+        const asset = resolveReleaseAsset(release);
         const targetPath = resolveExecutablePath();
-        await downloadAndInstall(assetUrl, targetPath, currentVersion);
-        printHint(`Auto-updated jenkins-cli to ${release.tag_name}.`);
+        await downloadAndInstall(asset.url, targetPath, currentVersion);
+        const installedBinaryDescription =
+          describeInstalledBinary(targetPath) ?? release.tag_name;
+        printHint(`Auto-updated jenkins-cli: ${installedBinaryDescription}.`);
+        if (installDecision.reason === "native-binary-migration") {
+          printHint(
+            "Replaced the generic bundle with the native binary for this platform.",
+          );
+        }
+        if (asset.isLegacyBundle) {
+          printHint(
+            "Native binary not available for this platform/version. Installed the generic jenkins-cli bundle instead.",
+          );
+          printHint("Bun must be installed on this machine to run this CLI.");
+        }
         await writeUpdateState({
           ...clearPendingUpdateState(pendingState),
           lastNotifiedVersion: release.tag_name,
@@ -437,7 +713,9 @@ async function runAutoUpdate(currentVersion: string): Promise<void> {
     }
 
     printHint(
-      `New version available: ${release.tag_name}. Run \`${updateCommand}\`.`,
+      installDecision.reason === "native-binary-migration"
+        ? `A native binary is available for ${release.tag_name}. Run \`${updateCommand}\`.`
+        : `New version available: ${release.tag_name}. Run \`${updateCommand}\`.`,
     );
 
     await writeUpdateState({

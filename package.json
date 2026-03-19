@@ -1,6 +1,6 @@
 {
   "name": "jenkins-cli-ts",
-  "version": "0.7.11",
+  "version": "0.7.12",
   "type": "module",
   "private": true,
   "module": "src/index.ts",
@@ -9,7 +9,8 @@
   },
   "scripts": {
     "dev": "bun run src/index.ts",
-    "build": "bun build src/index.ts --outfile dist/jenkins-cli --target bun",
+    "build": "bun scripts/build-local.ts",
+    "build:all": "bun scripts/build.ts",
     "install:global": "bun run build && bun link",
     "lint": "oxlint",
     "lint:fix": "oxlint --fix",
@@ -20,16 +21,16 @@
     "format:check": "prettier . --check"
   },
   "devDependencies": {
-    "@types/bun": "latest",
+    "@types/bun": "1.3.11",
     "@types/yargs": "^17.0.35",
     "husky": "^9.1.7",
-    "lint-staged": "^16.2.7",
-    "oxlint": "^1.42.0",
+    "lint-staged": "^16.4.0",
+    "oxlint": "^1.56.0",
     "prettier": "3.8.1",
     "typescript": "^5"
   },
   "dependencies": {
-    "@clack/prompts": "^1.0.0",
+    "@clack/prompts": "^1.1.0",
     "yargs": "^18.0.0"
   },
   "lint-staged": {
