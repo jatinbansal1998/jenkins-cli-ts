@@ -553,7 +553,8 @@ export async function downloadAndInstall(
       assetUrl,
       currentVersion,
     });
-    await Bun.write(tempFile, response);
+    const bytes = await response.bytes();
+    await Bun.write(tempFile, bytes);
 
     if (isWindows) {
       throw new CliError(
