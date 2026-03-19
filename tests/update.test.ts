@@ -13,6 +13,7 @@ import {
   getDeferredUpdatePromptVersion,
   isHomebrewManagedPath,
   normalizeVersionTag,
+  parseLddProbeOutput,
   parseUpdateChannel,
   resolveAssetName,
   resolveReleaseAsset,
@@ -78,6 +79,20 @@ describe("update version helpers", () => {
     expect(parseUpdateChannel("pre-release")).toBe("prerelease");
     expect(parseUpdateChannel("prerelease")).toBe("prerelease");
     expect(parseUpdateChannel("nightly")).toBeNull();
+  });
+
+  test("parseLddProbeOutput detects musl even when version probes fail", () => {
+    expect(parseLddProbeOutput("musl libc (x86_64)\nVersion 1.2.5")).toBeTrue();
+  });
+
+  test("parseLddProbeOutput recognizes glibc output", () => {
+    expect(
+      parseLddProbeOutput("ldd (Ubuntu GLIBC 2.39-0ubuntu8.4) 2.39"),
+    ).toBeFalse();
+  });
+
+  test("parseLddProbeOutput returns null for unrelated output", () => {
+    expect(parseLddProbeOutput("not enough information")).toBeNull();
   });
 
   test("resolveUpdateChannel defaults to stable", () => {

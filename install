@@ -5,6 +5,23 @@ print() {
   printf '%s\n' "$*"
 }
 
+parse_ldd_probe_output() {
+  local normalized
+
+  normalized="$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')"
+  case "$normalized" in
+    *musl*)
+      return 0
+      ;;
+    *glibc* | *"gnu libc"* | *"gnu c library"*)
+      return 1
+      ;;
+    *)
+      return 2
+      ;;
+  esac
+}
+
 ensure_downloader() {
   if command -v curl >/dev/null 2>&1; then
     return 0
@@ -56,14 +73,16 @@ detect_asset() {
   libc_suffix=""
   baseline_suffix=""
   if [ "$os_str" = "linux" ]; then
-    if ldd --version >/dev/null 2>&1; then
-      if ldd --version 2>&1 | grep -qi musl; then
+    ldd_version_output="$(ldd --version 2>&1 || true)"
+    if parse_ldd_probe_output "$ldd_version_output"; then
+      libc_suffix="-musl"
+    elif [ $? -eq 2 ]; then
+      ldd_shell_output="$(ldd /bin/sh 2>&1 || true)"
+      if parse_ldd_probe_output "$ldd_shell_output"; then
         libc_suffix="-musl"
-      fi
-    else
-      if grep -qi musl /proc/self/exe 2>/dev/null || ldd /bin/sh 2>&1 | grep -qi musl; then
+      elif grep -qi musl /proc/self/exe 2>/dev/null; then
         libc_suffix="-musl"
-      else
+      elif [ $? -eq 2 ]; then
         print "ERROR: Unable to reliably detect libc. ldd failed and no musl environment detected."
         print "Please download the binary manually from the GitHub Releases page."
         exit 1

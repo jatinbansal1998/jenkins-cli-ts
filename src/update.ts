@@ -17,31 +17,68 @@ import {
   type GitHubReleaseInfo as ReleaseInfo,
 } from "./github/api-wrapper";
 
-function detectMusl(): boolean | null {
+export function parseLddProbeOutput(text: string): boolean | null {
+  const normalized = text.trim().toLowerCase();
+  if (!normalized) {
+    return null;
+  }
+  if (normalized.includes("musl")) {
+    return true;
+  }
+  if (
+    normalized.includes("glibc") ||
+    normalized.includes("gnu libc") ||
+    normalized.includes("gnu c library")
+  ) {
+    return false;
+  }
+  return null;
+}
+
+function runProbe(cmd: string[]): { success: boolean; text: string } | null {
   try {
     const proc = Bun.spawnSync({
-      cmd: ["ldd", "--version"],
+      cmd,
       stdout: "pipe",
       stderr: "pipe",
     });
     const text =
       new TextDecoder().decode(proc.stdout ?? undefined) +
       new TextDecoder().decode(proc.stderr ?? undefined);
-    if (text.toLowerCase().includes("musl")) {
-      return true;
-    }
-    if (!proc.success) {
-      try {
-        const selfExe = readFileSync("/proc/self/exe", "latin1");
-        if (selfExe.toLowerCase().includes("musl")) {
-          return true;
-        }
-      } catch {}
-    }
-    return false;
+    return {
+      success: proc.success,
+      text,
+    };
   } catch {
     return null;
   }
+}
+
+function detectMusl(): boolean | null {
+  const versionProbe = runProbe(["ldd", "--version"]);
+  if (versionProbe) {
+    const parsed = parseLddProbeOutput(versionProbe.text);
+    if (parsed !== null) {
+      return parsed;
+    }
+  }
+
+  const shellProbe = runProbe(["ldd", "/bin/sh"]);
+  if (shellProbe) {
+    const parsed = parseLddProbeOutput(shellProbe.text);
+    if (parsed !== null) {
+      return parsed;
+    }
+  }
+
+  try {
+    const selfExe = readFileSync("/proc/self/exe", "latin1");
+    if (selfExe.toLowerCase().includes("musl")) {
+      return true;
+    }
+  } catch {}
+
+  return null;
 }
 
 export function isBunAvailable(): boolean {
