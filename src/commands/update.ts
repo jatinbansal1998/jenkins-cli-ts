@@ -79,6 +79,13 @@ export async function runUpdate(options: UpdateOptions): Promise<void> {
       );
     }
 
+    if (options.enableAutoInstall && process.platform === "win32") {
+      throw new CliError("Auto-install is not yet supported on Windows.", [
+        "In-place binary replacement is not reliable on Windows.",
+        "Use `jenkins-cli update` to download updates manually.",
+      ]);
+    }
+
     if (options.enableAuto) {
       nextState.autoUpdate = true;
     }

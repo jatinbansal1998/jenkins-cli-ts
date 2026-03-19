@@ -86,7 +86,6 @@ jobs:
             dist/jenkins-cli-darwin-x64.tar.gz
             dist/jenkins-cli-darwin-arm64.tar.gz
             dist/jenkins-cli
-            dist/jenkins-cli.exe
             dist/homebrew-jenkins-cli.rb
             dist/checksums.txt
         env:

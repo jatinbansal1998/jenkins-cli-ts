@@ -157,9 +157,6 @@ if (pkg.version !== tagVersion) {
 await copyFile(join(DIST, "jenkins-cli-bundle"), join(DIST, "jenkins-cli"));
 await chmod(join(DIST, "jenkins-cli"), 0o755);
 
-// Windows .exe fallback
-await copyFile(join(DIST, "jenkins-cli"), join(DIST, "jenkins-cli.exe"));
-
 // Make all platform binaries executable
 for (const { outfile } of COMPILE_TARGETS) {
   if (!outfile.endsWith(".exe")) {
@@ -231,7 +228,6 @@ const checksumFiles = [
   ...COMPILE_TARGETS.map((t) => t.outfile),
   ...TARBALL_PLATFORMS.map((p) => `jenkins-cli-${p}.tar.gz`),
   "jenkins-cli",
-  "jenkins-cli.exe",
   "homebrew-jenkins-cli.rb",
 ];
 

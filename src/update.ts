@@ -422,10 +422,7 @@ export function resolveReleaseAsset(
     };
   }
 
-  const legacyNames =
-    process.platform === "win32"
-      ? ["jenkins-cli.exe", "jenkins-cli"]
-      : ["jenkins-cli"];
+  const legacyNames = ["jenkins-cli"];
   const legacyAsset = release.assets.find((item) =>
     legacyNames.includes(item.name),
   );
@@ -584,7 +581,7 @@ async function runAutoUpdate(currentVersion: string): Promise<void> {
       });
       return;
     }
-    if (autoInstallEnabled) {
+    if (autoInstallEnabled && process.platform !== "win32") {
       try {
         const asset = resolveReleaseAsset(release);
         const targetPath = resolveExecutablePath();
