@@ -14,7 +14,7 @@
 
 import { copyFile, mkdir, writeFile, chmod, rm } from "node:fs/promises";
 import { mkdtempSync } from "node:fs";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { createHash } from "node:crypto";
 import {
@@ -42,9 +42,14 @@ async function sha256(filePath: string): Promise<string> {
 async function tar(srcFile: string, destTarGz: string): Promise<void> {
   const tmpDir = mkdtempSync(join(tmpdir(), "jenkins-cli-"));
   const tmpBin = join(tmpDir, "jenkins-cli");
-  await copyFile(srcFile, tmpBin);
-  await Bun.$`tar -czf ${destTarGz} jenkins-cli`.cwd(tmpDir).quiet();
-  await rm(tmpDir, { recursive: true });
+  const destTarGzAbsolute = resolve(destTarGz);
+
+  try {
+    await copyFile(srcFile, tmpBin);
+    await Bun.$`tar -czf ${destTarGzAbsolute} jenkins-cli`.cwd(tmpDir).quiet();
+  } finally {
+    await rm(tmpDir, { recursive: true, force: true });
+  }
 }
 
 // ---------------------------------------------------------------------------
