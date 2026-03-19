@@ -75,6 +75,7 @@ jobs:
             dist/jenkins-cli-linux-x64
             dist/jenkins-cli-linux-x64-baseline
             dist/jenkins-cli-linux-x64-musl
+            dist/jenkins-cli-linux-x64-musl-baseline
             dist/jenkins-cli-linux-arm64
             dist/jenkins-cli-linux-arm64-musl
             dist/jenkins-cli-darwin-x64
