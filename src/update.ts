@@ -17,19 +17,28 @@ import {
   type GitHubReleaseInfo as ReleaseInfo,
 } from "./github/api-wrapper";
 
-function detectMusl(): boolean {
+function detectMusl(): boolean | null {
   try {
     const proc = Bun.spawnSync({
       cmd: ["ldd", "--version"],
       stdout: "pipe",
       stderr: "pipe",
     });
+    if (!proc.success) {
+      try {
+        const selfExe = readFileSync("/proc/self/exe", "latin1");
+        if (selfExe.toLowerCase().includes("musl")) {
+          return true;
+        }
+      } catch {}
+      return null;
+    }
     const text =
       new TextDecoder().decode(proc.stdout ?? undefined) +
       new TextDecoder().decode(proc.stderr ?? undefined);
     return text.toLowerCase().includes("musl");
   } catch {
-    return false;
+    return null;
   }
 }
 
@@ -65,6 +74,19 @@ function hasAvx2OnWindows(): boolean {
   }
 }
 
+export function isBunAvailable(): boolean {
+  try {
+    const proc = Bun.spawnSync({
+      cmd: ["bun", "--version"],
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    return proc.success;
+  } catch {
+    return false;
+  }
+}
+
 export function resolveAssetName(): string {
   const platform = process.platform;
   const arch = process.arch;
@@ -87,7 +109,14 @@ export function resolveAssetName(): string {
   }
 
   if (platform === "linux") {
-    if (detectMusl()) {
+    const isMusl = detectMusl();
+    if (isMusl === null) {
+      throw new CliError("Unable to reliably detect libc on Linux.", [
+        "Cannot determine if the system uses glibc or musl.",
+        "Please download the binary manually from GitHub Releases.",
+      ]);
+    }
+    if (isMusl) {
       return `jenkins-cli-linux-${arch}-musl`;
     }
     if (arch === "x64" && !hasAvx2()) {
@@ -352,7 +381,10 @@ export function getPreferredUpdateCommand(): string {
   if (!argv1) {
     return UPDATE_COMMAND_SELF;
   }
-  return isHomebrewManagedPath(argv1)
+  const resolved = argv1.startsWith("/$bunfs/")
+    ? process.execPath
+    : path.resolve(argv1);
+  return isHomebrewManagedPath(resolved)
     ? UPDATE_COMMAND_BREW
     : UPDATE_COMMAND_SELF;
 }
@@ -390,10 +422,14 @@ export function resolveReleaseAsset(
     };
   }
 
-  const legacyAsset = release.assets.find(
-    (item) => item.name === "jenkins-cli",
+  const legacyNames =
+    process.platform === "win32"
+      ? ["jenkins-cli.exe", "jenkins-cli"]
+      : ["jenkins-cli"];
+  const legacyAsset = release.assets.find((item) =>
+    legacyNames.includes(item.name),
   );
-  if (legacyAsset) {
+  if (legacyAsset && isBunAvailable()) {
     return {
       url: legacyAsset.browser_download_url,
       isLegacyBundle: true,
@@ -415,13 +451,28 @@ export async function downloadAndInstall(
   currentVersion: string,
 ): Promise<void> {
   const tempDir = await mkdtemp(path.join(os.tmpdir(), "jenkins-cli-"));
-  const tempFile = path.join(tempDir, "jenkins-cli");
+  const isWindows = process.platform === "win32";
+  const tempFile = path.join(
+    tempDir,
+    isWindows ? "jenkins-cli.exe" : "jenkins-cli",
+  );
   try {
     const response = await downloadReleaseAsset({
       assetUrl,
       currentVersion,
     });
     await Bun.write(tempFile, response);
+
+    if (isWindows) {
+      throw new CliError(
+        "In-place updates are not yet perfectly supported on Windows.",
+        [
+          `The update was downloaded to a temporary location: ${tempFile}`,
+          `Please close the application and replace your executable (${targetPath}) manually.`,
+        ],
+      );
+    }
+
     await chmod(tempFile, 0o755);
     try {
       await rename(tempFile, targetPath);
@@ -440,7 +491,9 @@ export async function downloadAndInstall(
       }
     }
   } finally {
-    await rm(tempDir, { recursive: true, force: true });
+    if (!isWindows) {
+      await rm(tempDir, { recursive: true, force: true });
+    }
   }
 }
 

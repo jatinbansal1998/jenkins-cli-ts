@@ -56,9 +56,21 @@ detect_asset() {
   libc_suffix=""
   baseline_suffix=""
   if [ "$os_str" = "linux" ]; then
-    if ldd --version 2>&1 | grep -qi musl; then
-      libc_suffix="-musl"
-    elif [ "$arch_str" = "x64" ]; then
+    if ldd --version >/dev/null 2>&1; then
+      if ldd --version 2>&1 | grep -qi musl; then
+        libc_suffix="-musl"
+      fi
+    else
+      if grep -qi musl /proc/self/exe 2>/dev/null || ldd /bin/sh 2>&1 | grep -qi musl; then
+        libc_suffix="-musl"
+      else
+        print "ERROR: Unable to reliably detect libc. ldd failed and no musl environment detected."
+        print "Please download the binary manually from the GitHub Releases page."
+        exit 1
+      fi
+    fi
+
+    if [ "$libc_suffix" != "-musl" ] && [ "$arch_str" = "x64" ]; then
       if ! grep -qw avx2 /proc/cpuinfo 2>/dev/null; then
         baseline_suffix="-baseline"
       fi

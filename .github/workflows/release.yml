@@ -23,7 +23,7 @@ jobs:
       - name: Install dependencies
         run: bun install
 
-      - name: Run tests (capture failures)
+      - name: Run tests
         shell: bash
         env:
           NO_COLOR: "1"
@@ -61,91 +61,10 @@ jobs:
           path: test-artifacts
           if-no-files-found: ignore
 
-      - name: Build all platform binaries
-        run: bun run build:all
-
-      - name: Prepare release artifacts
-        shell: bash
+      - name: Build & package release
         env:
           TAG_NAME: ${{ github.ref_name }}
-        run: |
-          set -euo pipefail
-
-          package_version="$(bun -e "console.log(require('./package.json').version)")"
-          tag_version="${TAG_NAME#v}"
-          if [ "$package_version" != "$tag_version" ]; then
-            echo "::error::Tag ${TAG_NAME} does not match package.json version ${package_version}."
-            exit 1
-          fi
-
-          # Preserve the legacy cross-platform bundle for backward compatibility:
-          # old clients look for the 'jenkins-cli' asset when running update.
-          cp dist/jenkins-cli-bundle dist/jenkins-cli
-          chmod +x dist/jenkins-cli
-
-          # Make all platform binaries executable
-          chmod +x dist/jenkins-cli-linux-x64
-          chmod +x dist/jenkins-cli-linux-x64-baseline
-          chmod +x dist/jenkins-cli-linux-x64-musl
-          chmod +x dist/jenkins-cli-linux-arm64
-          chmod +x dist/jenkins-cli-linux-arm64-musl
-          chmod +x dist/jenkins-cli-darwin-x64
-          chmod +x dist/jenkins-cli-darwin-arm64
-
-          # Create per-platform tarballs (each contains 'jenkins-cli' for Homebrew compatibility)
-          for platform in linux-x64 linux-x64-baseline linux-arm64 darwin-x64 darwin-arm64; do
-            cp "dist/jenkins-cli-${platform}" jenkins-cli
-            tar -czf "dist/jenkins-cli-${platform}.tar.gz" jenkins-cli
-            rm jenkins-cli
-          done
-
-          # Compute sha256 for each tarball (used in Homebrew formula)
-          sha_linux_x64="$(shasum -a 256 dist/jenkins-cli-linux-x64.tar.gz | awk '{print $1}')"
-          sha_linux_x64_baseline="$(shasum -a 256 dist/jenkins-cli-linux-x64-baseline.tar.gz | awk '{print $1}')"
-          sha_linux_arm64="$(shasum -a 256 dist/jenkins-cli-linux-arm64.tar.gz | awk '{print $1}')"
-          sha_darwin_x64="$(shasum -a 256 dist/jenkins-cli-darwin-x64.tar.gz | awk '{print $1}')"
-          sha_darwin_arm64="$(shasum -a 256 dist/jenkins-cli-darwin-arm64.tar.gz | awk '{print $1}')"
-
-          # Generate multi-platform Homebrew formula (no Bun dependency — binary is self-contained)
-          cat > dist/homebrew-jenkins-cli.rb <<EOF
-          class JenkinsCli < Formula
-            desc "Minimal Jenkins CLI for listing jobs, triggering builds, and checking status"
-            homepage "https://github.com/jatinbansal1998/jenkins-cli-ts"
-            version "${tag_version}"
-
-            on_macos do
-              on_arm do
-                url "https://github.com/jatinbansal1998/jenkins-cli-ts/releases/download/${TAG_NAME}/jenkins-cli-darwin-arm64.tar.gz"
-                sha256 "${sha_darwin_arm64}"
-              end
-
-              on_intel do
-                url "https://github.com/jatinbansal1998/jenkins-cli-ts/releases/download/${TAG_NAME}/jenkins-cli-darwin-x64.tar.gz"
-                sha256 "${sha_darwin_x64}"
-              end
-            end
-
-            on_linux do
-              on_arm do
-                url "https://github.com/jatinbansal1998/jenkins-cli-ts/releases/download/${TAG_NAME}/jenkins-cli-linux-arm64.tar.gz"
-                sha256 "${sha_linux_arm64}"
-              end
-
-              on_intel do
-                url "https://github.com/jatinbansal1998/jenkins-cli-ts/releases/download/${TAG_NAME}/jenkins-cli-linux-x64-baseline.tar.gz"
-                sha256 "${sha_linux_x64_baseline}"
-              end
-            end
-
-            def install
-              bin.install "jenkins-cli"
-            end
-
-            test do
-              assert_match "Usage: jenkins-cli", shell_output("#{bin}/jenkins-cli --help")
-            end
-          end
-          EOF
+        run: bun scripts/build.ts --release
 
       - name: Create Release
         uses: softprops/action-gh-release@v1
@@ -167,49 +86,38 @@ jobs:
             dist/jenkins-cli-darwin-x64.tar.gz
             dist/jenkins-cli-darwin-arm64.tar.gz
             dist/jenkins-cli
+            dist/jenkins-cli.exe
             dist/homebrew-jenkins-cli.rb
+            dist/checksums.txt
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Checkout homebrew tap
+      - name: Sync Homebrew tap
         if: ${{ env.HOMEBREW_TAP_TOKEN != '' }}
-        uses: actions/checkout@v4
-        with:
-          repository: jatinbansal1998/homebrew-tap
-          token: ${{ env.HOMEBREW_TAP_TOKEN }}
-          path: tap-repo
-          fetch-depth: 1
-
-      - name: Sync formula to homebrew tap
         id: sync_tap
-        if: ${{ env.HOMEBREW_TAP_TOKEN != '' }}
         shell: bash
         env:
           TAG_NAME: ${{ github.ref_name }}
           GH_TOKEN: ${{ env.HOMEBREW_TAP_TOKEN }}
-          GH_NAME: github-actions[bot]
-          GH_EMAIL: 41898282+github-actions[bot]@users.noreply.github.com
         run: |
           set -euo pipefail
+
+          git clone --depth 1 \
+            "https://x-access-token:${GH_TOKEN}@github.com/jatinbansal1998/homebrew-tap.git" \
+            tap-repo
 
           mkdir -p tap-repo/Formula
           cp dist/homebrew-jenkins-cli.rb tap-repo/Formula/jenkins-cli.rb
 
           cd tap-repo
-          git remote set-url origin "https://x-access-token:${GH_TOKEN}@github.com/jatinbansal1998/homebrew-tap.git"
-          if ! git ls-remote --exit-code origin HEAD >/dev/null 2>&1; then
-            echo "::error::HOMEBREW_TAP_TOKEN cannot access jatinbansal1998/homebrew-tap. Ensure the token targets that repo and has Contents: Read and write."
-            exit 1
-          fi
-
           git add Formula/jenkins-cli.rb
           if git diff --cached --quiet -- Formula/jenkins-cli.rb; then
-            echo "No formula changes detected; skipping tap update."
+            echo "No formula changes; skipping."
             exit 0
           fi
 
-          git config user.name "${GH_NAME}"
-          git config user.email "${GH_EMAIL}"
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git commit -m "jenkins-cli ${TAG_NAME}"
           git push origin HEAD:main
 

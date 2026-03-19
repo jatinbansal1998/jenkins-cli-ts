@@ -42,6 +42,7 @@ import {
 } from "./update";
 import { printCliIntro } from "./cli-intro";
 import { formatPromptTarget } from "./tui-target";
+import { BUILD_TARGET } from "./build-target";
 import packageJson from "../package.json";
 
 const VERSION = packageJson.version;
@@ -670,7 +671,11 @@ async function main(): Promise<void> {
         });
       },
     )
-    .version("version", `Show version (${VERSION})`, VERSION)
+    .version(
+      "version",
+      `Show version (${VERSION})`,
+      `${VERSION} (${BUILD_TARGET})`,
+    )
     .alias("version", "v")
     .strict()
     .help()
