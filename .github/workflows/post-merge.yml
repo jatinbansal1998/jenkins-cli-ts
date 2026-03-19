@@ -208,9 +208,10 @@ jobs:
         run: |
           VERSION=$(bun -e "console.log(require('./package.json').version)")
           TAG="v$VERSION"
+          TAG_EXISTS="$(git ls-remote --tags origin "refs/tags/${TAG}")"
 
           # Skip if the tag already exists (idempotent)
-          if [ -n "$(git ls-remote --tags origin "refs/tags/${TAG}")" ]; then
+          if [ -n "$TAG_EXISTS" ]; then
             echo "Tag $TAG already exists, skipping tag creation."
           else
             git config user.name "github-actions[bot]"
@@ -219,5 +220,9 @@ jobs:
             git push origin "$TAG"
           fi
 
-          gh workflow run release.yml --ref main -f tag="$TAG"
-          echo "Ensured tag $TAG exists, then dispatched release.yml as a prerelease."
+          if [ -n "$TAG_EXISTS" ]; then
+            gh workflow run release.yml --ref main -f tag="$TAG"
+            echo "Tag $TAG already existed, so release.yml was dispatched manually."
+          else
+            echo "Tag $TAG was created and pushed in this run; release.yml will start from the tag push."
+          fi
