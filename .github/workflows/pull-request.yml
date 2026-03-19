@@ -1,0 +1,65 @@
+name: Pull Request Tests
+
+on:
+  pull_request:
+    branches: [main]
+    paths-ignore:
+      - ".github/workflows/**"
+
+concurrency:
+  group: pr-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        run: bun install
+
+      - name: Run tests (capture failures)
+        shell: bash
+        env:
+          NO_COLOR: "1"
+        run: |
+          set -o pipefail
+          mkdir -p test-artifacts
+
+          set +e
+          bun test --only-failures 2>&1 | tee test-artifacts/bun-test.log
+          TEST_EXIT=${PIPESTATUS[0]}
+          set -e
+
+          bun test --reporter=junit --reporter-outfile test-artifacts/bun-junit.xml >/dev/null 2>&1 || true
+          exit "$TEST_EXIT"
+
+      - name: Summarize test output
+        if: always()
+        shell: bash
+        run: |
+          if [ -f test-artifacts/bun-test.log ]; then
+            {
+              echo "## Bun test output (failures only)"
+              echo ""
+              echo '```text'
+              sed -n '1,240p' test-artifacts/bun-test.log
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Upload test artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bun-test-artifacts
+          path: test-artifacts
+          if-no-files-found: ignore
