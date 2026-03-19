@@ -323,7 +323,13 @@ export function resolveExecutablePath(): string {
   if (!argv1) {
     throw new CliError("Unable to determine the CLI path.");
   }
-  const resolved = path.resolve(argv1);
+
+  // Bun compiled binaries expose an embedded entrypoint (e.g. /$bunfs/root/...)
+  // in process.argv[1], whereas process.execPath points to the actual executable.
+  const resolved = argv1.startsWith("/$bunfs/")
+    ? process.execPath
+    : path.resolve(argv1);
+
   const base = path.basename(resolved);
   const looksLikeSource =
     base === "index.ts" ||
