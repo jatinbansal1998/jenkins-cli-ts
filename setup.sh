@@ -14,6 +14,18 @@ ensure_bun() {
   fi
 
   print "Bun not found. Installing..."
+
+  if ! command -v bash >/dev/null 2>&1 || ! command -v unzip >/dev/null 2>&1; then
+    if command -v apk >/dev/null 2>&1 && [ "$(id -u 2>/dev/null || printf '1')" = "0" ]; then
+      print "Alpine detected. Installing bash and unzip so Bun can bootstrap..."
+      apk add --no-cache bash unzip
+    else
+      print "ERROR: Bun's installer requires bash and unzip."
+      print "HINT: On Alpine, run: apk add --no-cache bash unzip"
+      exit 1
+    fi
+  fi
+
   if command -v curl >/dev/null 2>&1; then
     curl -fsSL https://bun.sh/install | bash
   elif command -v wget >/dev/null 2>&1; then

@@ -14,6 +14,7 @@ Primary install URL:
 
 ```bash
 curl -fsSL https://jatinbansal.com/jenkins-cli/install/ | bash
+wget -qO- https://jatinbansal.com/jenkins-cli/install/ | bash
 ```
 
 ## Supported Features
@@ -33,16 +34,22 @@ GitHub install mirror:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/jatinbansal1998/jenkins-cli-ts/main/install | bash
+wget -qO- https://raw.githubusercontent.com/jatinbansal1998/jenkins-cli-ts/main/install | bash
 ```
 
 Optional override:
 
 ```bash
 JENKINS_CLI_INSTALL_DIR="$HOME/.local/bin" curl -fsSL https://jatinbansal.com/jenkins-cli/install/ | bash
+JENKINS_CLI_INSTALL_DIR="$HOME/.local/bin" wget -qO- https://jatinbansal.com/jenkins-cli/install/ | bash
 ```
 
 Older versions are not installed through the script. If you need an older
 release, download it manually from GitHub Releases.
+
+On minimal Alpine images, if the installer falls back to the legacy Bun bundle
+before a native musl binary is available, it may need `bash` and `unzip` to
+bootstrap Bun. The script will try `apk add --no-cache bash unzip` when it can.
 
 Homebrew (tap, alternative):
 
@@ -365,6 +372,23 @@ Auto-update defaults:
 - Prerelease channel installs whichever GitHub release is newest, using the release order from GitHub.
 
 ## Development
+
+### Dev Container
+
+For a no-local-setup workflow, open the repo in a devcontainer-capable editor
+such as VS Code, Cursor, or GitHub Codespaces and choose **Reopen in
+Container**. The container installs Bun and runs `bun install`
+automatically on first create.
+
+Once the container is ready, use the same Bun commands as local development:
+
+```bash
+bun run dev
+bun test
+bun run build
+```
+
+### Local Development
 
 Install dependencies:
 

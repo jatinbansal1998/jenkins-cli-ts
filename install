@@ -37,12 +37,34 @@ has_bun() {
   command -v bun >/dev/null 2>&1
 }
 
+install_bun_bootstrap_tools() {
+  if command -v bash >/dev/null 2>&1 && command -v unzip >/dev/null 2>&1; then
+    return 0
+  fi
+
+  if command -v apk >/dev/null 2>&1 && [ "$(id -u 2>/dev/null || printf '1')" = "0" ]; then
+    print "Alpine detected. Installing bash and unzip so Bun can bootstrap..."
+    apk add --no-cache bash unzip
+    return $?
+  fi
+
+  return 1
+}
+
 ensure_bun() {
   if has_bun; then
     return 0
   fi
 
   print "Bun not found. Installing Bun for the legacy jenkins-cli fallback..."
+
+  if ! install_bun_bootstrap_tools; then
+    print "ERROR: Bun's installer requires bash and unzip."
+    print "HINT: On Alpine, run: apk add --no-cache bash unzip"
+    print "HINT: Or install Bun manually before running this script."
+    exit 1
+  fi
+
   if command -v curl >/dev/null 2>&1; then
     curl -fsSL https://bun.sh/install | bash
   else

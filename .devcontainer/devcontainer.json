@@ -1,0 +1,21 @@
+{
+  "name": "jenkins-cli-ts",
+  "image": "mcr.microsoft.com/devcontainers/base:ubuntu-24.04",
+  "workspaceFolder": "/workspaces/jenkins-cli-ts",
+  "features": {
+    "ghcr.io/devcontainers-extra/features/bun:1": {}
+  },
+  "updateRemoteUserUID": true,
+  "postCreateCommand": "bun install",
+  "customizations": {
+    "jetbrains": {
+      "settings": { "com.intellij:app:HttpConfigurable.use_proxy_pac": true }
+    },
+    "vscode": {
+      "extensions": ["oven.bun-vscode", "esbenp.prettier-vscode"],
+      "settings": {
+        "terminal.integrated.defaultProfile.linux": "zsh"
+      }
+    }
+  }
+}
