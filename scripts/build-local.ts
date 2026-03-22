@@ -21,6 +21,8 @@ const target = `bun-${process.platform}-${process.arch}` as const;
 const result = await Bun.build({
   entrypoints: [ENTRY],
   target: "bun",
+  // Bun always tree-shakes; package.json sideEffects metadata helps it drop
+  // unused internal modules when compiling the executable.
   compile: { outfile: `${DIST}/jenkins-cli` },
   define: { __BUILD_TARGET__: JSON.stringify(target) },
 });
