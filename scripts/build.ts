@@ -58,6 +58,8 @@ async function tar(srcFile: string, destTarGz: string): Promise<void> {
 
 await mkdir(DIST, { recursive: true });
 
+// Bun's bundler always tree-shakes. Marking the package as side-effect free in
+// package.json lets it prune unused internal modules more aggressively.
 // JS bundle (legacy fallback for users with Bun installed)
 const bundleStart = performance.now();
 const bundleResult = await Bun.build({
@@ -82,6 +84,7 @@ const results = await Promise.allSettled(
 
     const result = await Bun.build({
       entrypoints: [ENTRY],
+      // Bun always enables tree-shaking for builds, including compiled outputs.
       // @ts-expect-error -- Bun compile targets are valid at runtime
       compile: { target: compileTarget, outfile: outpath },
       define: { __BUILD_TARGET__: JSON.stringify(compileTarget) },
