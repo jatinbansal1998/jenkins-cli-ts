@@ -96,7 +96,6 @@ let bunFileSpy = spyOn(Bun, "file");
 describe("recent jobs", () => {
   beforeEach(() => {
     files.clear();
-    mock.clearAllMocks();
     bunFileSpy = spyOn(Bun, "file");
     bunFileSpy.mockImplementation(((filePath: string | URL) => {
       const resolvedPath =

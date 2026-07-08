@@ -91,7 +91,11 @@ function detectMusl(): boolean | null {
   return null;
 }
 
-export function isBunAvailable(): boolean {
+type UpdateRuntimeDeps = {
+  isBunAvailable: () => boolean;
+};
+
+function detectBunAvailable(): boolean {
   try {
     const proc = Bun.spawnSync({
       cmd: ["bun", "--version"],
@@ -102,6 +106,25 @@ export function isBunAvailable(): boolean {
   } catch {
     return false;
   }
+}
+
+const defaultUpdateRuntimeDeps: UpdateRuntimeDeps = {
+  isBunAvailable: detectBunAvailable,
+};
+
+let updateRuntimeDeps = defaultUpdateRuntimeDeps;
+
+export function setUpdateRuntimeDepsForTesting(
+  overrides: Partial<UpdateRuntimeDeps>,
+): () => void {
+  updateRuntimeDeps = { ...defaultUpdateRuntimeDeps, ...overrides };
+  return () => {
+    updateRuntimeDeps = defaultUpdateRuntimeDeps;
+  };
+}
+
+export function isBunAvailable(): boolean {
+  return updateRuntimeDeps.isBunAvailable();
 }
 
 export function resolveAssetName(): string {

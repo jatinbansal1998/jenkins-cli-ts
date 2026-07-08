@@ -17,6 +17,15 @@ function createClient(stubs: Partial<JenkinsClient>): JenkinsClient {
   return stubs as JenkinsClient;
 }
 
+const restoreFns: Array<() => void> = [];
+
+function trackRestore<T extends { mockRestore(): void }>(
+  mockWithRestore: T,
+): T {
+  restoreFns.push(() => mockWithRestore.mockRestore());
+  return mockWithRestore;
+}
+
 const env: EnvConfig = {
   jenkinsUrl: "https://jenkins.example.com",
   jenkinsUser: "ci-user",
@@ -30,19 +39,19 @@ describe("wait command", () => {
   const originalExitCode = process.exitCode;
 
   beforeEach(() => {
-    mock.clearAllMocks();
     process.exitCode = 0;
   });
 
   afterEach(() => {
     process.exitCode = originalExitCode;
-    mock.restore();
+    while (restoreFns.length > 0) {
+      restoreFns.pop()?.();
+    }
   });
 
   test("waitForBuild returns immediately when latest build is already complete", async () => {
-    const persistKnownTotalStagesSpy = spyOn(
-      stageCountCacheModule,
-      "persistKnownTotalStages",
+    const persistKnownTotalStagesSpy = trackRestore(
+      spyOn(stageCountCacheModule, "persistKnownTotalStages"),
     ).mockResolvedValue();
     const getJobStatus = mock(async () => ({
       lastBuildNumber: 42,
@@ -151,9 +160,8 @@ describe("wait command", () => {
   });
 
   test("waitForBuild persists stage totals for unstable build results", async () => {
-    const persistKnownTotalStagesSpy = spyOn(
-      stageCountCacheModule,
-      "persistKnownTotalStages",
+    const persistKnownTotalStagesSpy = trackRestore(
+      spyOn(stageCountCacheModule, "persistKnownTotalStages"),
     ).mockResolvedValue();
     const getBuildStatus = mock(async () => ({
       buildNumber: 9,
@@ -264,7 +272,7 @@ describe("wait command", () => {
   });
 
   test("waitForBuild shows a cancel error and continues watching when cancel fails", async () => {
-    const errorSpy = spyOn(console, "error");
+    const errorSpy = trackRestore(spyOn(console, "error"));
     const stopBuild = mock(async () => {
       throw new CliError("Cancel request failed.", ["Try again in a moment."]);
     });

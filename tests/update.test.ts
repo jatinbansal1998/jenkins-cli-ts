@@ -4,36 +4,30 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { CliError } from "../src/cli";
 import { GITHUB_REPO_URL } from "../src/github-constants";
-import {
+const realUpdate = await import("../src/update");
+const {
   clearPendingUpdateState,
   compareVersions,
   downloadAndInstall,
   extractInstalledBinaryVersionOutput,
   fetchLatestRelease,
-  getReleaseInstallDecision,
-  getPreferredUpdateCommand,
   getDeferredUpdatePromptVersion,
-  isLegacyBundleBuildTarget,
+  getPreferredUpdateCommand,
+  getReleaseInstallDecision,
   isHomebrewManagedPath,
+  isLegacyBundleBuildTarget,
   normalizeVersionTag,
   parseLddProbeOutput,
   parseUpdateChannel,
   resolveAssetName,
+  resolveExecutablePath,
   resolveReleaseAsset,
   resolveUpdateChannel,
-  resolveExecutablePath,
+  setUpdateRuntimeDepsForTesting,
   withPendingUpdateState,
-} from "../src/update";
+} = realUpdate;
 
-const isBunAvailableMock = mock(() => true);
-mock.module("../src/update", () => ({
-  compareVersions,
-  normalizeVersionTag,
-  parseUpdateChannel,
-  resolveAssetName,
-  resolveReleaseAsset,
-  isBunAvailable: isBunAvailableMock,
-}));
+let restoreUpdateRuntimeDeps: (() => void) | undefined;
 
 const realFetch = globalThis.fetch;
 type FetchInput = Parameters<typeof fetch>[0];
@@ -41,7 +35,8 @@ type FetchInit = Parameters<typeof fetch>[1];
 
 afterEach(() => {
   globalThis.fetch = realFetch;
-  mock.restore();
+  restoreUpdateRuntimeDeps?.();
+  restoreUpdateRuntimeDeps = undefined;
 });
 
 describe("update version helpers", () => {
@@ -190,22 +185,20 @@ describe("update helpers", () => {
   });
 
   test("resolveReleaseAsset throws when only legacy asset is present but Bun is unavailable", () => {
-    isBunAvailableMock.mockReturnValue(false);
-    try {
-      expect(() =>
-        resolveReleaseAsset({
-          tag_name: "v0.5.0",
-          assets: [
-            {
-              name: "jenkins-cli",
-              browser_download_url: "https://example.com/jenkins-cli",
-            },
-          ],
-        }),
-      ).toThrow(CliError);
-    } finally {
-      isBunAvailableMock.mockReturnValue(true);
-    }
+    restoreUpdateRuntimeDeps = setUpdateRuntimeDepsForTesting({
+      isBunAvailable: () => false,
+    });
+    expect(() =>
+      resolveReleaseAsset({
+        tag_name: "v0.5.0",
+        assets: [
+          {
+            name: "jenkins-cli",
+            browser_download_url: "https://example.com/jenkins-cli",
+          },
+        ],
+      }),
+    ).toThrow(CliError);
   });
 
   test("getReleaseInstallDecision keeps newer releases installable", () => {
@@ -526,8 +519,7 @@ describe("GitHub headers", () => {
       );
       expect(fs.readFileSync(targetPath, "utf8")).toBe("binary");
       const requestInit = fetchMock.mock.calls[0]?.[1] as
-        | RequestInit
-        | undefined;
+        RequestInit | undefined;
       expect(readHeader(requestInit, "User-Agent")).toBe(
         `jenkins-cli/0.7.0 (+${GITHUB_REPO_URL}; platform=${process.platform}; arch=${process.arch})`,
       );

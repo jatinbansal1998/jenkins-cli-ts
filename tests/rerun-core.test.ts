@@ -1,17 +1,21 @@
-import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import { beforeEach, describe, expect, mock, test } from "bun:test";
 import type { EnvConfig } from "../src/env";
 import type { JenkinsClient } from "../src/jenkins/client";
 
+const realRecentJobs = await import("../src/recent-jobs");
+const realBranches = await import("../src/branches");
 const recordRecentJobMock = mock(async () => undefined);
 const recordBranchSelectionMock = mock(async () => undefined);
 
 mock.module("../src/recent-jobs", () => ({
+  ...realRecentJobs,
   loadRecentJobs: mock(async () => []),
   loadPreferredJobs: mock(async () => []),
   recordRecentJob: recordRecentJobMock,
 }));
 
 mock.module("../src/branches", () => ({
+  ...realBranches,
   loadCachedBranches: mock(async () => []),
   loadCachedBranchHistory: mock(async () => []),
   removeCachedBranch: mock(async () => false),
@@ -30,10 +34,6 @@ describe("rerun-core", () => {
     recordRecentJobMock.mockImplementation(async () => undefined);
     recordBranchSelectionMock.mockReset();
     recordBranchSelectionMock.mockImplementation(async () => undefined);
-  });
-
-  afterEach(() => {
-    mock.restore();
   });
 
   test("rerunLastBuildForJob retriggers the latest build parameters", async () => {

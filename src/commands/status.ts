@@ -59,8 +59,7 @@ type StatusOptions = {
 };
 
 type StatusSelectionResult =
-  | { kind: "jobs"; jobs: JenkinsJob[] }
-  | { kind: "search" };
+  { kind: "jobs"; jobs: JenkinsJob[] } | { kind: "search" };
 
 class BackToRecentMenuError extends Error {
   constructor() {

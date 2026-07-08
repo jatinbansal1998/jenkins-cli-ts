@@ -20,10 +20,7 @@ type AnalyticsValue = string | number | boolean | null | undefined;
 type AnalyticsProps = Record<string, AnalyticsValue>;
 
 type AnalyticsErrorType =
-  | "http_error"
-  | "network_error"
-  | "timeout"
-  | "invalid_json";
+  "http_error" | "network_error" | "timeout" | "invalid_json";
 
 type AnalyticsClientConfig = {
   apiKey?: string;

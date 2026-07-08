@@ -30,8 +30,8 @@ function createAutocompleteSelection(userInput = "alpha") {
 }
 
 const confirmMock = mock(async () => false);
-const autocompleteMock = mock(
-  async (): Promise<AutocompletePromptResult> => createAutocompleteSelection(),
+const autocompleteMock = mock(async (): Promise<AutocompletePromptResult> =>
+  createAutocompleteSelection(),
 );
 const selectMock = mock(
   async (..._args: unknown[]): Promise<string | typeof CANCEL> => "done",
