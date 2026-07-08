@@ -1,5 +1,6 @@
+import { randomUUID } from "node:crypto";
 import fs from "node:fs";
-import { chmod, mkdir } from "node:fs/promises";
+import { chmod, mkdir, rename, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { CliError } from "./cli";
@@ -437,22 +438,30 @@ async function writeNormalizedConfigAsync(
 ): Promise<void> {
   await mkdir(CONFIG_DIR, { recursive: true, mode: 0o700 });
   const contents = `${JSON.stringify(config, null, 2)}\n`;
-  await Bun.file(CONFIG_FILE).write(contents);
+  // Write to a temp file and rename so an interrupt cannot truncate the
+  // credentials file.
+  const tempPath = `${CONFIG_FILE}.${randomUUID()}.tmp`;
   try {
-    await chmod(CONFIG_FILE, 0o600);
-  } catch {
-    // Best-effort permission hardening.
+    await Bun.file(tempPath).write(contents);
+    // Best-effort permission hardening, as before.
+    await chmod(tempPath, 0o600).catch(() => undefined);
+    await rename(tempPath, CONFIG_FILE);
+  } catch (error) {
+    await rm(tempPath, { force: true }).catch(() => undefined);
+    throw error;
   }
 }
 
 function writeNormalizedConfigSync(config: JenkinsConfig): void {
   fs.mkdirSync(CONFIG_DIR, { recursive: true, mode: 0o700 });
   const contents = `${JSON.stringify(config, null, 2)}\n`;
-  fs.writeFileSync(CONFIG_FILE, contents, { encoding: "utf8", mode: 0o600 });
+  const tempPath = `${CONFIG_FILE}.${randomUUID()}.tmp`;
   try {
-    fs.chmodSync(CONFIG_FILE, 0o600);
-  } catch {
-    // Best-effort permission hardening.
+    fs.writeFileSync(tempPath, contents, { encoding: "utf8", mode: 0o600 });
+    fs.renameSync(tempPath, CONFIG_FILE);
+  } catch (error) {
+    fs.rmSync(tempPath, { force: true });
+    throw error;
   }
 }
 

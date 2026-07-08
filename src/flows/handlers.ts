@@ -107,9 +107,6 @@ function selectListActionHandler({
   input?: unknown;
 }): EventId {
   const value = String(input);
-  if (value === "done") {
-    return "done";
-  }
   context.selectedAction = value;
   return resolveSelectEvent(value);
 }
