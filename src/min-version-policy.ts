@@ -16,6 +16,38 @@ const POLICY_URL = GITHUB_VERSION_POLICY_URL;
 const POLICY_FETCH_TIMEOUT_MS = 800;
 const POLICY_REFRESH_TTL_MS = 60 * 60 * 1000;
 
+type MinimumVersionPolicyDeps = {
+  compareVersions: typeof compareVersions;
+  getPreferredUpdateCommand: typeof getPreferredUpdateCommand;
+  normalizeVersionTag: typeof normalizeVersionTag;
+  readUpdateState: typeof readUpdateState;
+  runUpdate: typeof runUpdate;
+  writeUpdateState: typeof writeUpdateState;
+};
+
+const defaultMinimumVersionPolicyDeps: MinimumVersionPolicyDeps = {
+  compareVersions,
+  getPreferredUpdateCommand,
+  normalizeVersionTag,
+  readUpdateState,
+  runUpdate,
+  writeUpdateState,
+};
+
+let minimumVersionPolicyDeps = defaultMinimumVersionPolicyDeps;
+
+export function setMinimumVersionPolicyDepsForTesting(
+  overrides: Partial<MinimumVersionPolicyDeps>,
+): () => void {
+  minimumVersionPolicyDeps = {
+    ...defaultMinimumVersionPolicyDeps,
+    ...overrides,
+  };
+  return () => {
+    minimumVersionPolicyDeps = defaultMinimumVersionPolicyDeps;
+  };
+}
+
 type EnforceMinimumVersionOptions = {
   currentVersion: string;
   rawArgs: string[];
@@ -37,18 +69,21 @@ export async function enforceMinimumVersionFromCache(
     return;
   }
 
-  const state = await readUpdateState();
+  const state = await minimumVersionPolicyDeps.readUpdateState();
   const minAllowedVersion = state.minAllowedVersion?.trim();
   if (!minAllowedVersion) {
     return;
   }
 
-  const comparison = compareVersions(options.currentVersion, minAllowedVersion);
+  const comparison = minimumVersionPolicyDeps.compareVersions(
+    options.currentVersion,
+    minAllowedVersion,
+  );
   if (comparison === null || comparison >= 0) {
     return;
   }
 
-  const updateCommand = getPreferredUpdateCommand();
+  const updateCommand = minimumVersionPolicyDeps.getPreferredUpdateCommand();
   const mandatoryMessage = buildMandatoryUpdateMessage({
     currentVersion: options.currentVersion,
     minAllowedVersion,
@@ -67,7 +102,9 @@ export async function enforceMinimumVersionFromCache(
   }
 
   try {
-    await runUpdate({ currentVersion: options.currentVersion });
+    await minimumVersionPolicyDeps.runUpdate({
+      currentVersion: options.currentVersion,
+    });
   } catch {
     throw error;
   }
@@ -83,7 +120,7 @@ async function refreshMinimumVersionPolicy(
   currentVersion: string,
 ): Promise<void> {
   try {
-    const state = await readUpdateState();
+    const state = await minimumVersionPolicyDeps.readUpdateState();
     if (!shouldRefreshPolicy(state.minAllowedFetchedAt)) {
       return;
     }
@@ -93,7 +130,7 @@ async function refreshMinimumVersionPolicy(
       return;
     }
 
-    await writeUpdateState({
+    await minimumVersionPolicyDeps.writeUpdateState({
       ...state,
       minAllowedVersion: policy.minVersion,
       minAllowedMessage: policy.message,
@@ -144,8 +181,12 @@ function parseMinimumVersionPolicy(
     return null;
   }
 
-  const normalizedMinVersion = normalizeVersionTag(minVersionValue);
-  if (compareVersions(normalizedMinVersion, "0.0.0") === null) {
+  const normalizedMinVersion =
+    minimumVersionPolicyDeps.normalizeVersionTag(minVersionValue);
+  if (
+    minimumVersionPolicyDeps.compareVersions(normalizedMinVersion, "0.0.0") ===
+    null
+  ) {
     return null;
   }
 

@@ -46,6 +46,7 @@ describe("stage count cache", () => {
     const writeJobCacheSpy = trackRestore(
       spyOn(jobsModule, "writeJobCache"),
     ).mockRejectedValue(new Error("write failed"));
+    writeJobCacheSpy.mockClear();
 
     await expect(
       stageCountCacheModule.recordKnownStageTotal({
@@ -78,6 +79,7 @@ describe("stage count cache", () => {
     const writeJobCacheSpy = trackRestore(
       spyOn(jobsModule, "writeJobCache"),
     ).mockRejectedValue(new Error("disk full"));
+    writeJobCacheSpy.mockClear();
 
     await expect(
       stageCountCacheModule.persistKnownTotalStages({
@@ -101,6 +103,7 @@ describe("stage count cache", () => {
     const writeJobCacheSpy = trackRestore(
       spyOn(jobsModule, "writeJobCache"),
     ).mockResolvedValue();
+    writeJobCacheSpy.mockClear();
 
     await stageCountCacheModule.recordKnownStageTotal({
       env,

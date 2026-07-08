@@ -23,14 +23,11 @@ const {
   resolveExecutablePath,
   resolveReleaseAsset,
   resolveUpdateChannel,
+  setUpdateRuntimeDepsForTesting,
   withPendingUpdateState,
 } = realUpdate;
 
-const isBunAvailableMock = mock(() => true);
-mock.module("../src/update", () => ({
-  ...realUpdate,
-  isBunAvailable: isBunAvailableMock,
-}));
+let restoreUpdateRuntimeDeps: (() => void) | undefined;
 
 const realFetch = globalThis.fetch;
 type FetchInput = Parameters<typeof fetch>[0];
@@ -38,7 +35,8 @@ type FetchInit = Parameters<typeof fetch>[1];
 
 afterEach(() => {
   globalThis.fetch = realFetch;
-  isBunAvailableMock.mockReturnValue(true);
+  restoreUpdateRuntimeDeps?.();
+  restoreUpdateRuntimeDeps = undefined;
 });
 
 describe("update version helpers", () => {
@@ -187,22 +185,20 @@ describe("update helpers", () => {
   });
 
   test("resolveReleaseAsset throws when only legacy asset is present but Bun is unavailable", () => {
-    isBunAvailableMock.mockReturnValue(false);
-    try {
-      expect(() =>
-        resolveReleaseAsset({
-          tag_name: "v0.5.0",
-          assets: [
-            {
-              name: "jenkins-cli",
-              browser_download_url: "https://example.com/jenkins-cli",
-            },
-          ],
-        }),
-      ).toThrow(CliError);
-    } finally {
-      isBunAvailableMock.mockReturnValue(true);
-    }
+    restoreUpdateRuntimeDeps = setUpdateRuntimeDepsForTesting({
+      isBunAvailable: () => false,
+    });
+    expect(() =>
+      resolveReleaseAsset({
+        tag_name: "v0.5.0",
+        assets: [
+          {
+            name: "jenkins-cli",
+            browser_download_url: "https://example.com/jenkins-cli",
+          },
+        ],
+      }),
+    ).toThrow(CliError);
   });
 
   test("getReleaseInstallDecision keeps newer releases installable", () => {

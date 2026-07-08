@@ -2,8 +2,9 @@ import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { CliError } from "../src/cli";
 import { GITHUB_VERSION_POLICY_URL } from "../src/github-constants";
 
-const realUpdate = await import("../src/update");
-const realUpdateCommand = await import("../src/commands/update");
+const { compareVersions, normalizeVersionTag } = await import("../src/update");
+const { setMinimumVersionPolicyDepsForTesting } =
+  await import("../src/min-version-policy");
 const runUpdateMock = mock(async () => undefined);
 const getPreferredUpdateCommandMock = mock(() => "jenkins-cli update");
 
@@ -16,17 +17,7 @@ const writeUpdateStateMock = mock(
   },
 );
 
-mock.module("../src/commands/update", () => ({
-  ...realUpdateCommand,
-  runUpdate: runUpdateMock,
-}));
-
-mock.module("../src/update", () => ({
-  ...realUpdate,
-  getPreferredUpdateCommand: getPreferredUpdateCommandMock,
-  readUpdateState: readUpdateStateMock,
-  writeUpdateState: writeUpdateStateMock,
-}));
+let restoreMinimumVersionPolicyDeps: (() => void) | undefined;
 
 const realFetch = globalThis.fetch;
 const realStdinIsTTY = process.stdin.isTTY;
@@ -47,11 +38,21 @@ beforeEach(() => {
   getPreferredUpdateCommandMock.mockClear();
   readUpdateStateMock.mockClear();
   writeUpdateStateMock.mockClear();
+  restoreMinimumVersionPolicyDeps = setMinimumVersionPolicyDepsForTesting({
+    compareVersions,
+    getPreferredUpdateCommand: getPreferredUpdateCommandMock,
+    normalizeVersionTag,
+    readUpdateState: readUpdateStateMock,
+    runUpdate: runUpdateMock,
+    writeUpdateState: writeUpdateStateMock,
+  });
 });
 
 afterEach(() => {
   updateState = {};
   globalThis.fetch = realFetch;
+  restoreMinimumVersionPolicyDeps?.();
+  restoreMinimumVersionPolicyDeps = undefined;
   setStreamIsTTY(process.stdin, realStdinIsTTY);
   setStreamIsTTY(process.stdout, realStdoutIsTTY);
 });
