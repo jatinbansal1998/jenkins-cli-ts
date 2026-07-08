@@ -7,7 +7,6 @@ type FetchInit = Parameters<typeof fetch>[1];
 
 afterEach(() => {
   globalThis.fetch = realFetch;
-  mock.restore();
 });
 
 function readHeader(

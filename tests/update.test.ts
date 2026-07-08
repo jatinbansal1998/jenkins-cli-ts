@@ -4,34 +4,31 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { CliError } from "../src/cli";
 import { GITHUB_REPO_URL } from "../src/github-constants";
-import {
+const realUpdate = await import("../src/update");
+const {
   clearPendingUpdateState,
   compareVersions,
   downloadAndInstall,
   extractInstalledBinaryVersionOutput,
   fetchLatestRelease,
-  getReleaseInstallDecision,
-  getPreferredUpdateCommand,
   getDeferredUpdatePromptVersion,
-  isLegacyBundleBuildTarget,
+  getPreferredUpdateCommand,
+  getReleaseInstallDecision,
   isHomebrewManagedPath,
+  isLegacyBundleBuildTarget,
   normalizeVersionTag,
   parseLddProbeOutput,
   parseUpdateChannel,
   resolveAssetName,
+  resolveExecutablePath,
   resolveReleaseAsset,
   resolveUpdateChannel,
-  resolveExecutablePath,
   withPendingUpdateState,
-} from "../src/update";
+} = realUpdate;
 
 const isBunAvailableMock = mock(() => true);
 mock.module("../src/update", () => ({
-  compareVersions,
-  normalizeVersionTag,
-  parseUpdateChannel,
-  resolveAssetName,
-  resolveReleaseAsset,
+  ...realUpdate,
   isBunAvailable: isBunAvailableMock,
 }));
 
@@ -41,7 +38,7 @@ type FetchInit = Parameters<typeof fetch>[1];
 
 afterEach(() => {
   globalThis.fetch = realFetch;
-  mock.restore();
+  isBunAvailableMock.mockReturnValue(true);
 });
 
 describe("update version helpers", () => {
@@ -526,8 +523,7 @@ describe("GitHub headers", () => {
       );
       expect(fs.readFileSync(targetPath, "utf8")).toBe("binary");
       const requestInit = fetchMock.mock.calls[0]?.[1] as
-        | RequestInit
-        | undefined;
+        RequestInit | undefined;
       expect(readHeader(requestInit, "User-Agent")).toBe(
         `jenkins-cli/0.7.0 (+${GITHUB_REPO_URL}; platform=${process.platform}; arch=${process.arch})`,
       );

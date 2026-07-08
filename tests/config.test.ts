@@ -8,10 +8,12 @@ import {
   test,
 } from "bun:test";
 
+const realFsPromises = await import("node:fs/promises");
 const mkdirMock = mock(async () => undefined);
 const chmodMock = mock(async () => undefined);
 
 mock.module("node:fs/promises", () => ({
+  ...realFsPromises,
   chmod: chmodMock,
   mkdir: mkdirMock,
 }));
@@ -22,7 +24,6 @@ const bunFileSpy = spyOn(Bun, "file");
 const fileContents = new Map<string, string>();
 
 beforeEach(() => {
-  mock.clearAllMocks();
   mkdirMock.mockImplementation(async () => undefined);
   chmodMock.mockImplementation(async () => undefined);
   fileContents.clear();

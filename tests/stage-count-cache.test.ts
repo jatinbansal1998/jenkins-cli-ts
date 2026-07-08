@@ -1,15 +1,16 @@
-import {
-  afterEach,
-  beforeEach,
-  describe,
-  expect,
-  mock,
-  spyOn,
-  test,
-} from "bun:test";
+import { afterEach, describe, expect, spyOn, test } from "bun:test";
 import type { EnvConfig } from "../src/env";
 import * as jobsModule from "../src/jobs";
 import * as stageCountCacheModule from "../src/stage-count-cache";
+
+const restoreFns: Array<() => void> = [];
+
+function trackRestore<T extends { mockRestore(): void }>(
+  mockWithRestore: T,
+): T {
+  restoreFns.push(() => mockWithRestore.mockRestore());
+  return mockWithRestore;
+}
 
 const env: EnvConfig = {
   jenkinsUrl: "https://jenkins.example.com",
@@ -21,12 +22,10 @@ const env: EnvConfig = {
 };
 
 describe("stage count cache", () => {
-  beforeEach(() => {
-    mock.clearAllMocks();
-  });
-
   afterEach(() => {
-    mock.restore();
+    while (restoreFns.length > 0) {
+      restoreFns.pop()?.();
+    }
   });
 
   test("recordKnownStageTotal does not mutate the loaded cache when write fails", async () => {
@@ -43,10 +42,9 @@ describe("stage count cache", () => {
       },
     };
 
-    spyOn(jobsModule, "readJobCache").mockResolvedValue(cache);
-    const writeJobCacheSpy = spyOn(
-      jobsModule,
-      "writeJobCache",
+    trackRestore(spyOn(jobsModule, "readJobCache")).mockResolvedValue(cache);
+    const writeJobCacheSpy = trackRestore(
+      spyOn(jobsModule, "writeJobCache"),
     ).mockRejectedValue(new Error("write failed"));
 
     await expect(
@@ -71,15 +69,14 @@ describe("stage count cache", () => {
   });
 
   test("persistKnownTotalStages swallows write errors and derives job URL from build URL", async () => {
-    spyOn(jobsModule, "readJobCache").mockResolvedValue({
+    trackRestore(spyOn(jobsModule, "readJobCache")).mockResolvedValue({
       jenkinsUrl: env.jenkinsUrl,
       user: env.jenkinsUser,
       fetchedAt: "2026-03-17T00:00:00.000Z",
       jobs: [],
     });
-    const writeJobCacheSpy = spyOn(
-      jobsModule,
-      "writeJobCache",
+    const writeJobCacheSpy = trackRestore(
+      spyOn(jobsModule, "writeJobCache"),
     ).mockRejectedValue(new Error("disk full"));
 
     await expect(
@@ -100,10 +97,9 @@ describe("stage count cache", () => {
   });
 
   test("recordKnownStageTotal creates a cache entry when no cache exists yet", async () => {
-    spyOn(jobsModule, "readJobCache").mockResolvedValue(null);
-    const writeJobCacheSpy = spyOn(
-      jobsModule,
-      "writeJobCache",
+    trackRestore(spyOn(jobsModule, "readJobCache")).mockResolvedValue(null);
+    const writeJobCacheSpy = trackRestore(
+      spyOn(jobsModule, "writeJobCache"),
     ).mockResolvedValue();
 
     await stageCountCacheModule.recordKnownStageTotal({

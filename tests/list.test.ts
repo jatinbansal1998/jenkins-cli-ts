@@ -34,9 +34,20 @@ const runLogsMock = mock(async () => undefined);
 const runCancelMock = mock(async () => undefined);
 const runRerunMock = mock(async () => undefined);
 const runRerunLastBuildMock = mock(async () => undefined);
+const realListDeps = await import("../src/commands/list-deps");
+const restoreFns: Array<() => void> = [];
+
+function trackRestore<T extends { mockRestore(): void }>(
+  mockWithRestore: T,
+): T {
+  restoreFns.push(() => mockWithRestore.mockRestore());
+  return mockWithRestore;
+}
 
 mock.module("../src/commands/list-deps", () => ({
+  ...realListDeps,
   listDeps: {
+    ...realListDeps.listDeps,
     autocomplete: autocompleteMock,
     confirm: confirmMock,
     isCancel: isCancelMock,
@@ -71,7 +82,6 @@ const { runList } = await import("../src/commands/list");
 
 describe("runList", () => {
   beforeEach(() => {
-    mock.clearAllMocks();
     loadJobsMock.mockReset();
     loadJobsMock.mockImplementation(async () => jobs);
     loadPreferredJobsMock.mockReset();
@@ -106,11 +116,13 @@ describe("runList", () => {
   });
 
   afterEach(() => {
-    mock.restore();
+    while (restoreFns.length > 0) {
+      restoreFns.pop()?.();
+    }
   });
 
   test("non-interactive prints matching jobs", async () => {
-    const logSpy = spyOn(console, "log");
+    const logSpy = trackRestore(spyOn(console, "log"));
 
     await runList({
       client: {} as JenkinsClient,
@@ -270,7 +282,7 @@ describe("runList", () => {
   });
 
   test("interactive action errors are shown and menu continues", async () => {
-    const errorSpy = spyOn(console, "error");
+    const errorSpy = trackRestore(spyOn(console, "error"));
 
     autocompleteMock
       .mockImplementationOnce(

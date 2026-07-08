@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import { beforeEach, describe, expect, mock, test } from "bun:test";
 import type { EnvConfig } from "../src/env";
 import type { JenkinsClient } from "../src/jenkins/client";
 import type { JenkinsJob } from "../src/types/jenkins";
@@ -27,10 +27,6 @@ describe("ops helpers", () => {
     resolveJobMatchMock.mockImplementation(async () => {
       throw new Error("resolveJobMatchMock not configured");
     });
-  });
-
-  afterEach(() => {
-    mock.restore();
   });
 
   test("resolveJobTarget normalizes the selected job URL", async () => {

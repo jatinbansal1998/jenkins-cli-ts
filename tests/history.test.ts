@@ -67,7 +67,6 @@ const TEST_ENV: EnvConfig = {
 
 describe("runHistory", () => {
   beforeEach(() => {
-    mock.clearAllMocks();
     autocompleteMock.mockReset();
     autocompleteMock.mockImplementation(
       async (): Promise<AutocompletePromptResult> => CANCEL,

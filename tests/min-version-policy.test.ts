@@ -2,6 +2,8 @@ import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { CliError } from "../src/cli";
 import { GITHUB_VERSION_POLICY_URL } from "../src/github-constants";
 
+const realUpdate = await import("../src/update");
+const realUpdateCommand = await import("../src/commands/update");
 const runUpdateMock = mock(async () => undefined);
 const getPreferredUpdateCommandMock = mock(() => "jenkins-cli update");
 
@@ -15,13 +17,13 @@ const writeUpdateStateMock = mock(
 );
 
 mock.module("../src/commands/update", () => ({
+  ...realUpdateCommand,
   runUpdate: runUpdateMock,
 }));
 
 mock.module("../src/update", () => ({
-  compareVersions,
+  ...realUpdate,
   getPreferredUpdateCommand: getPreferredUpdateCommandMock,
-  normalizeVersionTag,
   readUpdateState: readUpdateStateMock,
   writeUpdateState: writeUpdateStateMock,
 }));
@@ -29,6 +31,16 @@ mock.module("../src/update", () => ({
 const realFetch = globalThis.fetch;
 const realStdinIsTTY = process.stdin.isTTY;
 const realStdoutIsTTY = process.stdout.isTTY;
+
+function setStreamIsTTY(
+  stream: typeof process.stdin | typeof process.stdout,
+  value: boolean | undefined,
+) {
+  Object.defineProperty(stream, "isTTY", {
+    value,
+    configurable: true,
+  });
+}
 
 beforeEach(() => {
   runUpdateMock.mockClear();
@@ -40,8 +52,8 @@ beforeEach(() => {
 afterEach(() => {
   updateState = {};
   globalThis.fetch = realFetch;
-  (process.stdin as { isTTY?: boolean }).isTTY = realStdinIsTTY;
-  (process.stdout as { isTTY?: boolean }).isTTY = realStdoutIsTTY;
+  setStreamIsTTY(process.stdin, realStdinIsTTY);
+  setStreamIsTTY(process.stdout, realStdoutIsTTY);
 });
 
 describe("minimum version policy", () => {
@@ -76,8 +88,8 @@ describe("minimum version policy", () => {
     const { enforceMinimumVersionFromCache } =
       await import("../src/min-version-policy");
     updateState = { minAllowedVersion: "v9.9.9" };
-    (process.stdin as { isTTY?: boolean }).isTTY = true;
-    (process.stdout as { isTTY?: boolean }).isTTY = true;
+    setStreamIsTTY(process.stdin, true);
+    setStreamIsTTY(process.stdout, true);
 
     await expect(
       enforceMinimumVersionFromCache({
@@ -215,54 +227,6 @@ describe("minimum version policy", () => {
     expect(updateState).toEqual(previousState);
   });
 });
-
-function normalizeVersionTag(input: string): string {
-  const trimmed = input.trim();
-  if (!trimmed) {
-    return trimmed;
-  }
-  return trimmed.startsWith("v") ? trimmed : `v${trimmed}`;
-}
-
-function compareVersions(a: string, b: string): number | null {
-  const aParts = parseVersionParts(a);
-  const bParts = parseVersionParts(b);
-  if (!aParts || !bParts) {
-    return null;
-  }
-  const length = Math.max(aParts.length, bParts.length, 3);
-  for (let index = 0; index < length; index += 1) {
-    const left = aParts[index] ?? 0;
-    const right = bParts[index] ?? 0;
-    if (left > right) {
-      return 1;
-    }
-    if (left < right) {
-      return -1;
-    }
-  }
-  return 0;
-}
-
-function parseVersionParts(value: string): number[] | null {
-  const cleaned = value.trim().replace(/^v/i, "");
-  if (!cleaned) {
-    return null;
-  }
-  const [main] = cleaned.split("-");
-  if (!main) {
-    return null;
-  }
-  const parts = main.split(".");
-  const numbers: number[] = [];
-  for (const part of parts) {
-    if (!/^\d+$/.test(part)) {
-      return null;
-    }
-    numbers.push(Number(part));
-  }
-  return numbers;
-}
 
 async function flushBackgroundTasks(): Promise<void> {
   await new Promise((resolve) => setTimeout(resolve, 0));
