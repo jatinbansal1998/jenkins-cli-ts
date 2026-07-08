@@ -28,7 +28,7 @@ import { loadEnv, getDebugDefault } from "./env";
 import { ENV_KEYS } from "./env-keys";
 import { JenkinsClient } from "./jenkins/api-wrapper";
 import { getJobCacheDir } from "./jobs";
-import { setDebugMode } from "./logger";
+import { pruneOldApiLogs, setDebugMode } from "./logger";
 import {
   enforceMinimumVersionFromCache,
   kickOffMinimumVersionRefresh,
@@ -73,7 +73,8 @@ async function main(): Promise<void> {
     })
     .option("debug", {
       type: "boolean",
-      describe: "Log API requests and responses to api.log",
+      describe:
+        "Log API requests and responses to api-<date>.log (kept for 7 days)",
     })
     .option("profile", {
       type: "string",
@@ -994,6 +995,9 @@ export function parseBuildCustomParams(
 }
 
 if (import.meta.main) {
+  // Exit handlers must be synchronous; pruneOldApiLogs is. This also runs
+  // after explicit process.exit() calls (e.g. yargs --help).
+  process.on("exit", () => pruneOldApiLogs());
   main().catch((error) => {
     handleCliError(error);
     process.exitCode = 1;

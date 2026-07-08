@@ -84,7 +84,7 @@ export const listInteractiveFlow: FlowDefinition<ListInteractiveContext> = {
       onSelect: "list.selectJob",
       transitions: {
         esc: "exit_command",
-        "select:search_again": "root",
+        "select:search_again": "select_job",
         "select:exit": "exit_command",
         "select:job": "action_menu",
       },
