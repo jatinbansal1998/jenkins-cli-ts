@@ -29,7 +29,6 @@ const originalEnv = { ...process.env };
 type FetchInput = Parameters<typeof fetch>[0];
 
 beforeEach(() => {
-  mock.clearAllMocks();
   resetAnalyticsForTests();
   fs.rmSync(join(tempHome, ".config"), { recursive: true, force: true });
   for (const key of Object.keys(process.env)) {

@@ -21,9 +21,7 @@ const env: EnvConfig = {
 };
 
 describe("stage count cache", () => {
-  beforeEach(() => {
-    mock.clearAllMocks();
-  });
+  beforeEach(() => {});
 
   afterEach(() => {
     mock.restore();

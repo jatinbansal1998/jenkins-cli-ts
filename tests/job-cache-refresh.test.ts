@@ -70,7 +70,6 @@ describe("job cache refresh", () => {
   beforeEach(async () => {
     jobsModule = await loadFreshJobsModule();
     files.clear();
-    mock.clearAllMocks();
     bunFileSpy = spyOn(Bun, "file");
     bunFileSpy.mockImplementation(((filePath: string | URL) => {
       const resolvedPath =

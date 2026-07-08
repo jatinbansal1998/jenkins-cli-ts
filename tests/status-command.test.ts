@@ -27,9 +27,7 @@ function createClient(stubs: Partial<JenkinsClient>): JenkinsClient {
 }
 
 describe("status command", () => {
-  beforeEach(() => {
-    mock.clearAllMocks();
-  });
+  beforeEach(() => {});
 
   afterEach(() => {
     mock.restore();

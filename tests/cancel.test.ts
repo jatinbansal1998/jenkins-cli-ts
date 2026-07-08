@@ -8,9 +8,7 @@ function createClient(stubs: Partial<JenkinsClient>): JenkinsClient {
 }
 
 describe("runCancel", () => {
-  beforeEach(() => {
-    mock.clearAllMocks();
-  });
+  beforeEach(() => {});
 
   test("waits for Jenkins to confirm a build was aborted before printing success", async () => {
     const originalIsTTY = process.stdin.isTTY;

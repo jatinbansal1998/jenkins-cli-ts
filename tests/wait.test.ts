@@ -30,7 +30,6 @@ describe("wait command", () => {
   const originalExitCode = process.exitCode;
 
   beforeEach(() => {
-    mock.clearAllMocks();
     process.exitCode = 0;
   });
 

@@ -30,6 +30,16 @@ const realFetch = globalThis.fetch;
 const realStdinIsTTY = process.stdin.isTTY;
 const realStdoutIsTTY = process.stdout.isTTY;
 
+function setStreamIsTTY(
+  stream: typeof process.stdin | typeof process.stdout,
+  value: boolean | undefined,
+) {
+  Object.defineProperty(stream, "isTTY", {
+    value,
+    configurable: true,
+  });
+}
+
 beforeEach(() => {
   runUpdateMock.mockClear();
   getPreferredUpdateCommandMock.mockClear();
@@ -40,8 +50,8 @@ beforeEach(() => {
 afterEach(() => {
   updateState = {};
   globalThis.fetch = realFetch;
-  (process.stdin as { isTTY?: boolean }).isTTY = realStdinIsTTY;
-  (process.stdout as { isTTY?: boolean }).isTTY = realStdoutIsTTY;
+  setStreamIsTTY(process.stdin, realStdinIsTTY);
+  setStreamIsTTY(process.stdout, realStdoutIsTTY);
 });
 
 describe("minimum version policy", () => {
@@ -76,8 +86,8 @@ describe("minimum version policy", () => {
     const { enforceMinimumVersionFromCache } =
       await import("../src/min-version-policy");
     updateState = { minAllowedVersion: "v9.9.9" };
-    (process.stdin as { isTTY?: boolean }).isTTY = true;
-    (process.stdout as { isTTY?: boolean }).isTTY = true;
+    setStreamIsTTY(process.stdin, true);
+    setStreamIsTTY(process.stdout, true);
 
     await expect(
       enforceMinimumVersionFromCache({

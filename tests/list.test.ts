@@ -71,7 +71,6 @@ const { runList } = await import("../src/commands/list");
 
 describe("runList", () => {
   beforeEach(() => {
-    mock.clearAllMocks();
     loadJobsMock.mockReset();
     loadJobsMock.mockImplementation(async () => jobs);
     loadPreferredJobsMock.mockReset();
