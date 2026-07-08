@@ -11,9 +11,7 @@ const CONFIG_DIR = path.join(os.homedir(), ".config", "jenkins-cli");
 const LOG_FILE = path.join(CONFIG_DIR, "api.log");
 
 type LogHeaders =
-  | Headers
-  | string[][]
-  | Record<string, string | readonly string[]>;
+  Headers | string[][] | Record<string, string | readonly string[]>;
 
 /** Whether debug mode is enabled (kept for backward compatibility). */
 let debugMode = false;

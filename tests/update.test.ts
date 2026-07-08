@@ -526,8 +526,7 @@ describe("GitHub headers", () => {
       );
       expect(fs.readFileSync(targetPath, "utf8")).toBe("binary");
       const requestInit = fetchMock.mock.calls[0]?.[1] as
-        | RequestInit
-        | undefined;
+        RequestInit | undefined;
       expect(readHeader(requestInit, "User-Agent")).toBe(
         `jenkins-cli/0.7.0 (+${GITHUB_REPO_URL}; platform=${process.platform}; arch=${process.arch})`,
       );

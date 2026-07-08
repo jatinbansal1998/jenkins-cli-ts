@@ -3,10 +3,7 @@ import type { EnvConfig } from "../env";
 
 /** All supported interactive flow definitions in the CLI. */
 export type FlowId =
-  | "listInteractive"
-  | "buildPre"
-  | "buildPost"
-  | "statusPost";
+  "listInteractive" | "buildPre" | "buildPost" | "statusPost";
 
 /** Unique identifier for a state within a flow definition. */
 export type StateId = string;
@@ -33,9 +30,7 @@ export type FlowPromptValue = string | boolean | AutocompletePromptValue;
 
 /** Autocomplete can also surface the prompt library's cancel token. */
 export type AutocompletePromptResult =
-  | string
-  | AutocompletePromptValue
-  | symbol;
+  string | AutocompletePromptValue | symbol;
 
 /** Select-option shape used by `select` prompts. */
 export type PromptOption = {
@@ -51,8 +46,7 @@ type PromptFilterOption = {
 };
 
 type PromptAutocompleteOptions<Ctx> =
-  | PromptOption[]
-  | ((context: Ctx, search: string) => PromptOption[]);
+  PromptOption[] | ((context: Ctx, search: string) => PromptOption[]);
 
 /** Declarative prompt spec for a flow state. */
 export type PromptSpec<Ctx> =
@@ -162,11 +156,7 @@ export type FlowRunResult<Ctx> = {
 
 /** Standardized outcomes for command action handlers used in menus. */
 export type ActionEffectResult =
-  | "action_ok"
-  | "watch_cancelled"
-  | "action_error"
-  | "root"
-  | "exit";
+  "action_ok" | "watch_cancelled" | "action_error" | "root" | "exit";
 
 /** Runtime context for `listInteractive` flow. */
 export type ListInteractiveContext = {
