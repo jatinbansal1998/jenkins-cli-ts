@@ -3,15 +3,26 @@
  * Prompts for Jenkins credentials, saves config, and prints export commands.
  */
 import { confirm, isCancel, password, text } from "../clack";
-import { CliError, printOk } from "../cli";
+import { CliError, printHint, printOk } from "../cli";
 import {
   CONFIG_FILE,
   DEFAULT_PROFILE_NAME,
+  KEYCHAIN_TOKEN_SENTINEL,
   readConfigSync,
+  type TokenStorage,
   writeConfigFile,
 } from "../config";
+import type { JenkinsProfileConfig } from "../config";
 import { ENV_KEYS } from "../env-keys";
 import { normalizeUrl } from "../env";
+import {
+  buildSecureStoreAccount,
+  deleteToken,
+  getToken,
+  isSecureStoreAvailable,
+  secureStoreLabel,
+  setToken,
+} from "../secure-store";
 
 type LoginOptions = {
   url?: string;
@@ -20,6 +31,19 @@ type LoginOptions = {
   branchParam?: string;
   profile?: string;
   nonInteractive: boolean;
+  noKeychain?: boolean;
+};
+
+type TokenPersistencePlan = {
+  tokenStorage?: TokenStorage;
+  tokenForConfig: string;
+  tokenForExport?: string;
+  /**
+   * When the token is written in plaintext, mark the profile so the proactive
+   * migration prompt does not nag the user who just chose (or fell back to)
+   * plaintext storage.
+   */
+  keychainPromptAnswered?: boolean;
 };
 
 export async function runLogin(options: LoginOptions): Promise<void> {
@@ -49,16 +73,29 @@ export async function runLogin(options: LoginOptions): Promise<void> {
   });
 
   const normalizedUrl = normalizeUrl(url);
+  const plan = await planTokenPersistence({
+    options,
+    profileName,
+    normalizedUrl,
+    apiToken,
+    existingProfile,
+  });
+
   const configPath = await writeConfigFile({
     profile: profileName,
     jenkinsUrl: normalizedUrl,
     jenkinsUser: user,
-    jenkinsApiToken: apiToken,
+    jenkinsApiToken: plan.tokenForConfig,
     ...(branchParam !== DEFAULT_BRANCH_PARAM ? { branchParam } : {}),
     ...(makeDefault !== undefined ? { makeDefault } : {}),
+    ...(plan.tokenStorage ? { tokenStorage: plan.tokenStorage } : {}),
+    ...(plan.keychainPromptAnswered ? { keychainPromptAnswered: true } : {}),
   });
 
   printOk(`Saved profile "${profileName}" to ${configPath}.`);
+  if (plan.tokenStorage === "keychain") {
+    printOk(`API token stored securely in the ${secureStoreLabel()}.`);
+  }
   if (makeDefault === true) {
     printOk(`Default profile set to "${profileName}".`);
   }
@@ -66,9 +103,15 @@ export async function runLogin(options: LoginOptions): Promise<void> {
   console.log("To set env vars in your current shell, run:");
   console.log(`  export ${ENV_KEYS.JENKINS_URL}=${shellEscape(normalizedUrl)}`);
   console.log(`  export ${ENV_KEYS.JENKINS_USER}=${shellEscape(user)}`);
-  console.log(
-    `  export ${ENV_KEYS.JENKINS_API_TOKEN}=${shellEscape(apiToken)}`,
-  );
+  if (plan.tokenForExport !== undefined) {
+    console.log(
+      `  export ${ENV_KEYS.JENKINS_API_TOKEN}=${shellEscape(plan.tokenForExport)}`,
+    );
+  } else {
+    console.log(
+      `  # ${ENV_KEYS.JENKINS_API_TOKEN} is stored in the ${secureStoreLabel()}; re-run login to view or change it.`,
+    );
+  }
   if (branchParam !== DEFAULT_BRANCH_PARAM) {
     console.log(
       `  export ${ENV_KEYS.JENKINS_BRANCH_PARAM}=${shellEscape(branchParam)}`,
@@ -82,6 +125,104 @@ export async function runLogin(options: LoginOptions): Promise<void> {
   console.log(
     `Use --profile ${shellEscape(profileName)} to target this profile.`,
   );
+}
+
+/**
+ * Decides how to persist the API token (OS keychain vs plaintext config) and
+ * performs the required secure-store side effects. Falls back to plaintext
+ * (with a HINT) when secure storage is unavailable or a store attempt fails,
+ * and best-effort removes stale keychain entries when switching to plaintext.
+ */
+async function planTokenPersistence(input: {
+  options: LoginOptions;
+  profileName: string;
+  normalizedUrl: string;
+  apiToken: string;
+  existingProfile: JenkinsProfileConfig | undefined;
+}): Promise<TokenPersistencePlan> {
+  const { options, profileName, normalizedUrl, apiToken, existingProfile } =
+    input;
+  const account = buildSecureStoreAccount(profileName, normalizedUrl);
+  const existingIsKeychain = existingProfile?.tokenStorage === "keychain";
+  const previousAccount =
+    existingIsKeychain && existingProfile
+      ? buildSecureStoreAccount(profileName, existingProfile.jenkinsUrl)
+      : undefined;
+  // When re-running login for a keychain profile without entering a new token,
+  // resolveApiToken echoes the stored sentinel rather than a real secret.
+  const tokenUnchanged = apiToken === existingProfile?.jenkinsApiToken;
+
+  const plaintextPlan = async (): Promise<TokenPersistencePlan> => {
+    let token = apiToken;
+    if (tokenUnchanged && existingIsKeychain && previousAccount) {
+      // The prompt returned the sentinel; recover the real token from the
+      // keychain so we can write it to the config in plaintext.
+      const stored = await getToken(previousAccount).catch(() => null);
+      if (!stored) {
+        throw new CliError(
+          "Cannot move the existing keychain token to plaintext automatically.",
+          [
+            `Re-run \`jenkins-cli login --profile ${profileName} --no-keychain --token <token>\` with the token.`,
+          ],
+        );
+      }
+      token = stored;
+    }
+    if (previousAccount) {
+      await deleteToken(previousAccount);
+    }
+    return {
+      tokenStorage: undefined,
+      tokenForConfig: token,
+      tokenForExport: token,
+      keychainPromptAnswered: true,
+    };
+  };
+
+  if (options.noKeychain) {
+    return await plaintextPlan();
+  }
+
+  if (!isSecureStoreAvailable()) {
+    printHint(
+      `Secure token storage is unavailable on this system; the token is saved in plaintext at ${CONFIG_FILE}.`,
+    );
+    return await plaintextPlan();
+  }
+
+  // Keychain is preferred and available.
+  if (tokenUnchanged && existingIsKeychain) {
+    // Nothing changed; keep the existing keychain entry and rewrite the
+    // sentinel. Real token is not printed since we did not read it.
+    return {
+      tokenStorage: "keychain",
+      tokenForConfig: KEYCHAIN_TOKEN_SENTINEL,
+      tokenForExport: undefined,
+    };
+  }
+
+  try {
+    await setToken(account, apiToken);
+    if (previousAccount && previousAccount !== account) {
+      await deleteToken(previousAccount);
+    }
+    return {
+      tokenStorage: "keychain",
+      tokenForConfig: KEYCHAIN_TOKEN_SENTINEL,
+      tokenForExport: apiToken,
+    };
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    printHint(
+      `Could not store the token in the ${secureStoreLabel()} (${detail}); falling back to plaintext in ${CONFIG_FILE}.`,
+    );
+    return {
+      tokenStorage: undefined,
+      tokenForConfig: apiToken,
+      tokenForExport: apiToken,
+      keychainPromptAnswered: true,
+    };
+  }
 }
 
 async function resolveProfileName(

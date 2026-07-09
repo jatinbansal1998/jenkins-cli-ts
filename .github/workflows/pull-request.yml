@@ -26,6 +26,11 @@ jobs:
       - name: Install dependencies
         run: bun install
 
+      - name: Install secure-store tooling (libsecret + keyring)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libsecret-tools gnome-keyring dbus dbus-x11
+
       - name: Run tests (capture failures)
         shell: bash
         env:
@@ -34,13 +39,21 @@ jobs:
           set -o pipefail
           mkdir -p test-artifacts
 
-          set +e
-          bun test --only-failures 2>&1 | tee test-artifacts/bun-test.log
-          TEST_EXIT=${PIPESTATUS[0]}
-          set -e
+          # Run inside a D-Bus session with an unlocked gnome-keyring so the
+          # secure-store integration tests (secret-tool) actually execute on
+          # Linux instead of being skipped.
+          dbus-run-session -- bash -c '
+            set -o pipefail
+            echo -n "" | gnome-keyring-daemon --unlock >/dev/null 2>&1 || true
 
-          bun test --reporter=junit --reporter-outfile test-artifacts/bun-junit.xml >/dev/null 2>&1 || true
-          exit "$TEST_EXIT"
+            set +e
+            bun test --only-failures 2>&1 | tee test-artifacts/bun-test.log
+            TEST_EXIT=${PIPESTATUS[0]}
+            set -e
+
+            bun test --reporter=junit --reporter-outfile test-artifacts/bun-junit.xml >/dev/null 2>&1 || true
+            exit "$TEST_EXIT"
+          '
 
       - name: Summarize test output
         if: always()
