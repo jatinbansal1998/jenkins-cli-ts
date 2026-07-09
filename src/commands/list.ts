@@ -8,6 +8,7 @@ import type { EnvConfig } from "../env";
 import type { JenkinsClient } from "../jenkins/api-wrapper";
 import type { JenkinsJob } from "../types/jenkins";
 import { MIN_SCORE } from "../config/fuzzy";
+import { type JsonWrite, runJsonCommand } from "../json-output";
 import { listDeps } from "./list-deps";
 import { runFlow } from "../flows/runner";
 import { flows } from "../flows/definition";
@@ -24,6 +25,15 @@ type ListOptions = {
   search?: string;
   refresh?: boolean;
   nonInteractive: boolean;
+  json?: boolean;
+  write?: JsonWrite;
+};
+
+/** JSON representation of a cached Jenkins job. */
+type ListJsonJob = {
+  name: string;
+  fullName?: string;
+  url: string;
 };
 
 type ListActionMenuOptions = {
@@ -39,6 +49,11 @@ type ListActionContext = {
 };
 
 export async function runList(options: ListOptions): Promise<void> {
+  if (options.json) {
+    await runListJson(options);
+    return;
+  }
+
   const jobs = await listDeps.loadJobs({
     client: options.client,
     env: options.env,
@@ -63,6 +78,28 @@ export async function runList(options: ListOptions): Promise<void> {
   ) {
     return;
   }
+}
+
+async function runListJson(options: ListOptions): Promise<void> {
+  await runJsonCommand(
+    "list",
+    async (): Promise<ListJsonJob[]> => {
+      const jobs = await listDeps.loadJobs({
+        client: options.client,
+        env: options.env,
+        refresh: options.refresh,
+        nonInteractive: true,
+      });
+      const search = options.search?.trim() ?? "";
+      const filteredJobs = getFilteredJobs(jobs, search);
+      return filteredJobs.map((job) => ({
+        name: job.name,
+        ...(job.fullName ? { fullName: job.fullName } : {}),
+        url: job.url,
+      }));
+    },
+    { write: options.write },
+  );
 }
 
 function getFilteredJobs(jobs: JenkinsJob[], search: string): JenkinsJob[] {

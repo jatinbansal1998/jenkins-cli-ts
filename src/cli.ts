@@ -7,11 +7,13 @@ import path from "node:path";
 /** Structured error with optional hints for user guidance. */
 export class CliError extends Error {
   public readonly hints: string[];
+  public readonly code?: string;
 
-  constructor(message: string, hints: string[] = []) {
+  constructor(message: string, hints: string[] = [], code?: string) {
     super(message);
     this.name = "CliError";
     this.hints = hints;
+    this.code = code;
   }
 }
 

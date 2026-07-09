@@ -4,6 +4,14 @@ import { CliError, printError, printHint, printOk } from "../cli";
 import type { EnvConfig } from "../env";
 import type { JenkinsClient } from "../jenkins/api-wrapper";
 import { normalizeOptionalJobUrl } from "../job-url";
+import {
+  emitJsonError,
+  emitJsonSuccess,
+  type JsonBuild,
+  type JsonWrite,
+  mapBuild,
+  toJsonError,
+} from "../json-output";
 import type { BuildStatus, JobStatus } from "../types/jenkins";
 import {
   getKnownStageTotal,
@@ -40,6 +48,15 @@ type WaitOptions = {
   timeout?: string;
   nonInteractive: boolean;
   suppressExitCode?: boolean;
+  json?: boolean;
+  write?: JsonWrite;
+};
+
+/** JSON payload for the wait command. */
+type WaitJsonData = {
+  result: string;
+  build: JsonBuild;
+  waitedMs: number;
 };
 
 type WaitResult = {
@@ -55,6 +72,10 @@ type WaitResult = {
 };
 
 export async function runWait(options: WaitOptions): Promise<WaitResult> {
+  if (options.json) {
+    return await runWaitJson(options);
+  }
+
   validateWaitOptions(options);
   markAnalyticsPollingCommand();
 
@@ -91,24 +112,103 @@ export async function runWait(options: WaitOptions): Promise<WaitResult> {
     nonInteractive: options.nonInteractive,
   });
 
-  if (options.suppressExitCode) {
-    return result;
+  if (!options.suppressExitCode) {
+    applyWaitExitCode(result);
   }
+  return result;
+}
+
+async function runWaitJson(options: WaitOptions): Promise<WaitResult> {
+  const write = options.write;
+  const startedAt = Date.now();
+  try {
+    validateWaitOptions(options);
+    markAnalyticsPollingCommand();
+
+    const intervalMs = parseOptionalDurationMs(
+      options.interval,
+      DEFAULT_WAIT_INTERVAL_MS,
+      "interval",
+    );
+    const timeoutMs = options.timeout
+      ? parseOptionalDurationMs(options.timeout, 0, "timeout")
+      : undefined;
+    if (timeoutMs !== undefined && timeoutMs <= 0) {
+      throw new CliError(
+        "Invalid --timeout value.",
+        ["Use a timeout greater than 0ms (e.g. --timeout 10m)."],
+        "INVALID_USAGE",
+      );
+    }
+    if (intervalMs <= 0) {
+      throw new CliError(
+        "Invalid --interval value.",
+        ["Use an interval greater than 0ms (e.g. --interval 5s)."],
+        "INVALID_USAGE",
+      );
+    }
+
+    const resolved = await resolveWaitTarget({
+      ...options,
+      nonInteractive: true,
+    });
+    const result = await waitForBuild({
+      client: options.client,
+      env: options.env,
+      jobUrl: resolved.jobUrl,
+      jobLabel: resolved.jobLabel,
+      buildUrl: resolved.buildUrl,
+      buildNumber: resolved.buildNumber,
+      queueUrl: resolved.queueUrl,
+      intervalMs,
+      timeoutMs,
+      nonInteractive: true,
+      suppressOutput: true,
+    });
+    const waitedMs = Date.now() - startedAt;
+
+    if (!options.suppressExitCode) {
+      applyWaitExitCode(result);
+    }
+
+    const data: WaitJsonData = {
+      result: result.result,
+      build: mapBuild({
+        number: result.buildNumber,
+        url: result.buildUrl,
+        result: result.result,
+        building: false,
+        durationMs: result.durationMs,
+        queueTimeMs: result.queueTimeMs,
+      }),
+      waitedMs,
+    };
+    emitJsonSuccess("wait", data, write);
+    return result;
+  } catch (error) {
+    emitJsonError(toJsonError(error), write);
+    if (!process.exitCode) {
+      process.exitCode = 1;
+    }
+    return { result: "ERROR" };
+  }
+}
+
+function applyWaitExitCode(result: WaitResult): void {
   if (result.timedOut) {
     process.exitCode = 124;
-    return result;
+    return;
   }
   if (result.cancelled) {
     process.exitCode = 130;
-    return result;
+    return;
   }
   if (result.cancelIssued) {
-    return result;
+    return;
   }
   if (result.result !== "SUCCESS") {
     process.exitCode = 1;
   }
-  return result;
 }
 
 function validateWaitOptions(options: WaitOptions): void {
@@ -175,7 +275,9 @@ export async function waitForBuild(options: {
   intervalMs: number;
   timeoutMs?: number;
   nonInteractive: boolean;
+  suppressOutput?: boolean;
 }): Promise<WaitResult> {
+  const emitOutput = !options.suppressOutput;
   const useSpinner = Boolean(process.stdout.isTTY) && !options.nonInteractive;
   const statusSpinner = useSpinner ? spinner() : null;
   const cancelSignal = createWatchControlSignal();
@@ -220,6 +322,7 @@ export async function waitForBuild(options: {
           jobUrl: options.jobUrl,
           finalBuildUrl,
           jobLabel: options.jobLabel,
+          emitOutput,
           renderFinalStatus: (resolvedTotalStages) => {
             printFinalJobStatus(
               options.jobLabel,
@@ -250,7 +353,7 @@ export async function waitForBuild(options: {
         const message = `Timed out after ${formatDuration(elapsedMs)} while waiting for ${options.jobLabel}.`;
         if (statusSpinner) {
           statusSpinner.error(message);
-        } else {
+        } else if (emitOutput) {
           printError(message);
         }
         return {
@@ -372,6 +475,7 @@ export async function waitForBuild(options: {
         emitProgress({
           spinnerInstance: statusSpinner,
           message: `${options.jobLabel}: queued | elapsed ${formatDuration(elapsedMs)}`,
+          emitOutput,
         });
       } else if (buildUrl) {
         const status = await options.client.getBuildStatus(buildUrl);
@@ -385,7 +489,7 @@ export async function waitForBuild(options: {
           status,
           knownTotalStages,
         );
-        emitProgress({ spinnerInstance: statusSpinner, message });
+        emitProgress({ spinnerInstance: statusSpinner, message, emitOutput });
         if (!status.building) {
           if (statusSpinner) {
             statusSpinner.stop("Build completed.");
@@ -398,6 +502,7 @@ export async function waitForBuild(options: {
             jobUrl: options.jobUrl,
             finalBuildUrl,
             jobLabel: options.jobLabel,
+            emitOutput,
             renderFinalStatus: (resolvedTotalStages) => {
               printFinalStatus(
                 options.jobLabel,
@@ -450,7 +555,7 @@ export async function waitForBuild(options: {
             status,
             knownTotalStages,
           );
-          emitProgress({ spinnerInstance: statusSpinner, message });
+          emitProgress({ spinnerInstance: statusSpinner, message, emitOutput });
           if (!status.building) {
             if (statusSpinner) {
               statusSpinner.stop("Build completed.");
@@ -463,6 +568,7 @@ export async function waitForBuild(options: {
               jobUrl: options.jobUrl,
               finalBuildUrl,
               jobLabel: options.jobLabel,
+              emitOutput,
               renderFinalStatus: (resolvedTotalStages) => {
                 printFinalJobStatus(
                   options.jobLabel,
@@ -487,6 +593,7 @@ export async function waitForBuild(options: {
           emitProgress({
             spinnerInstance: statusSpinner,
             message: `${options.jobLabel}: waiting for build start | elapsed ${formatDuration(elapsedMs)}`,
+            emitOutput,
           });
         }
       } else {
@@ -505,9 +612,13 @@ export async function waitForBuild(options: {
 function emitProgress(options: {
   spinnerInstance: ReturnType<typeof spinner> | null;
   message: string;
+  emitOutput?: boolean;
 }): void {
   if (options.spinnerInstance) {
     options.spinnerInstance.message(options.message);
+    return;
+  }
+  if (options.emitOutput === false) {
     return;
   }
   printOk(options.message);
@@ -566,6 +677,7 @@ async function finalizeJobCompletion<
   jobUrl?: string;
   finalBuildUrl: string;
   jobLabel: string;
+  emitOutput?: boolean;
   renderFinalStatus: (resolvedTotalStages?: number) => void;
   buildResult: (result: string) => WaitResult;
 }): Promise<WaitResult> {
@@ -583,7 +695,9 @@ async function finalizeJobCompletion<
     });
   }
 
-  options.renderFinalStatus(resolvedTotalStages);
+  if (options.emitOutput !== false) {
+    options.renderFinalStatus(resolvedTotalStages);
+  }
   return options.buildResult(result);
 }
 

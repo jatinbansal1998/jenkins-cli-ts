@@ -12,10 +12,17 @@ import {
 } from "../clack";
 import { runInteractiveSubcommandWithAnalytics } from "../analytics";
 import { CliError, printError, printHint, printOk } from "../cli";
+import {
+  jsonBuildFromJobStatus,
+  type JsonBuild,
+  type JsonWrite,
+  runJsonCommand,
+} from "../json-output";
 import { runBuild } from "./build";
 import { runCancel } from "./cancel";
 import { runHistory } from "./history";
 import { runLogs } from "./logs";
+import { resolveJobTarget } from "./ops-helpers";
 import { runRerun, runRerunLastBuild } from "./rerun";
 import { runWait } from "./wait";
 import {
@@ -56,6 +63,14 @@ type StatusOptions = {
   jobUrl?: string;
   nonInteractive: boolean;
   watch?: boolean;
+  json?: boolean;
+  write?: JsonWrite;
+};
+
+/** JSON payload for the status command. */
+type StatusJsonData = {
+  job: string;
+  build: JsonBuild | null;
 };
 
 type StatusSelectionResult =
@@ -71,6 +86,11 @@ class BackToRecentMenuError extends Error {
 const SEPARATOR_LINE = "-".repeat(60);
 
 export async function runStatus(options: StatusOptions): Promise<void> {
+  if (options.json) {
+    await runStatusJson(options);
+    return;
+  }
+
   if (options.job && options.jobUrl) {
     throw new CliError("Provide either --job or --job-url, not both.", [
       "Remove one of the flags and try again.",
@@ -330,6 +350,43 @@ export async function runStatus(options: StatusOptions): Promise<void> {
 
     return;
   }
+}
+
+async function runStatusJson(options: StatusOptions): Promise<void> {
+  await runJsonCommand(
+    "status",
+    async (): Promise<StatusJsonData> => {
+      if (options.watch) {
+        throw new CliError(
+          "Cannot combine --watch with --json.",
+          ["The --json output is a single document. Drop --watch or --json."],
+          "INVALID_USAGE",
+        );
+      }
+      if (options.job && options.jobUrl) {
+        throw new CliError("Provide either --job or --job-url, not both.", [
+          "Remove one of the flags and try again.",
+        ]);
+      }
+
+      const target = await resolveJobTarget({
+        client: options.client,
+        env: options.env,
+        job: options.job,
+        jobUrl: options.jobUrl,
+        nonInteractive: true,
+      });
+
+      await recordRecentJob({ env: options.env, jobUrl: target.jobUrl });
+
+      const status = await options.client.getJobStatus(target.jobUrl);
+      return {
+        job: target.jobLabel,
+        build: status.lastBuildNumber ? jsonBuildFromJobStatus(status) : null,
+      };
+    },
+    { write: options.write },
+  );
 }
 
 async function runStatusOnce(options: StatusOptions): Promise<void> {

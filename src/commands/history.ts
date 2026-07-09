@@ -2,6 +2,12 @@ import { CliError, printError, printHint, printOk } from "../cli";
 import type { EnvConfig } from "../env";
 import type { JenkinsClient } from "../jenkins/api-wrapper";
 import type { BuildHistoryEntry, BuildHistoryPage } from "../types/jenkins";
+import {
+  jsonBuildFromHistoryEntry,
+  type JsonBuild,
+  type JsonWrite,
+  runJsonCommand,
+} from "../json-output";
 import { runFlow } from "../flows/runner";
 import { flows } from "../flows/definition";
 import { buildFlowHandlers } from "../flows/handlers";
@@ -32,6 +38,8 @@ type HistoryOptions = {
   jobUrl?: string;
   nonInteractive: boolean;
   offset?: number;
+  json?: boolean;
+  write?: JsonWrite;
 };
 
 export type HistoryRunResult = {
@@ -48,6 +56,11 @@ export async function runHistory(
   options: HistoryOptions,
 ): Promise<HistoryRunResult> {
   const deps = activeHistoryDeps;
+  if (options.json) {
+    await runHistoryJson(options);
+    return {};
+  }
+
   if (options.job && options.jobUrl) {
     throw new CliError("Provide either --job or --job-url, not both.", [
       "Remove one of the flags and try again.",
@@ -120,6 +133,33 @@ export async function runHistory(
       latestActiveBuild = result.activeBuild;
     }
   }
+}
+
+async function runHistoryJson(options: HistoryOptions): Promise<void> {
+  const deps = activeHistoryDeps;
+  await runJsonCommand(
+    "history",
+    async (): Promise<JsonBuild[]> => {
+      if (options.job && options.jobUrl) {
+        throw new CliError("Provide either --job or --job-url, not both.", [
+          "Remove one of the flags and try again.",
+        ]);
+      }
+      const target = await deps.resolveJobTarget({
+        client: options.client,
+        env: options.env,
+        job: options.job,
+        jobUrl: options.jobUrl,
+        nonInteractive: true,
+      });
+      const page = await options.client.listBuildHistory(target.jobUrl, {
+        offset: normalizeOffset(options.offset),
+        limit: HISTORY_PAGE_SIZE,
+      });
+      return page.builds.map(jsonBuildFromHistoryEntry);
+    },
+    { write: options.write },
+  );
 }
 
 async function runBuildHistoryAction(options: {
