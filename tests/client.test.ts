@@ -493,3 +493,84 @@ describe("JenkinsClient listBuildHistory", () => {
     });
   });
 });
+
+describe("JenkinsClient listNodes", () => {
+  test("normalizes computers and derives per-node executor usage", async () => {
+    const fetchMock = mock(async (input: FetchInput, _init?: FetchInit) => {
+      const url = String(input);
+      if (url.startsWith("https://jenkins.example.com/computer/api/json")) {
+        return new Response(
+          JSON.stringify({
+            busyExecutors: 1,
+            totalExecutors: 6,
+            computer: [
+              {
+                displayName: "built-in",
+                offline: false,
+                temporarilyOffline: false,
+                numExecutors: 2,
+                assignedLabels: [{ name: "master" }, { name: "built-in" }],
+                executors: [
+                  {
+                    currentExecutable: {
+                      url: "https://jenkins.example.com/job/api/42/",
+                    },
+                  },
+                  { currentExecutable: null },
+                ],
+                oneOffExecutors: [],
+              },
+              {
+                displayName: "agent-2",
+                offline: true,
+                temporarilyOffline: true,
+                offlineCauseReason: "Disconnected by admin",
+                numExecutors: 4,
+                assignedLabels: [{ name: "linux" }, { name: "docker" }],
+                executors: [
+                  { currentExecutable: null },
+                  { currentExecutable: null },
+                ],
+              },
+            ],
+          }),
+          { status: 200 },
+        );
+      }
+      return new Response("", { status: 404 });
+    });
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+    const client = new JenkinsClient({
+      baseUrl: "https://jenkins.example.com",
+      user: "user",
+      apiToken: "token",
+      timeoutMs: 1_000,
+    });
+
+    const summary = await client.listNodes();
+
+    expect(summary.totalNodes).toBe(2);
+    expect(summary.offlineNodes).toBe(1);
+    expect(summary.busyExecutors).toBe(1);
+    expect(summary.totalExecutors).toBe(6);
+    expect(summary.nodes[0]).toMatchObject({
+      displayName: "built-in",
+      offline: false,
+      temporarilyOffline: false,
+      numExecutors: 2,
+      busyExecutors: 1,
+      totalExecutors: 2,
+      labels: ["master", "built-in"],
+    });
+    expect(summary.nodes[1]).toMatchObject({
+      displayName: "agent-2",
+      offline: true,
+      temporarilyOffline: true,
+      offlineCauseReason: "Disconnected by admin",
+      busyExecutors: 0,
+      totalExecutors: 4,
+      labels: ["linux", "docker"],
+    });
+  });
+});

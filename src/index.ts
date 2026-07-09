@@ -14,11 +14,13 @@ import { runHistory } from "./commands/history";
 import { runLogin } from "./commands/login";
 import { runList } from "./commands/list";
 import { DEFAULT_LOG_POLL_MS, runLogs } from "./commands/logs";
+import { runNodes } from "./commands/nodes";
 import {
   runProfileDelete,
   runProfileList,
   runProfileUse,
 } from "./commands/profile";
+import { runQueue } from "./commands/queue";
 import { runRerun } from "./commands/rerun";
 import { runStatus } from "./commands/status";
 import { runUpdate } from "./commands/update";
@@ -529,6 +531,53 @@ async function main(): Promise<void> {
       },
     )
     .command(
+      "queue",
+      "Show the Jenkins build queue",
+      (yargsInstance) =>
+        yargsInstance.option("job", {
+          type: "string",
+          describe: "Filter queued items to a job name",
+        }),
+      async (argv) => {
+        await runTrackedCommandWithContext(
+          "queue",
+          argv,
+          async ({ env, client }) => {
+            await runQueue({
+              client,
+              env,
+              job: typeof argv.job === "string" ? argv.job : undefined,
+              nonInteractive: Boolean(argv.nonInteractive),
+            });
+          },
+        );
+      },
+    )
+    .command(
+      "nodes",
+      "Show Jenkins agents and executor usage",
+      (yargsInstance) =>
+        yargsInstance.option("offline-only", {
+          type: "boolean",
+          default: false,
+          describe: "Show only offline nodes",
+        }),
+      async (argv) => {
+        await runTrackedCommandWithContext(
+          "nodes",
+          argv,
+          async ({ env, client }) => {
+            await runNodes({
+              client,
+              env,
+              offlineOnly: Boolean(argv.offlineOnly),
+              nonInteractive: Boolean(argv.nonInteractive),
+            });
+          },
+        );
+      },
+    )
+    .command(
       "rerun",
       "Rerun the last failed build for a job",
       (yargsInstance) =>
@@ -727,6 +776,12 @@ async function main(): Promise<void> {
     --job-url   Full Jenkins job URL
     --build-url Full Jenkins build URL
     --queue-url Full Jenkins queue item URL
+
+  queue:
+    --job       Filter queued items to a job name
+
+  nodes:
+    --offline-only  Show only offline nodes
 
   rerun:
     --job      Job name or description
