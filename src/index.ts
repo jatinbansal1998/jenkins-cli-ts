@@ -251,7 +251,8 @@ async function main(): Promise<void> {
           .option("without-params", {
             type: "boolean",
             default: false,
-            describe: "Trigger build without parameters",
+            describe:
+              "Trigger build without parameters (non-interactive only; ignored when prompts are shown)",
           })
           .option("default-branch", {
             type: "boolean",
@@ -692,7 +693,7 @@ async function main(): Promise<void> {
     --branch          Branch name to build
     --branch-param    Parameter name for the branch [default: "BRANCH"]
     --param           Custom build parameter KEY=VALUE (repeatable)
-    --without-params  Trigger build without parameters
+    --without-params  Trigger build without parameters (non-interactive only)
     --watch           Watch build status until completion
 
   status:

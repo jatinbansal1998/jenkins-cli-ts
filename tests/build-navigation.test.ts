@@ -234,6 +234,43 @@ describe("build command navigation", () => {
     expect(triggerBuild).toHaveBeenCalledWith(NORMALIZED_JOB_URL, {});
   });
 
+  test("interactive mode ignores --without-params and still prompts for build mode", async () => {
+    // Decision (2026-07): --without-params is a non-interactive-only flag.
+    // Interactive runs must keep prompting so users pick the mode explicitly.
+    const getJobStatus = mock(async () => ({ lastBuildNumber: 41 }));
+    const triggerBuild = mock(async () => ({
+      buildUrl: BUILD_URL,
+      buildNumber: 42,
+      queueUrl: QUEUE_URL,
+      jobUrl: JOB_URL,
+    }));
+
+    selectMock.mockImplementationOnce(async () => BUILD_WITHOUT_PARAMS_VALUE);
+
+    await runBuild({
+      client: createClient({
+        getJobStatus,
+        triggerBuild,
+      }),
+      env: {} as EnvConfig,
+      jobUrl: JOB_URL,
+      defaultBranch: true,
+      nonInteractive: false,
+      watch: false,
+    });
+
+    const selectCalls = selectMock.mock.calls as unknown as Array<
+      Array<unknown>
+    >;
+    expect(selectCalls[0]?.[0]).toEqual(
+      expect.objectContaining({
+        message: expect.stringContaining("Build mode"),
+      }),
+    );
+    expect(triggerBuild).toHaveBeenCalledTimes(1);
+    expect(triggerBuild).toHaveBeenCalledWith(NORMALIZED_JOB_URL, {});
+  });
+
   test("interactive branch selection supports using job without parameters", async () => {
     const getJobStatus = mock(async () => ({ lastBuildNumber: 41 }));
     const triggerBuild = mock(async () => ({

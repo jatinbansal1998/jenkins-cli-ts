@@ -770,4 +770,293 @@ describe("build command", () => {
       }
     }
   });
+
+  test("rejects --job together with --job-url before any Jenkins call", async () => {
+    const triggerBuild = mock(async () => ({}));
+
+    await expect(
+      runBuild({
+        client: createClient({ triggerBuild }),
+        env: {} as EnvConfig,
+        job: "api",
+        jobUrl: JOB_URL,
+        nonInteractive: true,
+      }),
+    ).rejects.toThrow("Provide either --job or --job-url, not both.");
+
+    expect(triggerBuild).not.toHaveBeenCalled();
+  });
+
+  test("rejects --branch combined with --without-params", async () => {
+    const triggerBuild = mock(async () => ({}));
+
+    await expect(
+      runBuild({
+        client: createClient({ triggerBuild }),
+        env: {} as EnvConfig,
+        jobUrl: JOB_URL,
+        branch: "staging",
+        defaultBranch: true,
+        nonInteractive: true,
+      }),
+    ).rejects.toThrow("Use either --branch or --without-params, not both.");
+
+    expect(triggerBuild).not.toHaveBeenCalled();
+  });
+
+  test("rejects --param combined with --without-params", async () => {
+    const triggerBuild = mock(async () => ({}));
+
+    await expect(
+      runBuild({
+        client: createClient({ triggerBuild }),
+        env: {} as EnvConfig,
+        jobUrl: JOB_URL,
+        customParams: { DEPLOY_ENV: "staging" },
+        defaultBranch: true,
+        nonInteractive: true,
+      }),
+    ).rejects.toThrow("Use either --param or --without-params, not both.");
+
+    expect(triggerBuild).not.toHaveBeenCalled();
+  });
+
+  test("rejects a blank --branch-param value", async () => {
+    const triggerBuild = mock(async () => ({}));
+
+    await expect(
+      runBuild({
+        client: createClient({ triggerBuild }),
+        env: {} as EnvConfig,
+        jobUrl: JOB_URL,
+        branchParam: "   ",
+        nonInteractive: true,
+      }),
+    ).rejects.toThrow("Invalid --branch-param value.");
+
+    expect(triggerBuild).not.toHaveBeenCalled();
+  });
+
+  test("non-interactive --without-params triggers with an empty parameter map", async () => {
+    const getJobStatus = mock(async () => ({ lastBuildNumber: 380 }));
+    const triggerBuild = mock(async () => ({
+      queueUrl: QUEUE_URL,
+      jobUrl: JOB_URL,
+    }));
+    const recordBranchSelection = mock(async () => undefined);
+
+    setBuildDepsForTesting({ recordBranchSelection });
+
+    await runBuild({
+      client: createClient({ getJobStatus, triggerBuild }),
+      env: {} as EnvConfig,
+      jobUrl: JOB_URL,
+      defaultBranch: true,
+      nonInteractive: true,
+    });
+
+    const triggerCalls = triggerBuild.mock.calls as unknown as Array<
+      Array<unknown>
+    >;
+    expect(triggerCalls[0]?.[0]).toBe(NORMALIZED_JOB_URL);
+    expect(triggerCalls[0]?.[1]).toEqual({});
+    // Without a branch there is nothing to remember in the branch cache.
+    expect(recordBranchSelection).not.toHaveBeenCalled();
+  });
+
+  test("non-interactive build honors a custom --branch-param name", async () => {
+    const getJobStatus = mock(async () => ({ lastBuildNumber: 380 }));
+    const triggerBuild = mock(async () => ({
+      queueUrl: QUEUE_URL,
+      jobUrl: JOB_URL,
+    }));
+    const recordBranchSelection = mock(async () => undefined);
+
+    setBuildDepsForTesting({ recordBranchSelection });
+
+    await runBuild({
+      client: createClient({ getJobStatus, triggerBuild }),
+      env: {} as EnvConfig,
+      jobUrl: JOB_URL,
+      branch: "release-1.2",
+      branchParam: "GIT_BRANCH",
+      nonInteractive: true,
+    });
+
+    const triggerCalls = triggerBuild.mock.calls as unknown as Array<
+      Array<unknown>
+    >;
+    expect(triggerCalls[0]?.[1]).toEqual({ GIT_BRANCH: "release-1.2" });
+    expect(recordBranchSelection).toHaveBeenCalledWith({
+      env: {},
+      jobUrl: NORMALIZED_JOB_URL,
+      branch: "release-1.2",
+    });
+  });
+
+  test("non-interactive build resolves --job through the cache and records recency", async () => {
+    const logSpy = spyOn(console, "log");
+    const cachedJob = {
+      name: "api-deploy",
+      url: "https://jenkins.example.com/job/api-deploy",
+    };
+    const loadJobs = mock(async () => [cachedJob]);
+    const resolveJobMatch = mock(async () => cachedJob);
+    const recordRecentJob = mock(async () => undefined);
+    const getJobStatus = mock(async () => ({ lastBuildNumber: 5 }));
+    const triggerBuild = mock(async () => ({
+      buildUrl: `${cachedJob.url}/6/`,
+      buildNumber: 6,
+    }));
+
+    setBuildDepsForTesting({ loadJobs, resolveJobMatch, recordRecentJob });
+
+    try {
+      await runBuild({
+        client: createClient({ getJobStatus, triggerBuild }),
+        env: {} as EnvConfig,
+        job: "api deploy",
+        branch: "staging",
+        nonInteractive: true,
+      });
+
+      expect(resolveJobMatch).toHaveBeenCalledWith({
+        query: "api deploy",
+        jobs: [cachedJob],
+        nonInteractive: true,
+      });
+      expect(triggerBuild).toHaveBeenCalledWith(cachedJob.url, {
+        BRANCH: "staging",
+      });
+      expect(recordRecentJob).toHaveBeenCalledWith({
+        env: {},
+        jobUrl: cachedJob.url,
+      });
+      const messages = logSpy.mock.calls
+        .map((call) => call[0])
+        .filter((entry): entry is string => typeof entry === "string");
+      expect(
+        messages.some((message) =>
+          message.includes("Selected job: api-deploy."),
+        ),
+      ).toBe(true);
+      expect(
+        messages.some((message) =>
+          message.includes(`Build started at ${cachedJob.url}/6/.`),
+        ),
+      ).toBe(true);
+    } finally {
+      logSpy.mockRestore();
+    }
+  });
+
+  test("non-interactive build fails when the job cache is empty", async () => {
+    const loadJobs = mock(async () => []);
+    setBuildDepsForTesting({ loadJobs });
+
+    await expect(
+      runBuild({
+        client: createClient({}),
+        env: {} as EnvConfig,
+        job: "api",
+        nonInteractive: true,
+      }),
+    ).rejects.toThrow("No jobs found in cache.");
+  });
+
+  test("non-interactive build fails when --job is missing", async () => {
+    const loadJobs = mock(async () => [
+      { name: "api", url: "https://jenkins.example.com/job/api" },
+    ]);
+    setBuildDepsForTesting({ loadJobs });
+
+    await expect(
+      runBuild({
+        client: createClient({}),
+        env: {} as EnvConfig,
+        nonInteractive: true,
+      }),
+    ).rejects.toThrow("Missing required --job.");
+  });
+
+  test("non-interactive watch reports failure via exit code and notification", async () => {
+    const originalExitCode = process.exitCode;
+    process.exitCode = 0;
+
+    const getJobStatus = mock(async () => ({ lastBuildNumber: 380 }));
+    const triggerBuild = mock(async () => ({
+      buildUrl: BUILD_URL,
+      buildNumber: 381,
+      jobUrl: JOB_URL,
+    }));
+    const getBuildStatus = mock(async () => ({
+      buildNumber: 381,
+      buildUrl: BUILD_URL,
+      result: "FAILURE",
+      building: false,
+    }));
+
+    try {
+      await runBuild({
+        client: createClient({ getJobStatus, triggerBuild, getBuildStatus }),
+        env: {} as EnvConfig,
+        jobUrl: JOB_URL,
+        branch: "staging",
+        nonInteractive: true,
+        watch: true,
+      });
+
+      expect(process.exitCode).toBe(1);
+      expect(notifyBuildCompleteMock).toHaveBeenCalledTimes(1);
+      const notifyCalls = notifyBuildCompleteMock.mock.calls as unknown as [
+        [{ message: string }],
+      ];
+      expect(notifyCalls[0]?.[0]?.message).toContain("Build #381 FAILURE");
+    } finally {
+      process.exitCode = originalExitCode;
+    }
+  });
+
+  test("non-interactive watch resolves a queued build before polling it", async () => {
+    const originalExitCode = process.exitCode;
+    process.exitCode = 0;
+
+    const getJobStatus = mock(async () => ({ lastBuildNumber: 380 }));
+    const triggerBuild = mock(async () => ({
+      queueUrl: QUEUE_URL,
+      jobUrl: JOB_URL,
+    }));
+    const getQueueBuild = mock(async () => ({
+      buildUrl: BUILD_URL,
+      buildNumber: 381,
+    }));
+    const getBuildStatus = mock(async () => ({
+      buildNumber: 381,
+      buildUrl: BUILD_URL,
+      result: "FAILURE",
+      building: false,
+    }));
+
+    try {
+      await runBuild({
+        client: createClient({
+          getJobStatus,
+          triggerBuild,
+          getQueueBuild,
+          getBuildStatus,
+        }),
+        env: {} as EnvConfig,
+        jobUrl: JOB_URL,
+        branch: "staging",
+        nonInteractive: true,
+        watch: true,
+      });
+
+      expect(getQueueBuild).toHaveBeenCalledWith(QUEUE_URL);
+      expect(getBuildStatus).toHaveBeenCalledWith(BUILD_URL);
+      expect(process.exitCode).toBe(1);
+    } finally {
+      process.exitCode = originalExitCode;
+    }
+  });
 });

@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import fs from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { normalizeUrl } from "../src/env";
 
 type LoadEnvResult = {
   ok: boolean;
@@ -12,6 +13,7 @@ type LoadEnvResult = {
     profileName?: string;
     branchParamDefault: string;
     useCrumb: boolean;
+    folderDepth: number;
   };
   message?: string;
 };
@@ -37,7 +39,12 @@ function writeConfig(homeDir: string, config: unknown): void {
 function runLoadEnv(params: {
   homeDir: string;
   env?: Record<string, string | undefined>;
-  options?: { profile?: string };
+  options?: {
+    profile?: string;
+    url?: string;
+    user?: string;
+    apiToken?: string;
+  };
 }): { exitCode: number; payload: LoadEnvResult } {
   const result = Bun.spawnSync({
     cmd: ["bun", "run", FIXTURE_PATH],
@@ -235,6 +242,229 @@ describe("loadEnv useCrumb parsing", () => {
       expect(result.payload.env?.jenkinsUser).toBe("prod-user");
       expect(result.payload.env?.jenkinsApiToken).toBe("prod-token");
       expect(result.payload.env?.profileName).toBe("prod");
+    });
+  });
+});
+
+describe("normalizeUrl", () => {
+  test("strips trailing slashes", () => {
+    expect(normalizeUrl("https://jenkins.example.com/")).toBe(
+      "https://jenkins.example.com",
+    );
+    expect(normalizeUrl("https://jenkins.example.com///")).toBe(
+      "https://jenkins.example.com",
+    );
+    expect(normalizeUrl("https://jenkins.example.com/jenkins/")).toBe(
+      "https://jenkins.example.com/jenkins",
+    );
+  });
+
+  test("trims surrounding whitespace", () => {
+    expect(normalizeUrl("  https://jenkins.example.com  ")).toBe(
+      "https://jenkins.example.com",
+    );
+  });
+
+  test("preserves port and path", () => {
+    expect(normalizeUrl("http://jenkins.example.com:8080/ci")).toBe(
+      "http://jenkins.example.com:8080/ci",
+    );
+  });
+
+  test("rejects malformed URLs", () => {
+    expect(() => normalizeUrl("not a url")).toThrow("Invalid JENKINS_URL.");
+    expect(() => normalizeUrl("")).toThrow("Invalid JENKINS_URL.");
+    expect(() => normalizeUrl("jenkins.example.com")).toThrow(
+      "Invalid JENKINS_URL.",
+    );
+  });
+
+  test("rejects non-http(s) protocols", () => {
+    expect(() => normalizeUrl("ftp://jenkins.example.com")).toThrow(
+      "Invalid JENKINS_URL protocol.",
+    );
+    expect(() => normalizeUrl("file:///etc/passwd")).toThrow(
+      "Invalid JENKINS_URL protocol.",
+    );
+  });
+});
+
+describe("loadEnv credential sources", () => {
+  test("complete CLI credentials override the default profile", () => {
+    withTempHome((homeDir) => {
+      writeConfig(homeDir, {
+        defaultProfile: "work",
+        profiles: {
+          work: {
+            jenkinsUrl: "https://work-jenkins.example.com",
+            jenkinsUser: "work-user",
+            jenkinsApiToken: "work-token",
+          },
+        },
+      });
+
+      const result = runLoadEnv({
+        homeDir,
+        options: {
+          url: "https://cli-jenkins.example.com/",
+          user: "cli-user",
+          apiToken: "cli-token",
+        },
+      });
+
+      expect(result.exitCode).toBe(0);
+      // Trailing slash must be normalized away.
+      expect(result.payload.env?.jenkinsUrl).toBe(
+        "https://cli-jenkins.example.com",
+      );
+      expect(result.payload.env?.jenkinsUser).toBe("cli-user");
+      expect(result.payload.env?.jenkinsApiToken).toBe("cli-token");
+      expect(result.payload.env?.profileName).toBeUndefined();
+    });
+  });
+
+  test("partial CLI credentials fail fast", () => {
+    withTempHome((homeDir) => {
+      const partials = [
+        { url: "https://cli-jenkins.example.com" },
+        { user: "cli-user" },
+        { url: "https://cli-jenkins.example.com", apiToken: "cli-token" },
+      ];
+      for (const options of partials) {
+        const result = runLoadEnv({ homeDir, options });
+        expect(result.exitCode).toBe(1);
+        expect(result.payload.ok).toBeFalse();
+        expect(result.payload.message).toBe(
+          "Incomplete Jenkins CLI credentials.",
+        );
+      }
+    });
+  });
+
+  test("unknown requested profile fails even when env credentials exist", () => {
+    withTempHome((homeDir) => {
+      writeConfig(homeDir, {
+        defaultProfile: "work",
+        profiles: {
+          work: {
+            jenkinsUrl: "https://work-jenkins.example.com",
+            jenkinsUser: "work-user",
+            jenkinsApiToken: "work-token",
+          },
+        },
+      });
+
+      const result = runLoadEnv({ homeDir, options: { profile: "missing" } });
+      expect(result.exitCode).toBe(1);
+      expect(result.payload.message).toBe('Profile "missing" was not found.');
+    });
+  });
+
+  test("requested profile without any config file fails", () => {
+    withTempHome((homeDir) => {
+      const result = runLoadEnv({ homeDir, options: { profile: "missing" } });
+      expect(result.exitCode).toBe(1);
+      expect(result.payload.message).toBe('Profile "missing" was not found.');
+    });
+  });
+
+  test("missing or blank env credentials produce targeted errors", () => {
+    withTempHome((homeDir) => {
+      const cases: Array<{
+        env: Record<string, string>;
+        message: string;
+      }> = [
+        { env: { JENKINS_URL: "" }, message: "Missing JENKINS_URL." },
+        { env: { JENKINS_URL: "   " }, message: "Missing JENKINS_URL." },
+        { env: { JENKINS_USER: "" }, message: "Missing JENKINS_USER." },
+        {
+          env: { JENKINS_API_TOKEN: "   " },
+          message: "Missing JENKINS_API_TOKEN.",
+        },
+      ];
+      for (const testCase of cases) {
+        const result = runLoadEnv({ homeDir, env: testCase.env });
+        expect(result.exitCode).toBe(1);
+        expect(result.payload.message).toBe(testCase.message);
+      }
+    });
+  });
+
+  test("env credentials are trimmed", () => {
+    withTempHome((homeDir) => {
+      const result = runLoadEnv({
+        homeDir,
+        env: {
+          JENKINS_USER: "  padded-user  ",
+          JENKINS_API_TOKEN: "  padded-token  ",
+        },
+      });
+      expect(result.exitCode).toBe(0);
+      expect(result.payload.env?.jenkinsUser).toBe("padded-user");
+      expect(result.payload.env?.jenkinsApiToken).toBe("padded-token");
+    });
+  });
+});
+
+describe("loadEnv branchParam and folderDepth resolution", () => {
+  const profileConfig = {
+    defaultProfile: "work",
+    profiles: {
+      work: {
+        jenkinsUrl: "https://work-jenkins.example.com",
+        jenkinsUser: "work-user",
+        jenkinsApiToken: "work-token",
+        branchParam: "PROFILE_BRANCH",
+        folderDepth: 5,
+      },
+    },
+  };
+
+  test("JENKINS_BRANCH_PARAM env var beats profile branchParam", () => {
+    withTempHome((homeDir) => {
+      writeConfig(homeDir, profileConfig);
+      const result = runLoadEnv({
+        homeDir,
+        env: { JENKINS_BRANCH_PARAM: "GIT_BRANCH" },
+      });
+      expect(result.exitCode).toBe(0);
+      expect(result.payload.env?.branchParamDefault).toBe("GIT_BRANCH");
+    });
+  });
+
+  test("profile branchParam beats built-in default", () => {
+    withTempHome((homeDir) => {
+      writeConfig(homeDir, profileConfig);
+      const result = runLoadEnv({
+        homeDir,
+        env: { JENKINS_BRANCH_PARAM: "" },
+      });
+      expect(result.exitCode).toBe(0);
+      expect(result.payload.env?.branchParamDefault).toBe("PROFILE_BRANCH");
+    });
+  });
+
+  test("falls back to BRANCH when nothing is configured", () => {
+    withTempHome((homeDir) => {
+      const result = runLoadEnv({
+        homeDir,
+        env: { JENKINS_BRANCH_PARAM: "" },
+      });
+      expect(result.exitCode).toBe(0);
+      expect(result.payload.env?.branchParamDefault).toBe("BRANCH");
+    });
+  });
+
+  test("profile folderDepth is honored and defaults to 3 otherwise", () => {
+    withTempHome((homeDir) => {
+      writeConfig(homeDir, profileConfig);
+      const profileResult = runLoadEnv({ homeDir });
+      expect(profileResult.payload.env?.folderDepth).toBe(5);
+    });
+
+    withTempHome((homeDir) => {
+      const envResult = runLoadEnv({ homeDir });
+      expect(envResult.payload.env?.folderDepth).toBe(3);
     });
   });
 });

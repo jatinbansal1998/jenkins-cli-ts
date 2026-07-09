@@ -218,6 +218,157 @@ describe("cli default command", () => {
   });
 });
 
+describe("cli argument routing", () => {
+  function runCli(args: string[]): {
+    exitCode: number;
+    output: string;
+  } {
+    const tempHome = fs.mkdtempSync(join(tmpdir(), "jenkins-cli-home-"));
+    try {
+      const result = Bun.spawnSync({
+        cmd: ["bun", "run", "src/index.ts", ...args],
+        cwd: process.cwd(),
+        env: {
+          ...process.env,
+          HOME: tempHome,
+          JENKINS_URL: "https://jenkins.example.com",
+          JENKINS_USER: "ci-user",
+          JENKINS_API_TOKEN: "ci-token",
+        },
+        stdout: "pipe",
+        stderr: "pipe",
+      });
+      return {
+        exitCode: result.exitCode,
+        output:
+          new TextDecoder().decode(result.stdout) +
+          new TextDecoder().decode(result.stderr),
+      };
+    } finally {
+      fs.rmSync(tempHome, { recursive: true, force: true });
+    }
+  }
+
+  test("--version reports the package version and build target", () => {
+    const packageJson = JSON.parse(
+      fs.readFileSync(join(process.cwd(), "package.json"), "utf8"),
+    ) as { version: string };
+
+    const result = runCli(["--version"]);
+    expect(result.exitCode).toBe(0);
+    expect(result.output).toContain(packageJson.version);
+  });
+
+  test("unknown commands fail fast with a usage hint", () => {
+    const result = runCli(["bogus-command", "--non-interactive"]);
+    expect(result.exitCode).toBe(1);
+    expect(result.output).toContain("Unknown argument: bogus-command");
+    expect(result.output).toContain("Run with --help to see usage.");
+  });
+
+  test("profile use without a name fails with a targeted error", () => {
+    const result = runCli(["profile", "use", "--non-interactive"]);
+    expect(result.exitCode).toBe(1);
+    expect(result.output).toContain("Missing required <name> for profile use.");
+  });
+
+  test("build rejects --job together with --job-url", () => {
+    const result = runCli([
+      "build",
+      "--non-interactive",
+      "--job",
+      "api",
+      "--job-url",
+      "https://jenkins.example.com/job/api",
+    ]);
+    expect(result.exitCode).toBe(1);
+    expect(result.output).toContain(
+      "Provide either --job or --job-url, not both.",
+    );
+  });
+
+  test("deploy alias routes to the build command", () => {
+    const result = runCli([
+      "deploy",
+      "--non-interactive",
+      "--job",
+      "api",
+      "--job-url",
+      "https://jenkins.example.com/job/api",
+    ]);
+    expect(result.exitCode).toBe(1);
+    expect(result.output).toContain(
+      "Provide either --job or --job-url, not both.",
+    );
+  });
+
+  test("build maps --without-params to the default-branch conflict check", () => {
+    const result = runCli([
+      "build",
+      "--non-interactive",
+      "--job-url",
+      "https://jenkins.example.com/job/api",
+      "--branch",
+      "staging",
+      "--without-params",
+    ]);
+    expect(result.exitCode).toBe(1);
+    expect(result.output).toContain(
+      "Use either --branch or --without-params, not both.",
+    );
+  });
+
+  test("build rejects malformed --param values", () => {
+    const result = runCli([
+      "build",
+      "--non-interactive",
+      "--job-url",
+      "https://jenkins.example.com/job/api",
+      "--param",
+      "NO_EQUALS_SIGN",
+    ]);
+    expect(result.exitCode).toBe(1);
+    expect(result.output).toContain('Invalid --param value "NO_EQUALS_SIGN".');
+  });
+
+  test("build rejects duplicate --param keys", () => {
+    const result = runCli([
+      "build",
+      "--non-interactive",
+      "--job-url",
+      "https://jenkins.example.com/job/api",
+      "--param",
+      "KEY=a",
+      "--param",
+      "KEY=b",
+    ]);
+    expect(result.exitCode).toBe(1);
+    expect(result.output).toContain('Duplicate --param key "KEY".');
+  });
+
+  test("cancel rejects a malformed --build-url", () => {
+    const result = runCli([
+      "cancel",
+      "--non-interactive",
+      "--build-url",
+      "not-a-url",
+    ]);
+    expect(result.exitCode).toBe(1);
+    expect(result.output).toContain("Invalid --build-url value.");
+  });
+
+  test("update rejects conflicting --check and --enable-auto flags", () => {
+    const result = runCli([
+      "update",
+      "--check",
+      "--enable-auto",
+      "--non-interactive",
+    ]);
+    expect(result.exitCode).toBe(1);
+    expect(result.output).toContain("mutually exclusive");
+  });
+});
+
 describe("parseBuildCustomParams", () => {
   test("returns undefined for empty input", () => {
     expect(parseBuildCustomParams([])).toBeUndefined();
