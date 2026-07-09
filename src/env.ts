@@ -8,8 +8,15 @@ import {
   migrateLegacyConfigSyncIfNeeded,
   readConfigSync,
   resolveDefaultProfileName,
+  type TokenStorage,
 } from "./config";
 import { ENV_KEYS } from "./env-keys";
+import {
+  buildSecureStoreAccount,
+  getToken,
+  secureStoreLabel,
+  type SecureStoreDeps,
+} from "./secure-store";
 
 export type LoadEnvOptions = {
   profile?: string;
@@ -33,6 +40,11 @@ export type EnvConfig = {
   useCrumb: boolean;
   /** How many levels deep to pre-fetch folder children in a single API call. */
   folderDepth: number;
+  /**
+   * How `jenkinsApiToken` is backed. When "keychain", `jenkinsApiToken` holds a
+   * sentinel and the real token must be resolved via `resolveApiToken`.
+   */
+  tokenStorage?: TokenStorage;
 };
 
 export function normalizeUrl(rawUrl: string): string {
@@ -108,6 +120,9 @@ export function loadEnv(options: LoadEnvOptions = {}): EnvConfig {
         process.env[ENV_KEYS.JENKINS_USE_CRUMB] ?? activeProfile.useCrumb,
       ),
       folderDepth: activeProfile.folderDepth ?? DEFAULT_FOLDER_DEPTH,
+      ...(activeProfile.tokenStorage
+        ? { tokenStorage: activeProfile.tokenStorage }
+        : {}),
     };
   }
 
@@ -143,6 +158,52 @@ export function loadEnv(options: LoadEnvOptions = {}): EnvConfig {
     useCrumb: parseUseCrumbValue(process.env[ENV_KEYS.JENKINS_USE_CRUMB]),
     folderDepth: DEFAULT_FOLDER_DEPTH,
   };
+}
+
+/**
+ * Resolves the effective API token for a loaded env config, transparently
+ * reading keychain-backed tokens from the OS secure store. For plaintext
+ * profiles, env vars, and one-off credentials this returns the token as-is.
+ *
+ * Throws a CliError with actionable hints when a keychain-backed token cannot
+ * be resolved (keyring locked, missing entry, or backend unavailable).
+ */
+export async function resolveApiToken(
+  env: EnvConfig,
+  deps: SecureStoreDeps = {},
+): Promise<string> {
+  if (env.tokenStorage !== "keychain") {
+    return env.jenkinsApiToken;
+  }
+
+  const profileName = env.profileName ?? "";
+  const account = buildSecureStoreAccount(profileName, env.jenkinsUrl);
+  const relogin = `jenkins-cli login --profile ${profileName}`;
+  let token: string | null;
+  try {
+    token = await getToken(account, deps);
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    throw new CliError(
+      `Unable to read the Jenkins API token from the ${secureStoreLabel(deps)}.`,
+      [
+        detail,
+        "Ensure your login keychain / keyring is unlocked and accessible.",
+        `Or run \`${relogin} --no-keychain\` to store the token in the config file.`,
+      ],
+    );
+  }
+
+  if (!token) {
+    throw new CliError(
+      `No Jenkins API token found in the ${secureStoreLabel(deps)} for profile "${profileName}".`,
+      [
+        `Run \`${relogin}\` to store the token again.`,
+        `Or run \`${relogin} --no-keychain\` to store it in the config file.`,
+      ],
+    );
+  }
+  return token;
 }
 
 /**

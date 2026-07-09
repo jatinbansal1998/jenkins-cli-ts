@@ -24,7 +24,7 @@ import { runStatus } from "./commands/status";
 import { runUpdate } from "./commands/update";
 import { runWait } from "./commands/wait";
 import { DEFAULT_WATCH_INTERVAL_MS } from "./commands/watch-utils";
-import { loadEnv, getDebugDefault } from "./env";
+import { loadEnv, getDebugDefault, resolveApiToken } from "./env";
 import { ENV_KEYS } from "./env-keys";
 import { JenkinsClient } from "./jenkins/api-wrapper";
 import { getJobCacheDir } from "./jobs";
@@ -41,6 +41,7 @@ import {
   writeUpdateState,
 } from "./update";
 import { printCliIntro } from "./cli-intro";
+import { maybePromptTokenMigration } from "./token-migration";
 import { formatPromptTarget } from "./tui-target";
 import { BUILD_TARGET } from "./build-target";
 import packageJson from "../package.json";
@@ -137,6 +138,12 @@ async function main(): Promise<void> {
           .option("profile", {
             type: "string",
             describe: "Profile name to create or update",
+          })
+          .option("keychain", {
+            type: "boolean",
+            default: true,
+            describe:
+              "Store the token in the OS keychain when available (use --no-keychain to force plaintext)",
           }),
       async (argv) => {
         await runTrackedCommand("login", argv, async ({ showIntro }) => {
@@ -157,6 +164,7 @@ async function main(): Promise<void> {
             profile:
               typeof argv.profile === "string" ? argv.profile : undefined,
             nonInteractive: Boolean(argv.nonInteractive),
+            noKeychain: argv.keychain === false,
           });
         });
       },
@@ -824,17 +832,21 @@ async function promptForDeferredUpdate(
   }
 }
 
-function createContext(argv?: {
+type ContextArgv = {
   profile?: unknown;
   url?: unknown;
   user?: unknown;
   token?: unknown;
   apiToken?: unknown;
   folderDepth?: unknown;
-}): {
+};
+
+type CommandContext = {
   env: ReturnType<typeof loadEnv>;
   client: JenkinsClient;
-} {
+};
+
+function loadContextEnv(argv?: ContextArgv): ReturnType<typeof loadEnv> {
   const env = loadEnv({
     profile: toOptionalString(argv?.profile),
     url: toOptionalString(argv?.url),
@@ -846,10 +858,21 @@ function createContext(argv?: {
       ? Math.max(1, Math.floor(argv.folderDepth))
       : env.folderDepth;
   env.folderDepth = folderDepth;
+  return env;
+}
+
+async function buildContext(
+  env: ReturnType<typeof loadEnv>,
+  argv?: ContextArgv,
+): Promise<CommandContext> {
+  // Resolve keychain-backed tokens transparently, replacing the sentinel with
+  // the real token for downstream API calls.
+  const apiToken = await resolveApiToken(env);
+  env.jenkinsApiToken = apiToken;
   const client = new JenkinsClient({
     baseUrl: env.jenkinsUrl,
     user: env.jenkinsUser,
-    apiToken: env.jenkinsApiToken,
+    apiToken,
     useCrumb: env.useCrumb,
     folderDepth: env.folderDepth,
   });
@@ -861,19 +884,29 @@ function createContext(argv?: {
   return { env, client };
 }
 
-function prepareContext(
-  argv: Parameters<typeof createContext>[0],
+async function prepareContext(
+  argv: ContextArgv | undefined,
   showIntro: (target?: string) => void,
-): ReturnType<typeof createContext> {
-  const context = createContext(argv);
-  showIntro(formatPromptTarget(context.env));
+  interactive: boolean,
+): Promise<CommandContext> {
+  // Show the intro using the loaded env before the (possibly slower) keychain
+  // read so the banner target still reflects host/profile immediately.
+  const env = loadContextEnv(argv);
+  showIntro(formatPromptTarget(env));
+  const context = await buildContext(env, argv);
+  // Offer to migrate a plaintext token into the OS keychain once per profile,
+  // strictly on interactive runs. No-op for scripts, pipes, and CI.
+  await maybePromptTokenMigration({ env: context.env, interactive });
   return context;
 }
 
 async function runTrackedCommand(
   command: string,
   argv: { nonInteractive?: unknown; banner?: unknown } | undefined,
-  action: (helpers: { showIntro: (target?: string) => void }) => Promise<void>,
+  action: (helpers: {
+    showIntro: (target?: string) => void;
+    interactive: boolean;
+  }) => Promise<void>,
 ): Promise<void> {
   const interactive = !argv?.nonInteractive && isInteractiveTerminal();
   let introShown = false;
@@ -894,11 +927,11 @@ async function runTrackedCommand(
       command,
       interactive,
     },
-    async () => action({ showIntro }),
+    async () => action({ showIntro, interactive }),
   );
 }
 
-type ContextualCommandArgv = Parameters<typeof createContext>[0] & {
+type ContextualCommandArgv = ContextArgv & {
   nonInteractive?: unknown;
   banner?: unknown;
 };
@@ -909,14 +942,14 @@ async function runTrackedCommandWithContext<
   command: string,
   argv: TArgv,
   action: (
-    helpers: ReturnType<typeof createContext> & {
+    helpers: CommandContext & {
       argv: TArgv;
       showIntro: (target?: string) => void;
     },
   ) => Promise<void>,
 ): Promise<void> {
-  await runTrackedCommand(command, argv, async ({ showIntro }) => {
-    const context = prepareContext(argv, showIntro);
+  await runTrackedCommand(command, argv, async ({ showIntro, interactive }) => {
+    const context = await prepareContext(argv, showIntro, interactive);
     await action({
       ...context,
       argv,

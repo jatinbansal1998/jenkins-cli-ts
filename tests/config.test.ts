@@ -50,7 +50,8 @@ mock.module("node:fs/promises", () => ({
   rm: rmMock,
 }));
 
-const { CONFIG_FILE, writeConfigFile } = await import("../src/config");
+const { CONFIG_FILE, KEYCHAIN_TOKEN_SENTINEL, readConfig, writeConfigFile } =
+  await import("../src/config");
 const realBunFile = Bun.file;
 const bunFileSpy = spyOn(Bun, "file");
 
@@ -143,5 +144,86 @@ describe("writeConfigFile", () => {
 
     expect(payload.profiles.default.useCrumb).toBeFalse();
     expect(payload.debug).toBeFalse();
+  });
+});
+
+describe("tokenStorage persistence", () => {
+  test("writes the keychain sentinel and tokenStorage flag", async () => {
+    await writeConfigFile({
+      profile: "work",
+      jenkinsUrl: "https://jenkins.example.com",
+      jenkinsUser: "user",
+      jenkinsApiToken: KEYCHAIN_TOKEN_SENTINEL,
+      tokenStorage: "keychain",
+    });
+
+    const payload = JSON.parse(fileContents.get(CONFIG_FILE) ?? "");
+    expect(payload.profiles.work.tokenStorage).toBe("keychain");
+    expect(payload.profiles.work.jenkinsApiToken).toBe(KEYCHAIN_TOKEN_SENTINEL);
+  });
+
+  test("omits tokenStorage for plaintext profiles", async () => {
+    await writeConfigFile({
+      profile: "work",
+      jenkinsUrl: "https://jenkins.example.com",
+      jenkinsUser: "user",
+      jenkinsApiToken: "plain-token",
+    });
+
+    const payload = JSON.parse(fileContents.get(CONFIG_FILE) ?? "");
+    expect(payload.profiles.work.tokenStorage).toBeUndefined();
+    expect(payload.profiles.work.jenkinsApiToken).toBe("plain-token");
+  });
+
+  test("re-login to plaintext drops a previous keychain flag", async () => {
+    fileContents.set(
+      CONFIG_FILE,
+      JSON.stringify({
+        version: 2,
+        defaultProfile: "work",
+        profiles: {
+          work: {
+            jenkinsUrl: "https://jenkins.example.com",
+            jenkinsUser: "user",
+            jenkinsApiToken: KEYCHAIN_TOKEN_SENTINEL,
+            tokenStorage: "keychain",
+          },
+        },
+      }),
+    );
+
+    // writeConfigFile rebuilds the profile from input only, so passing no
+    // tokenStorage clears the keychain flag.
+    await writeConfigFile({
+      profile: "work",
+      jenkinsUrl: "https://jenkins.example.com",
+      jenkinsUser: "user",
+      jenkinsApiToken: "fresh-plaintext",
+    });
+
+    const payload = JSON.parse(fileContents.get(CONFIG_FILE) ?? "");
+    expect(payload.profiles.work.tokenStorage).toBeUndefined();
+    expect(payload.profiles.work.jenkinsApiToken).toBe("fresh-plaintext");
+  });
+
+  test("readConfig parses the tokenStorage flag", async () => {
+    fileContents.set(
+      CONFIG_FILE,
+      JSON.stringify({
+        version: 2,
+        defaultProfile: "work",
+        profiles: {
+          work: {
+            jenkinsUrl: "https://jenkins.example.com",
+            jenkinsUser: "user",
+            jenkinsApiToken: KEYCHAIN_TOKEN_SENTINEL,
+            tokenStorage: "keychain",
+          },
+        },
+      }),
+    );
+
+    const loaded = await readConfig();
+    expect(loaded?.config.profiles.work?.tokenStorage).toBe("keychain");
   });
 });

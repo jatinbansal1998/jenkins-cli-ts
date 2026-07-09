@@ -11,6 +11,21 @@ export const CONFIG_FILE = path.join(CONFIG_DIR, "jenkins-cli-config.json");
 export const DEFAULT_PROFILE_NAME = "default";
 const CONFIG_VERSION = 2;
 
+/**
+ * How a profile's API token is persisted.
+ * - omitted: the token is stored directly in the config JSON (plaintext).
+ * - "keychain": the token lives in the OS secure store and the config only
+ *   holds a sentinel value (see KEYCHAIN_TOKEN_SENTINEL).
+ */
+export type TokenStorage = "keychain";
+
+/**
+ * Sentinel written to `jenkinsApiToken` when a profile's real token is held in
+ * the OS keychain. Keeping the field a non-empty string preserves backward
+ * compatibility with the existing config parser and legacy migration path.
+ */
+export const KEYCHAIN_TOKEN_SENTINEL = "@keychain";
+
 export type ConfigFileInput = {
   profile?: string;
   jenkinsUrl: string;
@@ -21,6 +36,8 @@ export type ConfigFileInput = {
   debug?: boolean;
   folderDepth?: number;
   makeDefault?: boolean;
+  tokenStorage?: TokenStorage;
+  keychainPromptAnswered?: boolean;
 };
 
 export type JenkinsProfileConfig = {
@@ -30,6 +47,13 @@ export type JenkinsProfileConfig = {
   branchParam?: string;
   useCrumb?: boolean;
   folderDepth?: number;
+  tokenStorage?: TokenStorage;
+  /**
+   * Set once the user has been asked (via the proactive migration prompt)
+   * whether to move a plaintext token into the OS keychain. Prevents nagging
+   * on every subsequent command regardless of the answer given.
+   */
+  keychainPromptAnswered?: boolean;
 };
 
 export type JenkinsConfig = {
@@ -157,6 +181,8 @@ export async function writeConfigFile(input: ConfigFileInput): Promise<string> {
     ...(branchParam ? { branchParam } : {}),
     ...(typeof useCrumb === "boolean" ? { useCrumb } : {}),
     ...(typeof folderDepth === "number" ? { folderDepth } : {}),
+    ...(input.tokenStorage ? { tokenStorage: input.tokenStorage } : {}),
+    ...(input.keychainPromptAnswered ? { keychainPromptAnswered: true } : {}),
   };
 
   const profiles = {
@@ -356,6 +382,10 @@ function parseProfileRecord(
     ENV_KEYS.JENKINS_USE_CRUMB,
   ]);
   const folderDepth = firstPositiveInt(record, ["folderDepth"]);
+  const tokenStorage = parseTokenStorage(record.tokenStorage);
+  const keychainPromptAnswered = firstBoolean(record, [
+    "keychainPromptAnswered",
+  ]);
 
   return {
     jenkinsUrl,
@@ -364,7 +394,15 @@ function parseProfileRecord(
     ...(branchParam ? { branchParam } : {}),
     ...(typeof useCrumb === "boolean" ? { useCrumb } : {}),
     ...(typeof folderDepth === "number" ? { folderDepth } : {}),
+    ...(tokenStorage ? { tokenStorage } : {}),
+    ...(keychainPromptAnswered === true
+      ? { keychainPromptAnswered: true }
+      : {}),
   };
+}
+
+function parseTokenStorage(value: unknown): TokenStorage | undefined {
+  return value === "keychain" ? "keychain" : undefined;
 }
 
 function resolveNextDefaultProfile(options: {
@@ -415,6 +453,10 @@ function normalizeConfigForWrite(config: JenkinsConfig): JenkinsConfig {
       Number.isFinite(profile.folderDepth) &&
       profile.folderDepth >= 1
         ? { folderDepth: Math.floor(profile.folderDepth) }
+        : {}),
+      ...(profile.tokenStorage ? { tokenStorage: profile.tokenStorage } : {}),
+      ...(profile.keychainPromptAnswered
+        ? { keychainPromptAnswered: true }
         : {}),
     };
   }

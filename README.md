@@ -109,6 +109,73 @@ jenkins-cli login --profile work
 jenkins-cli login --profile prod --url https://jenkins-prod.example.com --user ci --token <token>
 ```
 
+### Secure Token Storage
+
+When an OS-native secret store is available, `login` stores the API token in
+the keychain instead of writing it in plaintext to the config file:
+
+- **macOS** — the login Keychain (via the built-in `security` tool).
+- **Linux** — the Secret Service / libsecret keyring (via `secret-tool`, e.g.
+  GNOME Keyring or KWallet). Install with `sudo apt-get install libsecret-tools`
+  (Debian/Ubuntu) if it is missing.
+
+For keychain-backed profiles the config file only holds a sentinel instead of
+the secret:
+
+```json
+{
+  "profiles": {
+    "work": {
+      "jenkinsUrl": "https://jenkins.example.com",
+      "jenkinsUser": "your-username",
+      "jenkinsApiToken": "@keychain",
+      "tokenStorage": "keychain"
+    }
+  }
+}
+```
+
+The token is resolved transparently on every command. If the keyring is locked
+or the entry is missing, the CLI prints a `HINT:` explaining how to re-run
+`login` and fails gracefully rather than sending an empty token.
+
+Behavior notes:
+
+- **Fallback:** if no secure store is available (e.g. a headless box with no
+  keyring, or `secret-tool` not installed), the token is written to the config
+  file in plaintext and a one-line `HINT:` is printed.
+- **`--no-keychain`:** pass this flag to `login` to force plaintext storage in
+  the config file even when a keychain is available.
+- **Existing profiles:** plaintext profiles keep working unchanged. A profile
+  is migrated to the keychain only when you re-run `login` for it or accept the
+  one-time migration prompt (never silently).
+- **`profile delete`** removes the matching keychain entry on a best-effort
+  basis.
+
+#### One-time migration prompt
+
+If you upgrade without re-running `login`, the CLI offers to move an existing
+plaintext token into the keychain the next time you run any command
+interactively:
+
+> Store your Jenkins token in the system keychain? (recommended)
+
+- You are asked at most **once per profile** — the answer (yes or no) is
+  recorded in the config so you are never nagged again.
+- On **yes**, the token is written to the keychain and **read back to verify
+  the round-trip**; only after that succeeds is the plaintext token replaced
+  with the sentinel (atomic config write). If anything fails (locked keyring,
+  denied prompt), the config is left untouched and a `HINT:` is printed — your
+  plaintext token keeps working.
+- The prompt **never appears** in `--non-interactive` mode, when stdin/stdout is
+  not a TTY (pipes, cron), or when no secure store is available. Scripts and CI
+  are unaffected.
+
+```bash
+jenkins-cli login --profile work                 # keychain when available
+jenkins-cli login --profile work --no-keychain    # force plaintext config
+```
+
 ### Manage Profiles
 
 ```bash

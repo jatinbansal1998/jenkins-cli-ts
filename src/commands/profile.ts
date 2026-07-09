@@ -6,6 +6,7 @@ import {
   resolveDefaultProfileName,
   writeConfig,
 } from "../config";
+import { buildSecureStoreAccount, deleteToken } from "../secure-store";
 
 type UseProfileOptions = {
   name: string;
@@ -113,6 +114,14 @@ export async function runProfileDelete(
     if (!response) {
       throw new CliError("Operation cancelled.");
     }
+  }
+
+  const profileToDelete = profiles[profileName];
+  // Best-effort: remove the keychain entry for keychain-backed profiles.
+  if (profileToDelete?.tokenStorage === "keychain") {
+    await deleteToken(
+      buildSecureStoreAccount(profileName, profileToDelete.jenkinsUrl),
+    );
   }
 
   const remainingProfiles = { ...profiles };
