@@ -177,6 +177,11 @@ async function main(): Promise<void> {
             type: "boolean",
             default: false,
             describe: "Refresh the job cache from Jenkins",
+          })
+          .option("json", {
+            type: "boolean",
+            default: false,
+            describe: "Output a single JSON document (implies non-interactive)",
           }),
       async (argv) => {
         await runTrackedCommandWithContext(
@@ -189,6 +194,7 @@ async function main(): Promise<void> {
               search: typeof argv.search === "string" ? argv.search : undefined,
               refresh: Boolean(argv.refresh),
               nonInteractive: Boolean(argv.nonInteractive),
+              json: Boolean(argv.json),
             });
           },
         );
@@ -207,6 +213,11 @@ async function main(): Promise<void> {
             type: "boolean",
             default: false,
             describe: "Refresh the job cache from Jenkins",
+          })
+          .option("json", {
+            type: "boolean",
+            default: false,
+            describe: "Output a single JSON document (implies non-interactive)",
           }),
       async (argv) => {
         await runTrackedCommandWithContext(
@@ -219,6 +230,7 @@ async function main(): Promise<void> {
               search: typeof argv.search === "string" ? argv.search : undefined,
               refresh: Boolean(argv.refresh),
               nonInteractive: Boolean(argv.nonInteractive),
+              json: Boolean(argv.json),
             });
           },
         );
@@ -324,6 +336,11 @@ async function main(): Promise<void> {
             type: "boolean",
             default: false,
             describe: "Watch latest build status until completion",
+          })
+          .option("json", {
+            type: "boolean",
+            default: false,
+            describe: "Output a single JSON document (implies non-interactive)",
           }),
       async (argv) => {
         await runTrackedCommandWithContext(
@@ -345,6 +362,7 @@ async function main(): Promise<void> {
               jobUrl: typeof argv.jobUrl === "string" ? argv.jobUrl : undefined,
               nonInteractive: Boolean(argv.nonInteractive),
               watch: watchExplicitlyPassed ? Boolean(argv.watch) : undefined,
+              json: Boolean(argv.json),
             });
           },
         );
@@ -367,6 +385,11 @@ async function main(): Promise<void> {
             type: "number",
             default: 0,
             describe: "Skip the first N builds before showing the next 5",
+          })
+          .option("json", {
+            type: "boolean",
+            default: false,
+            describe: "Output a single JSON document (implies non-interactive)",
           }),
       async (argv) => {
         await runTrackedCommandWithContext(
@@ -380,6 +403,7 @@ async function main(): Promise<void> {
               jobUrl: typeof argv.jobUrl === "string" ? argv.jobUrl : undefined,
               offset: argv.offset,
               nonInteractive: Boolean(argv.nonInteractive),
+              json: Boolean(argv.json),
             });
           },
         );
@@ -413,6 +437,11 @@ async function main(): Promise<void> {
           .option("timeout", {
             type: "string",
             describe: "Timeout (e.g. 30m, 2h)",
+          })
+          .option("json", {
+            type: "boolean",
+            default: false,
+            describe: "Output a single JSON document (implies non-interactive)",
           }),
       async (argv) => {
         await runTrackedCommandWithContext(
@@ -433,6 +462,7 @@ async function main(): Promise<void> {
               timeout:
                 typeof argv.timeout === "string" ? argv.timeout : undefined,
               nonInteractive: Boolean(argv.nonInteractive),
+              json: Boolean(argv.json),
             });
           },
         );
@@ -800,6 +830,7 @@ async function main(): Promise<void> {
   list:
     --search   Search jobs by name or description
     --refresh  Refresh the job cache from Jenkins
+    --json     Output a single JSON document (implies non-interactive)
 
   build / deploy:
     --job             Job name or description
@@ -814,11 +845,13 @@ async function main(): Promise<void> {
     --job      Job name or description
     --job-url  Full Jenkins job URL
     --watch    Watch latest build status until completion
+    --json     Output a single JSON document (implies non-interactive)
 
   history / builds:
     --job      Job name or description
     --job-url  Full Jenkins job URL
     --offset   Skip the first N builds before showing the next 5
+    --json     Output a single JSON document (implies non-interactive)
 
   wait:
     --job       Job name or description
@@ -827,6 +860,7 @@ async function main(): Promise<void> {
     --queue-url Full Jenkins queue item URL
     --interval  Polling interval (e.g. ${DEFAULT_WATCH_INTERVAL_MS / 1000}s, 1m)
     --timeout   Timeout (e.g. 30m, 2h)
+    --json      Output a single JSON document (implies non-interactive)
 
   logs:
     --job       Job name or description
@@ -1002,10 +1036,13 @@ function prepareContext(
 
 async function runTrackedCommand(
   command: string,
-  argv: { nonInteractive?: unknown; banner?: unknown } | undefined,
+  argv:
+    { nonInteractive?: unknown; banner?: unknown; json?: unknown } | undefined,
   action: (helpers: { showIntro: (target?: string) => void }) => Promise<void>,
 ): Promise<void> {
-  const interactive = !argv?.nonInteractive && isInteractiveTerminal();
+  // --json implies non-interactive: no prompts, no banner on stdout.
+  const interactive =
+    !argv?.nonInteractive && !argv?.json && isInteractiveTerminal();
   let introShown = false;
   const showIntro = (target?: string): void => {
     if (introShown || !interactive || argv?.banner === false) {
@@ -1031,6 +1068,7 @@ async function runTrackedCommand(
 type ContextualCommandArgv = Parameters<typeof createContext>[0] & {
   nonInteractive?: unknown;
   banner?: unknown;
+  json?: unknown;
 };
 
 async function runTrackedCommandWithContext<

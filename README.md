@@ -164,6 +164,145 @@ If you have not installed the global CLI, replace `jenkins-cli` with
 - Interactive commands show an ASCII intro banner by default. Use `--no-banner`
   to disable it for a single run.
 
+#### JSON Output (`--json`)
+
+The read commands `list`, `status`, `history` (alias `builds`), and `wait`
+accept a `--json` flag for scripting and automation:
+
+- `--json` prints **exactly one JSON document** to stdout and nothing else — no
+  banner, no `OK:`/`HINT:` lines, no prompts, no spinner. Hints and warnings, if
+  any, go to stderr.
+- `--json` implies `--non-interactive`: the command never prompts and fails fast.
+- `--json` cannot be combined with `--watch` (or streaming flags); doing so is an
+  error.
+
+Success envelope:
+
+```json
+{ "ok": true, "command": "<name>", "data": <command-specific> }
+```
+
+Error envelope (also written to stdout, with a non-zero exit code):
+
+```json
+{ "ok": false, "error": { "message": "<message>", "code": "<code>" } }
+```
+
+Every build object shares the same camelCase shape across `status`, `history`,
+and `wait`:
+
+```json
+{
+  "number": 42,
+  "url": "https://jenkins.example.com/job/api/42/",
+  "result": "SUCCESS",
+  "building": false,
+  "durationMs": 12000,
+  "timestampMs": 1700000000000,
+  "estimatedDurationMs": 11000,
+  "queueTimeMs": 250,
+  "branch": "main",
+  "parameters": [{ "name": "BRANCH", "value": "main" }],
+  "stages": [{ "name": "Build", "status": "SUCCESS", "durationMs": 8000 }]
+}
+```
+
+Fields that Jenkins does not return are omitted from the document.
+
+**`list`** — `data` is an array of cached jobs:
+
+```bash
+jenkins-cli list --json
+```
+
+```json
+{
+  "ok": true,
+  "command": "list",
+  "data": [
+    {
+      "name": "api",
+      "fullName": "team/api",
+      "url": "https://jenkins.example.com/job/api"
+    }
+  ]
+}
+```
+
+**`status`** — `data` is `{ job, build }` (`build` is `null` when the job has no
+builds):
+
+```bash
+jenkins-cli status --json --job-url https://jenkins.example.com/job/api/
+```
+
+```json
+{
+  "ok": true,
+  "command": "status",
+  "data": {
+    "job": "https://jenkins.example.com/job/api",
+    "build": {
+      "number": 42,
+      "url": "https://jenkins.example.com/job/api/42/",
+      "result": "SUCCESS",
+      "building": false,
+      "durationMs": 12000,
+      "timestampMs": 1700000000000
+    }
+  }
+}
+```
+
+**`history` / `builds`** — `data` is an array of builds (most recent first):
+
+```bash
+jenkins-cli history --json --job-url https://jenkins.example.com/job/api/
+```
+
+```json
+{
+  "ok": true,
+  "command": "history",
+  "data": [
+    {
+      "number": 42,
+      "url": "https://jenkins.example.com/job/api/42/",
+      "result": "FAILURE",
+      "building": false,
+      "durationMs": 75000,
+      "branch": "main"
+    }
+  ]
+}
+```
+
+**`wait`** — `data` is `{ result, build, waitedMs }`. The document is emitted on
+every terminal path, and the exit code reflects the outcome: `0` success, `1`
+non-success, `124` timeout, `130` interrupted.
+
+```bash
+jenkins-cli wait --json --build-url https://jenkins.example.com/job/api/42/
+```
+
+```json
+{
+  "ok": true,
+  "command": "wait",
+  "data": {
+    "result": "SUCCESS",
+    "build": {
+      "number": 42,
+      "url": "https://jenkins.example.com/job/api/42/",
+      "result": "SUCCESS",
+      "building": false,
+      "durationMs": 12000
+    },
+    "waitedMs": 42000
+  }
+}
+```
+
 ### List Jobs
 
 Uses the local cache by default:
