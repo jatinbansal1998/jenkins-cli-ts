@@ -39,6 +39,25 @@ export type JenkinsApiBuildsResponse = {
   builds?: JenkinsApiBuild[];
 };
 
+export type JenkinsApiArtifact = {
+  fileName?: string;
+  relativePath?: string;
+  displayPath?: string;
+};
+
+export type JenkinsBuildArtifactsResponse = {
+  number?: number;
+  url?: string;
+  artifacts?: JenkinsApiArtifact[];
+};
+
+export type JenkinsLastCompletedBuildResponse = {
+  lastCompletedBuild?: {
+    number?: number;
+    url?: string;
+  };
+};
+
 export type JenkinsJobStatusResponse = {
   lastBuild?: JenkinsApiBuild;
 };

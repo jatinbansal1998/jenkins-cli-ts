@@ -8,6 +8,7 @@ import { hideBin } from "yargs/helpers";
 import { confirm, isCancel } from "@clack/prompts";
 import { runWithAnalytics, updateAnalyticsContext } from "./analytics";
 import { CliError, getScriptName, handleCliError, printHint } from "./cli";
+import { runArtifacts } from "./commands/artifacts";
 import { runBuild } from "./commands/build";
 import { runCancel } from "./commands/cancel";
 import { runHistory } from "./commands/history";
@@ -488,6 +489,70 @@ async function main(): Promise<void> {
       },
     )
     .command(
+      "artifacts",
+      "List or download build artifacts",
+      (yargsInstance) =>
+        yargsInstance
+          .option("job", {
+            type: "string",
+            describe: "Job name or description",
+          })
+          .option("job-url", {
+            type: "string",
+            describe: "Full Jenkins job URL",
+          })
+          .option("build", {
+            type: "number",
+            describe: "Target a specific build number (with --job/--job-url)",
+          })
+          .option("build-url", {
+            type: "string",
+            describe: "Full Jenkins build URL",
+          })
+          .option("download", {
+            type: "boolean",
+            default: false,
+            describe: "Download artifacts instead of only listing them",
+          })
+          .option("dest", {
+            type: "string",
+            describe: "Destination directory for downloads (default: cwd)",
+          })
+          .option("artifact", {
+            type: "string",
+            array: true,
+            describe:
+              "Restrict downloads to a relativePath (repeatable). Implies --download",
+          })
+          .option("force", {
+            type: "boolean",
+            default: false,
+            describe: "Overwrite existing files when downloading",
+          }),
+      async (argv) => {
+        await runTrackedCommandWithContext(
+          "artifacts",
+          argv,
+          async ({ env, client }) => {
+            await runArtifacts({
+              client,
+              env,
+              job: typeof argv.job === "string" ? argv.job : undefined,
+              jobUrl: typeof argv.jobUrl === "string" ? argv.jobUrl : undefined,
+              build: typeof argv.build === "number" ? argv.build : undefined,
+              buildUrl:
+                typeof argv.buildUrl === "string" ? argv.buildUrl : undefined,
+              download: Boolean(argv.download),
+              dest: typeof argv.dest === "string" ? argv.dest : undefined,
+              artifact: parseArtifactFilters(argv.artifact),
+              force: Boolean(argv.force),
+              nonInteractive: Boolean(argv.nonInteractive),
+            });
+          },
+        );
+      },
+    )
+    .command(
       "cancel",
       "Cancel a queued or running build",
       (yargsInstance) =>
@@ -722,6 +787,16 @@ async function main(): Promise<void> {
     --follow    Keep streaming logs until build completes [default: true]
     --poll      Polling interval when following (e.g. ${DEFAULT_LOG_POLL_MS / 1000}s)
 
+  artifacts:
+    --job       Job name or description
+    --job-url   Full Jenkins job URL
+    --build     Target a specific build number (with --job/--job-url)
+    --build-url Full Jenkins build URL
+    --download  Download artifacts instead of only listing them
+    --dest      Destination directory for downloads (default: cwd)
+    --artifact  Restrict downloads to a relativePath (repeatable)
+    --force     Overwrite existing files when downloading
+
   cancel:
     --job       Job name or description
     --job-url   Full Jenkins job URL
@@ -949,6 +1024,19 @@ function hasCredentialOverrides(
     typeof argv?.token === "string" ||
     typeof argv?.apiToken === "string"
   );
+}
+
+export function parseArtifactFilters(value: unknown): string[] | undefined {
+  const entries = Array.isArray(value)
+    ? value
+    : typeof value === "string"
+      ? [value]
+      : [];
+  const filters = entries
+    .filter((entry): entry is string => typeof entry === "string")
+    .map((entry) => entry.trim())
+    .filter((entry) => entry.length > 0);
+  return filters.length > 0 ? filters : undefined;
 }
 
 export function parseBuildCustomParams(

@@ -27,6 +27,7 @@ wget -qO- https://jatinbansal.com/jenkins-cli/install/ | bash
 | Status and watch mode       | Yes       | Track the latest build and watch until completion                     |
 | Build history               | Yes       | Jenkins-style recent build history table                              |
 | Logs, cancel, and rerun     | Yes       | Inspect recent logs and manage existing builds                        |
+| Artifacts                   | Yes       | List build artifacts and stream them to disk, preserving paths        |
 | One-off credentials         | Yes       | Override profile config with `--url`, `--user`, and `--token`         |
 | Script-friendly output      | Yes       | Parseable `OK:` and `HINT:` output for automation                     |
 
@@ -294,6 +295,36 @@ jenkins-cli logs --job "api-prod" --follow
 jenkins-cli logs --job "api-prod" --follow --poll 1s
 jenkins-cli logs --build-url "https://jenkins.example.com/job/api-prod/184/" --no-follow
 ```
+
+### Artifacts
+
+List build artifacts (defaults to the latest completed build):
+
+```bash
+jenkins-cli artifacts --job "api-prod"
+jenkins-cli artifacts --job "api-prod" --build 184
+jenkins-cli artifacts --build-url "https://jenkins.example.com/job/api-prod/184/"
+```
+
+Download artifacts, preserving their `relativePath` subdirectories:
+
+```bash
+# Download every artifact to the current directory
+jenkins-cli artifacts --job "api-prod" --download
+
+# Download to a specific directory
+jenkins-cli artifacts --job "api-prod" --download --dest ./out
+
+# Download only specific artifacts (repeatable; overwrite with --force)
+jenkins-cli artifacts --job "api-prod" --download \
+  --artifact dist/app.js --artifact report.txt --force
+```
+
+Without `--download`, an interactive terminal offers a multi-select of
+artifacts and a destination prompt. In `--non-interactive` mode the command
+lists artifacts, or downloads them when `--download` is given. Existing files
+are never overwritten unless `--force` is passed, and downloads stream to disk
+rather than buffering in memory.
 
 ### Cancel Work
 
