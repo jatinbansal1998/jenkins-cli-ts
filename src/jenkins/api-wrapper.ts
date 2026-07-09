@@ -3,6 +3,7 @@
  * Handles authentication, CSRF crumbs, and provides methods for
  * listing jobs, fetching status, and triggering builds.
  */
+import { rm } from "node:fs/promises";
 import { CliError } from "../cli";
 import { recordJenkinsApiCall, recordJenkinsApiFailure } from "../analytics";
 import { ENV_KEYS } from "../env-keys";
@@ -13,15 +14,20 @@ import {
   logNetworkError,
 } from "../logger";
 import type {
+  ArtifactEntry,
+  BuildArtifacts,
   BuildHistoryEntry,
   BuildHistoryPage,
   BuildStatus,
   ConsoleChunk,
   Crumb,
+  JenkinsApiArtifact,
   JenkinsApiBuild,
   JenkinsApiBuildAction,
   JenkinsApiBuildsResponse,
   JenkinsApiJob,
+  JenkinsBuildArtifactsResponse,
+  JenkinsLastCompletedBuildResponse,
   JenkinsPipelineNodeResponse,
   JenkinsApiQueueItem,
   JenkinsBuildFailure,
@@ -45,6 +51,8 @@ import type {
 } from "../types/jenkins";
 
 export type {
+  ArtifactEntry,
+  BuildArtifacts,
   BuildHistoryEntry,
   BuildHistoryPage,
   BuildStatus,
@@ -292,6 +300,142 @@ export class JenkinsClient {
       hasNext: offset + limit < normalizedBuilds.length,
       hasPrevious: offset > 0,
     };
+  }
+
+  async getLastCompletedBuild(
+    jobUrl: string,
+  ): Promise<{ buildUrl: string; buildNumber?: number } | null> {
+    const url = this.withJob(
+      jobUrl,
+      "api/json?tree=lastCompletedBuild[number,url]",
+    );
+    const payload = await this.requestJson<JenkinsLastCompletedBuildResponse>(
+      url,
+      "fetch last completed build",
+    );
+    const build = payload.lastCompletedBuild;
+    if (!build?.url) {
+      return null;
+    }
+    return {
+      buildUrl: build.url,
+      buildNumber: build.number,
+    };
+  }
+
+  async listArtifacts(buildUrl: string): Promise<BuildArtifacts> {
+    const url = this.withJob(
+      buildUrl,
+      "api/json?tree=artifacts[fileName,relativePath],number,url",
+    );
+    const data = await this.requestJson<JenkinsBuildArtifactsResponse>(
+      url,
+      "list build artifacts",
+    );
+    const artifacts = (Array.isArray(data.artifacts) ? data.artifacts : [])
+      .map(normalizeArtifact)
+      .filter((entry): entry is ArtifactEntry => Boolean(entry));
+    return {
+      buildNumber: data.number,
+      buildUrl: data.url ?? buildUrl,
+      artifacts,
+    };
+  }
+
+  /**
+   * Stream a single build artifact to disk. The response body is piped to the
+   * destination file rather than buffered in memory, so large artifacts do not
+   * inflate the process heap. The destination directory must already exist.
+   * Returns the number of bytes written.
+   */
+  async downloadArtifact(
+    buildUrl: string,
+    relativePath: string,
+    destPath: string,
+  ): Promise<number> {
+    const encodedPath = relativePath
+      .split("/")
+      .map((segment) => encodeURIComponent(segment))
+      .join("/");
+    const url = this.withJob(buildUrl, `artifact/${encodedPath}`);
+    const headers: Record<string, string> = { Authorization: this.authHeader };
+
+    recordJenkinsApiCall();
+    logApiRequest("GET", url, headers);
+
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), this.timeoutMs);
+    let response: Response;
+    try {
+      // Only the response headers are guarded by the timeout; once the stream
+      // starts we clear it so large downloads are not aborted mid-flight.
+      response = await fetch(url, {
+        method: "GET",
+        headers,
+        signal: controller.signal,
+      });
+    } catch (error) {
+      if (error instanceof Error && error.name === "AbortError") {
+        logNetworkError("GET", url, "TIMEOUT");
+        recordJenkinsApiFailure({
+          operation: "download_artifact",
+          errorType: "timeout",
+        });
+        throw new CliError(
+          `Request timed out while trying to download artifact ${relativePath}.`,
+          [`Check your network and that ${this.baseUrl} is reachable.`],
+        );
+      }
+      const errorMsg = error instanceof Error ? error.message : "Unknown error";
+      logNetworkError("GET", url, errorMsg);
+      recordJenkinsApiFailure({
+        operation: "download_artifact",
+        errorType: "network_error",
+      });
+      throw new CliError(
+        `Network error while trying to download artifact ${relativePath}.`,
+        [`Check your network and that ${this.baseUrl} is reachable.`],
+      );
+    } finally {
+      clearTimeout(timeout);
+    }
+
+    if (!response.ok) {
+      logApiError("GET", url, response.status, response.headers);
+      recordJenkinsApiFailure({
+        operation: "download_artifact",
+        errorType: "http_error",
+        httpStatus: response.status,
+      });
+      await this.raiseHttpError(response, `download artifact ${relativePath}`);
+    }
+    logApiResponse("GET", url, response.status, response.headers);
+
+    // FileSink writes from offset 0 but does not truncate, so a smaller new
+    // payload could leave trailing bytes from a previous file. Removing any
+    // existing file first guarantees the artifact is written cleanly.
+    await rm(destPath, { force: true });
+    const file = Bun.file(destPath);
+    const writer = file.writer();
+    let bytesWritten = 0;
+    try {
+      if (response.body) {
+        const reader = response.body.getReader();
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) {
+            break;
+          }
+          if (value && value.byteLength > 0) {
+            writer.write(value);
+            bytesWritten += value.byteLength;
+          }
+        }
+      }
+    } finally {
+      await writer.end();
+    }
+    return bytesWritten;
   }
 
   async getQueueBuild(queueUrl: string): Promise<QueueBuildReference | null> {
@@ -1037,6 +1181,26 @@ function extractBranchParam(
     (param) => param.name.toLowerCase().includes("branch") && param.value,
   );
   return fallback?.value;
+}
+
+function normalizeArtifact(artifact: JenkinsApiArtifact): ArtifactEntry | null {
+  const relativePath =
+    typeof artifact.relativePath === "string"
+      ? artifact.relativePath.trim()
+      : "";
+  const fileName =
+    typeof artifact.fileName === "string" ? artifact.fileName.trim() : "";
+  const resolvedRelativePath =
+    relativePath || fileName || artifact.displayPath?.trim() || "";
+  if (!resolvedRelativePath) {
+    return null;
+  }
+  const resolvedFileName =
+    fileName || resolvedRelativePath.split("/").pop() || resolvedRelativePath;
+  return {
+    fileName: resolvedFileName,
+    relativePath: resolvedRelativePath,
+  };
 }
 
 function normalizeBuildHistoryEntry(

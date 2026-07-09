@@ -1,4 +1,6 @@
 export type {
+  ArtifactEntry,
+  BuildArtifacts,
   BuildHistoryEntry,
   BuildHistoryPage,
   BuildStatus,
@@ -19,11 +21,14 @@ export type {
 } from "./models";
 
 export type {
+  JenkinsApiArtifact,
   JenkinsApiBuild,
   JenkinsApiBuildAction,
   JenkinsApiBuildParameter,
   JenkinsApiBuildsResponse,
   JenkinsApiJob,
+  JenkinsBuildArtifactsResponse,
+  JenkinsLastCompletedBuildResponse,
   JenkinsPipelineLinkResponse,
   JenkinsPipelineNodeErrorResponse,
   JenkinsPipelineNodeLogResponse,

@@ -65,6 +65,17 @@ export type BuildStatus = {
   stages?: JenkinsPipelineStage[];
 };
 
+export type ArtifactEntry = {
+  fileName: string;
+  relativePath: string;
+};
+
+export type BuildArtifacts = {
+  buildNumber?: number;
+  buildUrl: string;
+  artifacts: ArtifactEntry[];
+};
+
 export type BuildHistoryEntry = {
   buildNumber?: number;
   buildUrl: string;
