@@ -26,6 +26,8 @@ wget -qO- https://jatinbansal.com/jenkins-cli/install/ | bash
 | Build triggers              | Yes       | Supports branch builds, default-parameter runs, and custom parameters |
 | Status and watch mode       | Yes       | Track the latest build and watch until completion                     |
 | Build history               | Yes       | Jenkins-style recent build history table                              |
+| Queue visibility            | Yes       | Inspect the build queue, filter by job, and cancel or open items      |
+| Node/agent visibility       | Yes       | List agents with status, executor usage, and labels                   |
 | Logs, cancel, and rerun     | Yes       | Inspect recent logs and manage existing builds                        |
 | Artifacts                   | Yes       | List build artifacts and stream them to disk, preserving paths        |
 | One-off credentials         | Yes       | Override profile config with `--url`, `--user`, and `--token`         |
@@ -335,6 +337,41 @@ jenkins-cli cancel --job "api-prod"
 jenkins-cli cancel --queue-url "https://jenkins.example.com/queue/item/123/"
 jenkins-cli cancel --build-url "https://jenkins.example.com/job/api-prod/184/"
 ```
+
+### Queue
+
+Show the Jenkins build queue with humanized wait times and item state
+(blocked / stuck / buildable / waiting):
+
+```bash
+jenkins-cli queue
+jenkins-cli queue --job "api-prod"
+jenkins-cli queue --non-interactive
+```
+
+An empty queue prints `OK: queue is empty` and exits 0. When a single item is
+shown, the full `why` reason is printed below the table. In interactive mode you
+can select a queued item and:
+
+- Cancel the queued item (reuses the same logic as `cancel`)
+- Open the queue item URL
+
+Use `--non-interactive` to list only, which is handy for scripts.
+
+### Nodes
+
+Show Jenkins agents/executors with online/offline status, per-node executor
+usage, and labels:
+
+```bash
+jenkins-cli nodes
+jenkins-cli nodes --offline-only
+```
+
+The summary line reports total nodes, offline count, and busy/total executors,
+for example `OK: 12 nodes, 2 offline, 5/48 executors busy.`. Use
+`--offline-only` to show just the offline agents (useful for alerting scripts);
+the summary still reflects the whole fleet. This command is read-only.
 
 ### Rerun Failed Builds
 

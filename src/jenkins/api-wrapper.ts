@@ -25,6 +25,7 @@ import type {
   JenkinsApiBuild,
   JenkinsApiBuildAction,
   JenkinsApiBuildsResponse,
+  JenkinsApiComputer,
   JenkinsApiJob,
   JenkinsBuildArtifactsResponse,
   JenkinsLastCompletedBuildResponse,
@@ -33,6 +34,7 @@ import type {
   JenkinsBuildFailure,
   JenkinsBuildParameter,
   JenkinsClientOptions,
+  JenkinsComputerResponse,
   JenkinsCrumbResponse,
   JenkinsJob,
   JenkinsJobsResponse,
@@ -43,6 +45,8 @@ import type {
   JenkinsQueueWaitTimeResponse,
   JobStatus,
   LastFailedBuildReference,
+  NodeSummary,
+  NodesSummary,
   PipelineInfo,
   QueueBuildReference,
   QueueItemSummary,
@@ -60,6 +64,8 @@ export type {
   JenkinsClientOptions,
   JenkinsJob,
   JobStatus,
+  NodeSummary,
+  NodesSummary,
   QueueBuildReference,
   QueueItemSummary,
   TriggerBuildParams,
@@ -480,6 +486,37 @@ export class JenkinsClient {
         buildable: item.buildable,
         stuck: item.stuck,
       }));
+  }
+
+  async listNodes(): Promise<NodesSummary> {
+    const url = this.withBase(
+      "computer/api/json?tree=busyExecutors,totalExecutors,computer[displayName,offline,temporarilyOffline,offlineCauseReason,numExecutors,assignedLabels[name],executors[currentExecutable[url]],oneOffExecutors[currentExecutable[url]]]",
+    );
+    const payload = await this.requestJson<JenkinsComputerResponse>(
+      url,
+      "list nodes",
+    );
+    const computers = Array.isArray(payload.computer) ? payload.computer : [];
+    const nodes = computers.map(normalizeNodeSummary);
+    const offlineNodes = nodes.filter(
+      (node) => node.offline || node.temporarilyOffline,
+    ).length;
+    const busyExecutors =
+      typeof payload.busyExecutors === "number"
+        ? payload.busyExecutors
+        : nodes.reduce((sum, node) => sum + node.busyExecutors, 0);
+    const totalExecutors =
+      typeof payload.totalExecutors === "number"
+        ? payload.totalExecutors
+        : nodes.reduce((sum, node) => sum + node.totalExecutors, 0);
+
+    return {
+      nodes,
+      totalNodes: nodes.length,
+      offlineNodes,
+      busyExecutors,
+      totalExecutors,
+    };
   }
 
   async cancelQueueItem(queueUrl: string): Promise<boolean> {
@@ -1310,5 +1347,40 @@ function normalizeJob(job: JenkinsApiJob): JenkinsJob | null {
     name: job.name,
     fullName: typeof job.fullName === "string" ? job.fullName : undefined,
     url: job.url,
+  };
+}
+
+function normalizeNodeSummary(computer: JenkinsApiComputer): NodeSummary {
+  const executors = Array.isArray(computer.executors) ? computer.executors : [];
+  const oneOffExecutors = Array.isArray(computer.oneOffExecutors)
+    ? computer.oneOffExecutors
+    : [];
+  const busyExecutors = [...executors, ...oneOffExecutors].filter((executor) =>
+    Boolean(executor?.currentExecutable),
+  ).length;
+  const numExecutors =
+    typeof computer.numExecutors === "number" && computer.numExecutors >= 0
+      ? computer.numExecutors
+      : executors.length;
+  const totalExecutors = Math.max(numExecutors, busyExecutors);
+  const labels = Array.isArray(computer.assignedLabels)
+    ? computer.assignedLabels
+        .map((label) => (typeof label?.name === "string" ? label.name : ""))
+        .filter((name) => name.length > 0)
+    : [];
+  const offlineCauseReason = computer.offlineCauseReason?.trim();
+
+  return {
+    displayName:
+      typeof computer.displayName === "string" && computer.displayName.trim()
+        ? computer.displayName
+        : "(unknown)",
+    offline: computer.offline === true,
+    temporarilyOffline: computer.temporarilyOffline === true,
+    ...(offlineCauseReason ? { offlineCauseReason } : {}),
+    numExecutors,
+    busyExecutors,
+    totalExecutors,
+    labels,
   };
 }

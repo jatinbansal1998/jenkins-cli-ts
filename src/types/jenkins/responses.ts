@@ -89,6 +89,37 @@ export type JenkinsQueueItemsResponse = {
   items?: JenkinsApiQueueItem[];
 };
 
+export type JenkinsApiComputerExecutable = {
+  url?: string;
+  number?: number;
+};
+
+export type JenkinsApiComputerExecutor = {
+  idle?: boolean;
+  currentExecutable?: JenkinsApiComputerExecutable | null;
+};
+
+export type JenkinsApiComputerLabel = {
+  name?: string;
+};
+
+export type JenkinsApiComputer = {
+  displayName?: string;
+  offline?: boolean;
+  temporarilyOffline?: boolean;
+  offlineCauseReason?: string;
+  numExecutors?: number;
+  assignedLabels?: JenkinsApiComputerLabel[];
+  executors?: JenkinsApiComputerExecutor[];
+  oneOffExecutors?: JenkinsApiComputerExecutor[];
+};
+
+export type JenkinsComputerResponse = {
+  busyExecutors?: number;
+  totalExecutors?: number;
+  computer?: JenkinsApiComputer[];
+};
+
 export type JenkinsCrumbResponse = {
   crumbRequestField?: string;
   crumb?: string;

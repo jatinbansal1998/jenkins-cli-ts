@@ -116,6 +116,25 @@ export type QueueBuildReference = {
   buildNumber?: number;
 };
 
+export type NodeSummary = {
+  displayName: string;
+  offline: boolean;
+  temporarilyOffline: boolean;
+  offlineCauseReason?: string;
+  numExecutors: number;
+  busyExecutors: number;
+  totalExecutors: number;
+  labels: string[];
+};
+
+export type NodesSummary = {
+  nodes: NodeSummary[];
+  totalNodes: number;
+  offlineNodes: number;
+  busyExecutors: number;
+  totalExecutors: number;
+};
+
 export type LastFailedBuildReference = {
   buildUrl: string;
   buildNumber?: number;
