@@ -175,16 +175,19 @@ describe("recent jobs", () => {
       recentJobs: ["https://jenkins.example.com/job/worker"],
     });
 
-    spyOn(jobsModule, "writeJobCache").mockRejectedValue(
-      new Error("disk full"),
-    );
+    const writeJobCacheSpy = spyOn(jobsModule, "writeJobCache");
+    writeJobCacheSpy.mockRejectedValue(new Error("disk full"));
 
-    await expect(
-      recentJobsModule.recordRecentJob({
-        env: loadEnv,
-        jobUrl: "https://jenkins.example.com/job/api/",
-      }),
-    ).resolves.toBeUndefined();
+    try {
+      await expect(
+        recentJobsModule.recordRecentJob({
+          env: loadEnv,
+          jobUrl: "https://jenkins.example.com/job/api/",
+        }),
+      ).resolves.toBeUndefined();
+    } finally {
+      writeJobCacheSpy.mockRestore();
+    }
   });
 
   test("loadPreferredJobs sorts recent jobs by recency", async () => {

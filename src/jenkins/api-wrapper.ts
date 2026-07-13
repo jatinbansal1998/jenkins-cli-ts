@@ -3,7 +3,9 @@
  * Handles authentication, CSRF crumbs, and provides methods for
  * listing jobs, fetching status, and triggering builds.
  */
+import { mkdirSync } from "node:fs";
 import { rm } from "node:fs/promises";
+import { dirname } from "node:path";
 import { CliError } from "../cli";
 import { recordJenkinsApiCall, recordJenkinsApiFailure } from "../analytics";
 import { ENV_KEYS } from "../env-keys";
@@ -420,6 +422,7 @@ export class JenkinsClient {
     // FileSink writes from offset 0 but does not truncate, so a smaller new
     // payload could leave trailing bytes from a previous file. Removing any
     // existing file first guarantees the artifact is written cleanly.
+    mkdirSync(dirname(destPath), { recursive: true });
     await rm(destPath, { force: true });
     const file = Bun.file(destPath);
     const writer = file.writer();
