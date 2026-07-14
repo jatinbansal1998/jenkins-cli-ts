@@ -5,10 +5,7 @@ import {
   KEYCHAIN_TOKEN_SENTINEL,
 } from "../src/config";
 import type { EnvConfig } from "../src/env";
-import type {
-  SecureStoreCommandResult,
-  SecureStoreDeps,
-} from "../src/secure-store";
+import type { SecureStoreDeps } from "../src/secure-store";
 import {
   maybePromptTokenMigration,
   shouldPromptTokenMigration,
@@ -49,24 +46,27 @@ function env(overrides: Partial<EnvConfig> = {}): EnvConfig {
   };
 }
 
-/** Linux secret-tool runner: store succeeds; lookup returns `lookupToken`. */
+/** Fake cross-keychain adapter: store succeeds; lookup returns `lookupToken`. */
 function linuxSecureStore(
   lookupToken: string | null,
-  storeResult?: SecureStoreCommandResult,
+  storeError?: Error,
 ): SecureStoreDeps {
   return {
-    platform: "linux",
-    hasBinary: () => true,
-    run: async (cmd) => {
-      if (cmd[1] === "store") {
-        return storeResult ?? { exitCode: 0, stdout: "", stderr: "" };
-      }
-      if (cmd[1] === "lookup") {
-        return lookupToken === null
-          ? { exitCode: 1, stdout: "", stderr: "" }
-          : { exitCode: 0, stdout: lookupToken, stderr: "" };
-      }
-      return { exitCode: 0, stdout: "", stderr: "" };
+    keychain: {
+      setPassword: async () => {
+        if (storeError) {
+          throw storeError;
+        }
+      },
+      getPassword: async () => lookupToken,
+      deletePassword: async () => undefined,
+      listBackends: async () => [
+        {
+          id: "native-linux",
+          name: "Native Freedesktop Secret Service",
+          priority: 10,
+        },
+      ],
     },
   };
 }
@@ -242,11 +242,10 @@ describe("maybePromptTokenMigration", () => {
     const h = harness({
       config: configWith(plaintextProfile()),
       answer: true,
-      secureStore: linuxSecureStore(TOKEN, {
-        exitCode: 1,
-        stdout: "",
-        stderr: "the collection is locked",
-      }),
+      secureStore: linuxSecureStore(
+        TOKEN,
+        new Error("the collection is locked"),
+      ),
     });
 
     await maybePromptTokenMigration({

@@ -5,38 +5,51 @@ import {
   deleteToken,
   getToken,
   isSecureStoreAvailable,
+  secureStoreLabel,
   SecureStoreError,
   setToken,
-  type SecureStoreCommandResult,
   type SecureStoreDeps,
 } from "../src/secure-store";
 
-type RecordedCall = { cmd: string[]; stdin?: string };
+const osBackends = [
+  {
+    id: "native-linux",
+    name: "Native Freedesktop Secret Service",
+    priority: 10,
+  },
+];
 
-/**
- * Builds injectable deps with a fake command runner so unit tests never touch
- * the real OS keychain. The runner records calls and returns queued results.
- */
-function makeDeps(
-  platform: NodeJS.Platform,
-  results: SecureStoreCommandResult[],
-): { deps: SecureStoreDeps; calls: RecordedCall[] } {
-  const calls: RecordedCall[] = [];
-  let index = 0;
-  const deps: SecureStoreDeps = {
-    platform,
-    hasBinary: () => true,
-    run: async (cmd, stdin) => {
-      calls.push({ cmd, stdin });
-      const result = results[index] ?? { exitCode: 0, stdout: "", stderr: "" };
-      index += 1;
-      return result;
+function makeDeps(options: {
+  getPassword?: SecureStoreDeps["keychain"] extends infer K
+    ? K extends { getPassword?: infer F }
+      ? F
+      : never
+    : never;
+  setPassword?: SecureStoreDeps["keychain"] extends infer K
+    ? K extends { setPassword?: infer F }
+      ? F
+      : never
+    : never;
+  deletePassword?: SecureStoreDeps["keychain"] extends infer K
+    ? K extends { deletePassword?: infer F }
+      ? F
+      : never
+    : never;
+  listBackends?: SecureStoreDeps["keychain"] extends infer K
+    ? K extends { listBackends?: infer F }
+      ? F
+      : never
+    : never;
+}): SecureStoreDeps {
+  return {
+    keychain: {
+      getPassword: options.getPassword,
+      setPassword: options.setPassword,
+      deletePassword: options.deletePassword,
+      listBackends: options.listBackends,
     },
   };
-  return { deps, calls };
 }
-
-const OK: SecureStoreCommandResult = { exitCode: 0, stdout: "", stderr: "" };
 
 describe("buildSecureStoreAccount", () => {
   test("combines profile name and host", () => {
@@ -53,193 +66,153 @@ describe("buildSecureStoreAccount", () => {
 });
 
 describe("isSecureStoreAvailable", () => {
-  test("darwin requires the security binary", () => {
+  test("true when cross-keychain reports an OS credential backend", async () => {
     expect(
-      isSecureStoreAvailable({ platform: "darwin", hasBinary: () => true }),
+      await isSecureStoreAvailable(
+        makeDeps({ listBackends: async () => osBackends }),
+      ),
     ).toBeTrue();
+  });
+
+  test("false for cross-keychain file/null fallback backends", async () => {
     expect(
-      isSecureStoreAvailable({ platform: "darwin", hasBinary: () => false }),
+      await isSecureStoreAvailable(
+        makeDeps({
+          listBackends: async () => [
+            { id: "file", name: "Encrypted file storage", priority: 0.5 },
+            { id: "null", name: "Null keyring", priority: -1 },
+          ],
+        }),
+      ),
     ).toBeFalse();
   });
 
-  test("linux requires secret-tool", () => {
+  test("false when backend detection fails", async () => {
     expect(
-      isSecureStoreAvailable({
-        platform: "linux",
-        hasBinary: (name) => name === "secret-tool",
-      }),
-    ).toBeTrue();
-    expect(
-      isSecureStoreAvailable({ platform: "linux", hasBinary: () => false }),
+      await isSecureStoreAvailable(
+        makeDeps({
+          listBackends: async () => {
+            throw new Error("no keyring");
+          },
+        }),
+      ),
     ).toBeFalse();
   });
+});
 
-  test("unsupported platforms are never available", () => {
-    expect(
-      isSecureStoreAvailable({ platform: "win32", hasBinary: () => true }),
-    ).toBeFalse();
+describe("secureStoreLabel", () => {
+  test("uses the preferred cross-keychain OS backend name", async () => {
+    await expect(
+      secureStoreLabel(makeDeps({ listBackends: async () => osBackends })),
+    ).resolves.toBe("Freedesktop Secret Service");
   });
 });
 
 describe("setToken", () => {
-  test("darwin invokes security add-generic-password with the token on argv", async () => {
-    const { deps, calls } = makeDeps("darwin", [OK]);
-    await setToken("work@host", "secret-token", deps);
-    expect(calls).toHaveLength(1);
-    expect(calls[0]?.cmd).toEqual([
-      "security",
-      "add-generic-password",
-      "-U",
-      "-s",
-      "jenkins-cli",
-      "-a",
+  test("delegates storage to cross-keychain", async () => {
+    const calls: unknown[][] = [];
+    await setToken(
       "work@host",
-      "-w",
       "secret-token",
-    ]);
-  });
-
-  test("linux invokes secret-tool store and passes the token via stdin", async () => {
-    const { deps, calls } = makeDeps("linux", [OK]);
-    await setToken("work@host", "secret-token", deps);
-    expect(calls).toHaveLength(1);
-    expect(calls[0]?.cmd).toEqual([
-      "secret-tool",
-      "store",
-      "--label",
-      "jenkins-cli work@host",
-      "service",
-      "jenkins-cli",
-      "account",
-      "work@host",
-    ]);
-    // Token must not appear on argv; it is fed through stdin.
-    expect(calls[0]?.cmd).not.toContain("secret-token");
-    expect(calls[0]?.stdin).toBe("secret-token");
-  });
-
-  test("throws SecureStoreError on non-zero exit", async () => {
-    const { deps } = makeDeps("linux", [
-      { exitCode: 1, stdout: "", stderr: "keyring locked" },
-    ]);
-    await expect(setToken("work@host", "t", deps)).rejects.toBeInstanceOf(
-      SecureStoreError,
+      makeDeps({
+        setPassword: async (...args) => {
+          calls.push(args);
+        },
+      }),
     );
+    expect(calls).toEqual([["jenkins-cli", "work@host", "secret-token"]]);
+  });
+
+  test("throws SecureStoreError when cross-keychain cannot store", async () => {
+    await expect(
+      setToken(
+        "work@host",
+        "t",
+        makeDeps({
+          setPassword: async () => {
+            throw new Error("keyring locked");
+          },
+        }),
+      ),
+    ).rejects.toBeInstanceOf(SecureStoreError);
   });
 });
 
 describe("getToken", () => {
-  test("darwin returns the token and trims the trailing newline", async () => {
-    const { deps, calls } = makeDeps("darwin", [
-      { exitCode: 0, stdout: "secret-token\n", stderr: "" },
-    ]);
-    const token = await getToken("work@host", deps);
-    expect(token).toBe("secret-token");
-    expect(calls[0]?.cmd).toEqual([
-      "security",
-      "find-generic-password",
-      "-s",
-      "jenkins-cli",
-      "-a",
-      "work@host",
-      "-w",
-    ]);
+  test("returns the stored token from cross-keychain", async () => {
+    await expect(
+      getToken(
+        "work@host",
+        makeDeps({
+          getPassword: async (service, account) =>
+            service === "jenkins-cli" && account === "work@host"
+              ? "secret-token"
+              : null,
+        }),
+      ),
+    ).resolves.toBe("secret-token");
   });
 
-  test("darwin returns null when the item is not found (exit 44)", async () => {
-    const { deps } = makeDeps("darwin", [
-      { exitCode: 44, stdout: "", stderr: "not found" },
-    ]);
-    expect(await getToken("missing@host", deps)).toBeNull();
+  test("returns null when cross-keychain finds no token", async () => {
+    await expect(
+      getToken("missing@host", makeDeps({ getPassword: async () => null })),
+    ).resolves.toBeNull();
   });
 
-  test("darwin throws on other failures", async () => {
-    const { deps } = makeDeps("darwin", [
-      { exitCode: 1, stdout: "", stderr: "keychain error" },
-    ]);
-    await expect(getToken("work@host", deps)).rejects.toBeInstanceOf(
-      SecureStoreError,
-    );
-  });
-
-  test("linux returns the stored token", async () => {
-    const { deps, calls } = makeDeps("linux", [
-      { exitCode: 0, stdout: "secret-token", stderr: "" },
-    ]);
-    expect(await getToken("work@host", deps)).toBe("secret-token");
-    expect(calls[0]?.cmd).toEqual([
-      "secret-tool",
-      "lookup",
-      "service",
-      "jenkins-cli",
-      "account",
-      "work@host",
-    ]);
-  });
-
-  test("linux returns null when absent (non-zero, empty stderr)", async () => {
-    const { deps } = makeDeps("linux", [
-      { exitCode: 1, stdout: "", stderr: "" },
-    ]);
-    expect(await getToken("missing@host", deps)).toBeNull();
-  });
-
-  test("linux throws when the backend reports an error", async () => {
-    const { deps } = makeDeps("linux", [
-      { exitCode: 1, stdout: "", stderr: "cannot create item: locked" },
-    ]);
-    await expect(getToken("work@host", deps)).rejects.toBeInstanceOf(
-      SecureStoreError,
-    );
+  test("throws SecureStoreError when cross-keychain reports an error", async () => {
+    await expect(
+      getToken(
+        "work@host",
+        makeDeps({
+          getPassword: async () => {
+            throw new Error("cannot unlock keyring");
+          },
+        }),
+      ),
+    ).rejects.toBeInstanceOf(SecureStoreError);
   });
 });
 
 describe("deleteToken", () => {
-  test("darwin issues delete-generic-password", async () => {
-    const { deps, calls } = makeDeps("darwin", [OK]);
-    expect(await deleteToken("work@host", deps)).toBeTrue();
-    expect(calls[0]?.cmd).toEqual([
-      "security",
-      "delete-generic-password",
-      "-s",
-      "jenkins-cli",
-      "-a",
-      "work@host",
-    ]);
-  });
-
-  test("linux issues secret-tool clear", async () => {
-    const { deps, calls } = makeDeps("linux", [OK]);
-    expect(await deleteToken("work@host", deps)).toBeTrue();
-    expect(calls[0]?.cmd).toEqual([
-      "secret-tool",
-      "clear",
-      "service",
-      "jenkins-cli",
-      "account",
-      "work@host",
-    ]);
+  test("delegates deletion to cross-keychain", async () => {
+    const calls: unknown[][] = [];
+    await expect(
+      deleteToken(
+        "work@host",
+        makeDeps({
+          deletePassword: async (...args) => {
+            calls.push(args);
+          },
+        }),
+      ),
+    ).resolves.toBeTrue();
+    expect(calls).toEqual([["jenkins-cli", "work@host"]]);
   });
 
   test("returns false and never throws when deletion fails", async () => {
-    const { deps } = makeDeps("linux", [
-      { exitCode: 1, stdout: "", stderr: "no such item" },
-    ]);
-    expect(await deleteToken("missing@host", deps)).toBeFalse();
+    await expect(
+      deleteToken(
+        "missing@host",
+        makeDeps({
+          deletePassword: async () => {
+            throw new Error("no such item");
+          },
+        }),
+      ),
+    ).resolves.toBeFalse();
   });
 });
 
 /**
- * Integration probe: exercises the REAL platform tooling once to decide
- * whether the store is usable in this environment (tool present AND the
- * keyring/session unlocked). Skips otherwise. On Linux CI this is enabled by
- * running under `dbus-run-session` with an unlocked gnome-keyring.
+ * Integration probe: exercises the REAL cross-keychain backend once to decide
+ * whether the store is usable in this environment (backend present AND the
+ * keyring/session unlocked). Skips otherwise.
  */
 async function probeSecureStore(): Promise<boolean> {
   if (process.env.SKIP_KEYCHAIN_INTEGRATION === "1") {
     return false;
   }
-  if (!isSecureStoreAvailable()) {
+  if (!(await isSecureStoreAvailable())) {
     return false;
   }
   const account = `__probe__${randomUUID()}`;
@@ -266,7 +239,6 @@ describe("secure store integration (real OS keychain)", () => {
       await setToken(account, token);
       expect(await getToken(account)).toBe(token);
 
-      // Overwrite updates in place.
       const updated = `tok2-${randomUUID()}`;
       await setToken(account, updated);
       expect(await getToken(account)).toBe(updated);

@@ -51,8 +51,6 @@ function capture(): { write: (text: string) => void; output: () => string } {
 }
 
 describe("history --json", () => {
-  const originalExitCode = process.exitCode;
-
   beforeEach(() => {
     process.exitCode = 0;
     resolveJobTargetMock.mockReset();
@@ -67,7 +65,7 @@ describe("history --json", () => {
   });
 
   afterEach(() => {
-    process.exitCode = originalExitCode;
+    process.exitCode = undefined;
     setHistoryDepsForTesting();
     while (restoreFns.length > 0) {
       restoreFns.pop()?.();
@@ -160,5 +158,6 @@ describe("history --json", () => {
     expect(parsed.ok).toBe(false);
     expect(parsed.error.code).toBe("CLI_ERROR");
     expect(process.exitCode).toBe(1);
+    process.exitCode = 0;
   });
 });

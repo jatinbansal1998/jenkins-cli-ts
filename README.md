@@ -115,12 +115,14 @@ jenkins-cli login --profile prod --url https://jenkins-prod.example.com --user c
 ### Secure Token Storage
 
 When an OS-native secret store is available, `login` stores the API token in
-the keychain instead of writing it in plaintext to the config file:
+the keychain via `cross-keychain` instead of writing it in plaintext to the
+config file:
 
-- **macOS** — the login Keychain (via the built-in `security` tool).
-- **Linux** — the Secret Service / libsecret keyring (via `secret-tool`, e.g.
-  GNOME Keyring or KWallet). Install with `sudo apt-get install libsecret-tools`
-  (Debian/Ubuntu) if it is missing.
+- **macOS** — the login Keychain.
+- **Linux** — the Secret Service / libsecret keyring (e.g. GNOME Keyring or
+  KWallet). Install with `sudo apt-get install libsecret-tools` on
+  Debian/Ubuntu if needed.
+- **Windows** — Windows Credential Manager.
 
 For keychain-backed profiles the config file only holds a sentinel instead of
 the secret:

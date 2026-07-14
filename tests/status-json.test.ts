@@ -46,8 +46,6 @@ function capture(): { write: (text: string) => void; output: () => string } {
 }
 
 describe("status --json", () => {
-  const originalExitCode = process.exitCode;
-
   beforeEach(() => {
     process.exitCode = 0;
     trackRestore(
@@ -56,7 +54,7 @@ describe("status --json", () => {
   });
 
   afterEach(() => {
-    process.exitCode = originalExitCode;
+    process.exitCode = undefined;
     while (restoreFns.length > 0) {
       restoreFns.pop()?.();
     }
@@ -164,6 +162,7 @@ describe("status --json", () => {
     expect(parsed.error.code).toBe("INVALID_USAGE");
     expect(parsed.error.message).toContain("--watch");
     expect(process.exitCode).toBe(1);
+    process.exitCode = 0;
   });
 
   test("emits a JSON error envelope and non-zero exit code on failure", async () => {
@@ -191,5 +190,6 @@ describe("status --json", () => {
     expect(parsed.ok).toBe(false);
     expect(parsed.error.code).toBe("CLI_ERROR");
     expect(process.exitCode).toBe(1);
+    process.exitCode = 0;
   });
 });

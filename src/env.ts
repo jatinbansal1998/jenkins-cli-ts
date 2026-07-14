@@ -185,7 +185,7 @@ export async function resolveApiToken(
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error);
     throw new CliError(
-      `Unable to read the Jenkins API token from the ${secureStoreLabel(deps)}.`,
+      `Unable to read the Jenkins API token from the ${await secureStoreLabel(deps)}.`,
       [
         detail,
         "Ensure your login keychain / keyring is unlocked and accessible.",
@@ -196,7 +196,7 @@ export async function resolveApiToken(
 
   if (!token) {
     throw new CliError(
-      `No Jenkins API token found in the ${secureStoreLabel(deps)} for profile "${profileName}".`,
+      `No Jenkins API token found in the ${await secureStoreLabel(deps)} for profile "${profileName}".`,
       [
         `Run \`${relogin}\` to store the token again.`,
         `Or run \`${relogin} --no-keychain\` to store it in the config file.`,
