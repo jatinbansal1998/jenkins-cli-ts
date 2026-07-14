@@ -44,14 +44,12 @@ function capture(): { write: (text: string) => void; output: () => string } {
 }
 
 describe("list --json", () => {
-  const originalExitCode = process.exitCode;
-
   beforeEach(() => {
     process.exitCode = 0;
   });
 
   afterEach(() => {
-    process.exitCode = originalExitCode;
+    process.exitCode = undefined;
     while (restoreFns.length > 0) {
       restoreFns.pop()?.();
     }
@@ -131,5 +129,6 @@ describe("list --json", () => {
     expect(parsed.error.message).toBe("Job cache is missing.");
     expect(parsed.error.code).toBe("CLI_ERROR");
     expect(process.exitCode).toBe(1);
+    process.exitCode = 0;
   });
 });
