@@ -228,7 +228,7 @@ async function downloadArtifacts(options: {
   let downloaded = 0;
   let skipped = 0;
   for (const artifact of options.artifacts) {
-    const destPath = path.join(options.dest, artifact.relativePath);
+    const destPath = resolveArtifactDestPath(options.dest, artifact);
     if (!options.force && (await Bun.file(destPath).exists())) {
       printHint(
         `Skipped ${artifact.relativePath} (already exists; pass --force to overwrite).`,
@@ -253,6 +253,39 @@ async function downloadArtifacts(options: {
       ? `Downloaded ${downloaded} artifact${downloaded === 1 ? "" : "s"} to ${options.dest} (${skipped} skipped).`
       : `Downloaded ${downloaded} artifact${downloaded === 1 ? "" : "s"} to ${options.dest}.`;
   printOk(summary);
+}
+
+function resolveArtifactDestPath(
+  dest: string,
+  artifact: ArtifactEntry,
+): string {
+  const relativePath = artifact.relativePath.trim();
+  const normalizedRelativePath = relativePath.replaceAll("\\", "/");
+  const segments = normalizedRelativePath.split("/");
+  if (
+    relativePath.length === 0 ||
+    path.isAbsolute(relativePath) ||
+    path.win32.isAbsolute(relativePath) ||
+    segments.some((segment) => segment === "..")
+  ) {
+    throw new CliError(`Unsafe artifact path: ${artifact.relativePath}.`, [
+      "Jenkins returned an artifact path that would write outside the destination directory.",
+    ]);
+  }
+
+  const destRoot = path.resolve(dest);
+  const destPath = path.resolve(destRoot, normalizedRelativePath);
+  const relativeToDest = path.relative(destRoot, destPath);
+  if (
+    relativeToDest === "" ||
+    relativeToDest.startsWith(`..${path.sep}`) ||
+    path.isAbsolute(relativeToDest)
+  ) {
+    throw new CliError(`Unsafe artifact path: ${artifact.relativePath}.`, [
+      "Jenkins returned an artifact path that would write outside the destination directory.",
+    ]);
+  }
+  return destPath;
 }
 
 function renderArtifactsTable(artifacts: ArtifactEntry[]): void {

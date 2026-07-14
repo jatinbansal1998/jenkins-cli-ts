@@ -272,6 +272,70 @@ describe("runArtifacts download", () => {
       restoreFetch();
     }
   });
+
+  test("rejects artifact paths that escape the destination directory", async () => {
+    const dest = makeTempDir();
+    const outsidePath = path.join(dest, "..", "outside.txt");
+    await Bun.write(outsidePath, "do not overwrite");
+    const restoreFetch = installFetchMock({
+      "../outside.txt": "malicious contents",
+    });
+    try {
+      await expect(
+        runArtifacts({
+          client: realClient(),
+          env: TEST_ENV,
+          buildUrl: BUILD_URL,
+          download: true,
+          dest,
+          nonInteractive: true,
+        }),
+      ).rejects.toThrow("Unsafe artifact path: ../outside.txt.");
+      expect(await Bun.file(outsidePath).text()).toBe("do not overwrite");
+    } finally {
+      restoreFetch();
+    }
+  });
+
+  test("rejects nested traversal and absolute artifact paths", async () => {
+    const traversalDest = makeTempDir();
+    const traversalRestoreFetch = installFetchMock({
+      "dist/../../outside.txt": "malicious contents",
+    });
+    try {
+      await expect(
+        runArtifacts({
+          client: realClient(),
+          env: TEST_ENV,
+          buildUrl: BUILD_URL,
+          download: true,
+          dest: traversalDest,
+          nonInteractive: true,
+        }),
+      ).rejects.toThrow("Unsafe artifact path: dist/../../outside.txt.");
+    } finally {
+      traversalRestoreFetch();
+    }
+
+    const absoluteDest = makeTempDir();
+    const absoluteRestoreFetch = installFetchMock({
+      "/tmp/outside.txt": "malicious contents",
+    });
+    try {
+      await expect(
+        runArtifacts({
+          client: realClient(),
+          env: TEST_ENV,
+          buildUrl: BUILD_URL,
+          download: true,
+          dest: absoluteDest,
+          nonInteractive: true,
+        }),
+      ).rejects.toThrow("Unsafe artifact path: /tmp/outside.txt.");
+    } finally {
+      absoluteRestoreFetch();
+    }
+  });
 });
 
 describe("runArtifacts validation", () => {
