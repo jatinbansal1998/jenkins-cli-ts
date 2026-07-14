@@ -2,10 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { CliError } from "../src/cli";
 import { KEYCHAIN_TOKEN_SENTINEL } from "../src/config";
 import { type EnvConfig, resolveApiToken } from "../src/env";
-import type {
-  SecureStoreCommandResult,
-  SecureStoreDeps,
-} from "../src/secure-store";
+import type { SecureStoreDeps } from "../src/secure-store";
 
 function baseEnv(overrides: Partial<EnvConfig> = {}): EnvConfig {
   return {
@@ -20,11 +17,26 @@ function baseEnv(overrides: Partial<EnvConfig> = {}): EnvConfig {
   };
 }
 
-function linuxDeps(result: SecureStoreCommandResult): SecureStoreDeps {
+function secureStoreDeps(options: {
+  token?: string | null;
+  error?: Error;
+}): SecureStoreDeps {
   return {
-    platform: "linux",
-    hasBinary: () => true,
-    run: async () => result,
+    keychain: {
+      getPassword: async () => {
+        if (options.error) {
+          throw options.error;
+        }
+        return options.token ?? null;
+      },
+      listBackends: async () => [
+        {
+          id: "native-linux",
+          name: "Native Freedesktop Secret Service",
+          priority: 10,
+        },
+      ],
+    },
   };
 }
 
@@ -41,7 +53,7 @@ describe("resolveApiToken", () => {
     });
     const token = await resolveApiToken(
       env,
-      linuxDeps({ exitCode: 0, stdout: "resolved-secret\n", stderr: "" }),
+      secureStoreDeps({ token: "resolved-secret" }),
     );
     expect(token).toBe("resolved-secret");
   });
@@ -52,10 +64,7 @@ describe("resolveApiToken", () => {
       tokenStorage: "keychain",
     });
     // Absent item: non-zero exit with empty stderr => getToken returns null.
-    const promise = resolveApiToken(
-      env,
-      linuxDeps({ exitCode: 1, stdout: "", stderr: "" }),
-    );
+    const promise = resolveApiToken(env, secureStoreDeps({ token: null }));
     await expect(promise).rejects.toBeInstanceOf(CliError);
     await expect(promise).rejects.toThrow(/No Jenkins API token found/);
   });
@@ -67,11 +76,7 @@ describe("resolveApiToken", () => {
     });
     const promise = resolveApiToken(
       env,
-      linuxDeps({
-        exitCode: 1,
-        stdout: "",
-        stderr: "the collection is locked",
-      }),
+      secureStoreDeps({ error: new Error("the collection is locked") }),
     );
     await expect(promise).rejects.toBeInstanceOf(CliError);
     await expect(promise).rejects.toThrow(

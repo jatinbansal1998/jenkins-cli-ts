@@ -94,7 +94,7 @@ export async function runLogin(options: LoginOptions): Promise<void> {
 
   printOk(`Saved profile "${profileName}" to ${configPath}.`);
   if (plan.tokenStorage === "keychain") {
-    printOk(`API token stored securely in the ${secureStoreLabel()}.`);
+    printOk(`API token stored securely in the ${await secureStoreLabel()}.`);
   }
   if (makeDefault === true) {
     printOk(`Default profile set to "${profileName}".`);
@@ -109,7 +109,7 @@ export async function runLogin(options: LoginOptions): Promise<void> {
     );
   } else {
     console.log(
-      `  # ${ENV_KEYS.JENKINS_API_TOKEN} is stored in the ${secureStoreLabel()}; re-run login to view or change it.`,
+      `  # ${ENV_KEYS.JENKINS_API_TOKEN} is stored in the ${await secureStoreLabel()}; re-run login to view or change it.`,
     );
   }
   if (branchParam !== DEFAULT_BRANCH_PARAM) {
@@ -183,7 +183,7 @@ async function planTokenPersistence(input: {
     return await plaintextPlan();
   }
 
-  if (!isSecureStoreAvailable()) {
+  if (!(await isSecureStoreAvailable())) {
     printHint(
       `Secure token storage is unavailable on this system; the token is saved in plaintext at ${CONFIG_FILE}.`,
     );
@@ -214,7 +214,7 @@ async function planTokenPersistence(input: {
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error);
     printHint(
-      `Could not store the token in the ${secureStoreLabel()} (${detail}); falling back to plaintext in ${CONFIG_FILE}.`,
+      `Could not store the token in the ${await secureStoreLabel()} (${detail}); falling back to plaintext in ${CONFIG_FILE}.`,
     );
     return {
       tokenStorage: undefined,

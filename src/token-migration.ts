@@ -30,7 +30,7 @@ import {
 
 export type TokenMigrationDeps = {
   secureStore?: SecureStoreDeps;
-  isAvailable?: (deps?: SecureStoreDeps) => boolean;
+  isAvailable?: (deps?: SecureStoreDeps) => boolean | Promise<boolean>;
   /** Returns true (yes), false (no), or null when the user cancels. */
   confirm?: (message: string) => Promise<boolean | null>;
   loadConfig?: () => Promise<JenkinsConfig | null>;
@@ -89,7 +89,7 @@ export async function maybePromptTokenMigration(params: {
   const hint = deps.hint ?? printHint;
   const confirmFn = deps.confirm ?? defaultConfirm;
 
-  const available = isAvailable(deps.secureStore);
+  const available = await isAvailable(deps.secureStore);
   const profileName = params.env.profileName;
 
   // Cheap gate before reading config.
@@ -135,7 +135,7 @@ export async function maybePromptTokenMigration(params: {
   // Accepted: store -> verify round-trip -> only then rewrite the config.
   const token = profile.jenkinsApiToken;
   const account = buildSecureStoreAccount(profileName, profile.jenkinsUrl);
-  const label = secureStoreLabel(deps.secureStore);
+  const label = await secureStoreLabel(deps.secureStore);
   try {
     await setToken(account, token, deps.secureStore);
     const readBack = await getToken(account, deps.secureStore);
