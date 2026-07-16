@@ -56,14 +56,16 @@ The flow chooses job + parameter strategy and returns when state reaches `comple
 
 ```text
 entry
-  -> recent_menu OR search_direct
-  -> search_from_recent
-	-> results_from_recent/results_direct
-	-> prepare_branch
-	-> branch_mode (branch/custom/without)
-	-> branch_select OR branch_entry OR custom_key/custom_value loop
-	-> complete
+  -> shared single-job picker
+  -> prepare_branch
+  -> branch_mode (branch/custom/without)
+  -> branch_select OR branch_entry OR custom_key/custom_value loop
+  -> complete
 ```
+
+`src/job-picker.ts` shows recent jobs first when the query is blank and switches
+to fuzzy-ranked cache results as the user types. There is no separate recent
+jobs menu or text-then-results search path.
 
 What this flow writes into context:
 
@@ -121,27 +123,23 @@ Possible outcomes:
 Assume user does:
 
 1. `jenkins-cli build`
-2. Selects `Search all jobs`
-3. Types `api prod`
-4. Selects job `api-prod`
-5. Selects build mode `Select a branch`
-6. Selects branch `development`
-7. Chooses to add custom parameter `DEPLOY_ENV=staging`
-8. Chooses `Watch`
+2. Types `api prod` in the shared job picker
+3. Selects job `api-prod`
+4. Selects build mode `Select a branch`
+5. Selects branch `development`
+6. Chooses to add custom parameter `DEPLOY_ENV=staging`
+7. Chooses `Watch`
 
 Data evolution:
 
 ```text
 Initial:
-  searchQuery=""
+  initialQuery=undefined
   selectedJobUrl=undefined
   branch=undefined
 
-After search submit:
-  searchQuery="api prod"
-  searchCandidates=[...]
-
 After job select:
+  initialQuery=undefined
   selectedJobUrl="https://jenkins.example.com/job/api-prod/"
   selectedJobLabel="api-prod"
 
@@ -158,10 +156,10 @@ Trigger payload:
 ## 5) Esc/back behavior in `buildPre`
 
 ```text
-recent_menu (Esc) -> exit command
-search_from_recent (Esc) -> recent_menu
-results_from_recent (Esc) -> search_from_recent
-branch_select (Esc) -> entry -> recent_menu (if recent jobs exist)
+job picker (Esc) -> exit command
+branch_select (Esc) -> branch_mode
+branch_mode (Esc) -> shared job picker
 ```
 
-This is why Esc no longer abruptly quits in the middle of search/branch navigation.
+When `--job-url` locks the job selection, Esc from build mode exits instead of
+opening the picker.

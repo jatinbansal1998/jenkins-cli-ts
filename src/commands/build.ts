@@ -29,7 +29,8 @@ import {
   recordBranchSelection,
   removeCachedBranch,
 } from "../branches.ts";
-import { loadRecentJobs, recordRecentJob } from "../recent-jobs.ts";
+import { recordRecentJob } from "../recent-jobs.ts";
+import { pickJob } from "../job-picker";
 import type { EnvConfig } from "../env";
 import type { JenkinsClient } from "../jenkins/api-wrapper";
 import { areSameJobUrls, normalizeOptionalJobUrl } from "../job-url";
@@ -123,7 +124,7 @@ type BuildDeps = {
   loadCachedBranches: typeof loadCachedBranches;
   recordBranchSelection: typeof recordBranchSelection;
   removeCachedBranch: typeof removeCachedBranch;
-  loadRecentJobs: typeof loadRecentJobs;
+  pickJob: typeof pickJob;
   recordRecentJob: typeof recordRecentJob;
   getJobDisplayName: typeof getJobDisplayName;
   loadJobs: typeof loadJobs;
@@ -146,7 +147,7 @@ const defaultBuildDeps: BuildDeps = {
   loadCachedBranches,
   recordBranchSelection,
   removeCachedBranch,
-  loadRecentJobs,
+  pickJob,
   recordRecentJob,
   getJobDisplayName,
   loadJobs,
@@ -1354,7 +1355,6 @@ async function resolveInteractiveBuildSelection(options: {
 
   const query = options.job?.trim() ?? "";
   let jobs: Awaited<ReturnType<typeof defaultBuildDeps.loadJobs>> = [];
-  let recentJobs: { url: string; label: string }[] = [];
   let selectedJobLabel = providedUrl;
 
   if (!providedUrl) {
@@ -1369,19 +1369,17 @@ async function resolveInteractiveBuildSelection(options: {
         "Run `jenkins-cli list --refresh` to fetch jobs from Jenkins.",
       ]);
     }
-
-    recentJobs = query ? [] : await deps.loadRecentJobs({ env: options.env });
   }
 
   let context: BuildPreContext;
   context = {
     env: options.env,
     jobs,
-    recentJobs,
     jobSelectionLocked: Boolean(providedUrl),
-    searchQuery: query,
+    initialQuery: query || undefined,
     selectedJobUrl: providedUrl,
     selectedJobLabel,
+    pickJob: deps.pickJob,
     branchParam: options.branchParam,
     branch: options.branch,
     customParams: cloneParams(options.customParams),

@@ -8,7 +8,6 @@ import {
   BUILD_WITH_PARAMS_VALUE,
   CUSTOM_MORE_BUILD_VALUE,
   CUSTOM_MORE_CANCEL_VALUE,
-  SEARCH_ALL_JOBS_VALUE,
 } from "../src/flows/constants";
 import type { AutocompletePromptResult } from "../src/flows/types";
 import type { JenkinsClient } from "../src/jenkins/client";
@@ -65,7 +64,29 @@ const spinnerPrompt = ((options?: Parameters<typeof clack.spinner>[0]) =>
 const runCancelMock = mock(async (..._args: unknown[]) => undefined);
 const runLogsMock = mock(async () => undefined);
 const notifyBuildCompleteMock = mock(async () => undefined);
-const loadRecentJobsMock = mock(async () => [{ url: JOB_URL, label: "alpha" }]);
+const pickJobMock = mock(
+  async (options: {
+    jobs: JenkinsJob[];
+    initialQuery?: string;
+  }): Promise<
+    | { kind: "selected"; job: JenkinsJob }
+    | { kind: "cancelled"; userInput: string }
+  > => {
+    const response = await autocompleteMock();
+    if (isCancelMock(response)) {
+      return { kind: "cancelled", userInput: options.initialQuery ?? "" };
+    }
+    const value =
+      typeof response === "object" && "value" in response
+        ? response.value
+        : String(response);
+    const job = options.jobs.find((entry) => entry.url === value);
+    if (!job) {
+      throw new Error("Expected picker selection to match a job");
+    }
+    return { kind: "selected", job };
+  },
+);
 const recordRecentJobMock = mock(async (..._args: unknown[]) => undefined);
 const loadCachedBranchesMock = mock(async () => ["development", "master"]);
 const loadCachedBranchHistoryMock = mock(async () => []);
@@ -126,10 +147,7 @@ describe("build command navigation", () => {
     notifyBuildCompleteMock.mockReset();
     notifyBuildCompleteMock.mockImplementation(async () => undefined);
 
-    loadRecentJobsMock.mockReset();
-    loadRecentJobsMock.mockImplementation(async () => [
-      { url: JOB_URL, label: "alpha" },
-    ]);
+    pickJobMock.mockClear();
 
     recordRecentJobMock.mockReset();
     recordRecentJobMock.mockImplementation(async () => undefined);
@@ -165,7 +183,7 @@ describe("build command navigation", () => {
       runCancel: runCancelMock,
       runLogs: runLogsMock,
       notifyBuildComplete: notifyBuildCompleteMock,
-      loadRecentJobs: loadRecentJobsMock,
+      pickJob: pickJobMock,
       recordRecentJob: recordRecentJobMock,
       loadCachedBranches: loadCachedBranchesMock,
       loadCachedBranchHistory: loadCachedBranchHistoryMock,
@@ -201,7 +219,7 @@ describe("build command navigation", () => {
     setBuildPreFlowDepsForTesting();
   });
 
-  test("Esc in job search goes back to recent job menu", async () => {
+  test("Esc in shared job picker exits the build", async () => {
     const getJobStatus = mock(async () => ({ lastBuildNumber: 41 }));
     const triggerBuild = mock(async () => ({
       buildUrl: BUILD_URL,
@@ -210,10 +228,6 @@ describe("build command navigation", () => {
       jobUrl: JOB_URL,
     }));
 
-    selectMock
-      .mockImplementationOnce(async () => SEARCH_ALL_JOBS_VALUE)
-      .mockImplementationOnce(async () => JOB_URL)
-      .mockImplementationOnce(async () => BUILD_WITHOUT_PARAMS_VALUE);
     autocompleteMock.mockImplementationOnce(async () => CANCEL);
 
     await runBuild({
@@ -226,22 +240,8 @@ describe("build command navigation", () => {
       watch: false,
     });
 
-    const selectCalls = selectMock.mock.calls as unknown as Array<
-      Array<unknown>
-    >;
-    expect(selectCalls[0]?.[0]).toEqual(
-      expect.objectContaining({
-        message: expect.stringContaining("Recent jobs"),
-      }),
-    );
-    expect(selectCalls[1]?.[0]).toEqual(
-      expect.objectContaining({
-        message: expect.stringContaining("Recent jobs"),
-      }),
-    );
     expect(autocompleteMock).toHaveBeenCalledTimes(1);
-    expect(triggerBuild).toHaveBeenCalledTimes(1);
-    expect(triggerBuild).toHaveBeenCalledWith(NORMALIZED_JOB_URL, {});
+    expect(triggerBuild).toHaveBeenCalledTimes(0);
   });
 
   test("interactive mode ignores --without-params and still prompts for build mode", async () => {
@@ -290,9 +290,7 @@ describe("build command navigation", () => {
       jobUrl: JOB_URL,
     }));
 
-    selectMock
-      .mockImplementationOnce(async () => JOB_URL)
-      .mockImplementationOnce(async () => BUILD_WITHOUT_PARAMS_VALUE);
+    selectMock.mockImplementationOnce(async () => BUILD_WITHOUT_PARAMS_VALUE);
 
     await runBuild({
       client: createClient({
@@ -308,8 +306,7 @@ describe("build command navigation", () => {
     expect(triggerBuild).toHaveBeenCalledWith(NORMALIZED_JOB_URL, {});
   });
 
-  test("structured autocomplete payload preserves user input when returning to search", async () => {
-    loadRecentJobsMock.mockImplementationOnce(async () => []);
+  test("returning from build mode opens the shared picker again", async () => {
     autocompleteMock
       .mockImplementationOnce(async () => createAutocompleteSelection("alp"))
       .mockImplementationOnce(async () => CANCEL);
@@ -330,15 +327,8 @@ describe("build command navigation", () => {
       watch: false,
     });
 
-    const autocompleteCalls = autocompleteMock.mock.calls as unknown as Array<
-      Array<unknown>
-    >;
     expect(autocompleteMock).toHaveBeenCalledTimes(2);
-    expect(autocompleteCalls[1]?.[0]).toEqual(
-      expect.objectContaining({
-        initialUserInput: "alp",
-      }),
-    );
+    expect(pickJobMock).toHaveBeenCalledTimes(2);
   });
 
   test("interactive build with parameters retries on blank branch", async () => {
@@ -351,9 +341,7 @@ describe("build command navigation", () => {
     }));
 
     loadCachedBranchesMock.mockImplementationOnce(async () => []);
-    selectMock
-      .mockImplementationOnce(async () => JOB_URL)
-      .mockImplementationOnce(async () => BUILD_WITH_PARAMS_VALUE);
+    selectMock.mockImplementationOnce(async () => BUILD_WITH_PARAMS_VALUE);
     textMock
       .mockImplementationOnce(async () => "")
       .mockImplementationOnce(async () => "development");
@@ -384,7 +372,6 @@ describe("build command navigation", () => {
     }));
 
     selectMock
-      .mockImplementationOnce(async () => JOB_URL)
       .mockImplementationOnce(async () => BUILD_WITH_PARAMS_VALUE)
       .mockImplementationOnce(async () => CANCEL)
       .mockImplementationOnce(async () => BUILD_WITHOUT_PARAMS_VALUE);
@@ -404,7 +391,7 @@ describe("build command navigation", () => {
     const selectCalls = selectMock.mock.calls as unknown as Array<
       Array<unknown>
     >;
-    expect(selectCalls[3]?.[0]).toEqual(
+    expect(selectCalls[2]?.[0]).toEqual(
       expect.objectContaining({
         message: expect.stringContaining("Build mode"),
       }),
@@ -421,7 +408,6 @@ describe("build command navigation", () => {
     }));
 
     selectMock
-      .mockImplementationOnce(async () => JOB_URL)
       .mockImplementationOnce(async () => BUILD_WITH_CUSTOM_PARAMS_VALUE)
       .mockImplementationOnce(async () => CUSTOM_MORE_BUILD_VALUE);
     textMock
@@ -454,7 +440,6 @@ describe("build command navigation", () => {
     }));
 
     selectMock
-      .mockImplementationOnce(async () => JOB_URL)
       .mockImplementationOnce(async () => BUILD_WITH_CUSTOM_PARAMS_VALUE)
       .mockImplementationOnce(async () => CUSTOM_MORE_CANCEL_VALUE);
     textMock
@@ -484,7 +469,6 @@ describe("build command navigation", () => {
     }));
 
     selectMock
-      .mockImplementationOnce(async () => JOB_URL)
       .mockImplementationOnce(async () => BUILD_WITH_CUSTOM_PARAMS_VALUE)
       .mockImplementationOnce(async () => CANCEL)
       .mockImplementationOnce(async () => CUSTOM_MORE_BUILD_VALUE);
@@ -548,7 +532,6 @@ describe("build command navigation", () => {
     }));
 
     selectMock
-      .mockImplementationOnce(async () => JOB_URL)
       .mockImplementationOnce(async () => BUILD_WITH_PARAMS_VALUE)
       .mockImplementationOnce(async () => "development")
       .mockImplementationOnce(async () => CUSTOM_MORE_BUILD_VALUE);

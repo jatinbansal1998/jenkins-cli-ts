@@ -117,7 +117,17 @@ async function resolveCancelTargets(
       throw new CliError("Operation cancelled.");
     }
     if (selection === SEARCH_VALUE) {
-      return [await resolveCancelTarget(options)];
+      try {
+        return [await resolveCancelTarget(options)];
+      } catch (error) {
+        if (
+          error instanceof CliError &&
+          error.message === "Operation cancelled."
+        ) {
+          continue;
+        }
+        throw error;
+      }
     }
     if (selection === ALL_VALUE) {
       return runningBuilds.map(toCancelTarget);

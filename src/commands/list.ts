@@ -73,7 +73,7 @@ export async function runList(options: ListOptions): Promise<void> {
       client: options.client,
       env: options.env,
       jobs,
-      searchQuery: options.search?.trim() ?? "",
+      initialQuery: options.search?.trim() || undefined,
     })) === "exit"
   ) {
     return;
@@ -113,19 +113,13 @@ function getFilteredJobs(jobs: JenkinsJob[], search: string): JenkinsJob[] {
 }
 
 async function runListActionMenu(
-  options: ListActionMenuOptions & { searchQuery: string },
+  options: ListActionMenuOptions & { initialQuery?: string },
 ): Promise<"exit" | void> {
-  const preferredJobs = options.searchQuery
-    ? listDeps.sortJobsByDisplayName(options.jobs)
-    : await listDeps.loadPreferredJobs({
-        env: options.env,
-        jobs: options.jobs,
-      });
   const context: ListInteractiveContext = {
     env: options.env,
     jobs: options.jobs,
-    preferredJobs,
-    searchQuery: options.searchQuery,
+    initialQuery: options.initialQuery,
+    pickJob: listDeps.pickJob,
     performAction: (action, selectedJob) =>
       performListAction(options, action, selectedJob),
   };

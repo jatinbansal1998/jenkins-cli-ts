@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, mock, spyOn, test } from "bun:test";
+import { CliError } from "../src/cli";
 import { cancelDeps } from "../src/commands/cancel-deps";
 import {
   runCancel,
@@ -209,6 +210,44 @@ describe("interactive targetless cancel", () => {
 
     expect(resolveJobTarget).toHaveBeenCalledTimes(1);
     expect(stopBuild).toHaveBeenCalledWith(builds[0]!.buildUrl);
+  });
+
+  test("cancelling full job search returns to the running-build menu", async () => {
+    const resolveJobTarget = mock()
+      .mockImplementationOnce(async () => {
+        throw new CliError("Operation cancelled.");
+      })
+      .mockImplementationOnce(async () => ({
+        jobUrl: builds[0]!.jobUrl,
+        jobLabel: "apps/api",
+      }));
+    const select = mock()
+      .mockImplementationOnce(async () => "__jenkins_cli_cancel_search__")
+      .mockImplementationOnce(async () => "__jenkins_cli_cancel_search__");
+    setDeps({
+      select: select as typeof cancelDeps.select,
+      resolveJobTarget: resolveJobTarget as typeof cancelDeps.resolveJobTarget,
+      confirm: mock(async () => true) as typeof cancelDeps.confirm,
+      waitForBuild: mock(async () => ({
+        result: "ABORTED",
+      })) as unknown as typeof cancelDeps.waitForBuild,
+    });
+
+    await runCancel(
+      options(
+        client({
+          listRunningBuilds: mock(async () => builds),
+          getJobStatus: mock(async () => ({
+            building: true,
+            lastBuildUrl: builds[0]!.buildUrl,
+          })),
+          stopBuild: mock(async () => undefined),
+        }),
+      ),
+    );
+
+    expect(select).toHaveBeenCalledTimes(2);
+    expect(resolveJobTarget).toHaveBeenCalledTimes(2);
   });
 
   test("skips the running-build menu when none are running", async () => {

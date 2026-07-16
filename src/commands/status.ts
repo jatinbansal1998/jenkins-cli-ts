@@ -2,14 +2,7 @@
  * Status command implementation.
  * Shows the last build status (number, result, URL) for a job.
  */
-import {
-  autocomplete,
-  confirm,
-  isCancel,
-  multiselect,
-  select,
-  text,
-} from "../clack";
+import { autocomplete, confirm, isCancel, select, text } from "../clack";
 import { runInteractiveSubcommandWithAnalytics } from "../analytics";
 import { CliError, printError, printHint, printOk } from "../cli";
 import {
@@ -22,7 +15,7 @@ import { runBuild } from "./build";
 import { runCancel } from "./cancel";
 import { runHistory } from "./history";
 import { runLogs } from "./logs";
-import { resolveJobTarget } from "./ops-helpers";
+import { resolveJobTarget, resolveJobTargets } from "./ops-helpers";
 import { runRerun, runRerunLastBuild } from "./rerun";
 import { runWait } from "./wait";
 import {
@@ -37,23 +30,11 @@ import {
 import type { EnvConfig } from "../env";
 import type { JenkinsClient } from "../jenkins/api-wrapper";
 import { normalizeOptionalJobUrl } from "../job-url";
-import type { JenkinsJob } from "../types/jenkins";
-import {
-  getJobDisplayName,
-  loadJobs,
-  resolveJobCandidates,
-  resolveJobMatch,
-} from "../jobs";
-import {
-  loadRecentJobs,
-  recordRecentJob,
-  type RecentJob,
-} from "../recent-jobs";
+import { recordRecentJob } from "../recent-jobs";
 import { runFlow } from "../flows/runner";
 import { flows } from "../flows/definition";
 import { statusFlowHandlers } from "../flows/handlers";
 import type { ActionEffectResult, StatusPostContext } from "../flows/types";
-import { withPromptTarget } from "../tui-target";
 
 /** Options for the status command. */
 type StatusOptions = {
@@ -72,16 +53,6 @@ type StatusJsonData = {
   job: string;
   build: JsonBuild | null;
 };
-
-type StatusSelectionResult =
-  { kind: "jobs"; jobs: JenkinsJob[] } | { kind: "search" };
-
-class BackToRecentMenuError extends Error {
-  constructor() {
-    super("Back to recent menu");
-    this.name = "BackToRecentMenuError";
-  }
-}
 
 const SEPARATOR_LINE = "-".repeat(60);
 
@@ -104,7 +75,6 @@ export async function runStatus(options: StatusOptions): Promise<void> {
 
   let jobUrl = normalizeOptionalJobUrl(options.jobUrl);
   let jobQuery = options.job?.trim() ?? "";
-  let jobs: JenkinsJob[] | null = null;
 
   while (true) {
     let targets: { jobUrl: string; jobLabel: string }[] = [];
@@ -113,53 +83,13 @@ export async function runStatus(options: StatusOptions): Promise<void> {
       ensureValidUrl(jobUrl, "job-url");
       targets = [{ jobUrl, jobLabel: jobUrl }];
     } else {
-      const loadedJobs = (jobs ??= await loadJobsForStatus({
+      targets = await resolveJobTargets({
         client: options.client,
-        env: options.env,
-        nonInteractive: false,
-      }));
-
-      if (loadedJobs.length === 0) {
-        throw new CliError("No jobs found in cache.", [
-          "Run `jenkins-cli list --refresh` to fetch jobs from Jenkins.",
-        ]);
-      }
-
-      const selection = await resolveJobSelection({
         env: options.env,
         job: jobQuery,
         nonInteractive: false,
+        mode: "multiple",
       });
-
-      if (selection.kind === "recent") {
-        targets = selection.jobs.map((recentJob) => ({
-          jobUrl: recentJob.url,
-          jobLabel: recentJob.label,
-        }));
-      } else {
-        try {
-          const selectedJobs = await resolveJobSearch({
-            initialQuery: selection.query,
-            jobs: loadedJobs,
-            nonInteractive: false,
-            allowBackToRecent: selection.allowBackToRecent,
-            env: options.env,
-          });
-          targets = selectedJobs.map((job) => ({
-            jobUrl: job.url,
-            jobLabel: getJobDisplayName(job),
-          }));
-        } catch (err) {
-          if (
-            err instanceof BackToRecentMenuError &&
-            selection.allowBackToRecent
-          ) {
-            jobQuery = "";
-            continue;
-          }
-          throw err;
-        }
-      }
     }
 
     const showSeparators = targets.length > 1;
@@ -390,50 +320,13 @@ async function runStatusJson(options: StatusOptions): Promise<void> {
 }
 
 async function runStatusOnce(options: StatusOptions): Promise<void> {
-  let jobUrl = normalizeOptionalJobUrl(options.jobUrl);
-  let jobLabel = jobUrl ?? "";
-
-  if (jobUrl) {
-    ensureValidUrl(jobUrl, "job-url");
-  } else {
-    const jobs = await loadJobsForStatus({
-      client: options.client,
-      env: options.env,
-      nonInteractive: options.nonInteractive,
-    });
-
-    if (jobs.length === 0) {
-      throw new CliError("No jobs found in cache.", [
-        "Run `jenkins-cli list --refresh` to fetch jobs from Jenkins.",
-      ]);
-    }
-
-    const selection = await resolveJobSelection({
-      env: options.env,
-      job: options.job,
-      nonInteractive: options.nonInteractive,
-    });
-
-    if (selection.kind === "recent") {
-      const recentJob = selection.jobs[0];
-      if (!recentJob) {
-        throw new CliError("No jobs selected.", [
-          "Choose at least one job and try again.",
-        ]);
-      }
-      jobUrl = recentJob.url;
-      jobLabel = recentJob.label;
-    } else {
-      const selectedJob = await resolveJobMatch({
-        query: selection.query,
-        jobs,
-        nonInteractive: options.nonInteractive,
-      });
-
-      jobUrl = selectedJob.url;
-      jobLabel = getJobDisplayName(selectedJob);
-    }
-  }
+  const { jobUrl, jobLabel } = await resolveJobTarget({
+    client: options.client,
+    env: options.env,
+    job: options.job,
+    jobUrl: options.jobUrl,
+    nonInteractive: options.nonInteractive,
+  });
 
   await recordRecentJob({
     env: options.env,
@@ -489,216 +382,6 @@ async function runTrackedStatusAction<T>(
   action: () => Promise<T>,
 ): Promise<T> {
   return await runInteractiveSubcommandWithAnalytics(command, action);
-}
-
-async function promptForJobSelection(
-  candidates: JenkinsJob[],
-  env: EnvConfig,
-): Promise<StatusSelectionResult> {
-  const response = await multiselect({
-    message: withPromptTarget("Select jobs (press Esc to search again)", env),
-    options: candidates.map((job) => ({
-      value: job.url,
-      label: getJobDisplayName(job),
-    })),
-  });
-
-  if (isCancel(response)) {
-    return { kind: "search" };
-  }
-
-  const selectedValues = new Set(
-    Array.isArray(response) ? response.map(String) : [],
-  );
-  const selected = candidates.filter((job) => selectedValues.has(job.url));
-  if (selected.length === 0) {
-    return { kind: "search" };
-  }
-
-  return { kind: "jobs", jobs: selected };
-}
-
-async function resolveJobSelection(options: {
-  env: EnvConfig;
-  job?: string;
-  nonInteractive: boolean;
-}): Promise<
-  | { kind: "query"; query: string; allowBackToRecent: boolean }
-  | { kind: "recent"; jobs: RecentJob[] }
-> {
-  const query = options.job?.trim() ?? "";
-  if (query) {
-    return { kind: "query", query, allowBackToRecent: false };
-  }
-  if (options.nonInteractive) {
-    throw new CliError("Missing required --job.", [
-      "Pass --job <name> or use --job-url <url>.",
-    ]);
-  }
-  const recentJobs = await loadRecentJobs({ env: options.env });
-  const allowBackToRecent = recentJobs.length > 0;
-  while (true) {
-    if (allowBackToRecent) {
-      const selection = await promptForRecentJobSelection(
-        recentJobs,
-        options.env,
-      );
-      if (selection.kind === "recent") {
-        return selection;
-      }
-    }
-    try {
-      return {
-        kind: "query",
-        query: await promptForJobSearch({
-          allowBack: allowBackToRecent,
-          env: options.env,
-        }),
-        allowBackToRecent,
-      };
-    } catch (err) {
-      if (err instanceof BackToRecentMenuError && allowBackToRecent) {
-        continue;
-      }
-      throw err;
-    }
-  }
-}
-
-async function promptForRecentJobSelection(
-  recentJobs: RecentJob[],
-  env: EnvConfig,
-): Promise<{ kind: "recent"; jobs: RecentJob[] } | { kind: "search" }> {
-  while (true) {
-    const mode = await select({
-      message: withPromptTarget("Recent jobs", env),
-      options: [
-        { value: "recent", label: "Select from recent jobs" },
-        { value: "search", label: "Search all jobs" },
-      ],
-    });
-    if (isCancel(mode)) {
-      throw new CliError("Operation cancelled.");
-    }
-    if (mode === "search") {
-      return { kind: "search" };
-    }
-
-    const response = await multiselect({
-      message: withPromptTarget("Select recent jobs", env),
-      options: recentJobs.map((job) => ({
-        value: job.url,
-        label: job.label,
-      })),
-    });
-    if (isCancel(response)) {
-      continue;
-    }
-    const selectedValues = new Set(
-      Array.isArray(response) ? response.map(String) : [],
-    );
-    if (selectedValues.size === 0) {
-      return { kind: "search" };
-    }
-    const selected = recentJobs.filter((job) => selectedValues.has(job.url));
-    if (selected.length === 0) {
-      return { kind: "search" };
-    }
-    return { kind: "recent", jobs: selected };
-  }
-}
-
-async function promptForJobSearch(options: {
-  allowBack?: boolean;
-  env: EnvConfig;
-}): Promise<string> {
-  const response = await text({
-    message: withPromptTarget("Job name or description", options.env),
-    placeholder: "e.g. api prod deploy",
-  });
-  if (isCancel(response)) {
-    if (options.allowBack) {
-      throw new BackToRecentMenuError();
-    }
-    throw new CliError("Operation cancelled.");
-  }
-  return String(response).trim();
-}
-
-async function loadJobsForStatus(options: {
-  client: JenkinsClient;
-  env: EnvConfig;
-  nonInteractive: boolean;
-}): Promise<JenkinsJob[]> {
-  return loadJobs({
-    client: options.client,
-    env: options.env,
-    nonInteractive: options.nonInteractive,
-  });
-}
-
-async function resolveJobSearch(options: {
-  initialQuery: string;
-  jobs: JenkinsJob[];
-  nonInteractive: boolean;
-  allowBackToRecent: boolean;
-  env: EnvConfig;
-}): Promise<JenkinsJob[]> {
-  if (options.nonInteractive) {
-    const job = await resolveJobMatch({
-      query: options.initialQuery,
-      jobs: options.jobs,
-      nonInteractive: options.nonInteractive,
-    });
-    return [job];
-  }
-
-  let query = options.initialQuery.trim();
-  while (true) {
-    if (!query) {
-      query = await promptForJobSearch({
-        allowBack: options.allowBackToRecent,
-        env: options.env,
-      });
-    }
-
-    try {
-      const candidates = resolveJobCandidates(query, options.jobs);
-      if (candidates.length === 1) {
-        return candidates;
-      }
-
-      const selection = await promptForJobSelection(candidates, options.env);
-      if (selection.kind === "search") {
-        query = await promptForJobSearch({
-          allowBack: options.allowBackToRecent,
-          env: options.env,
-        });
-        continue;
-      }
-      return selection.jobs;
-    } catch (err) {
-      if (err instanceof CliError && shouldRetryJobSearch(err)) {
-        printError(err.message);
-        for (const hint of err.hints) {
-          printHint(hint);
-        }
-        query = await promptForJobSearch({
-          allowBack: options.allowBackToRecent,
-          env: options.env,
-        });
-        continue;
-      }
-      throw err;
-    }
-  }
-}
-
-function shouldRetryJobSearch(error: CliError): boolean {
-  if (error.message === "Job name is required.") {
-    return true;
-  }
-  return error.message.startsWith("No jobs match ");
 }
 
 async function runMenuAction<T>(

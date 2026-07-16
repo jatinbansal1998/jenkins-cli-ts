@@ -1,5 +1,4 @@
 import type {
-  AutocompletePromptValue,
   ActionEffectResult,
   BuildPreContext,
   BuildPostContext,
@@ -22,9 +21,6 @@ import {
   BUILD_WITH_CUSTOM_PARAMS_VALUE,
   BUILD_WITHOUT_PARAMS_VALUE,
   BUILD_WITH_PARAMS_VALUE,
-  EXIT_VALUE,
-  SEARCH_AGAIN_VALUE,
-  SEARCH_ALL_JOBS_VALUE,
 } from "./constants";
 
 const defaultBuildPreFlowDeps = {
@@ -44,60 +40,27 @@ export function setBuildPreFlowDepsForTesting(
     : defaultBuildPreFlowDeps;
 }
 
-type SelectEvent = `select:${string}`;
-
 function resolveSelectEvent<T extends string>(input: T): `select:${T}` {
   return `select:${input}`;
 }
 
-function getPromptSelectionValue(input?: unknown): string {
-  if (
-    input &&
-    typeof input === "object" &&
-    "value" in input &&
-    typeof (input as AutocompletePromptValue).value === "string"
-  ) {
-    return (input as AutocompletePromptValue).value;
-  }
-  return String(input);
-}
-
-function getPromptSearchValue(input?: unknown): string | undefined {
-  if (
-    input &&
-    typeof input === "object" &&
-    "userInput" in input &&
-    typeof (input as AutocompletePromptValue).userInput === "string"
-  ) {
-    return (input as AutocompletePromptValue).userInput;
-  }
-  return undefined;
-}
-
-function selectJobHandler({
+async function pickListJobHandler({
   context,
-  input,
 }: {
   context: ListInteractiveContext;
-  input?: unknown;
-}): SelectEvent {
-  const value = getPromptSelectionValue(input);
-  const search = getPromptSearchValue(input);
-  if (typeof search === "string") {
-    context.searchQuery = search.trim();
+}): Promise<"selected" | "cancelled"> {
+  const result = await context.pickJob({
+    env: context.env,
+    jobs: context.jobs,
+    initialQuery: context.initialQuery,
+  });
+  if (result.kind === "cancelled") {
+    context.initialQuery = result.userInput;
+    return "cancelled";
   }
-  if (value === SEARCH_AGAIN_VALUE) {
-    return "select:search_again";
-  }
-  if (value === EXIT_VALUE) {
-    return "select:exit";
-  }
-  const selectedJob = context.jobs.find((job) => job.url === value);
-  if (!selectedJob) {
-    return "select:search_again";
-  }
-  context.selectedJob = selectedJob;
-  return "select:job";
+  context.selectedJob = result.job;
+  context.initialQuery = undefined;
+  return "selected";
 }
 
 function selectListActionHandler({
@@ -172,63 +135,29 @@ function repeatConfirmHandler({ input }: { input?: unknown }): EventId {
   return input ? "confirm:yes" : "confirm:no";
 }
 
-function buildPreEntryHandler({
+async function pickBuildJobHandler({
   context,
 }: {
   context: BuildPreContext;
-}): EventId {
-  return context.recentJobs.length > 0 ? "show_recent" : "search_direct";
-}
-
-function selectRecentJobHandler({
-  context,
-  input,
-}: {
-  context: BuildPreContext;
-  input?: unknown;
-}): EventId {
-  const value = getPromptSelectionValue(input);
-  if (value === SEARCH_ALL_JOBS_VALUE) {
-    return "select:search_all";
-  }
-  const recent = context.recentJobs.find((entry) => entry.url === value);
-  if (!recent) {
-    return "select:search_all";
-  }
-  context.selectedJobUrl = recent.url;
-  context.selectedJobLabel = recent.label;
-  context.searchQuery = "";
-  context.buildModePrompted = false;
-  context.parameterMode = undefined;
-  context.parameterDefinitions = undefined;
-  context.parameterDiscoveryAttempted = false;
-  return "select:recent";
-}
-
-function selectSearchCandidateHandler({
-  context,
-  input,
-}: {
-  context: BuildPreContext;
-  input?: unknown;
-}): EventId {
-  const value = getPromptSelectionValue(input);
-  const search = getPromptSearchValue(input);
-  if (typeof search === "string") {
-    context.searchQuery = search.trim();
-  }
-  const selected = context.jobs.find((job) => job.url === value);
-  if (!selected) {
-    return "select:search_again";
+}): Promise<"selected" | "cancelled"> {
+  const result = await context.pickJob({
+    env: context.env,
+    jobs: context.jobs,
+    initialQuery: context.initialQuery,
+  });
+  if (result.kind === "cancelled") {
+    context.initialQuery = result.userInput;
+    return "cancelled";
   }
   const deps = activeBuildPreFlowDeps;
-  context.selectedJobUrl = selected.url;
-  context.selectedJobLabel = deps.getJobDisplayName(selected);
+  context.selectedJobUrl = result.job.url;
+  context.selectedJobLabel = deps.getJobDisplayName(result.job);
+  context.initialQuery = undefined;
   context.buildModePrompted = false;
   context.parameterMode = undefined;
   context.parameterDefinitions = undefined;
   context.parameterDiscoveryAttempted = false;
-  return "select:job";
+  return "selected";
 }
 
 function selectBuildModeHandler({
@@ -603,7 +532,7 @@ async function runStatusActionHandler({
 }
 
 export const listFlowHandlers = {
-  "list.selectJob": selectJobHandler,
+  "list.pickJob": pickListJobHandler,
   "list.selectAction": selectListActionHandler,
   "list.runAction": runListActionHandler,
 } satisfies FlowHandlerRegistry<ListInteractiveContext>;
@@ -617,9 +546,7 @@ export const buildFlowHandlers = {
 } satisfies FlowHandlerRegistry<BuildPostContext>;
 
 export const buildPreFlowHandlers = {
-  "buildPre.entry": buildPreEntryHandler,
-  "buildPre.selectRecentJob": selectRecentJobHandler,
-  "buildPre.selectSearchCandidate": selectSearchCandidateHandler,
+  "buildPre.pickJob": pickBuildJobHandler,
   "buildPre.selectBuildMode": selectBuildModeHandler,
   "buildPre.selectDiscoveredMode": selectDiscoveredModeHandler,
   "buildPre.leaveBuildMode": leaveBuildModeHandler,

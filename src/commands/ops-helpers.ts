@@ -1,15 +1,10 @@
-import { isCancel, select, text } from "../clack";
-import { CliError, printError, printHint } from "../cli";
+import { CliError } from "../cli";
 import type { EnvConfig } from "../env";
 import type { JenkinsClient } from "../jenkins/api-wrapper";
 import { normalizeOptionalJobUrl } from "../job-url";
+import { pickJobs, type JobPickerResult } from "../job-picker";
 import type { JenkinsJob } from "../types/jenkins";
-import {
-  getJobDisplayName,
-  loadJobs,
-  resolveJobCandidates,
-  resolveJobMatch,
-} from "../jobs";
+import { getJobDisplayName, loadJobs, resolveJobMatch } from "../jobs";
 
 export function ensureValidUrl(value: string, label: string): void {
   try {
@@ -28,13 +23,32 @@ export async function resolveJobTarget(options: {
   jobUrl?: string;
   nonInteractive: boolean;
 }): Promise<{ jobUrl: string; jobLabel: string }> {
+  const targets = await resolveJobTargets({ ...options, mode: "single" });
+  const target = targets[0];
+  if (!target) {
+    throw new CliError("Operation cancelled.");
+  }
+  return target;
+}
+
+export async function resolveJobTargets(options: {
+  client: JenkinsClient;
+  env: EnvConfig;
+  job?: string;
+  jobUrl?: string;
+  nonInteractive: boolean;
+  mode: "single" | "multiple";
+  pickJobs?: typeof pickJobs;
+}): Promise<{ jobUrl: string; jobLabel: string }[]> {
   const providedUrl = normalizeOptionalJobUrl(options.jobUrl);
   if (providedUrl) {
     ensureValidUrl(providedUrl, "job-url");
-    return {
-      jobUrl: providedUrl,
-      jobLabel: providedUrl,
-    };
+    return [
+      {
+        jobUrl: providedUrl,
+        jobLabel: providedUrl,
+      },
+    ];
   }
 
   const jobs = await loadJobs({
@@ -48,104 +62,82 @@ export async function resolveJobTarget(options: {
     ]);
   }
 
-  const selectedJob = await resolveJobFromQuery({
-    job: options.job,
-    jobs,
-    nonInteractive: options.nonInteractive,
-  });
-  const normalizedJobUrl = normalizeOptionalJobUrl(selectedJob.url);
+  const query = options.job?.trim() ?? "";
+  if (!query && options.nonInteractive) {
+    throw new CliError("Missing required --job.", [
+      "Pass --job <name> or use --job-url <url>.",
+    ]);
+  }
+  let selection: JobPickerResult;
+  if (options.nonInteractive) {
+    selection = {
+      kind: "selected",
+      jobs: [
+        await resolveJobMatch({
+          query,
+          jobs,
+          nonInteractive: true,
+        }),
+      ],
+    };
+  } else if (query) {
+    const candidates = await resolveInitialCandidates(query, jobs);
+    if (candidates.length === 1 && options.mode === "single") {
+      selection = { kind: "selected", jobs: candidates };
+    } else {
+      selection = await (options.pickJobs ?? pickJobs)({
+        env: options.env,
+        jobs: candidates,
+        mode: options.mode,
+        initialQuery: query,
+      });
+    }
+  } else {
+    selection = await (options.pickJobs ?? pickJobs)({
+      env: options.env,
+      jobs,
+      mode: options.mode,
+    });
+  }
+  if (selection.kind === "cancelled") {
+    throw new CliError("Operation cancelled.");
+  }
+  return selection.jobs.map(toResolvedJobTarget);
+}
+
+async function resolveInitialCandidates(
+  query: string,
+  jobs: JenkinsJob[],
+): Promise<JenkinsJob[]> {
+  try {
+    return [await resolveJobMatch({ query, jobs, nonInteractive: true })];
+  } catch (error) {
+    if (
+      error instanceof CliError &&
+      (error.message.startsWith("Job name is ambiguous") ||
+        error.message.startsWith("No jobs match "))
+    ) {
+      return jobs;
+    }
+    throw error;
+  }
+}
+
+function toResolvedJobTarget(job: JenkinsJob): {
+  jobUrl: string;
+  jobLabel: string;
+} {
+  const normalizedJobUrl = normalizeOptionalJobUrl(job.url);
   if (!normalizedJobUrl) {
     throw new CliError("Selected job has an invalid URL.", [
       "Run `jenkins-cli list --refresh` to update the cache.",
     ]);
   }
   ensureValidUrl(normalizedJobUrl, "job-url");
-
   return {
     jobUrl: normalizedJobUrl,
-    jobLabel: getJobDisplayName({
-      ...selectedJob,
-      url: normalizedJobUrl,
-    }),
+    jobLabel: getJobDisplayName({ ...job, url: normalizedJobUrl }),
   };
-}
-
-async function resolveJobFromQuery(options: {
-  job?: string;
-  jobs: JenkinsJob[];
-  nonInteractive: boolean;
-}): Promise<JenkinsJob> {
-  let query = options.job?.trim() ?? "";
-
-  if (!query && options.nonInteractive) {
-    throw new CliError("Missing required --job.", [
-      "Pass --job <name> or use --job-url <url>.",
-    ]);
-  }
-
-  while (true) {
-    if (!query) {
-      const response = await text({
-        message: "Job name or description",
-        placeholder: "e.g. api prod deploy",
-      });
-      if (isCancel(response)) {
-        throw new CliError("Operation cancelled.");
-      }
-      query = String(response).trim();
-    }
-
-    try {
-      if (options.nonInteractive) {
-        return await resolveJobMatch({
-          query,
-          jobs: options.jobs,
-          nonInteractive: true,
-        });
-      }
-
-      const candidates = resolveJobCandidates(query, options.jobs);
-      if (candidates.length === 1) {
-        // Length check guarantees an entry here; keep fallback for defensive flow.
-        const first = candidates[0];
-        if (first) {
-          return first;
-        }
-        printError("Unable to resolve selected job.");
-        query = "";
-        continue;
-      }
-      const selected = await select({
-        message: "Select a job",
-        options: candidates.map((job) => ({
-          value: job.url,
-          label: getJobDisplayName(job),
-        })),
-      });
-      if (isCancel(selected)) {
-        query = "";
-        continue;
-      }
-      const match = candidates.find((candidate) => candidate.url === selected);
-      if (!match) {
-        printError("Selected job is no longer available.");
-        printHint("Run `jenkins-cli list --refresh` to update the cache.");
-        query = "";
-        continue;
-      }
-      return match;
-    } catch (error) {
-      if (error instanceof CliError && !options.nonInteractive) {
-        printError(error.message);
-        for (const hint of error.hints) {
-          printHint(hint);
-        }
-        query = "";
-        continue;
-      }
-      throw error;
-    }
-  }
 }
 
 export function parseDurationMs(

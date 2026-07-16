@@ -6,7 +6,6 @@ import type {
   PromptOption,
   StatusPostContext,
 } from "./types";
-import { getSuggestedJobs } from "../jobs";
 import {
   BRANCH_CUSTOM_VALUE,
   BRANCH_REMOVE_VALUE,
@@ -17,8 +16,6 @@ import {
   CUSTOM_MORE_ADD_VALUE,
   CUSTOM_MORE_BUILD_VALUE,
   CUSTOM_MORE_CANCEL_VALUE,
-  EXIT_VALUE,
-  SEARCH_ALL_JOBS_VALUE,
 } from "./constants";
 import { withPromptTarget } from "../tui-target";
 
@@ -59,36 +56,13 @@ export const listInteractiveFlow: FlowDefinition<ListInteractiveContext> = {
   id: "listInteractive",
   initialState: "select_job",
   states: {
-    /** Root type-ahead selector for choosing a job. */
+    /** Root entry state delegated to the shared Jenkins job picker. */
     select_job: {
       root: true,
-      prompt: {
-        kind: "autocomplete",
-        message: (context) =>
-          withPromptTarget("Search jobs and select one", context.env),
-        placeholder: "e.g. api prod deploy",
-        initialUserInput: (context) => context.searchQuery,
-        maxItems: 10,
-        validate: (value) => (value ? undefined : "Select a job to continue."),
-        options: (context, search) => {
-          if (["q", "quit", "exit"].includes(search.trim().toLowerCase())) {
-            return [{ value: EXIT_VALUE, label: "Exit" }];
-          }
-          const jobs = search.trim()
-            ? getSuggestedJobs(search, context.jobs)
-            : context.preferredJobs.slice(0, 15);
-          return jobs.map((job) => ({
-            value: job.url,
-            label: job.fullName || job.name,
-          }));
-        },
-      },
-      onSelect: "list.selectJob",
+      onEnter: "list.pickJob",
       transitions: {
-        esc: "exit_command",
-        "select:search_again": "select_job",
-        "select:exit": "exit_command",
-        "select:job": "action_menu",
+        cancelled: "exit_command",
+        selected: "action_menu",
       },
     },
     /** Action picker for the currently selected job. */
@@ -148,80 +122,13 @@ export const buildPreFlow: FlowDefinition<BuildPreContext> = {
   id: "buildPre",
   initialState: "entry",
   states: {
-    /** Entry router that decides recent-jobs flow vs direct search flow. */
+    /** Root entry state delegated to the shared Jenkins job picker. */
     entry: {
-      onEnter: "buildPre.entry",
-      transitions: {
-        show_recent: "recent_menu",
-        search_direct: "search_direct",
-      },
-    },
-    /** Root menu for picking a recent job or switching to full search. */
-    recent_menu: {
       root: true,
-      prompt: {
-        kind: "select",
-        message: (context) => withPromptTarget("Recent jobs", context.env),
-        options: (context) => [
-          { value: SEARCH_ALL_JOBS_VALUE, label: "Search all jobs" },
-          ...context.recentJobs.map((job) => ({
-            value: job.url,
-            label: job.label,
-          })),
-        ],
-      },
-      onSelect: "buildPre.selectRecentJob",
+      onEnter: "buildPre.pickJob",
       transitions: {
-        esc: "exit_command",
-        "select:search_all": "search_from_recent",
-        "select:recent": "prepare_branch",
-      },
-    },
-    /** Search prompt reached from the recent-jobs menu. */
-    search_from_recent: {
-      prompt: {
-        kind: "autocomplete",
-        message: (context) =>
-          withPromptTarget("Job name or description", context.env),
-        placeholder: "e.g. api prod deploy",
-        initialUserInput: (context) => context.searchQuery,
-        maxItems: 10,
-        validate: (value) => (value ? undefined : "Select a job to continue."),
-        options: (context, search) =>
-          getSuggestedJobs(search, context.jobs).map((job) => ({
-            value: job.url,
-            label: job.fullName || job.name,
-          })),
-      },
-      onSelect: "buildPre.selectSearchCandidate",
-      transitions: {
-        esc: "recent_menu",
-        "select:search_again": "search_from_recent",
-        "select:job": "prepare_branch",
-      },
-    },
-    /** Root search prompt used when build starts without a preset job. */
-    search_direct: {
-      root: true,
-      prompt: {
-        kind: "autocomplete",
-        message: (context) =>
-          withPromptTarget("Job name or description", context.env),
-        placeholder: "e.g. api prod deploy",
-        initialUserInput: (context) => context.searchQuery,
-        maxItems: 10,
-        validate: (value) => (value ? undefined : "Select a job to continue."),
-        options: (context, search) =>
-          getSuggestedJobs(search, context.jobs).map((job) => ({
-            value: job.url,
-            label: job.fullName || job.name,
-          })),
-      },
-      onSelect: "buildPre.selectSearchCandidate",
-      transitions: {
-        esc: "exit_command",
-        "select:search_again": "search_direct",
-        "select:job": "prepare_branch",
+        cancelled: "exit_command",
+        selected: "prepare_branch",
       },
     },
     /** Selects whether to configure discovered parameters or use Jenkins defaults. */

@@ -32,6 +32,7 @@
     "typescript": "^7.0.2"
   },
   "dependencies": {
+    "@clack/core": "1.4.3",
     "@clack/prompts": "^1.7.0",
     "cross-keychain": "^1.1.0",
     "yargs": "^18.0.0"

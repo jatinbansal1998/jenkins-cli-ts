@@ -5,7 +5,8 @@ This document explains how interactive prompts are assembled and executed in
 
 ## 1) Prompt architecture
 
-Prompt behavior is split into 3 layers:
+Prompt behavior is split into generic flow layers plus a focused Jenkins job
+picker:
 
 1. `FlowDefinition` (`src/flows/definition.ts`)
    - Declares states, prompt types, and transitions.
@@ -16,13 +17,20 @@ Prompt behavior is split into 3 layers:
 3. Runner (`src/flows/runner.ts`)
    - Executes state machine loop.
    - Renders prompts via a prompt adapter and resolves next transition.
+4. Job picker (`src/job-picker.ts`)
+   - Owns every interactive Jenkins job autocomplete.
+   - Provides single- and multiple-selection modes over an already loaded job
+     collection.
+   - Applies fuzzy suggestions, preferred/recent ordering, validation, and
+     structured cancellation in one place.
 
 At runtime, commands call `runFlow(...)` and pass:
 
 - `definition`: the flow map (`buildPre`, `buildPost`, `listInteractive`,
   `statusPost`)
 - `handlers`: event resolver callbacks for each flow
-- `prompts`: concrete prompt functions (`select`, `confirm`, `text`, `isCancel`)
+- `prompts`: concrete prompt functions (`autocomplete`, `select`, `confirm`,
+  `text`, `isCancel`)
 - `context`: mutable flow state
 
 Interactive prompt functions are routed through `src/clack.ts`, which wraps
@@ -37,6 +45,12 @@ Prompt kinds are defined in `src/flows/types.ts`:
 - `select`: choose from options
 - `confirm`: yes/no
 - `text`: free input
+- `autocomplete`: searchable single selection for domain-neutral flow prompts
+
+Jenkins job selection is not a `PromptSpec` kind. Flow entry handlers call the
+shared job picker and translate its selected/cancelled result into semantic
+flow events. Interactive `status` uses the picker's autocomplete multi-select
+mode directly.
 
 Each prompt field can be static or context-driven:
 
@@ -62,9 +76,14 @@ For each state in `runFlow(...)`:
 ### External package dependencies
 
 - `@clack/prompts` (`package.json`)
-  - Actual terminal UI prompt implementation (`select`, `confirm`, `text`,
-    `multiselect`, `spinner`, `isCancel`).
+  - Actual terminal UI prompt implementation (`autocomplete`,
+    `autocompleteMultiselect`, `select`, `confirm`, `text`, `multiselect`,
+    `spinner`, `isCancel`).
   - Imported via `src/clack.ts` so interactive prompt usage stays centralized.
+- `@clack/core` (`package.json`)
+  - Low-level prompt state used for deliberately customized UI components.
+  - The focused autocomplete multi-select renderer uses it to preserve Clack's
+    navigation behavior while making the active option italic and underlined.
 - `yargs` (`package.json`)
   - CLI argument parsing and command routing.
   - Indirectly affects prompts by deciding interactive vs non-interactive paths.
@@ -83,6 +102,21 @@ For each state in `runFlow(...)`:
   - Validates flow definitions before first run.
 - `src/clack.ts`
   - Shared `@clack/prompts` facade.
+- `src/prompts/autocomplete-multiselect.ts`
+  - Core-backed autocomplete multi-select renderer with explicit focused-row
+    styling for terminal themes where dimming alone is not visible enough.
+- `src/prompts/multiselect.ts`
+  - Core-backed regular multi-select renderer used automatically by artifact
+    and multiple-running-build selection.
+- `src/prompts/focused-option.ts`
+  - Opt-in italic-and-underline focused-row treatment shared by both custom
+    multi-select renderers. Standard select and single autocomplete do not use
+    it.
+- `src/job-picker.ts`
+  - Shared owner of interactive Jenkins job search and selection.
+- `src/commands/ops-helpers.ts`
+  - Loads and resolves job targets, bypasses prompts for explicit URLs and
+    non-interactive calls, and delegates interactive selection to the picker.
 - `src/cli-intro.ts`
   - CLI intro banner formatter/printer helpers.
 - `src/commands/list-deps.ts`
@@ -91,13 +125,15 @@ For each state in `runFlow(...)`:
 ## 5) Which flows own which prompts
 
 - `listInteractive`
-  - Job picker + action menu for `list`.
+  - Invokes the shared single-job picker, then owns the action menu for `list`.
 - `buildPre`
-  - Job selection/search + branch selection/entry before triggering build.
+  - Invokes the shared single-job picker, then owns branch and parameter input.
 - `buildPost`
   - Post-build actions (`watch`, `logs`, `cancel`, `rerun`, `done`).
 - `statusPost`
   - Post-status follow-up actions and repeat confirmation.
+
+`status` invokes the shared multi-job picker before entering `statusPost`.
 
 ## 6) Non-interactive mode behavior
 

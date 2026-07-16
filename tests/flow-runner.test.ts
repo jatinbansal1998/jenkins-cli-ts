@@ -5,7 +5,6 @@ import {
   buildPreFlowHandlers,
   listFlowHandlers,
 } from "../src/flows/handlers";
-import { SEARCH_ALL_JOBS_VALUE } from "../src/flows/constants";
 import { resetValidatedFlowsForTesting, runFlow } from "../src/flows/runner";
 import type {
   AutocompletePromptValue,
@@ -80,24 +79,27 @@ describe("flow runner", () => {
   });
 
   test("watch cancellation returns to job search", async () => {
+    let pickCount = 0;
     const context: ListInteractiveContext = {
       env: TEST_ENV,
       jobs: [{ name: "api", url: "https://jenkins.example.com/job/api/" }],
-      preferredJobs: [
-        { name: "api", url: "https://jenkins.example.com/job/api/" },
-      ],
-      searchQuery: "",
+      pickJob: async () =>
+        pickCount++ === 0
+          ? {
+              kind: "selected",
+              job: {
+                name: "api",
+                url: "https://jenkins.example.com/job/api/",
+              },
+            }
+          : { kind: "cancelled", userInput: "" },
       performAction: async () => "watch_cancelled",
     };
 
     const result = await runFlow({
       definition: flows.listInteractive,
       handlers: listFlowHandlers,
-      prompts: createPromptAdapter([
-        "https://jenkins.example.com/job/api/",
-        "watch",
-        CANCEL,
-      ]),
+      prompts: createPromptAdapter(["watch"]),
       context,
     });
 
@@ -105,24 +107,27 @@ describe("flow runner", () => {
   });
 
   test("action error returns to job search", async () => {
+    let pickCount = 0;
     const context: ListInteractiveContext = {
       env: TEST_ENV,
       jobs: [{ name: "api", url: "https://jenkins.example.com/job/api/" }],
-      preferredJobs: [
-        { name: "api", url: "https://jenkins.example.com/job/api/" },
-      ],
-      searchQuery: "",
+      pickJob: async () =>
+        pickCount++ === 0
+          ? {
+              kind: "selected",
+              job: {
+                name: "api",
+                url: "https://jenkins.example.com/job/api/",
+              },
+            }
+          : { kind: "cancelled", userInput: "" },
       performAction: async () => "action_error",
     };
 
     const result = await runFlow({
       definition: flows.listInteractive,
       handlers: listFlowHandlers,
-      prompts: createPromptAdapter([
-        "https://jenkins.example.com/job/api/",
-        "logs",
-        CANCEL,
-      ]),
+      prompts: createPromptAdapter(["logs"]),
       context,
     });
 
@@ -147,15 +152,12 @@ describe("flow runner", () => {
     expect(result.terminal).toBe("repeat");
   });
 
-  test("build pre flow esc in search from recent returns to recent menu", async () => {
+  test("build pre flow exits when the shared picker is cancelled", async () => {
     const context: BuildPreContext = {
       env: TEST_ENV,
       jobs: [{ name: "api", url: "https://jenkins.example.com/job/api/" }],
-      recentJobs: [
-        { url: "https://jenkins.example.com/job/api/", label: "api" },
-      ],
       jobSelectionLocked: false,
-      searchQuery: "",
+      pickJob: async () => ({ kind: "cancelled", userInput: "api" }),
       branchParam: "BRANCH",
       customParams: {},
       defaultBranch: false,
@@ -166,7 +168,7 @@ describe("flow runner", () => {
     const result = await runFlow({
       definition: flows.buildPre,
       handlers: buildPreFlowHandlers,
-      prompts: createPromptAdapter([SEARCH_ALL_JOBS_VALUE, CANCEL, CANCEL]),
+      prompts: createPromptAdapter([]),
       context,
     });
 

@@ -19,12 +19,36 @@ const jobs: JenkinsJob[] = [
 ];
 
 const loadJobsMock = mock(async () => jobs);
-const loadPreferredJobsMock = mock(async () => jobs);
+const loadPreferredJobsMock = mock(async (..._args: unknown[]) => jobs);
 const autocompleteMock = mock(async (..._args: unknown[]) => EXIT_VALUE);
 const confirmMock = mock(() => true);
 const isCancelMock = mock(() => false);
 const selectMock = mock(async (..._args: unknown[]) => EXIT_VALUE);
 const textMock = mock(async (..._args: unknown[]) => "q");
+const pickJobMock = mock(
+  async (options: {
+    env: EnvConfig;
+    jobs: JenkinsJob[];
+    initialQuery?: string;
+  }): Promise<
+    | { kind: "selected"; job: JenkinsJob }
+    | { kind: "cancelled"; userInput: string }
+  > => {
+    const preferred = options.initialQuery
+      ? options.jobs
+      : await loadPreferredJobsMock({ env: options.env, jobs: options.jobs });
+    const response = await autocompleteMock({
+      initialUserInput: options.initialQuery,
+      options: function (this: { userInput: string }) {
+        return preferred.map((job) => ({ value: job.url, label: job.name }));
+      },
+    });
+    const job = options.jobs.find((entry) => entry.url === response);
+    return job
+      ? { kind: "selected", job }
+      : { kind: "cancelled", userInput: options.initialQuery ?? "" };
+  },
+);
 
 const runBuildMock = mock(async () => undefined);
 const runHistoryMock = mock(async () => undefined);
@@ -56,6 +80,7 @@ mock.module("../src/commands/list-deps", () => ({
     text: textMock,
     loadJobs: loadJobsMock,
     loadPreferredJobs: loadPreferredJobsMock,
+    pickJob: pickJobMock,
     getJobDisplayName: (job: { name: string; fullName?: string }) =>
       job.fullName || job.name,
     rankJobs: (query: string, entries: { name: string; url: string }[]) =>
@@ -98,6 +123,7 @@ describe("runList", () => {
     selectMock.mockImplementation(async () => EXIT_VALUE);
     textMock.mockReset();
     textMock.mockImplementation(async () => "q");
+    pickJobMock.mockClear();
 
     runBuildMock.mockReset();
     runBuildMock.mockImplementation(async () => undefined);

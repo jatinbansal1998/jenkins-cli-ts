@@ -37,9 +37,10 @@ export type PromptOption = {
   value: string;
   label: string;
   hint?: string;
+  disabled?: boolean;
 };
 
-type PromptFilterOption = {
+export type PromptFilterOption = {
   value: string;
   label?: string;
   hint?: string;
@@ -136,6 +137,17 @@ export type PromptAdapter = {
       value: string | string[] | undefined,
     ) => string | Error | undefined;
   }) => Promise<AutocompletePromptResult>;
+  autocompleteMultiselect?: (options: {
+    message: string;
+    options: PromptOption[] | ((this: { userInput: string }) => PromptOption[]);
+    filter?: (search: string, option: PromptFilterOption) => boolean;
+    maxItems?: number;
+    placeholder?: string;
+    required?: boolean;
+    validate?: (
+      value: string | string[] | undefined,
+    ) => string | Error | undefined;
+  }) => Promise<string[] | symbol>;
   confirm: (options: {
     message: string;
     initialValue?: boolean;
@@ -164,10 +176,17 @@ export type ActionEffectResult =
 export type ListInteractiveContext = {
   env: EnvConfig;
   jobs: JenkinsJob[];
-  preferredJobs: JenkinsJob[];
-  searchQuery: string;
+  initialQuery?: string;
   selectedJob?: JenkinsJob;
   selectedAction?: string;
+  pickJob: (options: {
+    env: EnvConfig;
+    jobs: JenkinsJob[];
+    initialQuery?: string;
+  }) => Promise<
+    | { kind: "selected"; job: JenkinsJob }
+    | { kind: "cancelled"; userInput: string }
+  >;
   performAction: (
     action: string,
     selectedJob: JenkinsJob,
@@ -187,11 +206,18 @@ export type BuildPostContext = {
 export type BuildPreContext = {
   env: EnvConfig;
   jobs: JenkinsJob[];
-  recentJobs: { url: string; label: string }[];
   jobSelectionLocked: boolean;
-  searchQuery: string;
+  initialQuery?: string;
   selectedJobUrl?: string;
   selectedJobLabel?: string;
+  pickJob: (options: {
+    env: EnvConfig;
+    jobs: JenkinsJob[];
+    initialQuery?: string;
+  }) => Promise<
+    | { kind: "selected"; job: JenkinsJob }
+    | { kind: "cancelled"; userInput: string }
+  >;
   branchParam: string;
   branch?: string;
   customParams: Record<string, string>;

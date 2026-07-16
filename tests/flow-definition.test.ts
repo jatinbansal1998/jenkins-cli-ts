@@ -97,8 +97,7 @@ describe("flow definitions", () => {
         ? listOptions.options({
             env: {} as never,
             jobs: [],
-            preferredJobs: [],
-            searchQuery: "",
+            pickJob: async () => ({ kind: "cancelled", userInput: "" }),
             performAction: async () => "action_ok",
           })
         : listOptions.options;
@@ -202,9 +201,8 @@ describe("flow definitions", () => {
 
     const options = prompt.options({
       jobs: [],
-      recentJobs: [],
       jobSelectionLocked: false,
-      searchQuery: "",
+      pickJob: async () => ({ kind: "cancelled", userInput: "" }),
       selectedJobUrl: undefined,
       selectedJobLabel: undefined,
       branchParam: "BRANCH",
