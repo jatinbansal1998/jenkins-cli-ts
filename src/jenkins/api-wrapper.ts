@@ -52,6 +52,7 @@ import type {
   PipelineInfo,
   QueueBuildReference,
   QueueItemSummary,
+  RunningBuildSummary,
   TriggerBuildParams,
   TriggerBuildResult,
 } from "../types/jenkins";
@@ -70,6 +71,7 @@ export type {
   NodesSummary,
   QueueBuildReference,
   QueueItemSummary,
+  RunningBuildSummary,
   TriggerBuildParams,
   TriggerBuildResult,
 } from "../types/jenkins";
@@ -125,6 +127,38 @@ export class JenkinsClient {
     return jobs;
   }
 
+  async listRunningBuilds(): Promise<RunningBuildSummary[]> {
+    const treeFields = buildFolderTree(
+      RUNNING_BUILD_LEAF_FIELDS,
+      this.folderDepth,
+    );
+    const url = this.withBase(`api/json?tree=jobs[${treeFields}]`);
+    const data = await this.requestJson<JenkinsJobsResponse>(
+      url,
+      "list running builds",
+    );
+    if (!Array.isArray(data.jobs)) {
+      throw new CliError(
+        "Unexpected Jenkins response when listing running builds.",
+        ["Try again after checking the Jenkins connection."],
+      );
+    }
+
+    const builds: RunningBuildSummary[] = [];
+    const seen = new Set<string>();
+    for (const item of data.jobs) {
+      await this.collectRunningBuilds(item, builds, seen);
+    }
+
+    builds.sort((left, right) => {
+      const byName = runningBuildDisplayName(left).localeCompare(
+        runningBuildDisplayName(right),
+      );
+      return byName || left.buildNumber - right.buildNumber;
+    });
+    return builds;
+  }
+
   private async collectFolderJobs(
     item: JenkinsApiJob,
     out: JenkinsJob[],
@@ -163,6 +197,49 @@ export class JenkinsClient {
       return;
     }
     const key = normalizeUrl(normalized.url);
+    if (!seen.has(key)) {
+      seen.add(key);
+      out.push(normalized);
+    }
+  }
+
+  private async collectRunningBuilds(
+    item: JenkinsApiJob,
+    out: RunningBuildSummary[],
+    seen: Set<string>,
+  ): Promise<void> {
+    if (item._class === CLOUDBEES_FOLDER_CLASS) {
+      let children: JenkinsApiJob[];
+      if (Array.isArray(item.jobs)) {
+        children = item.jobs;
+      } else if (typeof item.url === "string") {
+        const treeFields = buildFolderTree(
+          RUNNING_BUILD_LEAF_FIELDS,
+          this.folderDepth,
+        );
+        const folderUrl = this.withJob(
+          item.url,
+          `api/json?tree=jobs[${treeFields}]`,
+        );
+        const folderData = await this.requestJson<JenkinsJobsResponse>(
+          folderUrl,
+          `list running builds in folder ${item.fullName ?? item.name ?? item.url}`,
+        );
+        children = Array.isArray(folderData.jobs) ? folderData.jobs : [];
+      } else {
+        return;
+      }
+      for (const child of children) {
+        await this.collectRunningBuilds(child, out, seen);
+      }
+      return;
+    }
+
+    const normalized = normalizeRunningBuild(item);
+    if (!normalized) {
+      return;
+    }
+    const key = normalizeUrl(normalized.buildUrl);
     if (!seen.has(key)) {
       seen.add(key);
       out.push(normalized);
@@ -1153,6 +1230,8 @@ export class JenkinsClient {
 const CLOUDBEES_FOLDER_CLASS = "com.cloudbees.hudson.plugins.folder.Folder";
 
 const FOLDER_LEAF_FIELDS = "_class,name,fullName,url";
+const RUNNING_BUILD_LEAF_FIELDS =
+  "_class,name,fullName,url,lastBuild[number,url,building]";
 const DEFAULT_FOLDER_DEPTH = 3;
 const MAX_FOLDER_DEPTH = 10;
 
@@ -1166,6 +1245,10 @@ function buildFolderTree(fields: string, depth: number): string {
 
 function normalizeUrl(value: string): string {
   return value.trim().replace(/\/+$/, "");
+}
+
+function runningBuildDisplayName(build: RunningBuildSummary): string {
+  return build.fullJobName?.trim() || build.jobName;
 }
 
 function toAnalyticsOperation(context: string): string {
@@ -1351,6 +1434,44 @@ function normalizeJob(job: JenkinsApiJob): JenkinsJob | null {
     fullName: typeof job.fullName === "string" ? job.fullName : undefined,
     url: job.url,
   };
+}
+
+function normalizeRunningBuild(job: JenkinsApiJob): RunningBuildSummary | null {
+  const lastBuild = job.lastBuild;
+  if (
+    typeof job.name !== "string" ||
+    !job.name.trim() ||
+    typeof job.url !== "string" ||
+    !isValidHttpUrl(job.url) ||
+    lastBuild?.building !== true ||
+    typeof lastBuild.number !== "number" ||
+    !Number.isInteger(lastBuild.number) ||
+    lastBuild.number < 0 ||
+    typeof lastBuild.url !== "string" ||
+    !isValidHttpUrl(lastBuild.url)
+  ) {
+    return null;
+  }
+
+  return {
+    jobName: job.name,
+    fullJobName:
+      typeof job.fullName === "string" && job.fullName.trim()
+        ? job.fullName
+        : undefined,
+    jobUrl: job.url,
+    buildNumber: lastBuild.number,
+    buildUrl: lastBuild.url,
+  };
+}
+
+function isValidHttpUrl(value: string): boolean {
+  try {
+    const url = new URL(value);
+    return url.protocol === "http:" || url.protocol === "https:";
+  } catch {
+    return false;
+  }
 }
 
 function normalizeNodeSummary(computer: JenkinsApiComputer): NodeSummary {

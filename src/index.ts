@@ -23,6 +23,7 @@ import {
 } from "./commands/profile";
 import { runQueue } from "./commands/queue";
 import { runRerun } from "./commands/rerun";
+import { runRunningBuilds } from "./commands/run";
 import { runStatus } from "./commands/status";
 import { runUpdate } from "./commands/update";
 import { runWait } from "./commands/wait";
@@ -586,6 +587,24 @@ async function main(): Promise<void> {
               dest: typeof argv.dest === "string" ? argv.dest : undefined,
               artifact: parseArtifactFilters(argv.artifact),
               force: Boolean(argv.force),
+              nonInteractive: Boolean(argv.nonInteractive),
+            });
+          },
+        );
+      },
+    )
+    .command(
+      "run",
+      "List running builds and open one in the browser",
+      () => {},
+      async (argv) => {
+        await runTrackedCommandWithContext(
+          "run",
+          argv,
+          async ({ env, client }) => {
+            await runRunningBuilds({
+              client,
+              env,
               nonInteractive: Boolean(argv.nonInteractive),
             });
           },

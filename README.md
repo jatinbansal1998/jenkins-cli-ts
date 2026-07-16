@@ -28,6 +28,7 @@ wget -qO- https://jatinbansal.com/jenkins-cli/install/ | bash
 | Build history               | Yes       | Jenkins-style recent build history table                              |
 | Queue visibility            | Yes       | Inspect the build queue, filter by job, and cancel or open items      |
 | Node/agent visibility       | Yes       | List agents with status, executor usage, and labels                   |
+| Running build actions       | Yes       | List, open, or batch-cancel live running builds                       |
 | Logs, cancel, and rerun     | Yes       | Inspect recent logs and manage existing builds                        |
 | Artifacts                   | Yes       | List build artifacts and stream them to disk, preserving paths        |
 | One-off credentials         | Yes       | Override profile config with `--url`, `--user`, and `--token`         |
@@ -541,10 +542,29 @@ rather than buffering in memory.
 Cancel queued or running work:
 
 ```bash
+jenkins-cli cancel
 jenkins-cli cancel --job "api-prod"
 jenkins-cli cancel --queue-url "https://jenkins.example.com/queue/item/123/"
 jenkins-cli cancel --build-url "https://jenkins.example.com/job/api-prod/184/"
 ```
+
+With no target in interactive mode, `cancel` shows live running builds and
+supports selecting one, several, or all of them. You can also fall back to the
+existing cached job search. Explicit targets and non-interactive behavior are
+unchanged.
+
+### Running Builds
+
+List live running builds and open one in the default browser:
+
+```bash
+jenkins-cli run
+jenkins-cli run --non-interactive
+```
+
+Interactive mode opens the selected build. Non-interactive mode prints every
+running build and its exact URL without launching a browser. If nothing is
+running, the command prints `OK: no running builds` and exits 0.
 
 ### Queue
 

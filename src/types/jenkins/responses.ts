@@ -8,6 +8,7 @@ export type JenkinsApiJob = {
   fullName?: string;
   url?: string;
   jobs?: JenkinsApiJob[];
+  lastBuild?: JenkinsApiBuild | null;
 };
 
 export type JenkinsJobsResponse = {

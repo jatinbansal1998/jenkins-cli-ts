@@ -37,6 +37,14 @@ export type JenkinsJob = {
   url: string;
 };
 
+export type RunningBuildSummary = {
+  jobName: string;
+  fullJobName?: string;
+  jobUrl: string;
+  buildNumber: number;
+  buildUrl: string;
+};
+
 export type JobStatus = {
   lastBuildNumber?: number;
   lastBuildUrl?: string;

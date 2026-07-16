@@ -19,6 +19,7 @@ export type {
   PipelineInfo,
   QueueBuildReference,
   QueueItemSummary,
+  RunningBuildSummary,
   TriggerBuildResult,
 } from "./models";
 
