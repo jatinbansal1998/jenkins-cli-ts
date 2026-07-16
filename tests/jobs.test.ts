@@ -154,16 +154,16 @@ describe("job fuzzy matching", () => {
       const results = rankJobs("payment-service", jobs);
       const goodMatches = results.filter((r) => r.score >= MIN_SCORE);
 
-      // All good matches should be payment-service jobs only
+      // All good matches should contain the complete payment-service concept.
       for (const match of goodMatches) {
-        expect(match.job.name).toMatch(/^payment-service/);
+        expect(match.job.name).toContain("payment-service");
       }
 
-      // Other services should NOT be in good matches
+      // Services without the payment token should NOT be in good matches.
       const otherServices = results.filter(
         (r) =>
           r.job.name.includes("service") &&
-          !r.job.name.startsWith("payment-service"),
+          !r.job.name.includes("payment-service"),
       );
       for (const other of otherServices) {
         expect(other.score).toBeLessThan(MIN_SCORE);
@@ -200,14 +200,15 @@ describe("job fuzzy matching", () => {
 
     /**
      * Query: "payment-service-prod" (exact service+env)
-     * Expected: Only ONE result above threshold
+     * Expected: Exact result ranks above longer nested services
      */
-    test("exact service+env match returns only one result", () => {
+    test("exact service+env match ranks above nested services", () => {
       const results = rankJobs("payment-service-prod", jobs);
-      const goodMatches = results.filter((r) => r.score >= MIN_SCORE);
+      const exactScore = scoreFor(results, "payment-service-prod");
+      const nestedScore = scoreFor(results, "credit-card-payment-service-prod");
 
       expect(results[0]?.job.name).toBe("payment-service-prod");
-      expect(goodMatches.length).toBe(1);
+      expect(exactScore).toBeGreaterThan(nestedScore);
     });
   });
 
@@ -254,6 +255,85 @@ describe("job fuzzy matching", () => {
 
       expect(partialScore).toBeGreaterThanOrEqual(MIN_SCORE);
       expect(partialScore).toBeLessThan(exactScore);
+    });
+
+    test("matches a query token with one deleted character", () => {
+      const results = rankJobs("paymnt service prod", [
+        createJob("payment-service-prod"),
+      ]);
+
+      expect(results[0]?.job.name).toBe("payment-service-prod");
+      expect(results[0]?.score).toBeGreaterThanOrEqual(MIN_SCORE);
+    });
+
+    test("matches a query token with one substituted character", () => {
+      const results = rankJobs("paymant service prod", [
+        createJob("payment-service-prod"),
+      ]);
+
+      expect(results[0]?.job.name).toBe("payment-service-prod");
+      expect(results[0]?.score).toBeGreaterThanOrEqual(MIN_SCORE);
+    });
+
+    test("matches a query token with one inserted character", () => {
+      const results = rankJobs("paymentt service prod", [
+        createJob("payment-service-prod"),
+      ]);
+
+      expect(results[0]?.job.name).toBe("payment-service-prod");
+      expect(results[0]?.score).toBeGreaterThanOrEqual(MIN_SCORE);
+    });
+
+    test("matches a query token with one adjacent transposition", () => {
+      const results = rankJobs("payemnt service prod", [
+        createJob("payment-service-prod"),
+      ]);
+
+      expect(results[0]?.job.name).toBe("payment-service-prod");
+      expect(results[0]?.score).toBeGreaterThanOrEqual(MIN_SCORE);
+    });
+
+    test("does not treat unrelated words as typo matches", () => {
+      const results = rankJobs("shipment service prod", [
+        createJob("payment-service-prod"),
+      ]);
+
+      expect(scoreFor(results, "payment-service-prod")).toBeLessThan(MIN_SCORE);
+    });
+
+    test("does not apply typo matching to short query tokens", () => {
+      const results = rankJobs("apy gateway prod", [
+        createJob("api-gateway-prod"),
+      ]);
+
+      expect(scoreFor(results, "api-gateway-prod")).toBeLessThan(MIN_SCORE);
+    });
+
+    test("exact and prefix token matches score above typo matches", () => {
+      const targetJobs = [createJob("payment-service-prod")];
+      const exactScore = scoreFor(
+        rankJobs("payment service prod", targetJobs),
+        "payment-service-prod",
+      );
+      const prefixScore = scoreFor(
+        rankJobs("paymen service prod", targetJobs),
+        "payment-service-prod",
+      );
+      const typoScore = scoreFor(
+        rankJobs("paymant service prod", targetJobs),
+        "payment-service-prod",
+      );
+
+      expect(exactScore).toBeGreaterThan(prefixScore);
+      expect(prefixScore).toBeGreaterThan(typoScore);
+    });
+
+    test("requires query tokens to match distinct candidate tokens", () => {
+      const results = rankJobs("payment payment prod", [
+        createJob("payment-service-prod"),
+      ]);
+
+      expect(scoreFor(results, "payment-service-prod")).toBeLessThan(MIN_SCORE);
     });
 
     /**
@@ -353,22 +433,48 @@ describe("job fuzzy matching", () => {
 
     /**
      * Query: "payment-service-prod" (exact base service)
-     * Expected: Only payment-service-prod, NOT credit-card-payment-service-prod
-     * Tests that exact match of a shorter service doesn't match longer nested services.
+     * Expected: payment-service-prod ranks above credit-card-payment-service-prod
+     * without changing the nested service's intrinsic score.
      */
-    test("payment-service-prod exact match excludes nested services", () => {
+    test("payment-service-prod exact match ranks above nested services", () => {
       const results = rankJobs("payment-service-prod", jobs);
-      const goodMatches = results.filter((r) => r.score >= MIN_SCORE);
+      const exactScore = scoreFor(results, "payment-service-prod");
+      const nestedScore = scoreFor(results, "credit-card-payment-service-prod");
 
-      // Only payment-service-prod should be a good match
-      expect(goodMatches.length).toBe(1);
-      expect(goodMatches[0]?.job.name).toBe("payment-service-prod");
+      expect(results[0]?.job.name).toBe("payment-service-prod");
+      expect(exactScore).toBeGreaterThan(nestedScore);
+    });
 
-      // Longer nested services should NOT be in good matches
-      const nestedServiceMatch = goodMatches.find((m) =>
-        m.job.name.startsWith("credit-card-payment-service"),
+    test("candidate scores do not depend on exact competitors", () => {
+      const nestedJob = createJob("credit-card-payment-service-prod");
+      const exactJob = createJob("payment-service-prod");
+      const query = "payment service prod";
+
+      const scoreWithoutCompetitor = scoreFor(
+        rankJobs(query, [nestedJob]),
+        nestedJob.name,
       );
-      expect(nestedServiceMatch).toBeUndefined();
+      const resultsWithCompetitor = rankJobs(query, [nestedJob, exactJob]);
+
+      expect(scoreFor(resultsWithCompetitor, nestedJob.name)).toBe(
+        scoreWithoutCompetitor,
+      );
+      expect(resultsWithCompetitor[0]?.job.name).toBe(exactJob.name);
+    });
+
+    test("token scores do not depend on unrelated jobs", () => {
+      const targetJob = createJob("data-analytics-ml-pipeline-prod");
+      const query = "analytics pipelin";
+      const scoreByItself = scoreFor(
+        rankJobs(query, [targetJob]),
+        targetJob.name,
+      );
+      const scoreWithUnrelatedJob = scoreFor(
+        rankJobs(query, [targetJob, createJob("unrelated-task")]),
+        targetJob.name,
+      );
+
+      expect(scoreWithUnrelatedJob).toBe(scoreByItself);
     });
   });
 

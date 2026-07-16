@@ -69,34 +69,6 @@ function resolveCacheDir(): string {
   return path.join(baseDir, "jenkins-cli");
 }
 
-/** Analyze all jobs to identify frequently-occurring (trivial) tokens.
- * Tokens appearing in >30% of jobs are considered trivial and weighted lower.
- */
-function analyzeTokenFrequencies(jobs: JenkinsJob[]): Map<string, number> {
-  const tokenCounts = new Map<string, number>();
-  const totalJobs = jobs.length;
-
-  for (const job of jobs) {
-    const tokens = new Set(
-      job.name
-        .toLowerCase()
-        .split(/[^a-z0-9]+/)
-        .filter((t) => t.length > 0),
-    );
-    for (const token of tokens) {
-      tokenCounts.set(token, (tokenCounts.get(token) || 0) + 1);
-    }
-  }
-
-  // Convert counts to frequencies (0-1)
-  const tokenFrequencies = new Map<string, number>();
-  for (const [token, count] of tokenCounts) {
-    tokenFrequencies.set(token, count / totalJobs);
-  }
-
-  return tokenFrequencies;
-}
-
 export function getJobDisplayName(job: JenkinsJob): string {
   return job.fullName || job.name;
 }
@@ -389,17 +361,10 @@ export type RankedJob = {
 
 export function rankJobs(query: string, jobs: JenkinsJob[]): RankedJob[] {
   const normalizedQuery = normalizeText(query);
-  const tokenFrequencies = analyzeTokenFrequencies(jobs);
   const queryTokens = tokenize(normalizedQuery);
-  const hasExactOrPrefixMatch = hasExactOrPrefixMatchInJobs(
-    jobs,
-    normalizedQuery,
-  );
   const ranked = collectRankedJobs(jobs, {
     normalizedQuery,
     queryTokens,
-    tokenFrequencies,
-    hasExactOrPrefixMatch,
   });
   ranked.sort(compareRankedJobs);
   return ranked;
@@ -493,34 +458,21 @@ function tokenize(input: string): string[] {
     .filter((token) => token.length > 0);
 }
 
-function hasAllQueryTokens(
-  queryTokens: string[],
-  candidateTokens: string[],
-): boolean {
-  if (queryTokens.length === 0) {
-    return false;
-  }
-  return queryTokens.every((queryToken) =>
-    candidateTokens.some(
-      (candidateToken) =>
-        candidateToken === queryToken || candidateToken.startsWith(queryToken),
-    ),
-  );
-}
-
 function scoreCandidate(
   normalizedQuery: string,
   queryTokens: string[],
   candidate: string,
-  tokenFrequencies?: Map<string, number>,
-  hasExactOrPrefixMatch?: boolean,
 ): number {
   if (!normalizedQuery || !candidate) {
     return 0;
   }
 
   const candidateTokens = candidate.split(" ");
-  if (!passesTokenFilter(queryTokens, candidateTokens)) {
+  const tokenMatchCredit = getBestTokenMatchCredit(
+    queryTokens,
+    candidateTokens,
+  );
+  if (tokenMatchCredit === null) {
     return 0;
   }
 
@@ -533,7 +485,6 @@ function scoreCandidate(
     normalizedQuery,
     candidateTokens.length,
     candidate,
-    hasExactOrPrefixMatch,
   );
   if (substringScore !== null) {
     return substringScore;
@@ -543,25 +494,7 @@ function scoreCandidate(
     return 0;
   }
 
-  return scoreTokenOverlap(queryTokens, candidateTokens, tokenFrequencies);
-}
-
-function hasExactOrPrefixMatchInJobs(
-  jobs: JenkinsJob[],
-  normalizedQuery: string,
-): boolean {
-  for (const job of jobs) {
-    for (const candidate of getJobCandidates(job)) {
-      const candidateNormalized = normalizeText(candidate);
-      if (
-        candidateNormalized === normalizedQuery ||
-        candidateNormalized.startsWith(normalizedQuery)
-      ) {
-        return true;
-      }
-    }
-  }
-  return false;
+  return scoreTokenOverlap(tokenMatchCredit, queryTokens.length);
 }
 
 function collectRankedJobs(
@@ -569,8 +502,6 @@ function collectRankedJobs(
   options: {
     normalizedQuery: string;
     queryTokens: string[];
-    tokenFrequencies: Map<string, number>;
-    hasExactOrPrefixMatch: boolean;
   },
 ): RankedJob[] {
   const ranked: RankedJob[] = [];
@@ -588,8 +519,6 @@ function scoreJobCandidates(
   options: {
     normalizedQuery: string;
     queryTokens: string[];
-    tokenFrequencies: Map<string, number>;
-    hasExactOrPrefixMatch: boolean;
   },
 ): number {
   let bestScore = 0;
@@ -599,8 +528,6 @@ function scoreJobCandidates(
       options.normalizedQuery,
       options.queryTokens,
       candidateNormalized,
-      options.tokenFrequencies,
-      options.hasExactOrPrefixMatch,
     );
     if (score > bestScore) {
       bestScore = score;
@@ -629,16 +556,6 @@ function compareRankedJobs(a: RankedJob, b: RankedJob): number {
   return getJobDisplayName(a.job).localeCompare(getJobDisplayName(b.job));
 }
 
-function passesTokenFilter(
-  queryTokens: string[],
-  candidateTokens: string[],
-): boolean {
-  if (queryTokens.length === 0) {
-    return true;
-  }
-  return hasAllQueryTokens(queryTokens, candidateTokens);
-}
-
 function scoreDirectMatch(
   normalizedQuery: string,
   candidate: string,
@@ -656,7 +573,6 @@ function scoreSubstringMatch(
   normalizedQuery: string,
   candidateTokenCount: number,
   candidate: string,
-  hasExactOrPrefixMatch?: boolean,
 ): number | null {
   if (!candidate.includes(normalizedQuery)) {
     return null;
@@ -667,59 +583,152 @@ function scoreSubstringMatch(
   }
   const extraTokens = candidateTokenCount - queryTokenCount;
   const isSingleTokenQuery = queryTokenCount === 1;
-  if (hasExactOrPrefixMatch) {
-    const penalty = extraTokens * (isSingleTokenQuery ? 10 : 20);
-    return Math.max(0, SCORES.SUBSTRING - penalty);
-  }
   const perTokenPenalty = isSingleTokenQuery ? 4 : 8;
   const penalty = extraTokens * perTokenPenalty;
   return Math.max(25, SCORES.SUBSTRING - penalty);
 }
 
-function scoreTokenOverlap(
+const MIN_FUZZY_TOKEN_LENGTH = 4;
+const EXACT_TOKEN_CREDIT = 1;
+const PREFIX_TOKEN_CREDIT = 0.85;
+const TYPO_TOKEN_CREDIT = 0.75;
+
+type TokenMatchOption = {
+  candidateIndex: number;
+  credit: number;
+};
+
+function getBestTokenMatchCredit(
   queryTokens: string[],
   candidateTokens: string[],
-  tokenFrequencies?: Map<string, number>,
-): number {
-  let weightedOverlap = 0;
-  let totalWeight = 0;
+): number | null {
+  if (queryTokens.length === 0) {
+    return null;
+  }
 
-  for (const queryToken of queryTokens) {
-    const frequency = tokenFrequencies?.get(queryToken) ?? 0.5;
-    const weight = 1.1 - frequency;
-    totalWeight += weight;
+  const optionsByQuery: TokenMatchOption[][] = queryTokens.map((queryToken) =>
+    candidateTokens.flatMap((candidateToken, candidateIndex) => {
+      const credit = getTokenMatchCredit(queryToken, candidateToken);
+      return credit === null ? [] : [{ candidateIndex, credit }];
+    }),
+  );
+  if (optionsByQuery.some((options) => options.length === 0)) {
+    return null;
+  }
 
-    const overlapCredit = getTokenOverlapCredit(queryToken, candidateTokens);
-    if (overlapCredit > 0) {
-      weightedOverlap += weight * overlapCredit;
+  optionsByQuery.sort((a, b) => a.length - b.length);
+  const memo = optionsByQuery.map(() => new Map<bigint, number>());
+
+  function findBestCredit(queryIndex: number, usedCandidates: bigint): number {
+    if (queryIndex === optionsByQuery.length) {
+      return 0;
     }
+
+    const cached = memo[queryIndex]?.get(usedCandidates);
+    if (cached !== undefined) {
+      return cached;
+    }
+
+    let bestCredit = Number.NEGATIVE_INFINITY;
+    for (const option of optionsByQuery[queryIndex] ?? []) {
+      const candidateMask = 1n << BigInt(option.candidateIndex);
+      if ((usedCandidates & candidateMask) !== 0n) {
+        continue;
+      }
+      const remainingCredit = findBestCredit(
+        queryIndex + 1,
+        usedCandidates | candidateMask,
+      );
+      bestCredit = Math.max(bestCredit, option.credit + remainingCredit);
+    }
+
+    memo[queryIndex]?.set(usedCandidates, bestCredit);
+    return bestCredit;
   }
 
-  if (weightedOverlap === 0) {
-    return 0;
-  }
-
-  const weightedRatio = weightedOverlap / totalWeight;
-  return Math.round(weightedRatio * 40);
+  const bestCredit = findBestCredit(0, 0n);
+  return Number.isFinite(bestCredit) ? bestCredit : null;
 }
 
-function getTokenOverlapCredit(
+function getTokenMatchCredit(
   queryToken: string,
-  candidateTokens: string[],
-): number {
-  let bestCredit = 0;
+  candidateToken: string,
+): number | null {
+  if (candidateToken === queryToken) {
+    return EXACT_TOKEN_CREDIT;
+  }
+  if (candidateToken.startsWith(queryToken)) {
+    return PREFIX_TOKEN_CREDIT;
+  }
+  if (
+    queryToken.length >= MIN_FUZZY_TOKEN_LENGTH &&
+    isOneEditApart(queryToken, candidateToken)
+  ) {
+    return TYPO_TOKEN_CREDIT;
+  }
+  return null;
+}
 
-  for (const candidateToken of candidateTokens) {
-    if (candidateToken === queryToken) {
-      return 1;
-    }
-    if (candidateToken.startsWith(queryToken)) {
-      bestCredit = Math.max(
-        bestCredit,
-        queryToken.length / candidateToken.length,
-      );
-    }
+function isOneEditApart(left: string, right: string): boolean {
+  const lengthDifference = Math.abs(left.length - right.length);
+  if (lengthDifference > 1) {
+    return false;
   }
 
-  return bestCredit;
+  if (left.length === right.length) {
+    const mismatches: number[] = [];
+    for (let index = 0; index < left.length; index += 1) {
+      if (left[index] !== right[index]) {
+        mismatches.push(index);
+        if (mismatches.length > 2) {
+          return false;
+        }
+      }
+    }
+    if (mismatches.length === 1) {
+      return true;
+    }
+    if (mismatches.length !== 2) {
+      return false;
+    }
+    const first = mismatches[0];
+    const second = mismatches[1];
+    if (first === undefined || second === undefined) {
+      return false;
+    }
+    return (
+      second === first + 1 &&
+      left[first] === right[second] &&
+      left[second] === right[first]
+    );
+  }
+
+  const shorter = left.length < right.length ? left : right;
+  const longer = left.length < right.length ? right : left;
+  let shorterIndex = 0;
+  let longerIndex = 0;
+  let skippedCharacter = false;
+
+  while (shorterIndex < shorter.length && longerIndex < longer.length) {
+    if (shorter[shorterIndex] === longer[longerIndex]) {
+      shorterIndex += 1;
+      longerIndex += 1;
+      continue;
+    }
+    if (skippedCharacter) {
+      return false;
+    }
+    skippedCharacter = true;
+    longerIndex += 1;
+  }
+  return true;
+}
+
+function scoreTokenOverlap(
+  totalCredit: number,
+  queryTokenCount: number,
+): number {
+  return Math.round(
+    (totalCredit / queryTokenCount) * SCORES.TOKEN_OVERLAP_BASE,
+  );
 }
