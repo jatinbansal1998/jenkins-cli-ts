@@ -5,6 +5,14 @@ on:
     branches: [main]
     paths-ignore:
       - ".github/workflows/**"
+      - "**/*.md"
+      - "docs/**"
+      - "fuzzy-search-docs/**"
+      - "LICENSE"
+      - ".github/FUNDING.yml"
+      - ".coderabbit.yaml"
+      - ".devcontainer/**"
+      - ".gitignore"
 
 concurrency:
   group: pr-${{ github.event.pull_request.number }}
