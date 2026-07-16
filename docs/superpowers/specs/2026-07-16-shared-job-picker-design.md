@@ -82,6 +82,30 @@ Single mode renders Clack's `autocomplete` and requires one selected job.
 Multiple mode renders Clack's `autocompleteMultiselect`, requires at least one
 selected job, and returns selections in picker order.
 
+### Focused Multi-Select Styling
+
+The installed `@clack/prompts` 1.7.0 release is also the latest available
+release. Its autocomplete multi-select distinguishes the focused row primarily
+by dimming inactive labels. That contrast is not visible enough in some light
+terminal themes.
+
+Add `@clack/core` 1.4.3 as a direct dependency and implement a focused custom
+autocomplete multi-select renderer. The renderer stays behind the existing
+`src/clack.ts` facade so command and picker code remain independent of prompt
+internals, and the core dependency can support other deliberately designed
+custom UI elements later.
+
+The renderer follows Clack's current autocomplete multi-select behavior for
+search, fuzzy-filter bypass, scrolling, checked state, validation,
+cancellation, instructions, and submission. Its only presentation change is
+that the complete focused option is both italicized and underlined. Inactive
+options remain dimmed and selected checkboxes remain green. The focused style
+moves with Up/Down navigation and does not imply that an option is selected.
+
+Do not patch `node_modules` or couple `job-picker.ts` directly to
+`@clack/core`. Renderer-specific tests will verify focused, inactive, selected,
+and disabled option output. Picker tests continue to cover selection behavior.
+
 There will be no separate recent-jobs menu for job lookup. Recent jobs appear
 first when the input is blank, and users can immediately type to search the full
 cache. This makes the interaction consistent across `list`, `build`, `status`,
@@ -224,6 +248,8 @@ change as part of this work.
 - All single-job commands use one shared single-selection implementation.
 - Interactive `status` uses autocomplete multi-select and can process multiple
   selected jobs.
+- The complete focused status option is italicized and underlined while arrow
+  navigation moves through the list.
 - Blank input prioritizes recent jobs consistently.
 - `cancel` retains its running-build shortcuts and delegates full job search to
   the shared picker.
