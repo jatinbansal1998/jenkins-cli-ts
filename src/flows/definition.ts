@@ -10,6 +10,7 @@ import { getSuggestedJobs } from "../jobs";
 import {
   BRANCH_CUSTOM_VALUE,
   BRANCH_REMOVE_VALUE,
+  BUILD_CONFIGURE_DISCOVERED_VALUE,
   BUILD_WITH_CUSTOM_PARAMS_VALUE,
   BUILD_WITHOUT_PARAMS_VALUE,
   BUILD_WITH_PARAMS_VALUE,
@@ -25,6 +26,7 @@ const ACTION_MENU_ORDER = [
   "build",
   "rerun_last",
   "rerun",
+  "view_params",
   "status",
   "watch",
   "logs",
@@ -102,6 +104,7 @@ export const listInteractiveFlow: FlowDefinition<ListInteractiveContext> = {
           { value: "build", label: "Build" },
           { value: "rerun_last", label: "Rerun last build" },
           { value: "rerun", label: "Rerun last failed" },
+          { value: "view_params", label: "View parameters" },
           { value: "status", label: "Status" },
           { value: "watch", label: "Watch" },
           { value: "logs", label: "Logs" },
@@ -117,6 +120,7 @@ export const listInteractiveFlow: FlowDefinition<ListInteractiveContext> = {
         "select:search": "select_job",
         "select:exit": "exit_command",
         "select:build": "run_action",
+        "select:view_params": "run_action",
         "select:status": "run_action",
         "select:history": "run_action",
         "select:watch": "run_action",
@@ -220,6 +224,37 @@ export const buildPreFlow: FlowDefinition<BuildPreContext> = {
         "select:job": "prepare_branch",
       },
     },
+    /** Selects whether to configure discovered parameters or use Jenkins defaults. */
+    discovered_mode: {
+      prompt: {
+        kind: "select",
+        message: (context) => withPromptTarget("Build parameters", context.env),
+        options: [
+          {
+            value: BUILD_CONFIGURE_DISCOVERED_VALUE,
+            label: "Configure parameters",
+          },
+          {
+            value: BUILD_WITHOUT_PARAMS_VALUE,
+            label: "Run with default parameters",
+          },
+        ],
+      },
+      onSelect: "buildPre.selectDiscoveredMode",
+      transitions: {
+        esc: "build_mode_back",
+        "mode:configure_discovered": "configure_discovered",
+        "mode:without_params": "complete",
+      },
+    },
+    /** Prompts for normalized Jenkins parameter definitions. */
+    configure_discovered: {
+      onEnter: "buildPre.configureDiscovered",
+      transitions: {
+        "parameters:ready": "complete",
+        "parameters:cancelled": "exit_command",
+      },
+    },
     /** Selects whether to trigger with branch/custom parameters or without parameters. */
     branch_mode: {
       prompt: {
@@ -261,6 +296,8 @@ export const buildPreFlow: FlowDefinition<BuildPreContext> = {
       onEnter: "buildPre.prepareBranch",
       transitions: {
         "branch:ready": "complete",
+        "parameters:mode": "discovered_mode",
+        "parameters:configure": "configure_discovered",
         "branch:mode": "branch_mode",
         "branch:select": "branch_select",
         "branch:entry": "branch_entry",

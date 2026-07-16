@@ -18,6 +18,7 @@ import { getJobDisplayName } from "../jobs";
 import {
   BRANCH_CUSTOM_VALUE,
   BRANCH_REMOVE_VALUE,
+  BUILD_CONFIGURE_DISCOVERED_VALUE,
   BUILD_WITH_CUSTOM_PARAMS_VALUE,
   BUILD_WITHOUT_PARAMS_VALUE,
   BUILD_WITH_PARAMS_VALUE,
@@ -198,6 +199,9 @@ function selectRecentJobHandler({
   context.selectedJobLabel = recent.label;
   context.searchQuery = "";
   context.buildModePrompted = false;
+  context.parameterMode = undefined;
+  context.parameterDefinitions = undefined;
+  context.parameterDiscoveryAttempted = false;
   return "select:recent";
 }
 
@@ -221,6 +225,9 @@ function selectSearchCandidateHandler({
   context.selectedJobUrl = selected.url;
   context.selectedJobLabel = deps.getJobDisplayName(selected);
   context.buildModePrompted = false;
+  context.parameterMode = undefined;
+  context.parameterDefinitions = undefined;
+  context.parameterDiscoveryAttempted = false;
   return "select:job";
 }
 
@@ -267,6 +274,30 @@ function selectBuildModeHandler({
   return "mode:with_branch";
 }
 
+function selectDiscoveredModeHandler({
+  context,
+  input,
+}: {
+  context: BuildPreContext;
+  input?: unknown;
+}): EventId {
+  const value = String(input);
+  context.buildModePrompted = true;
+  if (value === BUILD_WITHOUT_PARAMS_VALUE) {
+    context.parameterMode = "without";
+    context.defaultBranch = true;
+    context.branch = "";
+    context.customParams = {};
+    return "mode:without_params";
+  }
+  if (value === BUILD_CONFIGURE_DISCOVERED_VALUE) {
+    context.parameterMode = "discovered";
+    context.defaultBranch = false;
+    return "mode:configure_discovered";
+  }
+  return "mode:configure_discovered";
+}
+
 function leaveBuildModeHandler({
   context,
 }: {
@@ -280,6 +311,42 @@ async function prepareBranchHandler({
 }: {
   context: BuildPreContext;
 }): Promise<EventId> {
+  const jobUrl = context.selectedJobUrl?.trim() ?? "";
+  if (
+    !context.parameterDiscoveryAttempted &&
+    jobUrl &&
+    context.discoverParameters
+  ) {
+    context.parameterDiscoveryAttempted = true;
+    try {
+      context.parameterDefinitions = await context.discoverParameters(jobUrl);
+    } catch (error) {
+      if (
+        error instanceof Error &&
+        "code" in error &&
+        error.code === "JENKINS_AUTH_ERROR"
+      ) {
+        throw error;
+      }
+      context.parameterDefinitions = undefined;
+      printHint(
+        "Could not discover job parameters; continuing with manual parameter entry.",
+      );
+    }
+  }
+
+  if (context.parameterDefinitions?.length) {
+    const hasExplicitValues =
+      Boolean(context.branch?.trim()) ||
+      Object.keys(context.customParams).length > 0;
+    if (hasExplicitValues || context.parameterMode === "discovered") {
+      context.parameterMode = "discovered";
+      return "parameters:configure";
+    }
+    if (context.defaultBranch) return "branch:ready";
+    return "parameters:mode";
+  }
+
   const branch = context.branch?.trim() ?? "";
   const hasCustomParams = Object.keys(context.customParams).length > 0;
   context.branch = branch;
@@ -301,7 +368,6 @@ async function prepareBranchHandler({
     return "branch:mode";
   }
 
-  const jobUrl = context.selectedJobUrl?.trim() ?? "";
   if (!jobUrl) {
     return "branch:error";
   }
@@ -324,6 +390,22 @@ async function prepareBranchHandler({
   context.removableBranches = removableBranches;
 
   return choices.length > 0 ? "branch:select" : "branch:entry";
+}
+
+async function configureDiscoveredHandler({
+  context,
+}: {
+  context: BuildPreContext;
+}): Promise<EventId> {
+  const definitions = context.parameterDefinitions ?? [];
+  if (!context.configureDiscoveredParameters) return "parameters:cancelled";
+  const result = await context.configureDiscoveredParameters(definitions);
+  if (result.cancelled) return "parameters:cancelled";
+  context.branch = result.branch;
+  context.customParams = result.customParams;
+  context.sensitiveParameterNames = result.sensitiveNames;
+  context.defaultBranch = false;
+  return "parameters:ready";
 }
 
 function selectBranchHandler({
@@ -539,8 +621,10 @@ export const buildPreFlowHandlers = {
   "buildPre.selectRecentJob": selectRecentJobHandler,
   "buildPre.selectSearchCandidate": selectSearchCandidateHandler,
   "buildPre.selectBuildMode": selectBuildModeHandler,
+  "buildPre.selectDiscoveredMode": selectDiscoveredModeHandler,
   "buildPre.leaveBuildMode": leaveBuildModeHandler,
   "buildPre.prepareBranch": prepareBranchHandler,
+  "buildPre.configureDiscovered": configureDiscoveredHandler,
   "buildPre.selectBranch": selectBranchHandler,
   "buildPre.selectBranchToRemove": selectBranchToRemoveHandler,
   "buildPre.removeBranch": removeBranchHandler,

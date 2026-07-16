@@ -77,7 +77,7 @@ describe("flow definitions", () => {
     });
   });
 
-  test("list action menu keeps rerun last build next to build", () => {
+  test("list action menu places parameter viewer after rerun actions", () => {
     const listActionMenu = flows.listInteractive.states.action_menu;
 
     expect(listActionMenu).toBeDefined();
@@ -107,6 +107,7 @@ describe("flow definitions", () => {
       "build",
       "rerun_last",
       "rerun",
+      "view_params",
       "status",
       "watch",
       "logs",

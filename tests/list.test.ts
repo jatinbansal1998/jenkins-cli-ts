@@ -31,6 +31,7 @@ const runHistoryMock = mock(async () => undefined);
 const runStatusMock = mock(async () => undefined);
 const runWaitMock = mock(async (..._args: unknown[]) => undefined);
 const runLogsMock = mock(async () => undefined);
+const runParamsMock = mock(async () => undefined);
 const runCancelMock = mock(async () => undefined);
 const runRerunMock = mock(async () => undefined);
 const runRerunLastBuildMock = mock(async () => undefined);
@@ -72,6 +73,7 @@ mock.module("../src/commands/list-deps", () => ({
     runStatus: runStatusMock,
     runWait: runWaitMock,
     runLogs: runLogsMock,
+    runParams: runParamsMock,
     runCancel: runCancelMock,
     runRerun: runRerunMock,
     runRerunLastBuild: runRerunLastBuildMock,
@@ -107,6 +109,8 @@ describe("runList", () => {
     runWaitMock.mockImplementation(async () => undefined);
     runLogsMock.mockReset();
     runLogsMock.mockImplementation(async () => undefined);
+    runParamsMock.mockReset();
+    runParamsMock.mockImplementation(async () => undefined);
     runCancelMock.mockReset();
     runCancelMock.mockImplementation(async () => undefined);
     runRerunMock.mockReset();
@@ -254,6 +258,34 @@ describe("runList", () => {
         jobUrl: "https://jenkins.example.com/job/alpha",
       }),
     );
+  });
+
+  test("interactive routes selected action to parameter viewer", async () => {
+    autocompleteMock
+      .mockImplementationOnce(
+        async () => "https://jenkins.example.com/job/alpha",
+      )
+      .mockImplementationOnce(async () => EXIT_VALUE);
+    selectMock
+      .mockImplementationOnce(async () => "view_params")
+      .mockImplementationOnce(async () => "search");
+
+    await runList({
+      client: {} as JenkinsClient,
+      env: { branchParamDefault: "BRANCH" } as EnvConfig,
+      refresh: false,
+      nonInteractive: false,
+    });
+
+    expect(runParamsMock).toHaveBeenCalledTimes(1);
+    expect(runParamsMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        jobUrl: "https://jenkins.example.com/job/alpha",
+        nonInteractive: true,
+      }),
+    );
+    expect(selectMock).toHaveBeenCalledTimes(2);
+    expect(autocompleteMock).toHaveBeenCalledTimes(2);
   });
 
   test("interactive routes selected action to rerun last build", async () => {

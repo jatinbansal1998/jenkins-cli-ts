@@ -328,7 +328,8 @@ describe("cli argument routing", () => {
       "NO_EQUALS_SIGN",
     ]);
     expect(result.exitCode).toBe(1);
-    expect(result.output).toContain('Invalid --param value "NO_EQUALS_SIGN".');
+    expect(result.output).toContain("Invalid --param value.");
+    expect(result.output).not.toContain("NO_EQUALS_SIGN");
   });
 
   test("build rejects duplicate --param keys", () => {
@@ -388,7 +389,7 @@ describe("parseBuildCustomParams", () => {
       throw new Error("Expected parseBuildCustomParams to throw");
     } catch (error) {
       expect(error).toBeInstanceOf(CliError);
-      expect((error as CliError).message).toBe('Invalid --param value "42".');
+      expect((error as CliError).message).toBe("Invalid --param value.");
       expect((error as CliError).hints).toContain(
         "Expected each --param entry to be a string in KEY=VALUE format.",
       );
@@ -404,9 +405,7 @@ describe("parseBuildCustomParams", () => {
       throw new Error("Expected parseBuildCustomParams to throw");
     } catch (error) {
       expect(error).toBeInstanceOf(CliError);
-      expect((error as CliError).message).toBe(
-        'Invalid --param value "INVALID".',
-      );
+      expect((error as CliError).message).toBe("Invalid --param value.");
       expect((error as CliError).hints).toEqual([
         "Use --param KEY=VALUE (example: --param DEPLOY_ENV=staging).",
       ]);

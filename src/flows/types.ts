@@ -1,4 +1,4 @@
-import type { JenkinsJob } from "../types/jenkins";
+import type { JenkinsJob, JobParameterDefinition } from "../types/jenkins";
 import type { EnvConfig } from "../env";
 
 /** All supported interactive flow definitions in the CLI. */
@@ -36,6 +36,7 @@ export type AutocompletePromptResult =
 export type PromptOption = {
   value: string;
   label: string;
+  hint?: string;
 };
 
 type PromptFilterOption = {
@@ -121,6 +122,7 @@ export type PromptAdapter = {
   select: (options: {
     message: string;
     options: PromptOption[];
+    initialValue?: string;
   }) => Promise<unknown>;
   autocomplete: (options: {
     message: string;
@@ -194,13 +196,28 @@ export type BuildPreContext = {
   branch?: string;
   customParams: Record<string, string>;
   defaultBranch: boolean;
-  parameterMode?: "branch" | "custom" | "without";
+  parameterMode?: "branch" | "custom" | "without" | "discovered";
   buildModePrompted?: boolean;
   branchChoices: string[];
   removableBranches: string[];
   pendingBranchRemoval?: string;
   pendingCustomParamKey?: string;
   lastAddedCustomParamKey?: string;
+  parameterDefinitions?: JobParameterDefinition[];
+  parameterDiscoveryAttempted?: boolean;
+  sensitiveParameterNames?: Set<string>;
+  discoverParameters?: (jobUrl: string) => Promise<JobParameterDefinition[]>;
+  configureDiscoveredParameters?: (
+    definitions: JobParameterDefinition[],
+  ) => Promise<
+    | { cancelled: true }
+    | {
+        cancelled: false;
+        branch: string;
+        customParams: Record<string, string>;
+        sensitiveNames: Set<string>;
+      }
+  >;
 };
 
 /** Runtime context for `statusPost` flow. */

@@ -175,6 +175,10 @@ async function performListAction(
       return await runTrackedListAction("build", () =>
         runMenuAction(runBuildAction, context),
       );
+    case "view_params":
+      return await runTrackedListAction("params", () =>
+        runMenuAction(runViewParamsAction, context),
+      );
     case "status":
       return await runTrackedListAction("status", () =>
         runMenuAction(runStatusAction, context),
@@ -227,6 +231,18 @@ async function runBuildAction(
     returnToCaller: true,
   });
   return result?.rootRequested ? "root" : "action_ok";
+}
+
+async function runViewParamsAction(
+  context: ListActionContext,
+): Promise<"action_ok"> {
+  await listDeps.runParams({
+    client: context.client,
+    env: context.env,
+    jobUrl: context.selectedJob.url,
+    nonInteractive: true,
+  });
+  return "action_ok";
 }
 
 async function runStatusAction(

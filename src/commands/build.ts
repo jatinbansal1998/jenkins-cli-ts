@@ -6,6 +6,7 @@ import {
   autocomplete,
   confirm,
   isCancel,
+  password,
   select,
   spinner,
   text,
@@ -67,6 +68,16 @@ import type {
   PromptAdapter,
 } from "../flows/types";
 import { withPromptTarget } from "../tui-target";
+import {
+  printParameterSummary,
+  promptForDiscoveredParameters,
+} from "../interactive-job-parameters";
+import {
+  defaultsForDefinitions,
+  isLikelySensitiveParameterName,
+  validateBuildParameters,
+} from "../job-parameters";
+import type { JobParameterDefinition } from "../types/jenkins";
 
 /** Options for the build command. */
 type BuildOptions = {
@@ -107,6 +118,7 @@ type BuildDeps = {
   select: PromptAdapter["select"];
   spinner: () => BuildSpinner;
   text: PromptAdapter["text"];
+  password: typeof password;
   loadCachedBranchHistory: typeof loadCachedBranchHistory;
   loadCachedBranches: typeof loadCachedBranches;
   recordBranchSelection: typeof recordBranchSelection;
@@ -129,6 +141,7 @@ const defaultBuildDeps: BuildDeps = {
   select,
   spinner,
   text,
+  password,
   loadCachedBranchHistory,
   loadCachedBranches,
   recordBranchSelection,
@@ -268,6 +281,7 @@ export async function runBuild(options: BuildOptions): Promise<BuildRunResult> {
       branch: resolvedBranch,
       defaultBranch: useDefaultBranch,
       customParams: resolvedCustomParams,
+      sensitiveParameterNames: preBuildSelection.sensitiveParameterNames,
       branchParam,
       watch: shouldWatch,
     });
@@ -601,6 +615,28 @@ async function runBuildOnce(options: {
     branchParam: options.branchParam,
   });
 
+  let params = triggerConfig.params;
+  let definitions: JobParameterDefinition[] | undefined;
+  try {
+    definitions = await options.client.getJobParameterDefinitions(jobUrl);
+  } catch (error) {
+    if (error instanceof CliError && error.code === "JENKINS_AUTH_ERROR") {
+      throw error;
+    }
+    printHint(
+      "Could not discover job parameters; continuing with the supplied parameters.",
+    );
+  }
+  if (definitions?.length && Object.keys(params).length > 0) {
+    const validated = validateBuildParameters(definitions, params);
+    params = validated.params;
+    for (const name of validated.unknownNames) {
+      printHint(
+        `Parameter "${name}" was not present in discovered Jenkins metadata; sending it unchanged.`,
+      );
+    }
+  }
+
   let baselineBuildNumber: number | undefined;
   try {
     const preTriggerStatus = await options.client.getJobStatus(jobUrl);
@@ -609,10 +645,7 @@ async function runBuildOnce(options: {
     // Best-effort only.
   }
 
-  const result = await options.client.triggerBuild(
-    jobUrl,
-    triggerConfig.params,
-  );
+  const result = await options.client.triggerBuild(jobUrl, params);
 
   if (triggerConfig.branch) {
     try {
@@ -718,6 +751,7 @@ function printNonInteractiveBuildTip(options: {
   branch?: string;
   defaultBranch: boolean;
   customParams?: Record<string, string>;
+  sensitiveParameterNames?: Set<string>;
   branchParam: string;
   watch?: boolean;
 }): void {
@@ -732,6 +766,7 @@ function formatNonInteractiveBuildCommand(options: {
   branch?: string;
   defaultBranch: boolean;
   customParams?: Record<string, string>;
+  sensitiveParameterNames?: Set<string>;
   branchParam: string;
   watch?: boolean;
 }): string {
@@ -759,7 +794,10 @@ function formatNonInteractiveBuildCommand(options: {
     ([left], [right]) => left.localeCompare(right),
   );
   for (const [key, value] of customEntries) {
-    parts.push("--param", shellEscape(`${key}=${value}`));
+    const renderedValue = options.sensitiveParameterNames?.has(key)
+      ? "<redacted>"
+      : value;
+    parts.push("--param", shellEscape(`${key}=${renderedValue}`));
   }
 
   if (options.watch) {
@@ -1305,6 +1343,8 @@ async function resolveInteractiveBuildSelection(options: {
   branch: string;
   customParams: Record<string, string>;
   defaultBranch: boolean;
+  sensitiveParameterNames: Set<string>;
+  parameterDefinitions?: JobParameterDefinition[];
 }> {
   const deps = activeBuildDeps;
   const providedUrl = normalizeOptionalJobUrl(options.jobUrl);
@@ -1333,7 +1373,8 @@ async function resolveInteractiveBuildSelection(options: {
     recentJobs = query ? [] : await deps.loadRecentJobs({ env: options.env });
   }
 
-  const context: BuildPreContext = {
+  let context: BuildPreContext;
+  context = {
     env: options.env,
     jobs,
     recentJobs,
@@ -1356,6 +1397,31 @@ async function resolveInteractiveBuildSelection(options: {
     branchChoices: [],
     removableBranches: [],
     lastAddedCustomParamKey: undefined,
+    sensitiveParameterNames: new Set<string>(),
+    discoverParameters: async (jobUrl) =>
+      await options.client.getJobParameterDefinitions(jobUrl),
+    configureDiscoveredParameters: async (definitions) =>
+      await promptForDiscoveredParameters({
+        definitions,
+        env: options.env,
+        branchParam: options.branchParam,
+        branch: context.branch,
+        customParams: context.customParams,
+        deps: {
+          text: deps.text,
+          password: deps.password,
+          confirm: deps.confirm,
+          select: deps.select,
+          isCancel: deps.isCancel,
+          writeLine: console.log,
+        },
+        selectBranch: async () =>
+          await resolveBranchValue({
+            env: options.env,
+            jobUrl: context.selectedJobUrl ?? "",
+            nonInteractive: false,
+          }),
+      }),
   };
 
   const result = await runFlow({
@@ -1382,6 +1448,28 @@ async function resolveInteractiveBuildSelection(options: {
     );
   }
 
+  if (context.defaultBranch && context.parameterDefinitions?.length) {
+    const defaults = defaultsForDefinitions(context.parameterDefinitions);
+    const sensitiveNames = new Set(
+      context.parameterDefinitions
+        .filter((definition) => definition.sensitive)
+        .map((definition) => definition.name),
+    );
+    for (const definition of context.parameterDefinitions) {
+      if (!Object.hasOwn(defaults, definition.name)) {
+        defaults[definition.name] = definition.sensitive
+          ? "<redacted>"
+          : "<Jenkins default>";
+      }
+    }
+    printParameterSummary({
+      definitions: context.parameterDefinitions,
+      params: defaults,
+      sensitiveNames,
+      writeLine: console.log,
+    });
+  }
+
   const selectedJobUrl = normalizeOptionalJobUrl(context.selectedJobUrl);
   if (!selectedJobUrl) {
     throw new CliError("Job name is required.");
@@ -1389,6 +1477,14 @@ async function resolveInteractiveBuildSelection(options: {
 
   const matchedFromSearch =
     !providedUrl || !areSameJobUrls(selectedJobUrl, providedUrl);
+  const sensitiveParameterNames = new Set(
+    context.sensitiveParameterNames ?? [],
+  );
+  for (const name of Object.keys(context.customParams)) {
+    if (isLikelySensitiveParameterName(name)) {
+      sensitiveParameterNames.add(name);
+    }
+  }
 
   return {
     jobUrl: selectedJobUrl,
@@ -1397,6 +1493,8 @@ async function resolveInteractiveBuildSelection(options: {
     branch: context.branch?.trim() ?? "",
     customParams: cloneParams(context.customParams),
     defaultBranch: context.defaultBranch,
+    sensitiveParameterNames,
+    parameterDefinitions: context.parameterDefinitions,
   };
 }
 

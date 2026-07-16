@@ -3,6 +3,7 @@ import * as clack from "../src/clack";
 import type { EnvConfig } from "../src/env";
 import {
   BUILD_WITH_CUSTOM_PARAMS_VALUE,
+  BUILD_CONFIGURE_DISCOVERED_VALUE,
   BUILD_WITHOUT_PARAMS_VALUE,
   BUILD_WITH_PARAMS_VALUE,
   CUSTOM_MORE_BUILD_VALUE,
@@ -11,7 +12,7 @@ import {
 } from "../src/flows/constants";
 import type { AutocompletePromptResult } from "../src/flows/types";
 import type { JenkinsClient } from "../src/jenkins/client";
-import type { JenkinsJob } from "../src/types/jenkins";
+import type { JenkinsJob, JobParameterDefinition } from "../src/types/jenkins";
 import { runBuild, setBuildDepsForTesting } from "../src/commands/build";
 import { setBuildPreFlowDepsForTesting } from "../src/flows/handlers";
 import { normalizeJobUrl } from "../src/job-url";
@@ -37,6 +38,9 @@ const selectMock = mock(
   async (..._args: unknown[]): Promise<string | typeof CANCEL> => "done",
 );
 const textMock = mock(async (..._args: unknown[]): Promise<string> => "");
+const passwordMock = mock(
+  async (..._args: unknown[]): Promise<string | typeof CANCEL> => "secret",
+);
 const isCancelMock = mock((value: unknown) => value === CANCEL);
 const spinnerMock = mock((..._args: unknown[]) => ({
   start: () => undefined,
@@ -51,6 +55,8 @@ const selectPrompt = ((options: Parameters<typeof clack.select>[0]) =>
   selectMock(options)) as typeof clack.select;
 const textPrompt = ((options: Parameters<typeof clack.text>[0]) =>
   textMock(options)) as typeof clack.text;
+const passwordPrompt = ((options: Parameters<typeof clack.password>[0]) =>
+  passwordMock(options)) as typeof clack.password;
 const isCancelPrompt = ((value: unknown): value is symbol =>
   Boolean(isCancelMock(value))) as typeof clack.isCancel;
 const spinnerPrompt = ((options?: Parameters<typeof clack.spinner>[0]) =>
@@ -93,6 +99,9 @@ describe("build command navigation", () => {
     textMock.mockImplementation(
       async (..._args: unknown[]): Promise<string> => "",
     );
+
+    passwordMock.mockReset();
+    passwordMock.mockImplementation(async () => "secret");
 
     isCancelMock.mockReset();
     isCancelMock.mockImplementation((value: unknown) => value === CANCEL);
@@ -150,6 +159,7 @@ describe("build command navigation", () => {
       confirm: confirmMock,
       select: selectPrompt,
       text: textPrompt,
+      password: passwordPrompt,
       isCancel: isCancelPrompt,
       spinner: spinnerPrompt,
       runCancel: runCancelMock,
@@ -564,5 +574,108 @@ describe("build command navigation", () => {
       BRANCH: "development",
       DEPLOY_ENV: "staging",
     });
+  });
+
+  test("discovered parameters preserve explicit branch and prompt remaining values", async () => {
+    const definitions: JobParameterDefinition[] = [
+      {
+        name: "BRANCH",
+        type: "string",
+        defaultValue: "develop",
+        sensitive: false,
+      },
+      {
+        name: "DEPLOY_ENV",
+        type: "choice",
+        choices: ["staging", "prod"],
+        defaultValue: "staging",
+        sensitive: false,
+      },
+    ];
+    const triggerBuild = mock(async () => ({ buildUrl: BUILD_URL }));
+    selectMock
+      .mockImplementationOnce(async () => "prod")
+      .mockImplementationOnce(async () => "done");
+    confirmMock.mockImplementationOnce(async () => true);
+
+    await runBuild({
+      client: createClient({
+        getJobParameterDefinitions: mock(async () => definitions),
+        getJobStatus: mock(async () => ({ lastBuildNumber: 41 })),
+        triggerBuild,
+      }),
+      env: {} as EnvConfig,
+      jobUrl: JOB_URL,
+      branch: "main",
+      nonInteractive: false,
+      watch: false,
+      returnToCaller: true,
+    });
+
+    expect(triggerBuild).toHaveBeenCalledWith(NORMALIZED_JOB_URL, {
+      BRANCH: "main",
+      DEPLOY_ENV: "prod",
+    });
+    expect(loadCachedBranchesMock).not.toHaveBeenCalled();
+  });
+
+  test("discovered parameter jobs can run entirely with Jenkins defaults", async () => {
+    const definitions: JobParameterDefinition[] = [
+      {
+        name: "DEPLOY_ENV",
+        type: "choice",
+        choices: ["staging", "prod"],
+        defaultValue: "staging",
+        sensitive: false,
+      },
+    ];
+    const triggerBuild = mock(async () => ({ buildUrl: BUILD_URL }));
+    selectMock
+      .mockImplementationOnce(async () => BUILD_WITHOUT_PARAMS_VALUE)
+      .mockImplementationOnce(async () => "done");
+
+    await runBuild({
+      client: createClient({
+        getJobParameterDefinitions: mock(async () => definitions),
+        getJobStatus: mock(async () => ({ lastBuildNumber: 41 })),
+        triggerBuild,
+      }),
+      env: {} as EnvConfig,
+      jobUrl: JOB_URL,
+      nonInteractive: false,
+      watch: false,
+      returnToCaller: true,
+    });
+
+    expect(triggerBuild).toHaveBeenCalledWith(NORMALIZED_JOB_URL, {});
+    expect(textMock).not.toHaveBeenCalled();
+    expect(passwordMock).not.toHaveBeenCalled();
+  });
+
+  test("cancelling a discovered password prompt never triggers a build", async () => {
+    const triggerBuild = mock(async () => ({ buildUrl: BUILD_URL }));
+    selectMock.mockImplementationOnce(
+      async () => BUILD_CONFIGURE_DISCOVERED_VALUE,
+    );
+    passwordMock.mockImplementationOnce(async () => CANCEL);
+
+    await runBuild({
+      client: createClient({
+        getJobParameterDefinitions: mock(
+          async (): Promise<JobParameterDefinition[]> => [
+            { name: "TOKEN", type: "password", sensitive: true },
+          ],
+        ),
+        getJobStatus: mock(async () => ({ lastBuildNumber: 41 })),
+        triggerBuild,
+      }),
+      env: {} as EnvConfig,
+      jobUrl: JOB_URL,
+      nonInteractive: false,
+      watch: false,
+      returnToCaller: true,
+    });
+
+    expect(triggerBuild).not.toHaveBeenCalled();
   });
 });

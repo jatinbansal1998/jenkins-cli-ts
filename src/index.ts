@@ -16,6 +16,7 @@ import { runLogin } from "./commands/login";
 import { runList } from "./commands/list";
 import { DEFAULT_LOG_POLL_MS, runLogs } from "./commands/logs";
 import { runNodes } from "./commands/nodes";
+import { runParams } from "./commands/params";
 import {
   runProfileDelete,
   runProfileList,
@@ -239,6 +240,42 @@ async function main(): Promise<void> {
               search: typeof argv.search === "string" ? argv.search : undefined,
               refresh: Boolean(argv.refresh),
               nonInteractive: Boolean(argv.nonInteractive),
+              json: Boolean(argv.json),
+            });
+          },
+        );
+      },
+    )
+    .command(
+      "params",
+      "Show parameter definitions for a Jenkins job",
+      (yargsInstance) =>
+        yargsInstance
+          .option("job", {
+            type: "string",
+            describe: "Job name or description",
+          })
+          .option("job-url", {
+            type: "string",
+            describe: "Full Jenkins job URL",
+          })
+          .option("json", {
+            type: "boolean",
+            default: false,
+            describe: "Output a single JSON document (implies non-interactive)",
+          }),
+      async (argv) => {
+        await runTrackedCommandWithContext(
+          "params",
+          argv,
+          async ({ env, client }) => {
+            await runParams({
+              client,
+              env,
+              job: typeof argv.job === "string" ? argv.job : undefined,
+              jobUrl: typeof argv.jobUrl === "string" ? argv.jobUrl : undefined,
+              nonInteractive:
+                Boolean(argv.nonInteractive) || Boolean(argv.json),
               json: Boolean(argv.json),
             });
           },
@@ -1199,21 +1236,21 @@ export function parseBuildCustomParams(
   const params: Record<string, string> = {};
   for (const entry of entries) {
     if (typeof entry !== "string") {
-      throw new CliError(`Invalid --param value "${String(entry)}".`, [
+      throw new CliError("Invalid --param value.", [
         "Expected each --param entry to be a string in KEY=VALUE format.",
         "Use --param KEY=VALUE (example: --param DEPLOY_ENV=staging).",
       ]);
     }
     const equalsIndex = entry.indexOf("=");
     if (equalsIndex <= 0) {
-      throw new CliError(`Invalid --param value "${entry}".`, [
+      throw new CliError("Invalid --param value.", [
         "Use --param KEY=VALUE (example: --param DEPLOY_ENV=staging).",
       ]);
     }
     const key = entry.slice(0, equalsIndex).trim();
     const paramValue = entry.slice(equalsIndex + 1);
     if (!key) {
-      throw new CliError(`Invalid --param value "${entry}".`, [
+      throw new CliError("Invalid --param value.", [
         "Parameter name cannot be empty.",
       ]);
     }

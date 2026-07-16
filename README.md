@@ -19,20 +19,20 @@ wget -qO- https://jatinbansal.com/jenkins-cli/install/ | bash
 
 ## Supported Features
 
-| Feature                     | Supported | Notes                                                                 |
-| --------------------------- | --------- | --------------------------------------------------------------------- |
-| Multi-profile configuration | Yes       | Store multiple Jenkins profiles and switch the default profile        |
-| Job listing and search      | Yes       | Cached job listing with refresh and natural-language search           |
-| Build triggers              | Yes       | Supports branch builds, default-parameter runs, and custom parameters |
-| Status and watch mode       | Yes       | Track the latest build and watch until completion                     |
-| Build history               | Yes       | Jenkins-style recent build history table                              |
-| Queue visibility            | Yes       | Inspect the build queue, filter by job, and cancel or open items      |
-| Node/agent visibility       | Yes       | List agents with status, executor usage, and labels                   |
-| Running build actions       | Yes       | List, open, or batch-cancel live running builds                       |
-| Logs, cancel, and rerun     | Yes       | Inspect recent logs and manage existing builds                        |
-| Artifacts                   | Yes       | List build artifacts and stream them to disk, preserving paths        |
-| One-off credentials         | Yes       | Override profile config with `--url`, `--user`, and `--token`         |
-| Script-friendly output      | Yes       | Parseable `OK:` and `HINT:` output for automation                     |
+| Feature                     | Supported | Notes                                                               |
+| --------------------------- | --------- | ------------------------------------------------------------------- |
+| Multi-profile configuration | Yes       | Store multiple Jenkins profiles and switch the default profile      |
+| Job listing and search      | Yes       | Cached job listing with refresh and natural-language search         |
+| Build triggers              | Yes       | Discovers common parameters and supports branch/default/custom runs |
+| Status and watch mode       | Yes       | Track the latest build and watch until completion                   |
+| Build history               | Yes       | Jenkins-style recent build history table                            |
+| Queue visibility            | Yes       | Inspect the build queue, filter by job, and cancel or open items    |
+| Node/agent visibility       | Yes       | List agents with status, executor usage, and labels                 |
+| Running build actions       | Yes       | List, open, or batch-cancel live running builds                     |
+| Logs, cancel, and rerun     | Yes       | Inspect recent logs and manage existing builds                      |
+| Artifacts                   | Yes       | List build artifacts and stream them to disk, preserving paths      |
+| One-off credentials         | Yes       | Override profile config with `--url`, `--user`, and `--token`       |
+| Script-friendly output      | Yes       | Parseable `OK:` and `HINT:` output for automation                   |
 
 GitHub install mirror:
 
@@ -236,7 +236,7 @@ If you have not installed the global CLI, replace `jenkins-cli` with
 
 #### JSON Output (`--json`)
 
-The read commands `list`, `status`, `history` (alias `builds`), and `wait`
+The read commands `list`, `params`, `status`, `history` (alias `builds`), and `wait`
 accept a `--json` flag for scripting and automation:
 
 - `--json` prints **exactly one JSON document** to stdout and nothing else — no
@@ -278,6 +278,31 @@ and `wait`:
 ```
 
 Fields that Jenkins does not return are omitted from the document.
+
+**`params`** — `data` is the normalized parameter-definition array. Sensitive
+parameters set `sensitive: true` and omit `defaultValue`:
+
+```bash
+jenkins-cli params --job "api-prod" --json
+jenkins-cli params --job-url "https://jenkins.example.com/job/api-prod/" --json
+```
+
+```json
+{
+  "ok": true,
+  "command": "params",
+  "data": [
+    {
+      "name": "DEPLOY_ENV",
+      "type": "choice",
+      "description": "Target environment",
+      "defaultValue": "staging",
+      "choices": ["dev", "staging", "prod"],
+      "sensitive": false
+    }
+  ]
+}
+```
 
 **`list`** — `data` is an array of cached jobs:
 
@@ -412,6 +437,25 @@ jenkins-cli list --url https://jenkins.example.com --user ci-user --token <token
 
 ### Trigger Builds
 
+From the root `jenkins-cli` launcher, search for a job and choose **Build**.
+For a parameterized job the CLI reads authoritative Jenkins job metadata and
+offers **Configure parameters** or **Run with default parameters**. Configure
+mode uses text inputs for string/text parameters, confirms for booleans,
+Jenkins-provided options for choices, and masked inputs for passwords. A final
+summary is shown before the existing trigger/watch/post-build flow continues.
+
+The initially supported Jenkins types are string, text, boolean, choice, and
+password/secret parameters. Unknown plugin parameter types remain available as
+generic text inputs instead of blocking the build.
+
+Inspect a job without starting it:
+
+```bash
+jenkins-cli params --job "api-prod"
+jenkins-cli params --job-url "https://jenkins.example.com/job/api-prod/"
+jenkins-cli params --job "api-prod" --json
+```
+
 Trigger a build with a branch:
 
 ```bash
@@ -440,6 +484,7 @@ Trigger a build with custom parameters:
 
 ```bash
 jenkins-cli build --job "api-prod" --param DEPLOY_ENV=staging --param FORCE=true
+jenkins-cli build --job "api-prod" --param DEPLOY_ENV=staging --non-interactive
 ```
 
 Trigger a build with both branch and custom parameters:
@@ -448,7 +493,30 @@ Trigger a build with both branch and custom parameters:
 jenkins-cli build --job "api-prod" --branch main --param DEPLOY_ENV=staging
 ```
 
-In interactive mode, build mode now offers:
+When Jenkins metadata is available, non-interactive builds validate recognized
+choice values and normalize common boolean forms (`true`/`false`, `yes`/`no`,
+`on`/`off`, and `1`/`0`). Unknown `--param` names are still sent for backward
+compatibility with a `HINT:` on stderr. `--non-interactive` and `--json` never
+prompt.
+
+Branch parameters keep the existing cached branch selection experience. A
+discovered parameter matching the configured branch parameter (usually
+`BRANCH`) uses that selector once; an explicit `--branch` wins and the CLI
+continues through the other discovered parameters.
+
+Secret parameter defaults are never displayed or returned in JSON. Entered
+secret values are masked and redacted from summaries and generated command
+tips. Jenkins request and response bodies are omitted from persistent debug
+logs so parameter secrets are not recorded there.
+
+If Jenkins reports no parameter definitions, or metadata discovery fails, the
+CLI falls back to the existing branch/custom/default build mode. Discovery
+failure prints a concise stderr hint, while genuinely non-parameterized jobs
+remain quiet. Authentication and permission errors still fail using the normal
+Jenkins error handling. Definitions are read from current job metadata only;
+previous builds are not inspected.
+
+In fallback interactive mode, build mode offers:
 
 - **Select a branch**
 - **Enter custom parameters**

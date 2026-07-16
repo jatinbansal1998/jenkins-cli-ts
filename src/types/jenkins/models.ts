@@ -7,6 +7,20 @@ export type JenkinsBuildParameter = {
   value: string;
 };
 
+export type JobParameterType =
+  "string" | "text" | "boolean" | "choice" | "password" | "unknown";
+
+/** Stable parameter metadata independent of Jenkins' plugin-specific JSON. */
+export type JobParameterDefinition = {
+  name: string;
+  type: JobParameterType;
+  description?: string;
+  defaultValue?: string | boolean;
+  choices?: string[];
+  sensitive: boolean;
+  jenkinsClass?: string;
+};
+
 export type JenkinsPipelineLinks = {
   self?: { href?: string };
   log?: { href?: string };

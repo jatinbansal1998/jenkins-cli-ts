@@ -15,6 +15,29 @@ export type JenkinsJobsResponse = {
   jobs?: JenkinsApiJob[];
 };
 
+export type JenkinsApiDefaultParameterValue = {
+  value?: unknown;
+};
+
+export type JenkinsApiParameterDefinition = {
+  _class?: string;
+  type?: string;
+  name?: string;
+  description?: string | null;
+  defaultParameterValue?: JenkinsApiDefaultParameterValue | null;
+  defaultValue?: unknown;
+  choices?: unknown;
+};
+
+export type JenkinsApiJobProperty = {
+  _class?: string;
+  parameterDefinitions?: JenkinsApiParameterDefinition[];
+};
+
+export type JenkinsJobParametersResponse = {
+  property?: JenkinsApiJobProperty[];
+};
+
 export type JenkinsApiBuildParameter = {
   name?: string;
   value?: unknown;

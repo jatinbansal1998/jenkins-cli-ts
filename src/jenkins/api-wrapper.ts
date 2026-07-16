@@ -9,6 +9,7 @@ import { dirname } from "node:path";
 import { CliError } from "../cli";
 import { recordJenkinsApiCall, recordJenkinsApiFailure } from "../analytics";
 import { ENV_KEYS } from "../env-keys";
+import { normalizeJobParameterDefinitions } from "../job-parameters";
 import {
   logApiRequest,
   logApiResponse,
@@ -39,6 +40,8 @@ import type {
   JenkinsComputerResponse,
   JenkinsCrumbResponse,
   JenkinsJob,
+  JenkinsJobParametersResponse,
+  JobParameterDefinition,
   JenkinsJobsResponse,
   JenkinsJobStatusResponse,
   JenkinsLastFailedBuildResponse,
@@ -66,6 +69,7 @@ export type {
   ConsoleChunk,
   JenkinsClientOptions,
   JenkinsJob,
+  JobParameterDefinition,
   JobStatus,
   NodeSummary,
   NodesSummary,
@@ -295,6 +299,20 @@ export class JenkinsClient {
       branch,
       stages: pipeline?.stages,
     };
+  }
+
+  async getJobParameterDefinitions(
+    jobUrl: string,
+  ): Promise<JobParameterDefinition[]> {
+    const url = this.withJob(
+      jobUrl,
+      "api/json?tree=property[_class,parameterDefinitions[_class,type,name,description,defaultValue,defaultParameterValue[value],choices]]",
+    );
+    const data = await this.requestJson<JenkinsJobParametersResponse>(
+      url,
+      "fetch job parameters",
+    );
+    return normalizeJobParameterDefinitions(data);
   }
 
   async getBuildStatus(buildUrl: string): Promise<BuildStatus> {
@@ -886,7 +904,14 @@ export class JenkinsClient {
     attemptedRetry = false,
   ): Promise<Response> {
     const method = options.method ?? "GET";
-    const requestBody = this.serializeRequestBody(options.body);
+    // POST bodies can contain build parameters and secrets. Never persist them
+    // in debug logs; the real body is still sent unchanged to Jenkins.
+    const requestBody =
+      method.toUpperCase() === "POST"
+        ? options.body === undefined || options.body === null
+          ? null
+          : "<omitted>"
+        : this.serializeRequestBody(options.body);
     recordJenkinsApiCall();
     logApiRequest(method, url, options.headers, requestBody);
 
@@ -897,14 +922,16 @@ export class JenkinsClient {
         ...options,
         signal: controller.signal,
       });
-      const responseBody = await this.readResponseBody(response);
+      // Jenkins responses can contain password parameter defaults or values.
+      // Keep response bodies out of persistent debug logs for every method.
+      const loggedResponseBody = null;
       if (response.ok) {
         logApiResponse(
           method,
           url,
           response.status,
           response.headers,
-          responseBody,
+          loggedResponseBody,
         );
       } else {
         logApiError(
@@ -912,7 +939,7 @@ export class JenkinsClient {
           url,
           response.status,
           response.headers,
-          responseBody,
+          loggedResponseBody,
         );
       }
       return response;
@@ -985,15 +1012,6 @@ export class JenkinsClient {
     return `[body kind=${typeof body}]`;
   }
 
-  private async readResponseBody(response: Response): Promise<string | null> {
-    try {
-      return await response.clone().text();
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "Unknown error";
-      return `[unreadable body: ${message}]`;
-    }
-  }
-
   private async raiseHttpError(
     response: Response,
     context: string,
@@ -1007,6 +1025,7 @@ export class JenkinsClient {
           `Confirm you can access ${this.baseUrl} in a browser.`,
           `If your Jenkins requires CSRF crumbs, set ${ENV_KEYS.JENKINS_USE_CRUMB}=true or useCrumb: true in config.`,
         ],
+        "JENKINS_AUTH_ERROR",
       );
     }
     if (status === 404) {

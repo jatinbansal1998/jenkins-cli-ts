@@ -11,6 +11,7 @@ import * as clack from "../src/clack";
 import type { EnvConfig } from "../src/env";
 import { BUILD_WITHOUT_PARAMS_VALUE } from "../src/flows/constants";
 import type { JenkinsClient } from "../src/jenkins/client";
+import type { JobParameterDefinition } from "../src/types/jenkins";
 import { runBuild, setBuildDepsForTesting } from "../src/commands/build";
 
 const confirmMock = mock(async () => false);
@@ -376,6 +377,7 @@ describe("build command", () => {
       customParams: {
         DEPLOY_ENV: "staging",
         FORCE: "true",
+        API_TOKEN: "must-not-appear",
       },
       nonInteractive: false,
       returnToCaller: true,
@@ -392,6 +394,8 @@ describe("build command", () => {
 
     expect(commandLine).toContain("--param 'DEPLOY_ENV=staging'");
     expect(commandLine).toContain("--param 'FORCE=true'");
+    expect(commandLine).toContain("--param 'API_TOKEN=<redacted>'");
+    expect(commandLine).not.toContain("must-not-appear");
     logSpy.mockRestore();
   });
 
@@ -1058,5 +1062,95 @@ describe("build command", () => {
     } finally {
       process.exitCode = originalExitCode;
     }
+  });
+
+  test("non-interactive builds validate choices without prompting", async () => {
+    const triggerBuild = mock(async () => ({}));
+    await expect(
+      runBuild({
+        client: createClient({
+          getJobParameterDefinitions: mock(
+            async (): Promise<JobParameterDefinition[]> => [
+              {
+                name: "DEPLOY_ENV",
+                type: "choice",
+                choices: ["staging", "prod"],
+                sensitive: false,
+              },
+            ],
+          ),
+          triggerBuild,
+        }),
+        env: {} as EnvConfig,
+        jobUrl: JOB_URL,
+        customParams: { DEPLOY_ENV: "invalid-private-value" },
+        nonInteractive: true,
+        watch: false,
+      }),
+    ).rejects.toThrow('Invalid value for choice parameter "DEPLOY_ENV".');
+
+    expect(triggerBuild).not.toHaveBeenCalled();
+    expect(selectMock).not.toHaveBeenCalled();
+    expect(textMock).not.toHaveBeenCalled();
+    expect(confirmMock).not.toHaveBeenCalled();
+  });
+
+  test("non-interactive builds normalize booleans and allow unknown parameters", async () => {
+    const triggerBuild = mock(async () => ({}));
+    const errorSpy = spyOn(console, "error").mockImplementation(
+      () => undefined,
+    );
+    await runBuild({
+      client: createClient({
+        getJobParameterDefinitions: mock(
+          async (): Promise<JobParameterDefinition[]> => [
+            { name: "FORCE", type: "boolean", sensitive: false },
+          ],
+        ),
+        getJobStatus: mock(async () => ({})),
+        triggerBuild,
+      }),
+      env: {} as EnvConfig,
+      jobUrl: JOB_URL,
+      customParams: { FORCE: "yes", LEGACY_VALUE: "kept" },
+      nonInteractive: true,
+      watch: false,
+    });
+
+    expect(triggerBuild).toHaveBeenCalledWith(NORMALIZED_JOB_URL, {
+      FORCE: "true",
+      LEGACY_VALUE: "kept",
+    });
+    expect(errorSpy.mock.calls.flat().join(" ")).toContain("LEGACY_VALUE");
+    errorSpy.mockRestore();
+  });
+
+  test("discovery failure falls back without blocking the existing build", async () => {
+    const triggerBuild = mock(async () => ({}));
+    const errorSpy = spyOn(console, "error").mockImplementation(
+      () => undefined,
+    );
+    await runBuild({
+      client: createClient({
+        getJobParameterDefinitions: mock(async () => {
+          throw new Error("metadata endpoint unavailable");
+        }),
+        getJobStatus: mock(async () => ({})),
+        triggerBuild,
+      }),
+      env: {} as EnvConfig,
+      jobUrl: JOB_URL,
+      customParams: { LEGACY_VALUE: "kept" },
+      nonInteractive: true,
+      watch: false,
+    });
+
+    expect(triggerBuild).toHaveBeenCalledWith(NORMALIZED_JOB_URL, {
+      LEGACY_VALUE: "kept",
+    });
+    expect(errorSpy.mock.calls.flat().join(" ")).toContain(
+      "Could not discover job parameters",
+    );
+    errorSpy.mockRestore();
   });
 });
