@@ -82,29 +82,43 @@ Single mode renders Clack's `autocomplete` and requires one selected job.
 Multiple mode renders Clack's `autocompleteMultiselect`, requires at least one
 selected job, and returns selections in picker order.
 
-### Focused Multi-Select Styling
+### Shared Focused Multi-Select Styling
 
 The installed `@clack/prompts` 1.7.0 release is also the latest available
 release. Its autocomplete multi-select distinguishes the focused row primarily
 by dimming inactive labels. That contrast is not visible enough in some light
 terminal themes.
 
-Add `@clack/core` 1.4.3 as a direct dependency and implement a focused custom
-autocomplete multi-select renderer. The renderer stays behind the existing
-`src/clack.ts` facade so command and picker code remain independent of prompt
-internals, and the core dependency can support other deliberately designed
-custom UI elements later.
+Add `@clack/core` 1.4.3 as a direct dependency and implement focused custom
+renderers for autocomplete multi-select and regular multi-select. Both
+renderers stay behind the existing `src/clack.ts` facade so command and picker
+code remain independent of prompt internals, and the core dependency can
+support other deliberately designed custom UI elements later.
 
-The renderer follows Clack's current autocomplete multi-select behavior for
-search, fuzzy-filter bypass, scrolling, checked state, validation,
-cancellation, instructions, and submission. Its only presentation change is
-that the complete focused option is both italicized and underlined. Inactive
-options remain dimmed and selected checkboxes remain green. The focused style
-moves with Up/Down navigation and does not imply that an option is selected.
+Extract the italic-and-underline treatment into an opt-in focused-option
+formatter. The two custom multi-select renderers use it; Clack's existing
+single `select` and single `autocomplete` implementations remain unchanged.
+Future custom renderers may opt into the formatter deliberately, but merely
+importing the shared helper must not change a prompt.
+
+Each renderer follows Clack's current behavior for scrolling, checked state,
+validation, cancellation, instructions, initial values, disabled options, and
+submission. Autocomplete multi-select additionally preserves search and
+fuzzy-filter bypass. Their only presentation change is that the complete
+focused option is both italicized and underlined. Inactive options remain
+dimmed and selected checkboxes remain green. The focused style moves with
+Up/Down navigation and does not imply that an option is selected.
+
+Export both custom multi-select functions from `src/clack.ts`. Existing regular
+multi-select callers, including artifact download selection and cancel's
+multiple-running-build selection, receive the shared styling automatically.
+Future regular multi-select call sites inherit the same behavior without
+command-specific changes.
 
 Do not patch `node_modules` or couple `job-picker.ts` directly to
-`@clack/core`. Renderer-specific tests will verify focused, inactive, selected,
-and disabled option output. Picker tests continue to cover selection behavior.
+`@clack/core`. Shared formatter and renderer tests will verify focused,
+inactive, selected, disabled, required, and cancellation behavior. Picker tests
+continue to cover job-selection behavior.
 
 There will be no separate recent-jobs menu for job lookup. Recent jobs appear
 first when the input is blank, and users can immediately type to search the full
@@ -250,6 +264,9 @@ change as part of this work.
   selected jobs.
 - The complete focused status option is italicized and underlined while arrow
   navigation moves through the list.
+- Regular multi-select prompts use the same focused styling automatically,
+  including artifact and multiple-running-build selection.
+- Standard single-select and single-autocomplete presentation is unchanged.
 - Blank input prioritizes recent jobs consistently.
 - `cancel` retains its running-build shortcuts and delegates full job search to
   the shared picker.
