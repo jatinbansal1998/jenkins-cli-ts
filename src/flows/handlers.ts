@@ -15,7 +15,6 @@ import {
 } from "../branches";
 import { getJobDisplayName } from "../jobs";
 import {
-  BRANCH_CUSTOM_VALUE,
   BRANCH_REMOVE_VALUE,
   BUILD_CONFIGURE_DISCOVERED_VALUE,
   BUILD_WITH_CUSTOM_PARAMS_VALUE,
@@ -347,9 +346,6 @@ function selectBranchHandler({
   const value = String(input);
   if (value === BRANCH_REMOVE_VALUE && context.removableBranches.length > 0) {
     return "branch:remove";
-  }
-  if (value === BRANCH_CUSTOM_VALUE) {
-    return "branch:entry";
   }
   const branch = value.trim();
   if (!branch) {

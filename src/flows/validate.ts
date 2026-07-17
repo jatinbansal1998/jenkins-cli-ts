@@ -47,6 +47,7 @@ export function validateFlowDefinition<Ctx>(
 
     if (
       state.prompt?.kind === "select" ||
+      state.prompt?.kind === "branchPicker" ||
       state.prompt?.kind === "autocomplete"
     ) {
       const staticOptions = getStaticOptions(state.prompt.options);

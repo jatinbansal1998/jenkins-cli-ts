@@ -175,6 +175,124 @@ describe("flow runner", () => {
     expect(result.terminal).toBe("exit_command");
   });
 
+  test("branch picker prompts resolve select events from the adapter value", async () => {
+    resetValidatedFlowsForTesting();
+    const prompts: PromptAdapter = {
+      autocomplete: async () => "",
+      branchPicker: async (options) => {
+        expect(options.message).toBe("Branch name");
+        expect(options.options).toEqual([
+          { value: "development", label: "development" },
+        ]);
+        expect(options.placeholder).toBe("e.g. main");
+        return "feature/checkout";
+      },
+      select: async () => "",
+      confirm: async () => false,
+      text: async () => "",
+      isCancel: () => false,
+    };
+
+    const result = await runFlow({
+      definition: {
+        id: "buildPre",
+        initialState: "branch",
+        states: {
+          branch: {
+            prompt: {
+              kind: "branchPicker",
+              message: "Branch name",
+              options: [{ value: "development", label: "development" }],
+              placeholder: "e.g. main",
+            },
+            transitions: {
+              "select:feature/checkout": "complete",
+            },
+          },
+        },
+      },
+      handlers: {},
+      prompts,
+      context: {},
+    });
+
+    expect(result.terminal).toBe("complete");
+  });
+
+  test("branch picker cancellation maps to the esc event", async () => {
+    resetValidatedFlowsForTesting();
+    const prompts: PromptAdapter = {
+      autocomplete: async () => "",
+      branchPicker: async () => CANCEL as unknown as symbol,
+      select: async () => "",
+      confirm: async () => false,
+      text: async () => "",
+      isCancel: (value: unknown) => value === CANCEL,
+    };
+
+    const result = await runFlow({
+      definition: {
+        id: "buildPre",
+        initialState: "branch",
+        states: {
+          branch: {
+            prompt: {
+              kind: "branchPicker",
+              message: "Branch name",
+              options: [{ value: "development", label: "development" }],
+            },
+            transitions: {
+              esc: "exit_command",
+              "select:development": "complete",
+            },
+          },
+        },
+      },
+      handlers: {},
+      prompts,
+      context: {},
+    });
+
+    expect(result.terminal).toBe("exit_command");
+  });
+
+  test("branch picker prompts fail fast without adapter support", async () => {
+    resetValidatedFlowsForTesting();
+    const prompts: PromptAdapter = {
+      autocomplete: async () => "",
+      select: async () => "",
+      confirm: async () => false,
+      text: async () => "",
+      isCancel: () => false,
+    };
+
+    await expect(
+      runFlow({
+        definition: {
+          id: "buildPre",
+          initialState: "branch",
+          states: {
+            branch: {
+              prompt: {
+                kind: "branchPicker",
+                message: "Branch name",
+                options: [{ value: "development", label: "development" }],
+              },
+              transitions: {
+                "select:development": "complete",
+              },
+            },
+          },
+        },
+        handlers: {},
+        prompts,
+        context: {},
+      }),
+    ).rejects.toThrow(
+      "Prompt adapter is missing branchPicker support for a branchPicker prompt.",
+    );
+  });
+
   test("dynamic autocomplete prompts bypass clack's default text filter", async () => {
     resetValidatedFlowsForTesting();
     const prompts: PromptAdapter = {

@@ -1,8 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import {
-  BRANCH_CUSTOM_VALUE,
-  BRANCH_REMOVE_VALUE,
-} from "../src/flows/constants";
+import { BRANCH_REMOVE_VALUE } from "../src/flows/constants";
 import { flows } from "../src/flows/definition";
 import type { BuildPreContext } from "../src/flows/types";
 import { validateFlowDefinition } from "../src/flows/validate";
@@ -193,10 +190,10 @@ describe("flow definitions", () => {
 
     if (
       !prompt ||
-      prompt.kind !== "select" ||
+      prompt.kind !== "branchPicker" ||
       typeof prompt.options !== "function"
     ) {
-      throw new Error("Expected select prompt with dynamic options.");
+      throw new Error("Expected branchPicker prompt with dynamic options.");
     }
 
     const options = prompt.options({
@@ -223,7 +220,6 @@ describe("flow definitions", () => {
       "feature/payments",
       "development",
       "master",
-      BRANCH_CUSTOM_VALUE,
       BRANCH_REMOVE_VALUE,
     ]);
   });

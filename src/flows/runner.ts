@@ -72,6 +72,28 @@ async function resolvePromptValue<Ctx>(
     return String(response);
   }
 
+  if (prompt.kind === "branchPicker") {
+    if (!prompts.branchPicker) {
+      throw new Error(
+        "Prompt adapter is missing branchPicker support for a branchPicker prompt.",
+      );
+    }
+    const response = await prompts.branchPicker({
+      message: resolveValue(prompt.message, context),
+      options: resolveValue(prompt.options, context),
+      ...(typeof prompt.placeholder !== "undefined"
+        ? { placeholder: resolveValue(prompt.placeholder, context) }
+        : {}),
+      ...(typeof prompt.maxItems !== "undefined"
+        ? { maxItems: resolveValue(prompt.maxItems, context) }
+        : {}),
+    });
+    if (prompts.isCancel(response)) {
+      return ESC_SENTINEL;
+    }
+    return String(response);
+  }
+
   if (prompt.kind === "confirm") {
     const response = await prompts.confirm({
       message: resolveValue(prompt.message, context),
@@ -209,7 +231,7 @@ async function resolveEventFromPrompt<Ctx>(
   if (prompt.kind === "confirm") {
     return input ? "confirm:yes" : "confirm:no";
   }
-  if (prompt.kind === "select") {
+  if (prompt.kind === "select" || prompt.kind === "branchPicker") {
     return `select:${String(input)}`;
   }
   if (prompt.kind === "autocomplete") {

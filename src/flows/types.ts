@@ -72,6 +72,18 @@ export type PromptSpec<Ctx> =
       initialValue?: string | ((context: Ctx) => string);
     }
   | {
+      /**
+       * Combined branch chooser: cached-branch options plus a persistent
+       * custom-branch input row. Nonblank typed input wins over the
+       * highlighted option.
+       */
+      kind: "branchPicker";
+      message: string | ((context: Ctx) => string);
+      options: PromptOption[] | ((context: Ctx) => PromptOption[]);
+      placeholder?: string | ((context: Ctx) => string);
+      maxItems?: number | ((context: Ctx) => number);
+    }
+  | {
       /** Searchable type-ahead selector. */
       kind: "autocomplete";
       message: string | ((context: Ctx) => string);
@@ -137,6 +149,12 @@ export type PromptAdapter = {
       value: string | string[] | undefined,
     ) => string | Error | undefined;
   }) => Promise<AutocompletePromptResult>;
+  branchPicker?: (options: {
+    message: string;
+    options: PromptOption[];
+    placeholder?: string;
+    maxItems?: number;
+  }) => Promise<string | symbol>;
   autocompleteMultiselect?: (options: {
     message: string;
     options: PromptOption[] | ((this: { userInput: string }) => PromptOption[]);

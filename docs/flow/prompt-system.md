@@ -46,6 +46,10 @@ Prompt kinds are defined in `src/flows/types.ts`:
 - `confirm`: yes/no
 - `text`: free input
 - `autocomplete`: searchable single selection for domain-neutral flow prompts
+- `branchPicker`: combined branch chooser (`src/prompts/branch-picker.ts`)
+  with cached-branch options plus a persistent custom-branch input row;
+  nonblank typed input wins over the highlighted option, and cancel maps to
+  `esc` like every other kind
 
 Jenkins job selection is not a `PromptSpec` kind. Flow entry handlers call the
 shared job picker and translate its selected/cancelled result into semantic
@@ -66,7 +70,7 @@ For each state in `runFlow(...)`:
 3. Convert result to event:
    - Cancel -> `esc`
    - Confirm -> `confirm:yes` / `confirm:no`
-   - Select -> `select:<value>`
+   - Select / branch picker -> `select:<value>`
    - Text -> handler event (for example `search:candidates`)
 4. Look up transition target in the state's `transitions`.
 5. Continue until a terminal state (`exit_command`, `repeat`, etc.).

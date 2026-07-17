@@ -136,8 +136,7 @@ stateDiagram-v2
     prepare_branch --> entry: branch_error (missing selectedJobUrl)
 
     branch_select --> entry: esc
-    branch_select --> t_complete: branch_selected
-    branch_select --> branch_entry: branch_entry (custom or empty)
+    branch_select --> t_complete: branch_selected (highlighted or typed custom branch)
     branch_select --> branch_remove: branch_remove (remove action selected)
 
     branch_remove --> branch_select: esc

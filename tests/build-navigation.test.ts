@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import * as clack from "../src/clack";
 import type { EnvConfig } from "../src/env";
 import {
+  BRANCH_REMOVE_VALUE,
   BUILD_WITH_CUSTOM_PARAMS_VALUE,
   BUILD_CONFIGURE_DISCOVERED_VALUE,
   BUILD_WITHOUT_PARAMS_VALUE,
@@ -36,6 +37,9 @@ const autocompleteMock = mock(async (): Promise<AutocompletePromptResult> =>
 const selectMock = mock(
   async (..._args: unknown[]): Promise<string | typeof CANCEL> => "done",
 );
+const branchPickerMock = mock(
+  async (..._args: unknown[]): Promise<string | typeof CANCEL> => "development",
+);
 const textMock = mock(async (..._args: unknown[]): Promise<string> => "");
 const passwordMock = mock(
   async (..._args: unknown[]): Promise<string | typeof CANCEL> => "secret",
@@ -52,6 +56,9 @@ const spinnerMock = mock((..._args: unknown[]) => ({
 }));
 const selectPrompt = ((options: Parameters<typeof clack.select>[0]) =>
   selectMock(options)) as typeof clack.select;
+const branchPickerPrompt = ((
+  options: Parameters<typeof clack.branchPicker>[0],
+) => branchPickerMock(options)) as typeof clack.branchPicker;
 const textPrompt = ((options: Parameters<typeof clack.text>[0]) =>
   textMock(options)) as typeof clack.text;
 const passwordPrompt = ((options: Parameters<typeof clack.password>[0]) =>
@@ -89,7 +96,7 @@ const pickJobMock = mock(
 );
 const recordRecentJobMock = mock(async (..._args: unknown[]) => undefined);
 const loadCachedBranchesMock = mock(async () => ["development", "master"]);
-const loadCachedBranchHistoryMock = mock(async () => []);
+const loadCachedBranchHistoryMock = mock(async (): Promise<string[]> => []);
 const recordBranchSelectionMock = mock(
   async (..._args: unknown[]) => undefined,
 );
@@ -114,6 +121,11 @@ describe("build command navigation", () => {
     selectMock.mockReset();
     selectMock.mockImplementation(
       async (): Promise<string | typeof CANCEL> => "done",
+    );
+
+    branchPickerMock.mockReset();
+    branchPickerMock.mockImplementation(
+      async (): Promise<string | typeof CANCEL> => "development",
     );
 
     textMock.mockReset();
@@ -174,6 +186,7 @@ describe("build command navigation", () => {
 
     setBuildDepsForTesting({
       autocomplete: autocompleteMock,
+      branchPicker: branchPickerPrompt,
       confirm: confirmMock,
       select: selectPrompt,
       text: textPrompt,
@@ -373,8 +386,8 @@ describe("build command navigation", () => {
 
     selectMock
       .mockImplementationOnce(async () => BUILD_WITH_PARAMS_VALUE)
-      .mockImplementationOnce(async () => CANCEL)
       .mockImplementationOnce(async () => BUILD_WITHOUT_PARAMS_VALUE);
+    branchPickerMock.mockImplementationOnce(async () => CANCEL);
 
     await runBuild({
       client: createClient({
@@ -388,10 +401,11 @@ describe("build command navigation", () => {
 
     expect(triggerBuild).toHaveBeenCalledTimes(1);
     expect(triggerBuild).toHaveBeenCalledWith(NORMALIZED_JOB_URL, {});
+    expect(branchPickerMock).toHaveBeenCalledTimes(1);
     const selectCalls = selectMock.mock.calls as unknown as Array<
       Array<unknown>
     >;
-    expect(selectCalls[2]?.[0]).toEqual(
+    expect(selectCalls[1]?.[0]).toEqual(
       expect.objectContaining({
         message: expect.stringContaining("Build mode"),
       }),
@@ -504,8 +518,8 @@ describe("build command navigation", () => {
 
     selectMock
       .mockImplementationOnce(async () => BUILD_WITH_PARAMS_VALUE)
-      .mockImplementationOnce(async () => CANCEL)
       .mockImplementationOnce(async () => CANCEL);
+    branchPickerMock.mockImplementationOnce(async () => CANCEL);
 
     await runBuild({
       client: createClient({
@@ -533,8 +547,8 @@ describe("build command navigation", () => {
 
     selectMock
       .mockImplementationOnce(async () => BUILD_WITH_PARAMS_VALUE)
-      .mockImplementationOnce(async () => "development")
       .mockImplementationOnce(async () => CUSTOM_MORE_BUILD_VALUE);
+    branchPickerMock.mockImplementationOnce(async () => "development");
     confirmMock
       .mockImplementationOnce(async () => true)
       .mockImplementationOnce(async () => false);
@@ -556,6 +570,88 @@ describe("build command navigation", () => {
     expect(triggerBuild).toHaveBeenCalledWith(NORMALIZED_JOB_URL, {
       BRANCH: "development",
       DEPLOY_ENV: "staging",
+    });
+  });
+
+  test("typed custom branch from the combined picker triggers the build", async () => {
+    const getJobStatus = mock(async () => ({ lastBuildNumber: 41 }));
+    const triggerBuild = mock(async () => ({
+      buildUrl: BUILD_URL,
+      buildNumber: 42,
+      queueUrl: QUEUE_URL,
+      jobUrl: JOB_URL,
+    }));
+
+    selectMock.mockImplementationOnce(async () => BUILD_WITH_PARAMS_VALUE);
+    branchPickerMock.mockImplementationOnce(async () => "feature/checkout");
+
+    await runBuild({
+      client: createClient({
+        getJobStatus,
+        triggerBuild,
+      }),
+      env: {} as EnvConfig,
+      nonInteractive: false,
+      watch: false,
+    });
+
+    expect(triggerBuild).toHaveBeenCalledTimes(1);
+    expect(triggerBuild).toHaveBeenCalledWith(NORMALIZED_JOB_URL, {
+      BRANCH: "feature/checkout",
+    });
+  });
+
+  test("remove cached branch stays available and prunes picker options", async () => {
+    const getJobStatus = mock(async () => ({ lastBuildNumber: 41 }));
+    const triggerBuild = mock(async () => ({
+      buildUrl: BUILD_URL,
+      buildNumber: 42,
+      queueUrl: QUEUE_URL,
+      jobUrl: JOB_URL,
+    }));
+
+    loadCachedBranchesMock.mockImplementation(async () => [
+      "feature/old",
+      "development",
+      "master",
+    ]);
+    loadCachedBranchHistoryMock.mockImplementation(async () => ["feature/old"]);
+    selectMock
+      .mockImplementationOnce(async () => BUILD_WITH_PARAMS_VALUE)
+      .mockImplementationOnce(async () => "feature/old");
+    branchPickerMock
+      .mockImplementationOnce(async () => BRANCH_REMOVE_VALUE)
+      .mockImplementationOnce(async () => "development");
+
+    await runBuild({
+      client: createClient({
+        getJobStatus,
+        triggerBuild,
+      }),
+      env: {} as EnvConfig,
+      nonInteractive: false,
+      watch: false,
+    });
+
+    expect(removeCachedBranchMock).toHaveBeenCalledWith(
+      expect.objectContaining({ branch: "feature/old" }),
+    );
+    const pickerCalls = branchPickerMock.mock.calls as unknown as Array<
+      Array<{ options: Array<{ value: string }> }>
+    >;
+    expect(pickerCalls[0]?.[0]?.options.map((option) => option.value)).toEqual([
+      "feature/old",
+      "development",
+      "master",
+      BRANCH_REMOVE_VALUE,
+    ]);
+    expect(pickerCalls[1]?.[0]?.options.map((option) => option.value)).toEqual([
+      "development",
+      "master",
+    ]);
+    expect(triggerBuild).toHaveBeenCalledTimes(1);
+    expect(triggerBuild).toHaveBeenCalledWith(NORMALIZED_JOB_URL, {
+      BRANCH: "development",
     });
   });
 

@@ -7,7 +7,6 @@ import type {
   StatusPostContext,
 } from "./types";
 import {
-  BRANCH_CUSTOM_VALUE,
   BRANCH_REMOVE_VALUE,
   BUILD_CONFIGURE_DISCOVERED_VALUE,
   BUILD_WITH_CUSTOM_PARAMS_VALUE,
@@ -212,10 +211,10 @@ export const buildPreFlow: FlowDefinition<BuildPreContext> = {
         "branch:error": "entry",
       },
     },
-    /** Branch chooser with cached branches and utility actions. */
+    /** Combined branch chooser: cached branches plus inline custom input. */
     branch_select: {
       prompt: {
-        kind: "select",
+        kind: "branchPicker",
         message: (context) =>
           withPromptTarget(
             "Branch name (press Esc for build mode)",
@@ -226,17 +225,16 @@ export const buildPreFlow: FlowDefinition<BuildPreContext> = {
             value: branch,
             label: branch,
           })),
-          { value: BRANCH_CUSTOM_VALUE, label: "Type a different branch" },
           ...(context.removableBranches.length > 0
             ? [{ value: BRANCH_REMOVE_VALUE, label: "Remove cached branch" }]
             : []),
         ],
+        placeholder: "e.g. main",
       },
       onSelect: "buildPre.selectBranch",
       transitions: {
         esc: "branch_mode",
         "branch:selected": "custom_confirm",
-        "branch:entry": "branch_entry",
         "branch:remove": "branch_remove",
         "branch:retry": "branch_select",
       },

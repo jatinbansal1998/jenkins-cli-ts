@@ -4,6 +4,7 @@
  */
 import {
   autocomplete,
+  branchPicker,
   confirm,
   isCancel,
   password,
@@ -60,7 +61,7 @@ import {
 } from "./watch-utils";
 import { runFlow } from "../flows/runner";
 import { flows } from "../flows/definition";
-import { BRANCH_CUSTOM_VALUE, BRANCH_REMOVE_VALUE } from "../flows/constants";
+import { BRANCH_REMOVE_VALUE } from "../flows/constants";
 import { buildFlowHandlers, buildPreFlowHandlers } from "../flows/handlers";
 import type {
   ActionEffectResult,
@@ -114,6 +115,7 @@ type BuildSpinner = {
 
 type BuildDeps = {
   autocomplete: PromptAdapter["autocomplete"];
+  branchPicker: NonNullable<PromptAdapter["branchPicker"]>;
   confirm: PromptAdapter["confirm"];
   isCancel: PromptAdapter["isCancel"];
   select: PromptAdapter["select"];
@@ -137,6 +139,7 @@ type BuildDeps = {
 
 const defaultBuildDeps: BuildDeps = {
   autocomplete,
+  branchPicker,
   confirm,
   isCancel,
   select,
@@ -1427,6 +1430,7 @@ async function resolveInteractiveBuildSelection(options: {
     handlers: buildPreFlowHandlers,
     prompts: {
       autocomplete: deps.autocomplete,
+      branchPicker: deps.branchPicker,
       confirm: deps.confirm,
       isCancel: deps.isCancel,
       select: deps.select,
@@ -1592,22 +1596,19 @@ async function promptForBranchSelection(options: {
   let removableBranches = dedupeCaseInsensitive(options.removableBranches);
 
   while (true) {
-    const selectOptions = [
+    const pickerOptions = [
       ...choices.map((choice) => ({
         value: choice,
         label: choice,
       })),
-      {
-        value: BRANCH_CUSTOM_VALUE,
-        label: "Type a different branch",
-      },
       ...(removableBranches.length > 0
         ? [{ value: BRANCH_REMOVE_VALUE, label: "Remove cached branch" }]
         : []),
     ];
-    const response = await deps.select({
+    const response = await deps.branchPicker({
       message: withPromptTarget("Branch name", options.env),
-      options: selectOptions,
+      options: pickerOptions,
+      placeholder: "e.g. main",
     });
 
     if (deps.isCancel(response)) {
@@ -1631,11 +1632,10 @@ async function promptForBranchSelection(options: {
       continue;
     }
 
-    if (response === BRANCH_CUSTOM_VALUE) {
-      return await promptForBranchEntry(options.env);
+    const branch = String(response).trim();
+    if (branch) {
+      return branch;
     }
-
-    return String(response).trim();
   }
 }
 

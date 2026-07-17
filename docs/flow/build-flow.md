@@ -63,6 +63,12 @@ entry
   -> complete
 ```
 
+`branch_select` is a single combined picker: cached branches are selectable
+rows, "Remove cached branch" stays after them, and a persistent custom-branch
+input row accepts typed input directly. Nonblank typed input wins over the
+highlighted row, so `branch_entry` is only reached when no cached branches
+exist at all.
+
 `src/job-picker.ts` shows recent jobs first when the query is blank and switches
 to fuzzy-ranked cache results as the user types. There is no separate recent
 jobs menu or text-then-results search path.
