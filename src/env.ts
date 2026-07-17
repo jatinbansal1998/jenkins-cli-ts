@@ -178,7 +178,7 @@ export async function resolveApiToken(
 
   const profileName = env.profileName ?? "";
   const account = buildSecureStoreAccount(profileName, env.jenkinsUrl);
-  const relogin = `jenkins-cli login --profile ${profileName}`;
+  const relogin = `jenkins-cli auth login --profile ${profileName}`;
   let token: string | null;
   try {
     token = await getToken(account, deps);
@@ -309,7 +309,7 @@ function missingProfileError(
     hints.push(`Available profiles: ${availableProfiles.join(", ")}.`);
   } else {
     hints.push(
-      "No profiles are configured yet. Run `jenkins-cli login --profile <name>`.",
+      "No profiles are configured yet. Run `jenkins-cli auth login --profile <name>`.",
     );
   }
   return new CliError(

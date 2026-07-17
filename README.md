@@ -77,7 +77,8 @@ Maintainers: see `docs/homebrew.md` for tap publishing steps.
 ## Quick Start
 
 ```bash
-jenkins-cli login --profile work --url https://jenkins.example.com --user ci --token <token>
+jenkins-cli auth login --profile work --url https://jenkins.example.com --user ci --token <token>
+jenkins-cli auth status --profile work
 jenkins-cli list --profile work
 jenkins-cli build --job "api-prod" --branch main --profile work
 ```
@@ -108,15 +109,18 @@ jenkins-cli build --job "api-prod" --branch main --profile work
 ### Add Credentials
 
 ```bash
-jenkins-cli login
-jenkins-cli login --profile work
-jenkins-cli login --profile prod --url https://jenkins-prod.example.com --user ci --token <token>
+jenkins-cli auth login
+jenkins-cli auth login --profile work
+jenkins-cli auth login --profile prod --url https://jenkins-prod.example.com --user ci --token <token>
 ```
+
+`jenkins-cli login` remains supported as a compatibility alias for
+`jenkins-cli auth login`.
 
 ### Secure Token Storage
 
-When an OS-native secret store is available, `login` stores the API token in
-the keychain via `cross-keychain` instead of writing it in plaintext to the
+When an OS-native secret store is available, `auth login` stores the API token
+in the keychain via `cross-keychain` instead of writing it in plaintext to the
 config file:
 
 - **macOS** — the login Keychain.
@@ -143,25 +147,25 @@ the secret:
 
 The token is resolved transparently on every command. If the keyring is locked
 or the entry is missing, the CLI prints a `HINT:` explaining how to re-run
-`login` and fails gracefully rather than sending an empty token.
+`auth login` and fails gracefully rather than sending an empty token.
 
 Behavior notes:
 
 - **Fallback:** if no secure store is available (e.g. a headless box with no
   keyring, or `secret-tool` not installed), the token is written to the config
   file in plaintext and a one-line `HINT:` is printed.
-- **`--no-keychain`:** pass this flag to `login` to force plaintext storage in
-  the config file even when a keychain is available.
+- **`--no-keychain`:** pass this flag to `auth login` to force plaintext
+  storage in the config file even when a keychain is available.
 - **Existing profiles:** plaintext profiles keep working unchanged. A profile
-  is migrated to the keychain only when you re-run `login` for it or accept the
-  one-time migration prompt (never silently).
+  is migrated to the keychain only when you re-run `auth login` for it or
+  accept the one-time migration prompt (never silently).
 - **`profile delete`** removes the matching keychain entry on a best-effort
   basis.
 
 #### One-time migration prompt
 
-If you upgrade without re-running `login`, the CLI offers to move an existing
-plaintext token into the keychain the next time you run any command
+If you upgrade without re-running `auth login`, the CLI offers to move an
+existing plaintext token into the keychain the next time you run any command
 interactively:
 
 > Store your Jenkins token in the system keychain? (recommended)
@@ -178,8 +182,8 @@ interactively:
   are unaffected.
 
 ```bash
-jenkins-cli login --profile work                 # keychain when available
-jenkins-cli login --profile work --no-keychain    # force plaintext config
+jenkins-cli auth login --profile work                 # keychain when available
+jenkins-cli auth login --profile work --no-keychain   # force plaintext config
 ```
 
 ### Manage Profiles
@@ -220,6 +224,9 @@ Single-account fallback only:
 ### Privacy Guardrails
 
 - Analytics never sends Jenkins usernames, API tokens, Jenkins URLs, job names, job URLs, build URLs, queue URLs, branch names, raw search text, build parameter names or values, or log output.
+- Authentication diagnostics also exclude profile names, token-storage details,
+  redirect destinations, effective Jenkins users, and Jenkins versions from
+  analytics.
 - Analytics only sends anonymous install ID, CLI version, command names, interactivity/TTY flags, high-level outcomes, exact command durations in milliseconds, and coarse Jenkins API health counts.
 
 ## Usage
@@ -397,6 +404,63 @@ jenkins-cli wait --json --build-url https://jenkins.example.com/job/api/42/
   }
 }
 ```
+
+### Authentication Troubleshooting
+
+Check the active default profile, a named profile, or a complete set of direct
+credentials without triggering or modifying a build:
+
+```bash
+jenkins-cli auth status
+jenkins-cli auth status --profile prod
+jenkins-cli auth status --url https://jenkins.example.com --user ci --token <token>
+```
+
+The command follows the normal credential precedence: a complete direct
+`--url --user --token` set, then an explicit `--profile`, then the configured
+default profile, and finally environment variables when no profile exists. It
+performs one read-only `GET` to `/whoAmI/api/json`, never requests a crumb, and
+never writes configuration or secure-store data. Redirects are not followed,
+so credentials are not forwarded to an SSO or reverse-proxy login page.
+
+Successful authentication exits with status `0`:
+
+```text
+Profile:          work
+Controller:       https://jenkins.company.com
+Username:         jatin
+Token storage:    macOS Keychain
+Token present:    Yes
+Authenticated:    Yes
+Jenkins user:     jatin.bansal
+Jenkins version:  2.516.1
+
+OK: Authentication is working.
+```
+
+Every other result exits with status `1` after printing all fields that could
+be determined. Failures distinguish missing or inaccessible tokens, rejected
+credentials, denied identity access, anonymous responses, redirects, malformed
+responses, timeouts, and network/DNS/TLS errors:
+
+```text
+Profile:          work
+Controller:       https://jenkins.company.com
+Username:         jatin
+Token storage:    macOS Keychain
+Token present:    Yes
+Authenticated:    No
+Jenkins user:     Unknown
+Jenkins version:  2.516.1
+
+ERROR: Jenkins rejected the supplied credentials (HTTP 401).
+HINT: Check the username and API token, then run `jenkins-cli auth login` again.
+```
+
+When a token is missing or the secure store cannot be read, `auth status`
+still probes the controller anonymously. This separates controller
+reachability from credential availability without exposing a token, Basic
+authorization value, response body, or redirect query string.
 
 ### List Jobs
 
@@ -807,6 +871,8 @@ Commands print `OK:` on success.
 - The first profile added becomes the default profile.
 - Legacy single-profile config is migrated automatically when profile data is read/written.
 - `deploy` is an alias for `build`.
+- `login` is a compatibility alias for `auth login`; new examples use
+  `auth login`.
 - `build`/`deploy` uses `buildWithParameters` when branch or custom parameters are
   provided; otherwise it triggers Jenkins with no parameters.
 - CSRF crumb usage is disabled by default. Enable it with

@@ -19,11 +19,15 @@ export class CliError extends Error {
 
 const DEFAULT_SCRIPT_NAME = "jenkins-cli";
 
-export function getScriptName(): string {
-  const rawScriptName = process.argv[1]
-    ? path.basename(process.argv[1])
+export function getScriptName(
+  scriptPath: string | undefined = process.argv[1],
+): string {
+  const rawScriptName = scriptPath
+    ? path.basename(scriptPath)
     : DEFAULT_SCRIPT_NAME;
-  return rawScriptName === "index.ts" ? DEFAULT_SCRIPT_NAME : rawScriptName;
+  return rawScriptName === "index.ts" || rawScriptName === "index.js"
+    ? DEFAULT_SCRIPT_NAME
+    : rawScriptName;
 }
 
 export function printOk(message: string): void {

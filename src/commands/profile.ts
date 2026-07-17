@@ -57,7 +57,7 @@ export async function runProfileUse(options: UseProfileOptions): Promise<void> {
   const names = Object.keys(profiles);
   if (names.length === 0) {
     throw new CliError("No profiles are configured.", [
-      "Run `jenkins-cli login --profile <name>` to add one.",
+      "Run `jenkins-cli auth login --profile <name>` to add one.",
     ]);
   }
   if (!profiles[profileName]) {
@@ -94,7 +94,7 @@ export async function runProfileDelete(
   const names = Object.keys(profiles);
   if (names.length === 0) {
     throw new CliError("No profiles are configured.", [
-      "Run `jenkins-cli login --profile <name>` to add one.",
+      "Run `jenkins-cli auth login --profile <name>` to add one.",
     ]);
   }
   if (!profiles[profileName]) {

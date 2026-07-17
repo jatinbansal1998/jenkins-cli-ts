@@ -4,11 +4,13 @@
  * Registers commands (list, build, status) and handles argument parsing via yargs.
  */
 import yargs from "yargs/yargs";
+import type { Argv } from "yargs";
 import { hideBin } from "yargs/helpers";
 import { confirm, isCancel } from "@clack/prompts";
 import { runWithAnalytics, updateAnalyticsContext } from "./analytics";
 import { CliError, getScriptName, handleCliError, printHint } from "./cli";
 import { runArtifacts } from "./commands/artifacts";
+import { runAuthStatus } from "./commands/auth-status";
 import { runBuild } from "./commands/build";
 import { runCancel } from "./commands/cancel";
 import { runHistory } from "./commands/history";
@@ -119,59 +121,44 @@ async function main(): Promise<void> {
       }
     })
     .command(
+      "auth",
+      "Configure and troubleshoot Jenkins authentication",
+      (authYargs) =>
+        authYargs
+          .command(
+            "login",
+            "Save Jenkins credentials to the config file",
+            configureLoginOptions,
+            async (argv) => {
+              await runLoginCommand("auth:login", argv);
+            },
+          )
+          .command(
+            "status",
+            "Check whether Jenkins accepts the selected credentials",
+            (statusYargs) => statusYargs,
+            async (argv) => {
+              await runTrackedCommand("auth:status", argv, async () => {
+                await runAuthStatus({
+                  profile: toOptionalString(argv.profile),
+                  url: toOptionalString(argv.url),
+                  user: toOptionalString(argv.user),
+                  apiToken:
+                    toOptionalString(argv.token) ??
+                    toOptionalString(argv.apiToken),
+                });
+              });
+            },
+          )
+          .demandCommand(1, "Choose an auth command: login or status."),
+      () => undefined,
+    )
+    .command(
       "login",
-      "Save Jenkins credentials to the config file",
-      (yargsInstance) =>
-        yargsInstance
-          .option("url", {
-            type: "string",
-            describe: "Jenkins base URL",
-          })
-          .option("user", {
-            type: "string",
-            describe: "Jenkins username",
-          })
-          .option("token", {
-            type: "string",
-            alias: "api-token",
-            describe: "Jenkins API token",
-          })
-          .option("branch-param", {
-            type: "string",
-            describe: "Branch parameter name (default from env/config)",
-          })
-          .option("profile", {
-            type: "string",
-            describe: "Profile name to create or update",
-          })
-          .option("keychain", {
-            type: "boolean",
-            default: true,
-            describe:
-              "Store the token in the OS keychain when available (use --no-keychain to force plaintext)",
-          }),
+      "Save Jenkins credentials (compatibility alias for auth login)",
+      configureLoginOptions,
       async (argv) => {
-        await runTrackedCommand("login", argv, async ({ showIntro }) => {
-          showIntro();
-          await runLogin({
-            url: typeof argv.url === "string" ? argv.url : undefined,
-            user: typeof argv.user === "string" ? argv.user : undefined,
-            apiToken:
-              typeof argv.token === "string"
-                ? argv.token
-                : typeof argv.apiToken === "string"
-                  ? argv.apiToken
-                  : undefined,
-            branchParam:
-              typeof argv.branchParam === "string"
-                ? argv.branchParam
-                : undefined,
-            profile:
-              typeof argv.profile === "string" ? argv.profile : undefined,
-            nonInteractive: Boolean(argv.nonInteractive),
-            noKeychain: argv.keychain === false,
-          });
-        });
+        await runLoginCommand("login", argv);
       },
     )
     .command(
@@ -960,12 +947,18 @@ async function main(): Promise<void> {
     --job      Job name or description
     --job-url  Full Jenkins job URL
 
-  login:
+  auth login / login:
     --url           Jenkins base URL
     --user          Jenkins username
     --token         Jenkins API token
     --profile       Profile name to create or update
     --branch-param  Branch parameter name
+
+  auth status:
+    --profile  Check a named profile
+    --url      Direct Jenkins base URL (use with --user and --token)
+    --user     Direct Jenkins username (use with --url and --token)
+    --token    Direct Jenkins API token (use with --url and --user)
 
   profile:
     list            List configured profiles
@@ -1006,6 +999,69 @@ Run "$0 <command> --help" for full details.`,
     });
 
   await parser.parseAsync();
+}
+
+function configureLoginOptions(yargsInstance: Argv): Argv {
+  return yargsInstance
+    .option("url", {
+      type: "string",
+      describe: "Jenkins base URL",
+    })
+    .option("user", {
+      type: "string",
+      describe: "Jenkins username",
+    })
+    .option("token", {
+      type: "string",
+      alias: "api-token",
+      describe: "Jenkins API token",
+    })
+    .option("branch-param", {
+      type: "string",
+      describe: "Branch parameter name (default from env/config)",
+    })
+    .option("profile", {
+      type: "string",
+      describe: "Profile name to create or update",
+    })
+    .option("keychain", {
+      type: "boolean",
+      default: true,
+      describe:
+        "Store the token in the OS keychain when available (use --no-keychain to force plaintext)",
+    });
+}
+
+type LoginCommandArgv = {
+  _?: unknown;
+  $0?: unknown;
+  url?: unknown;
+  user?: unknown;
+  token?: unknown;
+  apiToken?: unknown;
+  branchParam?: unknown;
+  profile?: unknown;
+  nonInteractive?: unknown;
+  keychain?: unknown;
+  banner?: unknown;
+};
+
+async function runLoginCommand(
+  command: "auth:login" | "login",
+  argv: LoginCommandArgv,
+): Promise<void> {
+  await runTrackedCommand(command, argv, async ({ showIntro }) => {
+    showIntro();
+    await runLogin({
+      url: toOptionalString(argv.url),
+      user: toOptionalString(argv.user),
+      apiToken: toOptionalString(argv.token) ?? toOptionalString(argv.apiToken),
+      branchParam: toOptionalString(argv.branchParam),
+      profile: toOptionalString(argv.profile),
+      nonInteractive: Boolean(argv.nonInteractive),
+      noKeychain: argv.keychain === false,
+    });
+  });
 }
 
 async function promptForDeferredUpdate(

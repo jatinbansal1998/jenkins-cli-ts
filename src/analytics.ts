@@ -393,11 +393,17 @@ function classifyCommandOutcome(error: unknown): CommandOutcome {
   }
   if (
     message.includes("Request timed out while trying to") ||
-    message.startsWith("Timed out after ")
+    message.startsWith("Timed out after ") ||
+    message.includes("could not be reached before the request timed out")
   ) {
     return "timeout";
   }
-  if (message.includes("Network error while trying to")) {
+  if (
+    message.includes("Network error while trying to") ||
+    message.includes(
+      "could not be reached because of a network, DNS, TLS, or connection error",
+    )
+  ) {
     return "network_error";
   }
   if (
@@ -406,7 +412,12 @@ function classifyCommandOutcome(error: unknown): CommandOutcome {
     message.includes("Resource not found while trying to") ||
     message.includes("Invalid JSON response while trying to") ||
     message.includes("Unexpected Jenkins response") ||
-    message.includes("Unable to complete request while trying to")
+    message.includes("Unable to complete request while trying to") ||
+    message.startsWith("Jenkins rejected the supplied credentials") ||
+    message.startsWith("Jenkins denied access to the identity endpoint") ||
+    message.startsWith("Jenkins treated the request as anonymous") ||
+    message.startsWith("The Jenkins API request was redirected") ||
+    message.startsWith("The identity endpoint returned")
   ) {
     return "jenkins_api_error";
   }

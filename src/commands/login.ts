@@ -162,7 +162,7 @@ async function planTokenPersistence(input: {
         throw new CliError(
           "Cannot move the existing keychain token to plaintext automatically.",
           [
-            `Re-run \`jenkins-cli login --profile ${profileName} --no-keychain --token <token>\` with the token.`,
+            `Re-run \`jenkins-cli auth login --profile ${profileName} --no-keychain --token <token>\` with the token.`,
           ],
         );
       }
@@ -269,7 +269,7 @@ async function resolveUrl(
       return existingValue.trim();
     }
     throw new CliError("Missing required --url.", [
-      "Run `jenkins-cli login --url <url> --user <user> --token <token>`.",
+      "Run `jenkins-cli auth login --url <url> --user <user> --token <token>`.",
     ]);
   }
   const response = await text({
@@ -299,7 +299,7 @@ async function resolveUser(
       return existingValue.trim();
     }
     throw new CliError("Missing required --user.", [
-      "Run `jenkins-cli login --url <url> --user <user> --token <token>`.",
+      "Run `jenkins-cli auth login --url <url> --user <user> --token <token>`.",
     ]);
   }
   const response = await text({
@@ -329,7 +329,7 @@ async function resolveApiToken(
       return existingValue.trim();
     }
     throw new CliError("Missing required --token.", [
-      "Run `jenkins-cli login --url <url> --user <user> --token <token>`.",
+      "Run `jenkins-cli auth login --url <url> --user <user> --token <token>`.",
     ]);
   }
   const response = await password({
