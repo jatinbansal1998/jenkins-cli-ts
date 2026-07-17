@@ -117,6 +117,11 @@ jenkins-cli auth login --profile prod --url https://jenkins-prod.example.com --u
 `jenkins-cli login` remains supported as a compatibility alias for
 `jenkins-cli auth login`.
 
+In interactive mode, after you enter the Jenkins URL the CLI asks whether to
+open that host in your browser — handy for signing in and creating an API
+token before the token prompt appears. Declining is the default, and the
+question is skipped entirely with `--non-interactive`.
+
 ### Secure Token Storage
 
 When an OS-native secret store is available, `auth login` stores the API token
@@ -159,8 +164,9 @@ Behavior notes:
 - **Existing profiles:** plaintext profiles keep working unchanged. A profile
   is migrated to the keychain only when you re-run `auth login` for it or
   accept the one-time migration prompt (never silently).
-- **`profile delete`** removes the matching keychain entry on a best-effort
-  basis.
+- **`auth logout` / `profile delete`** remove the matching keychain entry with
+  strict semantics: the secure-store entry is deleted and verified absent
+  before the config is updated, and a failed config write restores the entry.
 
 #### One-time migration prompt
 
@@ -187,6 +193,32 @@ jenkins-cli auth login --profile work --no-keychain   # force plaintext config
 ```
 
 ### Manage Profiles
+
+The canonical profile management commands live under `auth`:
+
+```bash
+jenkins-cli auth list                 # list profiles with URL, user, and token storage
+jenkins-cli auth use prod             # set the default profile
+jenkins-cli auth current              # show which credentials would be used (no network request)
+jenkins-cli auth rename work corp     # rename a profile (moves its keychain token)
+jenkins-cli auth logout               # delete the active profile's local credentials
+jenkins-cli auth logout --profile work
+jenkins-cli auth logout --all         # delete every stored profile
+```
+
+- `auth current` resolves credentials locally using the normal precedence
+  (direct `--url --user --token`, explicit `--profile`, default profile, then
+  environment variables) and never contacts Jenkins or prints the token. Use
+  `auth status` for the network-backed authentication check.
+- `auth logout` asks for confirmation unless `--non-interactive` is passed. It
+  deletes the profile from the config and its matching secure-store entry.
+- **Logout removes local credentials only.** The API token itself is not
+  revoked at the Jenkins controller — Jenkins exposes no general token
+  revocation operation to these credentials. To revoke the token, delete it
+  from your Jenkins user configuration page.
+
+The original `profile` commands remain supported and route through the same
+operations:
 
 ```bash
 jenkins-cli profile list
@@ -422,6 +454,10 @@ default profile, and finally environment variables when no profile exists. It
 performs one read-only `GET` to `/whoAmI/api/json`, never requests a crumb, and
 never writes configuration or secure-store data. Redirects are not followed,
 so credentials are not forwarded to an SSO or reverse-proxy login page.
+
+For a purely local view of the same resolution — which source, profile,
+controller, username, and token storage would be used — run
+`jenkins-cli auth current`; it makes no network request at all.
 
 Successful authentication exits with status `0`:
 

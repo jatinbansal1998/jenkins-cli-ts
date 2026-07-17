@@ -53,7 +53,7 @@ describe("auth CLI routing and help", () => {
 
     expect(result.exitCode).toBe(0);
     expect(result.output).toContain("jenkins-cli auth");
-    expect(result.output).toContain("Configure and troubleshoot Jenkins");
+    expect(result.output).toContain("Authentication commands: login, status,");
     expect(result.output).toContain("jenkins-cli login");
     expect(result.output).toContain("compatibility");
     expect(result.output).toContain("alias for auth login");

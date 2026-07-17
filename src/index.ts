@@ -10,6 +10,13 @@ import { confirm, isCancel } from "@clack/prompts";
 import { runWithAnalytics, updateAnalyticsContext } from "./analytics";
 import { CliError, getScriptName, handleCliError, printHint } from "./cli";
 import { runArtifacts } from "./commands/artifacts";
+import {
+  runAuthCurrent,
+  runAuthList,
+  runAuthLogout,
+  runAuthRename,
+  runAuthUse,
+} from "./commands/auth-profile";
 import { runAuthStatus } from "./commands/auth-status";
 import { runBuild } from "./commands/build";
 import { runCancel } from "./commands/cancel";
@@ -60,6 +67,12 @@ const scriptName = getScriptName();
 
 async function main(): Promise<void> {
   const rawArgs = hideBin(process.argv);
+  // yargs' built-in `help` command shadows a registered handler, so the
+  // aggregated reference is dispatched here before yargs parses.
+  if (rawArgs[0] === "help" && rawArgs.includes("--full")) {
+    await printFullHelp();
+    return;
+  }
   kickOffMinimumVersionRefresh({ currentVersion: VERSION });
   await enforceMinimumVersionFromCache({ currentVersion: VERSION, rawArgs });
   const deferredUpdatePrompt = await promptForDeferredUpdate(VERSION, rawArgs);
@@ -122,12 +135,12 @@ async function main(): Promise<void> {
     })
     .command(
       "auth",
-      "Configure and troubleshoot Jenkins authentication",
+      "Authentication commands: login, status, list, use, current, rename, logout",
       (authYargs) =>
         authYargs
           .command(
             "login",
-            "Save Jenkins credentials to the config file",
+            "Save Jenkins credentials",
             configureLoginOptions,
             async (argv) => {
               await runLoginCommand("auth:login", argv);
@@ -135,7 +148,7 @@ async function main(): Promise<void> {
           )
           .command(
             "status",
-            "Check whether Jenkins accepts the selected credentials",
+            "Validate credentials against Jenkins",
             (statusYargs) => statusYargs,
             async (argv) => {
               await runTrackedCommand("auth:status", argv, async () => {
@@ -150,7 +163,97 @@ async function main(): Promise<void> {
               });
             },
           )
-          .demandCommand(1, "Choose an auth command: login or status."),
+          .command(
+            "list",
+            "List stored credential profiles",
+            (listYargs) => listYargs,
+            async (argv) => {
+              await runTrackedCommand("auth:list", argv, async () => {
+                await runAuthList();
+              });
+            },
+          )
+          .command(
+            "use <name>",
+            "Set the default credential profile",
+            (useYargs) =>
+              useYargs.positional("name", {
+                type: "string",
+                describe: "Profile name",
+              }),
+            async (argv) => {
+              await runTrackedCommand("auth:use", argv, async () => {
+                await runAuthUse(toOptionalString(argv.name) ?? "");
+              });
+            },
+          )
+          .command(
+            "current",
+            "Show which credentials would be used",
+            (currentYargs) => currentYargs,
+            async (argv) => {
+              await runTrackedCommand("auth:current", argv, async () => {
+                await runAuthCurrent({
+                  profile: toOptionalString(argv.profile),
+                  url: toOptionalString(argv.url),
+                  user: toOptionalString(argv.user),
+                  apiToken:
+                    toOptionalString(argv.token) ??
+                    toOptionalString(argv.apiToken),
+                });
+              });
+            },
+          )
+          .command(
+            "rename <old> <new>",
+            "Rename a stored credential profile",
+            (renameYargs) =>
+              renameYargs
+                .positional("old", {
+                  type: "string",
+                  describe: "Current profile name",
+                })
+                .positional("new", {
+                  type: "string",
+                  describe: "New profile name",
+                }),
+            async (argv) => {
+              await runTrackedCommand("auth:rename", argv, async () => {
+                await runAuthRename(
+                  toOptionalString(argv.old) ?? "",
+                  toOptionalString(argv.new) ?? "",
+                );
+              });
+            },
+          )
+          .command(
+            "logout",
+            "Remove local credentials (one or --all)",
+            (logoutYargs) =>
+              logoutYargs.option("all", {
+                type: "boolean",
+                default: false,
+                describe: "Delete every stored profile",
+              }),
+            async (argv) => {
+              await runTrackedCommand(
+                "auth:logout",
+                argv,
+                async ({ showIntro }) => {
+                  showIntro();
+                  await runAuthLogout({
+                    profile: toOptionalString(argv.profile),
+                    all: Boolean(argv.all),
+                    nonInteractive: Boolean(argv.nonInteractive),
+                  });
+                },
+              );
+            },
+          )
+          .demandCommand(
+            1,
+            "Choose an auth command: login, status, list, use, current, rename, or logout.",
+          ),
       () => undefined,
     )
     .command(
@@ -868,6 +971,24 @@ async function main(): Promise<void> {
         });
       },
     )
+    .command(
+      "help",
+      "Show help (--full prints every command's options)",
+      (helpYargs) =>
+        helpYargs.option("full", {
+          type: "boolean",
+          default: false,
+          describe:
+            "Print the complete option reference for every command in one output",
+        }),
+      async (argv) => {
+        if (argv.full) {
+          await printFullHelp();
+          return;
+        }
+        parser.showHelp("log");
+      },
+    )
     .version(
       "version",
       `Show version (${VERSION})`,
@@ -877,99 +998,155 @@ async function main(): Promise<void> {
     .strict()
     .help()
     .epilog(
-      `Command-specific options:
+      `Examples:
+  $0 auth login
+      Interactive login (prompts for URL, user, and token).
+  $0 auth login --profile work --url https://jenkins.example.com --user ci --token <token> --non-interactive
+      Scripted login.
+  $0 build --job "api deploy" --branch main --non-interactive
+      Trigger a build by fuzzy job name.
+  $0 build --job-url https://jenkins.example.com/job/api/ --branch main --param ENV=staging --non-interactive
+      Trigger by exact URL with a custom parameter.
+  $0 status --job api --json
+      Last build status as a JSON document.
+  $0 wait --job api --timeout 30m --json
+      Wait for the latest build to finish.
+  $0 artifacts --job api --download --dest ./out --non-interactive
+      Download the last build's artifacts.
+  $0 auth logout --all --non-interactive
+      Remove all locally stored credentials.
+
+Job selection (build, status, history, wait, logs, artifacts, cancel, rerun, params):
+  --job <text>      Fuzzy match on job name or description (uses the local job cache)
+  --job-url <url>   Exact Jenkins job URL (skips the cache and search)
+  With neither flag, an interactive job picker opens (requires a TTY).
+
+Scripting and AI agents:
+  Pass --non-interactive to disable every prompt and fail fast; --json implies it.
+  --json is supported by: list, params, status, history, wait.
+  Output lines are prefixed OK: (success), ERROR: (failure), HINT: (guidance).
+  Exit code is 0 on success and 1 on any error.
+  Run "$0 help --full" to print every command's full option reference at once.
+  Note: the --search/--refresh/--json entries in "Options:" above belong to the
+  default "list" command, not to every command.
+
+Command-specific options:
   list:
-    --search   Search jobs by name or description
-    --refresh  Refresh the job cache from Jenkins
-    --json     Output a single JSON document (implies non-interactive)
+    --search <text>  Search jobs by name or description
+    --refresh        Refresh the job cache from Jenkins [default: false]
+    --json           Output a single JSON document (implies non-interactive)
+
+  params:
+    --job <text>     Job name or description
+    --job-url <url>  Full Jenkins job URL
+    --json           Output a single JSON document (implies non-interactive)
 
   build / deploy:
-    --job             Job name or description
-    --job-url         Full Jenkins job URL
-    --branch          Branch name to build
-    --branch-param    Parameter name for the branch [default: "BRANCH"]
-    --param           Custom build parameter KEY=VALUE (repeatable)
-    --without-params  Trigger build without parameters (non-interactive only)
-    --watch           Watch build status until completion
+    --job <text>           Job name or description
+    --job-url <url>        Full Jenkins job URL
+    --branch <name>        Branch name to build
+    --branch-param <name>  Parameter name for the branch [default: BRANCH]
+    --param KEY=VALUE      Custom build parameter (repeatable)
+    --without-params       Trigger without parameters (non-interactive only)
+    --watch                Watch build status until completion [default: false]
 
   status:
-    --job      Job name or description
-    --job-url  Full Jenkins job URL
-    --watch    Watch latest build status until completion
-    --json     Output a single JSON document (implies non-interactive)
+    --job <text>     Job name or description
+    --job-url <url>  Full Jenkins job URL
+    --watch          Watch latest build until completion [default: false]
+    --json           Output a single JSON document (implies non-interactive)
 
   history / builds:
-    --job      Job name or description
-    --job-url  Full Jenkins job URL
-    --offset   Skip the first N builds before showing the next 5
-    --json     Output a single JSON document (implies non-interactive)
+    --job <text>     Job name or description
+    --job-url <url>  Full Jenkins job URL
+    --offset <n>     Skip N builds before showing the next 5 [default: 0]
+    --json           Output a single JSON document (implies non-interactive)
 
   wait:
-    --job       Job name or description
-    --job-url   Full Jenkins job URL
-    --build-url Full Jenkins build URL
-    --queue-url Full Jenkins queue item URL
-    --interval  Polling interval (e.g. ${DEFAULT_WATCH_INTERVAL_MS / 1000}s, 1m)
-    --timeout   Timeout (e.g. 30m, 2h)
-    --json      Output a single JSON document (implies non-interactive)
+    --job <text>      Job name or description
+    --job-url <url>   Full Jenkins job URL
+    --build-url <url> Full Jenkins build URL
+    --queue-url <url> Full Jenkins queue item URL
+    --interval <dur>  Polling interval (e.g. 30s, 1m) [default: ${DEFAULT_WATCH_INTERVAL_MS / 1000}s]
+    --timeout <dur>   Timeout (e.g. 30m, 2h)
+    --json            Output a single JSON document (implies non-interactive)
 
   logs:
-    --job       Job name or description
-    --job-url   Full Jenkins job URL
-    --build-url Full Jenkins build URL
-    --queue-url Full Jenkins queue item URL
-    --follow    Keep streaming logs until build completes [default: true]
-    --poll      Polling interval when following (e.g. ${DEFAULT_LOG_POLL_MS / 1000}s)
+    --job <text>      Job name or description
+    --job-url <url>   Full Jenkins job URL
+    --build-url <url> Full Jenkins build URL
+    --queue-url <url> Full Jenkins queue item URL
+    --follow          Keep streaming logs until build completes [default: true]
+    --poll <dur>      Polling interval when following [default: ${DEFAULT_LOG_POLL_MS / 1000}s]
 
   artifacts:
-    --job       Job name or description
-    --job-url   Full Jenkins job URL
-    --build     Target a specific build number (with --job/--job-url)
-    --build-url Full Jenkins build URL
-    --download  Download artifacts instead of only listing them
-    --dest      Destination directory for downloads (default: cwd)
-    --artifact  Restrict downloads to a relativePath (repeatable)
-    --force     Overwrite existing files when downloading
+    --job <text>      Job name or description
+    --job-url <url>   Full Jenkins job URL
+    --build <n>       Target a specific build number (with --job/--job-url)
+    --build-url <url> Full Jenkins build URL
+    --download        Download artifacts, not just list them [default: false]
+    --dest <dir>      Destination directory for downloads [default: cwd]
+    --artifact <path> Only this relativePath (repeatable; implies --download)
+    --force           Overwrite existing files [default: false]
+
+  run:
+    (no command-specific options; interactive picker of running builds)
 
   cancel:
-    --job       Job name or description
-    --job-url   Full Jenkins job URL
-    --build-url Full Jenkins build URL
-    --queue-url Full Jenkins queue item URL
+    --job <text>      Job name or description
+    --job-url <url>   Full Jenkins job URL
+    --build-url <url> Full Jenkins build URL
+    --queue-url <url> Full Jenkins queue item URL
 
   queue:
-    --job       Filter queued items to a job name
+    --job <text>  Filter queued items to a job name
 
   nodes:
-    --offline-only  Show only offline nodes
+    --offline-only  Show only offline nodes [default: false]
 
   rerun:
-    --job      Job name or description
-    --job-url  Full Jenkins job URL
+    --job <text>     Job name or description
+    --job-url <url>  Full Jenkins job URL
 
   auth login / login:
-    --url           Jenkins base URL
-    --user          Jenkins username
-    --token         Jenkins API token
-    --profile       Profile name to create or update
-    --branch-param  Branch parameter name
+    --url <url>            Jenkins base URL
+    --user <name>          Jenkins username
+    --token <token>        Jenkins API token
+    --profile <name>       Profile name to create or update
+    --branch-param <name>  Branch parameter name [default: BRANCH]
+    --keychain             Store the token in the OS keychain when available
+                           [default: true; use --no-keychain for plaintext]
 
   auth status:
-    --profile  Check a named profile
-    --url      Direct Jenkins base URL (use with --user and --token)
-    --user     Direct Jenkins username (use with --url and --token)
-    --token    Direct Jenkins API token (use with --url and --user)
+    --profile <name>  Check a named profile
+    --url <url>       Direct Jenkins base URL (use with --user and --token)
+    --user <name>     Direct Jenkins username (use with --url and --token)
+    --token <token>   Direct Jenkins API token (use with --url and --user)
 
-  profile:
-    list            List configured profiles
-    use <name>      Set default profile
-    delete <name>   Delete a profile
+  auth profile management:
+    auth list                    List stored credential profiles
+    auth use <name>              Set the default profile
+    auth current                 Show resolved credentials (local, no network)
+    auth rename <old> <new>      Rename a profile (moves its keychain token)
+    auth logout                  Delete the active profile's local credentials
+    auth logout --profile <name> Delete a specific profile's local credentials
+    auth logout --all            Delete all profiles (logout never revokes the
+                                 Jenkins-side API token)
 
-  global auth overrides:
-    --profile  Use a named profile from config
-    --url      One-off Jenkins base URL override
-    --user     One-off Jenkins username override
-    --token    One-off Jenkins API token override
+  profile (compatibility):
+    list            List configured profiles (same as auth list)
+    use <name>      Set default profile (same as auth use)
+    delete <name>   Delete a profile (same as auth logout --profile)
+
+  help:
+    --full  Print every command's full option reference [default: false]
+
+  global auth overrides (any command):
+    --profile <name>  Use a named profile from config
+    --url <url>       One-off Jenkins base URL override
+    --user <name>     One-off Jenkins username override
+    --token <token>   One-off Jenkins API token override
+    (--url, --user, and --token must be passed together)
 
   config/env:
     ${ENV_KEYS.JENKINS_USE_CRUMB} / useCrumb  Enable Jenkins CSRF crumb usage [default: disabled]
@@ -978,11 +1155,11 @@ async function main(): Promise<void> {
     ${ENV_KEYS.JENKINS_ANALYTICS_DISABLED}    true disables analytics, false enables bundled analytics
 
   update / upgrade:
-    [tag]          Install a specific version tag (e.g. v0.2.4)
-    --check        Check for updates without installing
-    --channel      Set update channel (stable or prerelease)
-    --enable-auto  Enable daily update checks (notify only)
-    --disable-auto Disable daily update checks
+    [tag]                  Install a specific version tag (e.g. v0.2.4)
+    --check                Check for updates; do not install [default: false]
+    --channel <name>       Set update channel (stable or prerelease)
+    --enable-auto          Enable daily update checks (notify only)
+    --disable-auto         Disable daily update checks
     --enable-auto-install  Enable auto-install of updates
     --disable-auto-install Disable auto-install of updates
 
@@ -1236,6 +1413,80 @@ async function runTrackedCommandWithContext<
       showIntro,
     });
   });
+}
+
+/** Every command whose --help output `help --full` aggregates, in display order. */
+const FULL_HELP_COMMANDS: string[][] = [
+  [],
+  ["auth"],
+  ["auth", "login"],
+  ["auth", "status"],
+  ["auth", "list"],
+  ["auth", "use"],
+  ["auth", "current"],
+  ["auth", "rename"],
+  ["auth", "logout"],
+  ["login"],
+  ["list"],
+  ["params"],
+  ["build"],
+  ["status"],
+  ["history"],
+  ["wait"],
+  ["logs"],
+  ["artifacts"],
+  ["run"],
+  ["cancel"],
+  ["queue"],
+  ["nodes"],
+  ["rerun"],
+  ["profile"],
+  ["update"],
+  ["help"],
+];
+
+/**
+ * Builds the command line to re-invoke this CLI. A compiled binary exposes its
+ * embedded entry through Bun's virtual filesystem (/$bunfs on POSIX, B:\~BUN
+ * on Windows) and re-runs itself directly; `bun run src/index.ts` keeps a real
+ * script path in argv[1] that must be passed through.
+ */
+function selfInvocation(args: string[]): string[] {
+  const script = process.argv[1];
+  const isCompiled =
+    !script || script.startsWith("/$bunfs/") || script.includes("~BUN");
+  if (isCompiled) {
+    return [process.execPath, ...args];
+  }
+  return [process.execPath, script, ...args];
+}
+
+/**
+ * Prints the --help output of every command in one document so automation and
+ * AI agents can learn the complete CLI surface from a single invocation.
+ * Children are spawned concurrently; each `--help` run skips the update
+ * prompt/auto-update paths and never touches Jenkins.
+ */
+async function printFullHelp(): Promise<void> {
+  const sections = await Promise.all(
+    FULL_HELP_COMMANDS.map(async (commandPath) => {
+      const title = [scriptName, ...commandPath, "--help"].join(" ");
+      const child = Bun.spawn({
+        cmd: selfInvocation([...commandPath, "--help"]),
+        stdout: "pipe",
+        stderr: "pipe",
+        stdin: "ignore",
+      });
+      const [stdout, stderr] = await Promise.all([
+        new Response(child.stdout).text(),
+        new Response(child.stderr).text(),
+      ]);
+      await child.exited;
+      const rule = "=".repeat(72);
+      return `${rule}\n${title}\n${rule}\n${`${stdout}${stderr}`.trim()}`;
+    }),
+  );
+  console.log(sections.join("\n\n"));
 }
 
 function toOptionalString(value: unknown): string | undefined {
