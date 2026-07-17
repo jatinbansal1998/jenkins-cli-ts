@@ -108,4 +108,3 @@ After the failing tests are reviewed, implement bounded token-level edit
 matching inside candidate scoring and remove the collection-wide scoring flag.
 Exact-match preference should remain visible as ordering or selection policy,
 not as a mutation of other candidates' scores.
-
