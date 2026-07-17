@@ -1,12 +1,23 @@
+/**
+ * Compatibility `profile` commands. They route through the same shared
+ * profile operations as the canonical `auth` commands (list, use, logout) so
+ * their behavior cannot drift.
+ */
 import { confirm, isCancel } from "../clack";
-import { CliError, printOk } from "../cli";
+import { CliError } from "../cli";
+import { normalizeProfileName } from "../config";
 import {
-  migrateLegacyConfigIfNeeded,
-  normalizeProfileName,
-  resolveDefaultProfileName,
-  writeConfig,
-} from "../config";
-import { buildSecureStoreAccount, deleteToken } from "../secure-store";
+  deleteProfilesStrict,
+  listProfiles,
+  unknownProfileError,
+  type ProfileOperationsDeps,
+} from "../profile-operations";
+import {
+  runAuthList,
+  runAuthUse,
+  type AuthCommandDeps,
+  type WriteLine,
+} from "./auth-profile";
 
 type UseProfileOptions = {
   name: string;
@@ -17,69 +28,30 @@ type DeleteProfileOptions = {
   nonInteractive: boolean;
 };
 
-export async function runProfileList(): Promise<void> {
-  const loaded = await migrateLegacyConfigIfNeeded();
-  const config = loaded?.config;
-  const profiles = config?.profiles ?? {};
-  const names = Object.keys(profiles);
-  if (names.length === 0) {
-    printOk("No profiles configured.");
-    return;
-  }
-
-  const defaultProfile = resolveDefaultProfileName({
-    profiles,
-    defaultProfile: config?.defaultProfile,
-  });
-  for (const name of names) {
-    const profile = profiles[name];
-    if (!profile) {
-      continue;
-    }
-    const marker = name === defaultProfile ? " (default)" : "";
-    console.log(
-      `${name}${marker}  ${profile.jenkinsUrl}  ${profile.jenkinsUser}`,
-    );
-  }
+export async function runProfileList(
+  deps: ProfileOperationsDeps = {},
+  write: WriteLine = console.log,
+): Promise<void> {
+  await runAuthList(deps, write);
 }
 
-export async function runProfileUse(options: UseProfileOptions): Promise<void> {
-  const profileName = normalizeProfileName(options.name);
-  if (!profileName) {
+export async function runProfileUse(
+  options: UseProfileOptions,
+  deps: ProfileOperationsDeps = {},
+  write: WriteLine = console.log,
+): Promise<void> {
+  if (!normalizeProfileName(options.name)) {
     throw new CliError("Profile name is required.", [
       "Run `jenkins-cli profile use <name>`.",
     ]);
   }
-
-  const loaded = await migrateLegacyConfigIfNeeded();
-  const config = loaded?.config;
-  const profiles = config?.profiles ?? {};
-  const names = Object.keys(profiles);
-  if (names.length === 0) {
-    throw new CliError("No profiles are configured.", [
-      "Run `jenkins-cli auth login --profile <name>` to add one.",
-    ]);
-  }
-  if (!profiles[profileName]) {
-    throw new CliError(`Profile "${profileName}" was not found.`, [
-      `Available profiles: ${names.join(", ")}.`,
-    ]);
-  }
-
-  if (config?.defaultProfile === profileName) {
-    printOk(`Profile "${profileName}" is already the default.`);
-    return;
-  }
-
-  await writeConfig({
-    ...(config ?? { version: 2, profiles }),
-    defaultProfile: profileName,
-  });
-  printOk(`Default profile set to "${profileName}".`);
+  await runAuthUse(options.name, deps, write);
 }
 
 export async function runProfileDelete(
   options: DeleteProfileOptions,
+  deps: AuthCommandDeps = {},
+  write: WriteLine = console.log,
 ): Promise<void> {
   const profileName = normalizeProfileName(options.name);
   if (!profileName) {
@@ -88,61 +60,32 @@ export async function runProfileDelete(
     ]);
   }
 
-  const loaded = await migrateLegacyConfigIfNeeded();
-  const config = loaded?.config;
-  const profiles = config?.profiles ?? {};
-  const names = Object.keys(profiles);
-  if (names.length === 0) {
+  const listed = await listProfiles(deps);
+  if (listed.profiles.length === 0) {
     throw new CliError("No profiles are configured.", [
       "Run `jenkins-cli auth login --profile <name>` to add one.",
     ]);
   }
-  if (!profiles[profileName]) {
-    throw new CliError(`Profile "${profileName}" was not found.`, [
-      `Available profiles: ${names.join(", ")}.`,
-    ]);
-  }
-
-  if (!options.nonInteractive) {
-    const response = await confirm({
-      message: `Delete profile "${profileName}"?`,
-      initialValue: false,
-    });
-    if (isCancel(response)) {
-      throw new CliError("Operation cancelled.");
-    }
-    if (!response) {
-      throw new CliError("Operation cancelled.");
-    }
-  }
-
-  const profileToDelete = profiles[profileName];
-  // Best-effort: remove the keychain entry for keychain-backed profiles.
-  if (profileToDelete?.tokenStorage === "keychain") {
-    await deleteToken(
-      buildSecureStoreAccount(profileName, profileToDelete.jenkinsUrl),
+  if (!listed.profiles.some((row) => row.name === profileName)) {
+    throw unknownProfileError(
+      profileName,
+      listed.profiles.map((row) => row.name),
     );
   }
 
-  const remainingProfiles = { ...profiles };
-  delete remainingProfiles[profileName];
-  const nextDefault = resolveDefaultProfileName({
-    profiles: remainingProfiles,
-    defaultProfile:
-      config?.defaultProfile === profileName
-        ? undefined
-        : config?.defaultProfile,
-  });
+  if (!options.nonInteractive) {
+    const response = await (deps.confirm ?? confirm)({
+      message: `Delete profile "${profileName}"?`,
+      initialValue: false,
+    });
+    if (isCancel(response) || !response) {
+      throw new CliError("Operation cancelled.");
+    }
+  }
 
-  await writeConfig({
-    version: 2,
-    profiles: remainingProfiles,
-    ...(nextDefault ? { defaultProfile: nextDefault } : {}),
-    ...(typeof config?.debug === "boolean" ? { debug: config.debug } : {}),
-  });
-
-  printOk(`Deleted profile "${profileName}".`);
-  if (nextDefault) {
-    printOk(`Default profile is "${nextDefault}".`);
+  const result = await deleteProfilesStrict([profileName], deps);
+  write(`OK: Deleted profile "${profileName}".`);
+  if (result.nextDefault) {
+    write(`OK: Default profile is "${result.nextDefault}".`);
   }
 }
