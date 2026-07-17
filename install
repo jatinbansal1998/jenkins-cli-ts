@@ -195,4 +195,4 @@ case ":$PATH:" in
     ;;
 esac
 
-print "Run: jenkins-cli login"
+print "Run: jenkins-cli auth login"

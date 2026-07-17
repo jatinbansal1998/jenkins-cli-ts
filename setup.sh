@@ -157,17 +157,17 @@ if command -v jenkins-cli >/dev/null 2>&1; then
   if [ -n "$credentials_source" ]; then
     if confirm_default_no "Credentials detected in $credentials_source. Run login anyway? [y/N]: "; then
       print "Starting Jenkins CLI login..."
-      jenkins-cli login
+      jenkins-cli auth login
     else
       print "Skipping login."
     fi
   else
     print "Starting Jenkins CLI login..."
-    jenkins-cli login
+    jenkins-cli auth login
   fi
 else
   print ""
-  print "jenkins-cli not found on PATH. Run 'jenkins-cli login' manually."
+  print "jenkins-cli not found on PATH. Run 'jenkins-cli auth login' manually."
 fi
 
 print "Done."

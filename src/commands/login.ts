@@ -2,6 +2,7 @@
  * Login command implementation.
  * Prompts for Jenkins credentials, saves config, and prints export commands.
  */
+import { openInBrowser } from "../browser";
 import { confirm, isCancel, password, text } from "../clack";
 import { CliError, printHint, printOk } from "../cli";
 import {
@@ -46,13 +47,28 @@ type TokenPersistencePlan = {
   keychainPromptAnswered?: boolean;
 };
 
-export async function runLogin(options: LoginOptions): Promise<void> {
+export type LoginDeps = {
+  confirm?: typeof confirm;
+  openInBrowser?: (url: string) => Promise<void>;
+};
+
+export async function runLogin(
+  options: LoginOptions,
+  deps: LoginDeps = {},
+): Promise<void> {
   const existingConfig = readConfigSync()?.config;
   const profileName = await resolveProfileName(options, existingConfig);
   const existingProfile = existingConfig?.profiles[profileName];
   const profileAlreadyExists = Boolean(existingProfile);
 
   const url = await resolveUrl(options, existingProfile?.jenkinsUrl);
+  // Validate the URL right after entry so the browser offer (and any invalid
+  // URL error) happens before the remaining prompts.
+  const normalizedUrl = normalizeUrl(url);
+  await offerToOpenHostInBrowser(
+    { url: normalizedUrl, nonInteractive: options.nonInteractive },
+    deps,
+  );
   const user = await resolveUser(options, existingProfile?.jenkinsUser);
   const apiToken = await resolveApiToken(
     options,
@@ -72,7 +88,6 @@ export async function runLogin(options: LoginOptions): Promise<void> {
     profileCount: Object.keys(existingConfig?.profiles ?? {}).length,
   });
 
-  const normalizedUrl = normalizeUrl(url);
   const plan = await planTokenPersistence({
     options,
     profileName,
@@ -125,6 +140,40 @@ export async function runLogin(options: LoginOptions): Promise<void> {
   console.log(
     `Use --profile ${shellEscape(profileName)} to target this profile.`,
   );
+}
+
+/**
+ * Offers to open the entered Jenkins host in the default browser, so the user
+ * can sign in and create an API token before the token prompt appears.
+ * Skipped entirely in non-interactive mode; declining is the default. A failed
+ * browser launch prints a HINT and never fails the login flow.
+ */
+export async function offerToOpenHostInBrowser(
+  input: { url: string; nonInteractive: boolean },
+  deps: LoginDeps = {},
+): Promise<void> {
+  if (input.nonInteractive) {
+    return;
+  }
+  const response = await (deps.confirm ?? confirm)({
+    message: `Open ${input.url} in your browser? (useful for creating an API token)`,
+    initialValue: false,
+  });
+  // confirm resolves to a boolean or clack's cancel symbol; anything that is
+  // not an explicit boolean counts as a cancellation.
+  if (isCancel(response) || typeof response !== "boolean") {
+    throw new CliError("Operation cancelled.");
+  }
+  if (!response) {
+    return;
+  }
+  try {
+    await (deps.openInBrowser ?? openInBrowser)(input.url);
+  } catch {
+    printHint(
+      `Could not open the browser automatically. Visit ${input.url} manually.`,
+    );
+  }
 }
 
 /**
