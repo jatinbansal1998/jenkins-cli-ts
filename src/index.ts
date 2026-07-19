@@ -1190,7 +1190,6 @@ function configureLoginOptions(yargsInstance: Argv): Argv {
     })
     .option("token", {
       type: "string",
-      alias: "api-token",
       describe: "Jenkins API token",
     })
     .option("branch-param", {
