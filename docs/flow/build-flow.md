@@ -10,7 +10,7 @@ jenkins-cli build
 
 ```text
 CLI args
-  -> createContext (env + Jenkins client)
+  -> prepareContext (env + resolved token + Jenkins client)
   -> runBuild(options)
        -> buildPre flow (collect job + build parameters)
        -> triggerBuild(...)
@@ -25,16 +25,15 @@ CLI args
 - Build orchestration: `src/commands/build.ts`
 - Flow map (states/transitions): `src/flows/definition.ts`
 - Flow state logic: `src/flows/handlers.ts`
-- Jenkins HTTP calls: `src/jenkins/client.ts`
+- Jenkins HTTP calls: `src/jenkins/api-wrapper.ts`
 
 ## 3) Full request path
 
 ### A) CLI entry and options
 
 1. `build` command is parsed in `src/index.ts`.
-2. `createContext()` builds:
-   - `env` from `loadEnv()`
-   - `client = new JenkinsClient(...)`
+2. `prepareContext()` loads the selected environment/profile, resolves a
+   keychain-backed token when necessary, and builds `new JenkinsClient(...)`.
 3. `runBuild({...})` is called with flags:
    - `job`, `jobUrl`, `branch`, `branchParam`, `param`
    - `defaultBranch`, `watch`, `nonInteractive`
@@ -112,10 +111,12 @@ If watch is enabled/chosen:
 
 After trigger (and optional initial watch), post menu runs:
 
+- `rerun same inputs`
+- `rerun last build`
 - `watch`
 - `logs`
+- `build history`
 - `cancel`
-- `rerun`
 - `done`
 
 Possible outcomes:
