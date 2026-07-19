@@ -82,6 +82,9 @@ describe("auth CLI routing and help", () => {
       expect(canonical.output).toContain(option);
       expect(legacy.output).toContain(option);
     }
+
+    expect(canonical.output.match(/--api-token/g)).toHaveLength(1);
+    expect(legacy.output.match(/--api-token/g)).toHaveLength(1);
   });
 
   test("auth login and legacy login route to the same implementation", () => {
