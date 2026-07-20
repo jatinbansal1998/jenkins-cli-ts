@@ -7,6 +7,7 @@ import {
   type AuthDiagnosticsDeps,
   type AuthDiagnosticsResult,
 } from "../src/auth-diagnostics";
+import { buildSecureStoreAccount } from "../src/secure-store";
 import { CliError } from "../src/cli";
 import {
   authFailureMessage,
@@ -206,7 +207,9 @@ describe("auth credential resolution", () => {
       },
     );
 
-    expect(account).toBe("work@jenkins.example.com");
+    expect(account).toBe(
+      buildSecureStoreAccount("work", "https://jenkins.example.com"),
+    );
     expect(result).toMatchObject({
       tokenStorage: "macOS Keychain",
       tokenPresent: true,

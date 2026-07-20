@@ -52,16 +52,84 @@ function makeDeps(options: {
 }
 
 describe("buildSecureStoreAccount", () => {
-  test("combines profile name and host", () => {
+  test("derives the documented deterministic account", () => {
     expect(
-      buildSecureStoreAccount("work", "https://jenkins.example.com/ci"),
-    ).toBe("work@jenkins.example.com");
+      buildSecureStoreAccount("default", "https://jenkins.pluang.org"),
+    ).toBe("v1.6wqHyJLxhkabpPotDmbQp23XKq4PPcDTbGiTq65bvWg");
   });
 
-  test("falls back to default name and raw value for bad URLs", () => {
-    expect(buildSecureStoreAccount("  ", "not a url")).toBe(
-      "default@not a url",
+  test("uses a fixed-length cross-keychain-safe format", () => {
+    const account = buildSecureStoreAccount(
+      "dev/stage 2 !@#$%^&*() 🚀".repeat(100),
+      `https://jenkins.example.com/${"nested/path/".repeat(500)}`,
     );
+
+    expect(account).toHaveLength(46);
+    expect(account).toMatch(/^v1\.[A-Za-z0-9_-]{43}$/);
+  });
+
+  test("normalizes profile and controller URL equivalents", () => {
+    const canonical = buildSecureStoreAccount(
+      "work",
+      "https://jenkins.example.com/ci",
+    );
+
+    expect(
+      buildSecureStoreAccount(
+        "  work  ",
+        "  https://jenkins.example.com/ci///  ",
+      ),
+    ).toBe(canonical);
+    expect(buildSecureStoreAccount("  ", "https://jenkins.example.com")).toBe(
+      buildSecureStoreAccount("default", "https://jenkins.example.com/"),
+    );
+  });
+
+  test("isolates every account identity dimension", () => {
+    const base = buildSecureStoreAccount(
+      "work",
+      "https://jenkins.example.com/ci",
+    );
+    const variants = [
+      buildSecureStoreAccount("other", "https://jenkins.example.com/ci"),
+      buildSecureStoreAccount("work", "http://jenkins.example.com/ci"),
+      buildSecureStoreAccount("work", "https://other.example.com/ci"),
+      buildSecureStoreAccount("work", "https://jenkins.example.com:8443/ci"),
+      buildSecureStoreAccount("work", "https://jenkins.example.com/other"),
+    ];
+
+    expect(new Set([base, ...variants]).size).toBe(variants.length + 1);
+  });
+
+  test("accepts punctuation, delimiters, and Unicode in profile names", () => {
+    const accounts = [
+      "dev/stage 2",
+      "name@host",
+      'name","https://example.test',
+      "日本語 🚀",
+    ].map((name) =>
+      buildSecureStoreAccount(name, "https://jenkins.example.com"),
+    );
+
+    expect(new Set(accounts).size).toBe(accounts.length);
+    for (const account of accounts) {
+      expect(account).toMatch(/^v1\.[A-Za-z0-9_-]{43}$/);
+    }
+  });
+
+  test("uses an unambiguous tuple boundary", () => {
+    expect(
+      buildSecureStoreAccount("ab", "https://jenkins.example.com/c"),
+    ).not.toBe(buildSecureStoreAccount("a", "https://jenkins.example.com/bc"));
+  });
+
+  test("rejects invalid controller URLs instead of deriving raw accounts", () => {
+    expect(() => buildSecureStoreAccount("work", "not a url")).toThrow(
+      "Invalid JENKINS_URL.",
+    );
+    expect(() =>
+      buildSecureStoreAccount("work", "ftp://jenkins.example.com"),
+    ).toThrow("Invalid JENKINS_URL protocol.");
   });
 });
 

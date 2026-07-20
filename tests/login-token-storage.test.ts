@@ -5,11 +5,15 @@ import {
   type LoginOptions,
 } from "../src/commands/login";
 import { KEYCHAIN_TOKEN_SENTINEL } from "../src/config";
-import type { SecureStoreDeps } from "../src/secure-store";
+import {
+  buildSecureStoreAccount,
+  type SecureStoreDeps,
+} from "../src/secure-store";
 
 const TOKEN = "jenkins-secret";
 const PROFILE = "work";
 const URL = "https://jenkins.example.com";
+const ACCOUNT = buildSecureStoreAccount(PROFILE, URL);
 
 function loginOptions(overrides: Partial<LoginOptions> = {}): LoginOptions {
   return {
@@ -64,7 +68,7 @@ describe("login token persistence", () => {
       { secureStore: store.deps },
     );
 
-    expect(store.stored.get("work@jenkins.example.com")).toBe(TOKEN);
+    expect(store.stored.get(ACCOUNT)).toBe(TOKEN);
     expect(plan).toMatchObject({
       tokenStorage: "keychain",
       tokenForConfig: KEYCHAIN_TOKEN_SENTINEL,
@@ -137,7 +141,7 @@ describe("login token persistence", () => {
 
   test("rollback restores a previous secure token after config failure", async () => {
     const store = secureStore();
-    store.stored.set("work@jenkins.example.com", "previous-token");
+    store.stored.set(ACCOUNT, "previous-token");
 
     const plan = await planTokenPersistence(
       {
@@ -155,14 +159,14 @@ describe("login token persistence", () => {
       { secureStore: store.deps },
     );
 
-    expect(store.stored.get("work@jenkins.example.com")).toBe(TOKEN);
+    expect(store.stored.get(ACCOUNT)).toBe(TOKEN);
     await plan.rollback?.();
-    expect(store.stored.get("work@jenkins.example.com")).toBe("previous-token");
+    expect(store.stored.get(ACCOUNT)).toBe("previous-token");
   });
 
   test("plaintext conversion deletes the prior entry only after commit", async () => {
     const store = secureStore();
-    store.stored.set("work@jenkins.example.com", "previous-token");
+    store.stored.set(ACCOUNT, "previous-token");
 
     const plan = await planTokenPersistence(
       {
@@ -180,14 +184,18 @@ describe("login token persistence", () => {
       { secureStore: store.deps },
     );
 
-    expect(store.stored.get("work@jenkins.example.com")).toBe("previous-token");
+    expect(store.stored.get(ACCOUNT)).toBe("previous-token");
     await plan.commit?.();
-    expect(store.stored.has("work@jenkins.example.com")).toBeFalse();
+    expect(store.stored.has(ACCOUNT)).toBeFalse();
   });
 
   test("changing a host moves the existing token only after config commit", async () => {
     const store = secureStore();
-    store.stored.set("work@old.example.com", TOKEN);
+    const previousAccount = buildSecureStoreAccount(
+      PROFILE,
+      "https://old.example.com",
+    );
+    store.stored.set(previousAccount, TOKEN);
 
     const plan = await planTokenPersistence(
       {
@@ -205,10 +213,10 @@ describe("login token persistence", () => {
       { secureStore: store.deps },
     );
 
-    expect(store.stored.get("work@jenkins.example.com")).toBe(TOKEN);
-    expect(store.stored.get("work@old.example.com")).toBe(TOKEN);
+    expect(store.stored.get(ACCOUNT)).toBe(TOKEN);
+    expect(store.stored.get(previousAccount)).toBe(TOKEN);
     await plan.commit?.();
-    expect(store.stored.has("work@old.example.com")).toBeFalse();
+    expect(store.stored.has(previousAccount)).toBeFalse();
   });
 });
 

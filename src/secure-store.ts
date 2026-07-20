@@ -12,6 +12,7 @@ import {
   setPassword,
   type BackendInfo,
 } from "cross-keychain";
+import { normalizeUrl } from "./jenkins-url";
 
 /** Keychain / keyring service name used for all entries. */
 export const SECURE_STORE_SERVICE = "jenkins-cli";
@@ -55,22 +56,20 @@ function resolveKeychain(deps: SecureStoreDeps = {}): SecureStoreKeychain {
 }
 
 /**
- * Builds a stable, per-profile account identifier for keychain entries.
- * Uses the profile name and Jenkins host so the same profile name against
- * different hosts does not collide.
+ * Builds a stable, versioned account identifier for keychain entries.
+ * The fixed-length digest keeps all supported profile names and controller
+ * URLs within cross-keychain's account constraints without exposing them.
  */
 export function buildSecureStoreAccount(
   profileName: string,
   jenkinsUrl: string,
 ): string {
   const name = profileName.trim() || "default";
-  let host = jenkinsUrl.trim();
-  try {
-    host = new URL(jenkinsUrl).host || host;
-  } catch {
-    // Fall back to the raw value if it is not a parseable URL.
-  }
-  return `${name}@${host}`;
+  const canonicalPayload = JSON.stringify([name, normalizeUrl(jenkinsUrl)]);
+  const digest = new Bun.CryptoHasher("sha256")
+    .update(canonicalPayload)
+    .digest("base64url");
+  return `v1.${digest}`;
 }
 
 /**

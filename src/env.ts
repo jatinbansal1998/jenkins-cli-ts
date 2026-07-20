@@ -11,6 +11,7 @@ import {
   type TokenStorage,
 } from "./config";
 import { ENV_KEYS } from "./env-keys";
+import { normalizeUrl } from "./jenkins-url";
 import {
   buildSecureStoreAccount,
   getToken,
@@ -47,25 +48,7 @@ export type EnvConfig = {
   tokenStorage?: TokenStorage;
 };
 
-export function normalizeUrl(rawUrl: string): string {
-  const trimmed = rawUrl.trim();
-  let url: URL;
-  try {
-    url = new URL(trimmed);
-  } catch {
-    throw new CliError(`Invalid ${ENV_KEYS.JENKINS_URL}.`, [
-      "Use a full URL like https://jenkins.example.com.",
-    ]);
-  }
-
-  if (url.protocol !== "http:" && url.protocol !== "https:") {
-    throw new CliError(`Invalid ${ENV_KEYS.JENKINS_URL} protocol.`, [
-      `Use http:// or https:// for ${ENV_KEYS.JENKINS_URL}.`,
-    ]);
-  }
-
-  return url.toString().replace(/\/+$/, "");
-}
+export { normalizeUrl } from "./jenkins-url";
 
 export function loadEnv(options: LoadEnvOptions = {}): EnvConfig {
   const cliUrl = normalizeOptionalString(options.url);
