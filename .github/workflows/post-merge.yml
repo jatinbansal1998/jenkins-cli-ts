@@ -56,9 +56,9 @@ jobs:
           security unlock-keychain -p "jenkins-cli-ci" "$TEST_KEYCHAIN"
           security list-keychains -d user -s "$TEST_KEYCHAIN"
           security default-keychain -d user -s "$TEST_KEYCHAIN"
-          # The CLI tests replace HOME to isolate config files. Keep Apple's
-          # Security framework anchored to the runner home and its keychain.
-          echo "CFFIXED_USER_HOME=$HOME" >> "$GITHUB_ENV"
+          # The CLI tests replace HOME to isolate config files, so point the
+          # keyring backend directly at the unlocked CI keychain.
+          echo "KEYRING_PROPERTY_KEYCHAIN=$TEST_KEYCHAIN" >> "$GITHUB_ENV"
 
       - name: Run tests (capture failures)
         if: runner.os == 'Linux'
@@ -104,6 +104,8 @@ jobs:
           exit "$TEST_EXIT"
 
       - name: Build and install CLI
+        id: build_cli
+        if: ${{ !cancelled() }}
         shell: bash
         run: |
           set -euo pipefail
@@ -114,6 +116,7 @@ jobs:
           echo "$RUNNER_TEMP/jenkins-cli-bin" >> "$GITHUB_PATH"
 
       - name: Validate installed CLI version
+        if: steps.build_cli.outcome == 'success'
         shell: bash
         run: |
           set -euo pipefail
@@ -121,6 +124,12 @@ jobs:
           INSTALLED_VERSION="$(jenkins-cli --version)"
           echo "$INSTALLED_VERSION"
           grep -F "$EXPECTED_VERSION" <<< "$INSTALLED_VERSION"
+          case "$RUNNER_OS" in
+            Linux) EXPECTED_TARGET="bun-linux-" ;;
+            macOS) EXPECTED_TARGET="bun-darwin-" ;;
+            *) echo "Unsupported runner OS: $RUNNER_OS" >&2; exit 1 ;;
+          esac
+          grep -F "$EXPECTED_TARGET" <<< "$INSTALLED_VERSION"
 
       - name: Summarize test output
         if: always()
