@@ -1,4 +1,3 @@
-import { spinner } from "../clack";
 import { markAnalyticsPollingCommand } from "../analytics";
 import { CliError, printError, printHint, printOk } from "../cli";
 import type { EnvConfig } from "../env";
@@ -34,7 +33,7 @@ import {
   requestCancellationForWatchTarget,
   waitForPollIntervalOrCancel,
 } from "./watch-utils";
-import { fitWatchSpinnerMessage } from "./watch-output";
+import { createWatchSpinner } from "./watch-output";
 
 export const DEFAULT_WAIT_INTERVAL_MS = DEFAULT_WATCH_INTERVAL_MS;
 
@@ -280,7 +279,7 @@ export async function waitForBuild(options: {
 }): Promise<WaitResult> {
   const emitOutput = !options.suppressOutput;
   const useSpinner = Boolean(process.stdout.isTTY) && !options.nonInteractive;
-  const statusSpinner = useSpinner ? spinner() : null;
+  const statusSpinner = useSpinner ? createWatchSpinner() : null;
   const cancelSignal = createWatchControlSignal();
   const startedAt = Date.now();
   const watchPrompt = cancelSignal
@@ -292,7 +291,7 @@ export async function waitForBuild(options: {
   let cancelIssued = false;
 
   if (statusSpinner) {
-    statusSpinner.start(fitWatchSpinnerMessage(watchPrompt));
+    statusSpinner.start(watchPrompt);
   }
 
   let buildUrl = options.buildUrl;
@@ -428,7 +427,7 @@ export async function waitForBuild(options: {
             );
           }
           if (statusSpinner) {
-            statusSpinner.start(fitWatchSpinnerMessage(watchPrompt));
+            statusSpinner.start(watchPrompt);
           }
         }
       }
@@ -611,12 +610,12 @@ export async function waitForBuild(options: {
 }
 
 function emitProgress(options: {
-  spinnerInstance: ReturnType<typeof spinner> | null;
+  spinnerInstance: ReturnType<typeof createWatchSpinner> | null;
   message: string;
   emitOutput?: boolean;
 }): void {
   if (options.spinnerInstance) {
-    options.spinnerInstance.message(fitWatchSpinnerMessage(options.message));
+    options.spinnerInstance.message(options.message);
     return;
   }
   if (options.emitOutput === false) {
@@ -626,13 +625,13 @@ function emitProgress(options: {
 }
 
 function persistWatchMessage(options: {
-  spinnerInstance: ReturnType<typeof spinner> | null;
+  spinnerInstance: ReturnType<typeof createWatchSpinner> | null;
   watchPrompt: string;
   message: string;
 }): void {
   if (options.spinnerInstance) {
     options.spinnerInstance.stop(options.message);
-    options.spinnerInstance.start(fitWatchSpinnerMessage(options.watchPrompt));
+    options.spinnerInstance.start(options.watchPrompt);
     return;
   }
   printOk(options.message);

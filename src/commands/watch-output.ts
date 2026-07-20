@@ -1,11 +1,66 @@
 /**
- * Clack renders a spinner frame, two spaces, and up to three animated dots
- * around the supplied message. Its cleanup logic only measures the message,
- * so a message that fits by itself can still wrap and leave stale terminal
- * rows behind. Keep one additional column free to avoid pending-wrap behavior
- * at the terminal's right edge.
+ * A live update must remain one column short of the terminal width so writing
+ * it never triggers an automatic line wrap.
  */
-const SPINNER_DECORATION_WIDTH = 7;
+const ACTIVE_PREFIX = "◒  ";
+const LIVE_LINE_MARGIN_WIDTH = 1;
+
+type WatchOutput = {
+  columns?: number;
+  write: (chunk: string) => unknown;
+};
+
+export type WatchSpinner = {
+  start: (message: string) => void;
+  stop: (message?: string) => void;
+  message: (message: string) => void;
+  error: (message: string) => void;
+};
+
+export function createWatchSpinner(
+  output: WatchOutput = process.stdout,
+): WatchSpinner {
+  let active = false;
+  let previousWidth = 0;
+
+  const writeLine = (line: string, newline = false): void => {
+    const width = Bun.stringWidth(line);
+    const padding = " ".repeat(Math.max(0, previousWidth - width));
+    output.write(`\r${line}${padding}${newline ? "\n" : ""}`);
+    previousWidth = newline ? 0 : width;
+  };
+
+  const render = (message: string): void => {
+    const fitted = fitWatchSpinnerMessage(message, output.columns ?? 80);
+    writeLine(`${ACTIVE_PREFIX}${fitted}`);
+  };
+
+  const finish = (symbol: string, message: string): void => {
+    if (!active) {
+      return;
+    }
+    active = false;
+    writeLine(`${symbol}  ${message}`, true);
+  };
+
+  return {
+    start(message) {
+      active = true;
+      render(message);
+    },
+    stop(message = "") {
+      finish("◇", message);
+    },
+    message(message) {
+      if (active) {
+        render(message);
+      }
+    },
+    error(message) {
+      finish("▲", message);
+    },
+  };
+}
 
 export function fitWatchSpinnerMessage(
   message: string,
@@ -13,7 +68,9 @@ export function fitWatchSpinnerMessage(
 ): string {
   const availableWidth = Math.max(
     0,
-    Math.floor(columns) - SPINNER_DECORATION_WIDTH,
+    Math.floor(columns) -
+      Bun.stringWidth(ACTIVE_PREFIX) -
+      LIVE_LINE_MARGIN_WIDTH,
   );
   if (Bun.stringWidth(message) <= availableWidth) {
     return message;

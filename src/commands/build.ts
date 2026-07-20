@@ -9,7 +9,6 @@ import {
   isCancel,
   password,
   select,
-  spinner,
   text,
 } from "../clack";
 import {
@@ -59,7 +58,7 @@ import {
   requestCancellationForWatchTarget,
   waitForPollIntervalOrCancel,
 } from "./watch-utils";
-import { fitWatchSpinnerMessage } from "./watch-output";
+import { createWatchSpinner } from "./watch-output";
 import { runFlow } from "../flows/runner";
 import { flows } from "../flows/definition";
 import { BRANCH_REMOVE_VALUE } from "../flows/constants";
@@ -144,7 +143,7 @@ const defaultBuildDeps: BuildDeps = {
   confirm,
   isCancel,
   select,
-  spinner,
+  spinner: createWatchSpinner,
   text,
   password,
   loadCachedBranchHistory,
@@ -985,7 +984,7 @@ async function watchBuildStatus(options: {
   }
   let cancelIssued = false;
   if (statusSpinner) {
-    statusSpinner.start(fitWatchSpinnerMessage(watchPrompt));
+    statusSpinner.start(watchPrompt);
   }
 
   let buildUrl = options.buildUrl;
@@ -1063,7 +1062,7 @@ async function watchBuildStatus(options: {
             );
           }
           if (statusSpinner) {
-            statusSpinner.start(fitWatchSpinnerMessage(watchPrompt));
+            statusSpinner.start(watchPrompt);
           }
         }
       }
@@ -1237,7 +1236,7 @@ function emitWatchMessage(options: {
   message: string;
 }): void {
   if (options.spinner) {
-    options.spinner.message(fitWatchSpinnerMessage(options.message));
+    options.spinner.message(options.message);
     return;
   }
   printOk(options.message);
@@ -1250,7 +1249,7 @@ function persistWatchMessage(options: {
 }): void {
   if (options.spinner) {
     options.spinner.stop(options.message);
-    options.spinner.start(fitWatchSpinnerMessage(options.watchPrompt));
+    options.spinner.start(options.watchPrompt);
     return;
   }
   printOk(options.message);
