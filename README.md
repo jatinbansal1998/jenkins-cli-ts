@@ -153,39 +153,39 @@ the secret:
 The token is resolved transparently on every command. If the keyring is locked
 or the entry is missing, the CLI prints a `HINT:` explaining how to re-run
 `auth login` and fails gracefully rather than sending an empty token.
+After a secure login, the CLI shows profile-based usage instructions and does
+not echo the token or suggest exporting credentials into the shell.
 
 Behavior notes:
 
 - **Fallback:** if no secure store is available (e.g. a headless box with no
   keyring, or `secret-tool` not installed), the token is written to the config
-  file in plaintext and a one-line `HINT:` is printed.
+  file in plaintext and a one-line `HINT:` is printed. The profile remains
+  eligible for automatic migration if secure storage becomes available later.
 - **`--no-keychain`:** pass this flag to `auth login` to force plaintext
-  storage in the config file even when a keychain is available.
+  storage in the config file even when a keychain is available. This explicit
+  preference also disables automatic migration for that profile.
 - **Existing profiles:** plaintext profiles keep working unchanged. A profile
-  is migrated to the keychain only when you re-run `auth login` for it or
-  accept the one-time migration prompt (never silently).
+  is migrated automatically once a secure store is available and the token can
+  be written and read back successfully.
 - **`auth logout` / `profile delete`** remove the matching keychain entry with
   strict semantics: the secure-store entry is deleted and verified absent
   before the config is updated, and a failed config write restores the entry.
 
-#### One-time migration prompt
+#### Automatic secure-store migration
 
-If you upgrade without re-running `auth login`, the CLI offers to move an
-existing plaintext token into the keychain the next time you run any command
-interactively:
+If you upgrade without re-running `auth login`, the CLI automatically attempts
+to move an existing plaintext profile token into the secure store the next time
+that profile is used.
 
-> Store your Jenkins token in the system keychain? (recommended)
-
-- You are asked at most **once per profile** — the answer (yes or no) is
-  recorded in the config so you are never nagged again.
-- On **yes**, the token is written to the keychain and **read back to verify
-  the round-trip**; only after that succeeds is the plaintext token replaced
-  with the sentinel (atomic config write). If anything fails (locked keyring,
-  denied prompt), the config is left untouched and a `HINT:` is printed — your
-  plaintext token keeps working.
-- The prompt **never appears** in `--non-interactive` mode, when stdin/stdout is
-  not a TTY (pipes, cron), or when no secure store is available. Scripts and CI
-  are unaffected.
+- The token is written to the secure store and **read back to verify the
+  round-trip**. Only then is plaintext replaced with the sentinel.
+- If the secure store is unavailable, locked, fails verification, or the config
+  cannot be updated, the plaintext profile remains active.
+- Non-interactive and JSON commands migrate silently so their output contracts
+  remain unchanged.
+- Profiles created with `--no-keychain` are left in plaintext by explicit
+  request.
 
 ```bash
 jenkins-cli auth login --profile work                 # keychain when available

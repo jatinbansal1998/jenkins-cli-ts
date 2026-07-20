@@ -37,7 +37,7 @@ export type ConfigFileInput = {
   folderDepth?: number;
   makeDefault?: boolean;
   tokenStorage?: TokenStorage;
-  keychainPromptAnswered?: boolean;
+  secureStorageOptOut?: boolean;
 };
 
 export type JenkinsProfileConfig = {
@@ -48,12 +48,8 @@ export type JenkinsProfileConfig = {
   useCrumb?: boolean;
   folderDepth?: number;
   tokenStorage?: TokenStorage;
-  /**
-   * Set once the user has been asked (via the proactive migration prompt)
-   * whether to move a plaintext token into the OS keychain. Prevents nagging
-   * on every subsequent command regardless of the answer given.
-   */
-  keychainPromptAnswered?: boolean;
+  /** The user explicitly chose plaintext storage or declined migration. */
+  secureStorageOptOut?: boolean;
 };
 
 export type JenkinsConfig = {
@@ -182,7 +178,7 @@ export async function writeConfigFile(input: ConfigFileInput): Promise<string> {
     ...(typeof useCrumb === "boolean" ? { useCrumb } : {}),
     ...(typeof folderDepth === "number" ? { folderDepth } : {}),
     ...(input.tokenStorage ? { tokenStorage: input.tokenStorage } : {}),
-    ...(input.keychainPromptAnswered ? { keychainPromptAnswered: true } : {}),
+    ...(input.secureStorageOptOut ? { secureStorageOptOut: true } : {}),
   };
 
   const profiles = {
@@ -383,9 +379,7 @@ function parseProfileRecord(
   ]);
   const folderDepth = firstPositiveInt(record, ["folderDepth"]);
   const tokenStorage = parseTokenStorage(record.tokenStorage);
-  const keychainPromptAnswered = firstBoolean(record, [
-    "keychainPromptAnswered",
-  ]);
+  const secureStorageOptOut = firstBoolean(record, ["secureStorageOptOut"]);
 
   return {
     jenkinsUrl,
@@ -395,9 +389,7 @@ function parseProfileRecord(
     ...(typeof useCrumb === "boolean" ? { useCrumb } : {}),
     ...(typeof folderDepth === "number" ? { folderDepth } : {}),
     ...(tokenStorage ? { tokenStorage } : {}),
-    ...(keychainPromptAnswered === true
-      ? { keychainPromptAnswered: true }
-      : {}),
+    ...(secureStorageOptOut === true ? { secureStorageOptOut: true } : {}),
   };
 }
 
@@ -455,9 +447,7 @@ function normalizeConfigForWrite(config: JenkinsConfig): JenkinsConfig {
         ? { folderDepth: Math.floor(profile.folderDepth) }
         : {}),
       ...(profile.tokenStorage ? { tokenStorage: profile.tokenStorage } : {}),
-      ...(profile.keychainPromptAnswered
-        ? { keychainPromptAnswered: true }
-        : {}),
+      ...(profile.secureStorageOptOut ? { secureStorageOptOut: true } : {}),
     };
   }
   const defaultProfile = resolveDefaultProfileName({

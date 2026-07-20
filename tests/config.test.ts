@@ -226,4 +226,38 @@ describe("tokenStorage persistence", () => {
     const loaded = await readConfig();
     expect(loaded?.config.profiles.work?.tokenStorage).toBe("keychain");
   });
+
+  test("persists an explicit secure-storage opt-out", async () => {
+    await writeConfigFile({
+      profile: "work",
+      jenkinsUrl: "https://jenkins.example.com",
+      jenkinsUser: "user",
+      jenkinsApiToken: "plain-token",
+      secureStorageOptOut: true,
+    });
+
+    const payload = JSON.parse(fileContents.get(CONFIG_FILE) ?? "");
+    expect(payload.profiles.work.secureStorageOptOut).toBeTrue();
+  });
+
+  test("does not treat the legacy ambiguous prompt marker as an opt-out", async () => {
+    fileContents.set(
+      CONFIG_FILE,
+      JSON.stringify({
+        version: 2,
+        defaultProfile: "work",
+        profiles: {
+          work: {
+            jenkinsUrl: "https://jenkins.example.com",
+            jenkinsUser: "user",
+            jenkinsApiToken: "plain-token",
+            keychainPromptAnswered: true,
+          },
+        },
+      }),
+    );
+
+    const loaded = await readConfig();
+    expect(loaded?.config.profiles.work?.secureStorageOptOut).toBeUndefined();
+  });
 });

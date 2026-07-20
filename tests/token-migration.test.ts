@@ -7,8 +7,8 @@ import {
 import type { EnvConfig } from "../src/env";
 import type { SecureStoreDeps } from "../src/secure-store";
 import {
-  maybePromptTokenMigration,
-  shouldPromptTokenMigration,
+  maybeMigrateToken,
+  shouldMigrateToken,
   type TokenMigrationDeps,
 } from "../src/token-migration";
 
@@ -73,7 +73,6 @@ function linuxSecureStore(
 
 type Harness = {
   saved: JenkinsConfig[];
-  confirmCalls: string[];
   logs: string[];
   hints: string[];
   deps: TokenMigrationDeps;
@@ -81,59 +80,48 @@ type Harness = {
 
 function harness(options: {
   config: JenkinsConfig | null;
-  answer: boolean | null;
   available?: boolean;
   secureStore?: SecureStoreDeps;
+  saveError?: Error;
 }): Harness {
   const saved: JenkinsConfig[] = [];
-  const confirmCalls: string[] = [];
   const logs: string[] = [];
   const hints: string[] = [];
   const deps: TokenMigrationDeps = {
     isAvailable: () => options.available ?? true,
     secureStore: options.secureStore ?? linuxSecureStore(TOKEN),
-    confirm: async (message) => {
-      confirmCalls.push(message);
-      return options.answer;
-    },
     loadConfig: async () => options.config,
     saveConfig: async (config) => {
+      if (options.saveError) {
+        throw options.saveError;
+      }
       saved.push(config);
       return "ok";
     },
     log: (line) => logs.push(line),
     hint: (line) => hints.push(line),
   };
-  return { saved, confirmCalls, logs, hints, deps };
+  return { saved, logs, hints, deps };
 }
 
-describe("shouldPromptTokenMigration", () => {
+describe("shouldMigrateToken", () => {
   const base = {
-    interactive: true,
     available: true,
     env: { profileName: "work", tokenStorage: undefined },
     profile: plaintextProfile(),
   };
 
   test("true for an eligible plaintext profile", () => {
-    expect(shouldPromptTokenMigration(base)).toBeTrue();
-  });
-
-  test("false when non-interactive", () => {
-    expect(
-      shouldPromptTokenMigration({ ...base, interactive: false }),
-    ).toBeFalse();
+    expect(shouldMigrateToken(base)).toBeTrue();
   });
 
   test("false when secure store unavailable", () => {
-    expect(
-      shouldPromptTokenMigration({ ...base, available: false }),
-    ).toBeFalse();
+    expect(shouldMigrateToken({ ...base, available: false })).toBeFalse();
   });
 
   test("false without a profile name (env/one-off credentials)", () => {
     expect(
-      shouldPromptTokenMigration({
+      shouldMigrateToken({
         ...base,
         env: { profileName: undefined, tokenStorage: undefined },
       }),
@@ -142,38 +130,36 @@ describe("shouldPromptTokenMigration", () => {
 
   test("false when already keychain-backed", () => {
     expect(
-      shouldPromptTokenMigration({
+      shouldMigrateToken({
         ...base,
         profile: plaintextProfile({ tokenStorage: "keychain" }),
       }),
     ).toBeFalse();
   });
 
-  test("false when already answered", () => {
+  test("false when --no-keychain was explicitly requested", () => {
     expect(
-      shouldPromptTokenMigration({
+      shouldMigrateToken({
         ...base,
-        profile: plaintextProfile({ keychainPromptAnswered: true }),
+        profile: plaintextProfile({ secureStorageOptOut: true }),
       }),
     ).toBeFalse();
   });
 });
 
-describe("maybePromptTokenMigration", () => {
-  test("accept: verified round-trip then config rewritten to the sentinel", async () => {
+describe("maybeMigrateToken", () => {
+  test("automatically verifies and migrates an eligible profile", async () => {
     const h = harness({
       config: configWith(plaintextProfile()),
-      answer: true,
       secureStore: linuxSecureStore(TOKEN),
     });
 
-    await maybePromptTokenMigration({
+    await maybeMigrateToken({
       env: env(),
-      interactive: true,
+      report: true,
       deps: h.deps,
     });
 
-    expect(h.confirmCalls).toHaveLength(1);
     expect(h.saved).toHaveLength(1);
     const profile = h.saved[0]?.profiles.work;
     expect(profile?.jenkinsApiToken).toBe(KEYCHAIN_TOKEN_SENTINEL);
@@ -182,75 +168,49 @@ describe("maybePromptTokenMigration", () => {
     expect(h.hints).toHaveLength(0);
   });
 
-  test("decline: records the answer and leaves the token in plaintext", async () => {
+  test("an explicit --no-keychain preference skips migration", async () => {
     const h = harness({
-      config: configWith(plaintextProfile()),
-      answer: false,
+      config: configWith(plaintextProfile({ secureStorageOptOut: true })),
     });
 
-    await maybePromptTokenMigration({
+    await maybeMigrateToken({
       env: env(),
-      interactive: true,
+      report: true,
       deps: h.deps,
     });
 
-    expect(h.confirmCalls).toHaveLength(1);
-    expect(h.saved).toHaveLength(1);
-    const profile = h.saved[0]?.profiles.work;
-    expect(profile?.keychainPromptAnswered).toBeTrue();
-    expect(profile?.jenkinsApiToken).toBe(TOKEN);
-    expect(profile?.tokenStorage).toBeUndefined();
-  });
-
-  test("decline is durable: not asked again once recorded", async () => {
-    // Second run sees the recorded flag and never prompts.
-    const h = harness({
-      config: configWith(plaintextProfile({ keychainPromptAnswered: true })),
-      answer: true,
-    });
-
-    await maybePromptTokenMigration({
-      env: env(),
-      interactive: true,
-      deps: h.deps,
-    });
-
-    expect(h.confirmCalls).toHaveLength(0);
     expect(h.saved).toHaveLength(0);
   });
 
   test("verification failure: config left unchanged, HINT printed", async () => {
     const h = harness({
       config: configWith(plaintextProfile()),
-      answer: true,
       // Round-trip read returns a different value than what we stored.
       secureStore: linuxSecureStore("something-else"),
     });
 
-    await maybePromptTokenMigration({
+    await maybeMigrateToken({
       env: env(),
-      interactive: true,
+      report: true,
       deps: h.deps,
     });
 
-    expect(h.confirmCalls).toHaveLength(1);
     expect(h.saved).toHaveLength(0);
-    expect(h.hints.join("\n")).toMatch(/did not match/);
+    expect(h.hints.join("\n")).toMatch(/Could not verify/);
   });
 
   test("store failure (locked keyring): config left unchanged, HINT printed", async () => {
     const h = harness({
       config: configWith(plaintextProfile()),
-      answer: true,
       secureStore: linuxSecureStore(
         TOKEN,
         new Error("the collection is locked"),
       ),
     });
 
-    await maybePromptTokenMigration({
+    await maybeMigrateToken({
       env: env(),
-      interactive: true,
+      report: true,
       deps: h.deps,
     });
 
@@ -258,59 +218,58 @@ describe("maybePromptTokenMigration", () => {
     expect(h.hints.join("\n")).toMatch(/Could not migrate/);
   });
 
-  test("non-interactive: never prompts and never migrates", async () => {
-    const h = harness({ config: configWith(plaintextProfile()), answer: true });
+  test("non-interactive execution migrates without printing", async () => {
+    const h = harness({ config: configWith(plaintextProfile()) });
 
-    await maybePromptTokenMigration({
+    await maybeMigrateToken({
       env: env(),
-      interactive: false,
+      report: false,
       deps: h.deps,
     });
 
-    expect(h.confirmCalls).toHaveLength(0);
-    expect(h.saved).toHaveLength(0);
+    expect(h.saved).toHaveLength(1);
+    expect(h.logs).toHaveLength(0);
+    expect(h.hints).toHaveLength(0);
   });
 
-  test("secure store unavailable: never prompts and never migrates", async () => {
+  test("secure store unavailable: leaves plaintext config unchanged", async () => {
     const h = harness({
       config: configWith(plaintextProfile()),
-      answer: true,
       available: false,
     });
 
-    await maybePromptTokenMigration({
+    await maybeMigrateToken({
       env: env(),
-      interactive: true,
+      report: true,
       deps: h.deps,
     });
 
-    expect(h.confirmCalls).toHaveLength(0);
     expect(h.saved).toHaveLength(0);
   });
 
-  test("env/one-off credentials (no profile): never prompts", async () => {
-    const h = harness({ config: configWith(plaintextProfile()), answer: true });
+  test("env/one-off credentials (no profile): never migrates", async () => {
+    const h = harness({ config: configWith(plaintextProfile()) });
 
-    await maybePromptTokenMigration({
+    await maybeMigrateToken({
       env: env({ profileName: undefined }),
-      interactive: true,
+      report: true,
       deps: h.deps,
     });
 
-    expect(h.confirmCalls).toHaveLength(0);
     expect(h.saved).toHaveLength(0);
   });
 
-  test("cancel: does not record and does not migrate", async () => {
-    const h = harness({ config: configWith(plaintextProfile()), answer: null });
-
-    await maybePromptTokenMigration({
-      env: env(),
-      interactive: true,
-      deps: h.deps,
+  test("config write failure leaves the plaintext profile active", async () => {
+    const h = harness({
+      config: configWith(plaintextProfile()),
+      saveError: new Error("config is read-only"),
     });
 
-    expect(h.confirmCalls).toHaveLength(1);
+    await expect(
+      maybeMigrateToken({ env: env(), report: true, deps: h.deps }),
+    ).resolves.toBeUndefined();
+
     expect(h.saved).toHaveLength(0);
+    expect(h.hints.join("\n")).toContain("plaintext config remains active");
   });
 });

@@ -1,6 +1,6 @@
 /**
  * Login command implementation.
- * Prompts for Jenkins credentials, saves config, and prints export commands.
+ * Prompts for Jenkins credentials and saves them to a named profile.
  */
 import { openInBrowser } from "../browser";
 import { confirm, isCancel, password, text } from "../clack";
@@ -23,9 +23,10 @@ import {
   isSecureStoreAvailable,
   secureStoreLabel,
   setToken,
+  type SecureStoreDeps,
 } from "../secure-store";
 
-type LoginOptions = {
+export type LoginOptions = {
   url?: string;
   user?: string;
   apiToken?: string;
@@ -35,21 +36,26 @@ type LoginOptions = {
   noKeychain?: boolean;
 };
 
-type TokenPersistencePlan = {
+export type TokenPersistencePlan = {
   tokenStorage?: TokenStorage;
   tokenForConfig: string;
-  tokenForExport?: string;
   /**
-   * When the token is written in plaintext, mark the profile so the proactive
-   * migration prompt does not nag the user who just chose (or fell back to)
-   * plaintext storage.
+   * Mark the profile only when the user explicitly chose plaintext storage.
+   * Automatic fallback must remain eligible for migration if the secure store
+   * becomes available on a later invocation.
    */
-  keychainPromptAnswered?: boolean;
+  secureStorageOptOut?: boolean;
+  /** Finalizes secure-store cleanup after the config rewrite succeeds. */
+  commit?: () => Promise<void>;
+  /** Restores secure-store state when the config rewrite fails. */
+  rollback?: () => Promise<void>;
 };
 
 export type LoginDeps = {
   confirm?: typeof confirm;
   openInBrowser?: (url: string) => Promise<void>;
+  secureStore?: SecureStoreDeps;
+  hint?: (message: string) => void;
 };
 
 export async function runLogin(
@@ -88,58 +94,95 @@ export async function runLogin(
     profileCount: Object.keys(existingConfig?.profiles ?? {}).length,
   });
 
-  const plan = await planTokenPersistence({
-    options,
-    profileName,
-    normalizedUrl,
-    apiToken,
-    existingProfile,
-  });
+  const plan = await planTokenPersistence(
+    {
+      options,
+      profileName,
+      normalizedUrl,
+      apiToken,
+      existingProfile,
+    },
+    deps,
+  );
 
-  const configPath = await writeConfigFile({
-    profile: profileName,
-    jenkinsUrl: normalizedUrl,
-    jenkinsUser: user,
-    jenkinsApiToken: plan.tokenForConfig,
-    ...(branchParam !== DEFAULT_BRANCH_PARAM ? { branchParam } : {}),
-    ...(makeDefault !== undefined ? { makeDefault } : {}),
-    ...(plan.tokenStorage ? { tokenStorage: plan.tokenStorage } : {}),
-    ...(plan.keychainPromptAnswered ? { keychainPromptAnswered: true } : {}),
-  });
+  let configPath: string;
+  try {
+    configPath = await writeConfigFile({
+      profile: profileName,
+      jenkinsUrl: normalizedUrl,
+      jenkinsUser: user,
+      jenkinsApiToken: plan.tokenForConfig,
+      ...(branchParam !== DEFAULT_BRANCH_PARAM ? { branchParam } : {}),
+      ...(makeDefault !== undefined ? { makeDefault } : {}),
+      ...(plan.tokenStorage ? { tokenStorage: plan.tokenStorage } : {}),
+      ...(plan.secureStorageOptOut ? { secureStorageOptOut: true } : {}),
+    });
+  } catch (error) {
+    await plan.rollback?.();
+    throw error;
+  }
+  await plan.commit?.();
 
   printOk(`Saved profile "${profileName}" to ${configPath}.`);
+  const secureStoreName =
+    plan.tokenStorage === "keychain"
+      ? await secureStoreLabel(deps.secureStore)
+      : undefined;
   if (plan.tokenStorage === "keychain") {
-    printOk(`API token stored securely in the ${await secureStoreLabel()}.`);
+    printOk(`API token stored securely in the ${secureStoreName}.`);
   }
   if (makeDefault === true) {
     printOk(`Default profile set to "${profileName}".`);
   }
-  console.log("");
-  console.log("To set env vars in your current shell, run:");
-  console.log(`  export ${ENV_KEYS.JENKINS_URL}=${shellEscape(normalizedUrl)}`);
-  console.log(`  export ${ENV_KEYS.JENKINS_USER}=${shellEscape(user)}`);
-  if (plan.tokenForExport !== undefined) {
-    console.log(
-      `  export ${ENV_KEYS.JENKINS_API_TOKEN}=${shellEscape(plan.tokenForExport)}`,
-    );
-  } else {
-    console.log(
-      `  # ${ENV_KEYS.JENKINS_API_TOKEN} is stored in the ${await secureStoreLabel()}; re-run login to view or change it.`,
+  for (const line of getLoginInstructions({
+    profileName,
+    normalizedUrl,
+    user,
+    branchParam,
+    plan,
+    secureStoreName,
+  })) {
+    console.log(line);
+  }
+}
+
+/** Builds post-login guidance without exposing a securely persisted token. */
+export function getLoginInstructions(input: {
+  profileName: string;
+  normalizedUrl: string;
+  user: string;
+  branchParam: string;
+  plan: TokenPersistencePlan;
+  secureStoreName?: string;
+}): string[] {
+  const profileArg = shellEscape(input.profileName);
+  if (input.plan.tokenStorage === "keychain") {
+    return [
+      "",
+      `Credentials are ready. Use --profile ${profileArg} to target this profile.`,
+      `The CLI reads ${CONFIG_FILE} directly and loads the API token from the ${input.secureStoreName ?? "OS secure store"}.`,
+    ];
+  }
+
+  const lines = [
+    "",
+    "To set env vars in your current shell, run:",
+    `  export ${ENV_KEYS.JENKINS_URL}=${shellEscape(input.normalizedUrl)}`,
+    `  export ${ENV_KEYS.JENKINS_USER}=${shellEscape(input.user)}`,
+    `  export ${ENV_KEYS.JENKINS_API_TOKEN}=${shellEscape(input.plan.tokenForConfig)}`,
+  ];
+  if (input.branchParam !== DEFAULT_BRANCH_PARAM) {
+    lines.push(
+      `  export ${ENV_KEYS.JENKINS_BRANCH_PARAM}=${shellEscape(input.branchParam)}`,
     );
   }
-  if (branchParam !== DEFAULT_BRANCH_PARAM) {
-    console.log(
-      `  export ${ENV_KEYS.JENKINS_BRANCH_PARAM}=${shellEscape(branchParam)}`,
-    );
-  }
-  console.log("");
-  console.log(
+  lines.push(
+    "",
     "To persist them, add the exports to your shell profile manually.",
+    `The CLI also reads ${CONFIG_FILE} directly.`,
+    `Use --profile ${profileArg} to target this profile.`,
   );
-  console.log(`The CLI also reads ${CONFIG_FILE} directly.`);
-  console.log(
-    `Use --profile ${shellEscape(profileName)} to target this profile.`,
-  );
+  return lines;
 }
 
 /**
@@ -182,13 +225,16 @@ export async function offerToOpenHostInBrowser(
  * (with a HINT) when secure storage is unavailable or a store attempt fails,
  * and best-effort removes stale keychain entries when switching to plaintext.
  */
-async function planTokenPersistence(input: {
-  options: LoginOptions;
-  profileName: string;
-  normalizedUrl: string;
-  apiToken: string;
-  existingProfile: JenkinsProfileConfig | undefined;
-}): Promise<TokenPersistencePlan> {
+export async function planTokenPersistence(
+  input: {
+    options: LoginOptions;
+    profileName: string;
+    normalizedUrl: string;
+    apiToken: string;
+    existingProfile: JenkinsProfileConfig | undefined;
+  },
+  deps: LoginDeps = {},
+): Promise<TokenPersistencePlan> {
   const { options, profileName, normalizedUrl, apiToken, existingProfile } =
     input;
   const account = buildSecureStoreAccount(profileName, normalizedUrl);
@@ -201,12 +247,16 @@ async function planTokenPersistence(input: {
   // resolveApiToken echoes the stored sentinel rather than a real secret.
   const tokenUnchanged = apiToken === existingProfile?.jenkinsApiToken;
 
-  const plaintextPlan = async (): Promise<TokenPersistencePlan> => {
+  const plaintextPlan = async (
+    secureStorageOptOut: boolean,
+  ): Promise<TokenPersistencePlan> => {
     let token = apiToken;
     if (tokenUnchanged && existingIsKeychain && previousAccount) {
       // The prompt returned the sentinel; recover the real token from the
       // keychain so we can write it to the config in plaintext.
-      const stored = await getToken(previousAccount).catch(() => null);
+      const stored = await getToken(previousAccount, deps.secureStore).catch(
+        () => null,
+      );
       if (!stored) {
         throw new CliError(
           "Cannot move the existing keychain token to plaintext automatically.",
@@ -217,60 +267,103 @@ async function planTokenPersistence(input: {
       }
       token = stored;
     }
-    if (previousAccount) {
-      await deleteToken(previousAccount);
-    }
     return {
       tokenStorage: undefined,
       tokenForConfig: token,
-      tokenForExport: token,
-      keychainPromptAnswered: true,
+      ...(secureStorageOptOut ? { secureStorageOptOut: true } : {}),
+      ...(previousAccount
+        ? {
+            commit: async () => {
+              await deleteToken(previousAccount, deps.secureStore);
+            },
+          }
+        : {}),
     };
   };
 
   if (options.noKeychain) {
-    return await plaintextPlan();
+    return await plaintextPlan(true);
   }
 
-  if (!(await isSecureStoreAvailable())) {
-    printHint(
+  if (!(await isSecureStoreAvailable(deps.secureStore))) {
+    (deps.hint ?? printHint)(
       `Secure token storage is unavailable on this system; the token is saved in plaintext at ${CONFIG_FILE}.`,
     );
-    return await plaintextPlan();
+    return await plaintextPlan(false);
   }
 
   // Keychain is preferred and available.
-  if (tokenUnchanged && existingIsKeychain) {
+  if (tokenUnchanged && existingIsKeychain && previousAccount === account) {
     // Nothing changed; keep the existing keychain entry and rewrite the
     // sentinel. Real token is not printed since we did not read it.
     return {
       tokenStorage: "keychain",
       tokenForConfig: KEYCHAIN_TOKEN_SENTINEL,
-      tokenForExport: undefined,
     };
   }
 
+  let tokenToStore = apiToken;
+  if (tokenUnchanged && existingIsKeychain && previousAccount) {
+    const previousToken = await getToken(
+      previousAccount,
+      deps.secureStore,
+    ).catch(() => null);
+    if (!previousToken) {
+      throw new CliError(
+        "Cannot move the existing keychain token to the updated Jenkins host.",
+        [
+          `Re-run \`jenkins-cli auth login --profile ${profileName} --token <token>\` with the token.`,
+        ],
+      );
+    }
+    tokenToStore = previousToken;
+  }
+
+  let priorTokenAtAccount: string | null;
   try {
-    await setToken(account, apiToken);
-    if (previousAccount && previousAccount !== account) {
-      await deleteToken(previousAccount);
+    priorTokenAtAccount = await getToken(account, deps.secureStore);
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    (deps.hint ?? printHint)(
+      `Could not prepare the ${await secureStoreLabel(deps.secureStore)} for a verified token update (${detail}); falling back to plaintext in ${CONFIG_FILE}.`,
+    );
+    return await plaintextPlan(false);
+  }
+  const restoreAccount = async (): Promise<void> => {
+    if (priorTokenAtAccount === null) {
+      await deleteToken(account, deps.secureStore);
+      return;
+    }
+    await setToken(account, priorTokenAtAccount, deps.secureStore).catch(
+      () => undefined,
+    );
+  };
+
+  try {
+    await setToken(account, tokenToStore, deps.secureStore);
+    const stored = await getToken(account, deps.secureStore);
+    if (stored !== tokenToStore) {
+      throw new Error("the stored token could not be verified");
     }
     return {
       tokenStorage: "keychain",
       tokenForConfig: KEYCHAIN_TOKEN_SENTINEL,
-      tokenForExport: apiToken,
+      rollback: restoreAccount,
+      ...(previousAccount && previousAccount !== account
+        ? {
+            commit: async () => {
+              await deleteToken(previousAccount, deps.secureStore);
+            },
+          }
+        : {}),
     };
   } catch (error) {
+    await restoreAccount();
     const detail = error instanceof Error ? error.message : String(error);
-    printHint(
-      `Could not store the token in the ${await secureStoreLabel()} (${detail}); falling back to plaintext in ${CONFIG_FILE}.`,
+    (deps.hint ?? printHint)(
+      `Could not store the token in the ${await secureStoreLabel(deps.secureStore)} (${detail}); falling back to plaintext in ${CONFIG_FILE}.`,
     );
-    return {
-      tokenStorage: undefined,
-      tokenForConfig: apiToken,
-      tokenForExport: apiToken,
-      keychainPromptAnswered: true,
-    };
+    return await plaintextPlan(false);
   }
 }
 

@@ -34,7 +34,7 @@ import {
   enforceMinimumVersionFromCache,
   kickOffMinimumVersionRefresh,
 } from "./min-version-policy";
-import { maybePromptTokenMigration } from "./token-migration";
+import { maybeMigrateToken } from "./token-migration";
 import { formatPromptTarget } from "./tui-target";
 import {
   getDeferredUpdatePromptVersion,
@@ -253,9 +253,10 @@ async function prepareContext(
   // Show the intro before the potentially slower keychain read.
   const env = loadContextEnv(argv);
   showIntro(formatPromptTarget(env));
-  const context = await buildContext(env, argv);
-  await maybePromptTokenMigration({ env: context.env, interactive });
-  return context;
+  // Automatically migrate an eligible plaintext profile before command work.
+  // Non-interactive runs stay silent to preserve structured output contracts.
+  await maybeMigrateToken({ env, report: interactive });
+  return await buildContext(env, argv);
 }
 
 async function runTrackedCommand(
