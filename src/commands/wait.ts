@@ -34,6 +34,7 @@ import {
   requestCancellationForWatchTarget,
   waitForPollIntervalOrCancel,
 } from "./watch-utils";
+import { fitWatchSpinnerMessage } from "./watch-output";
 
 export const DEFAULT_WAIT_INTERVAL_MS = DEFAULT_WATCH_INTERVAL_MS;
 
@@ -291,7 +292,7 @@ export async function waitForBuild(options: {
   let cancelIssued = false;
 
   if (statusSpinner) {
-    statusSpinner.start(watchPrompt);
+    statusSpinner.start(fitWatchSpinnerMessage(watchPrompt));
   }
 
   let buildUrl = options.buildUrl;
@@ -427,7 +428,7 @@ export async function waitForBuild(options: {
             );
           }
           if (statusSpinner) {
-            statusSpinner.start(watchPrompt);
+            statusSpinner.start(fitWatchSpinnerMessage(watchPrompt));
           }
         }
       }
@@ -615,7 +616,7 @@ function emitProgress(options: {
   emitOutput?: boolean;
 }): void {
   if (options.spinnerInstance) {
-    options.spinnerInstance.message(options.message);
+    options.spinnerInstance.message(fitWatchSpinnerMessage(options.message));
     return;
   }
   if (options.emitOutput === false) {
@@ -631,7 +632,7 @@ function persistWatchMessage(options: {
 }): void {
   if (options.spinnerInstance) {
     options.spinnerInstance.stop(options.message);
-    options.spinnerInstance.start(options.watchPrompt);
+    options.spinnerInstance.start(fitWatchSpinnerMessage(options.watchPrompt));
     return;
   }
   printOk(options.message);

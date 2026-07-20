@@ -59,6 +59,7 @@ import {
   requestCancellationForWatchTarget,
   waitForPollIntervalOrCancel,
 } from "./watch-utils";
+import { fitWatchSpinnerMessage } from "./watch-output";
 import { runFlow } from "../flows/runner";
 import { flows } from "../flows/definition";
 import { BRANCH_REMOVE_VALUE } from "../flows/constants";
@@ -984,7 +985,7 @@ async function watchBuildStatus(options: {
   }
   let cancelIssued = false;
   if (statusSpinner) {
-    statusSpinner.start(watchPrompt);
+    statusSpinner.start(fitWatchSpinnerMessage(watchPrompt));
   }
 
   let buildUrl = options.buildUrl;
@@ -1062,7 +1063,7 @@ async function watchBuildStatus(options: {
             );
           }
           if (statusSpinner) {
-            statusSpinner.start(watchPrompt);
+            statusSpinner.start(fitWatchSpinnerMessage(watchPrompt));
           }
         }
       }
@@ -1236,7 +1237,7 @@ function emitWatchMessage(options: {
   message: string;
 }): void {
   if (options.spinner) {
-    options.spinner.message(options.message);
+    options.spinner.message(fitWatchSpinnerMessage(options.message));
     return;
   }
   printOk(options.message);
@@ -1249,7 +1250,7 @@ function persistWatchMessage(options: {
 }): void {
   if (options.spinner) {
     options.spinner.stop(options.message);
-    options.spinner.start(options.watchPrompt);
+    options.spinner.start(fitWatchSpinnerMessage(options.watchPrompt));
     return;
   }
   printOk(options.message);
