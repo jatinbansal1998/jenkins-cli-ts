@@ -22,12 +22,19 @@ export function createWatchSpinner(
 ): WatchSpinner {
   let active = false;
   let previousWidth = 0;
+  let previousColumns = output.columns ?? 80;
 
   const writeLine = (line: string, newline = false): void => {
+    const columns = output.columns ?? 80;
     const width = Bun.stringWidth(line);
-    const padding = " ".repeat(Math.max(0, previousWidth - width));
-    output.write(`\r${line}${padding}${newline ? "\n" : ""}`);
+    const resized = columns !== previousColumns;
+    const padding = resized
+      ? ""
+      : " ".repeat(Math.max(0, previousWidth - width));
+    const prefix = resized ? clearReflowedRows(previousWidth, columns) : "\r";
+    output.write(`${prefix}${line}${padding}${newline ? "\n" : ""}`);
     previousWidth = newline ? 0 : width;
+    previousColumns = columns;
   };
 
   const render = (message: string): void => {
@@ -60,6 +67,11 @@ export function createWatchSpinner(
       finish("▲", message);
     },
   };
+}
+
+function clearReflowedRows(previousWidth: number, columns: number): string {
+  const rowCount = Math.max(1, Math.ceil(previousWidth / Math.max(1, columns)));
+  return `\r\u001B[2K${"\u001B[1A\r\u001B[2K".repeat(rowCount - 1)}`;
 }
 
 export function fitWatchSpinnerMessage(

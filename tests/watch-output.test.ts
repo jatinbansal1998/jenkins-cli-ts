@@ -46,6 +46,21 @@ describe("watch spinner output", () => {
     expect(writes[1]).toBe("\r◇  Done.       \n");
   });
 
+  test("clears every row occupied by a line reflowed after resize", () => {
+    const { output, writes } = createOutput(50);
+    const spinner = createWatchSpinner(output);
+
+    spinner.start("x".repeat(80));
+    output.columns = 20;
+    spinner.message("resized");
+
+    expect(Bun.stringWidth((writes[0] ?? "").slice(1))).toBeLessThanOrEqual(49);
+    expect(writes[1]).toStartWith(
+      "\r\u001B[2K\u001B[1A\r\u001B[2K\u001B[1A\r\u001B[2K",
+    );
+    expect(writes[1]).toEndWith("◒  resized");
+  });
+
   test("leaves room for the live prefix and terminal margin", () => {
     const message =
       "https://jenkins.example.com/job/a-very-long-job-name: #34 | RUNNING | [4/10]";
