@@ -7,8 +7,8 @@ import { hideBin } from "yargs/helpers";
 import { runWithAnalytics, updateAnalyticsContext } from "./analytics";
 import { CliError, getScriptName, handleCliError, printHint } from "./cli";
 import {
-  parseArtifactFilters,
-  parseBuildCustomParams,
+  parseArtifactFilters as parseArtifactFiltersValue,
+  parseBuildCustomParams as parseBuildCustomParamsValue,
 } from "./cli/argument-values";
 import { printFullHelp } from "./cli/full-help";
 import { getRootHelpEpilog } from "./cli/help-epilog";
@@ -46,7 +46,18 @@ import {
 import { BUILD_TARGET } from "./build-target";
 import packageJson from "../package.json";
 
-export { parseArtifactFilters, parseBuildCustomParams };
+// Keep these public helpers as declarations owned by this entry point. Bun's
+// compiled-binary bundler can otherwise emit an invalid ESM export when an
+// imported binding is re-exported and also consumed by another bundled module.
+export function parseArtifactFilters(value: unknown): string[] | undefined {
+  return parseArtifactFiltersValue(value);
+}
+
+export function parseBuildCustomParams(
+  value: unknown,
+): Record<string, string> | undefined {
+  return parseBuildCustomParamsValue(value);
+}
 
 const VERSION = packageJson.version;
 const scriptName = getScriptName();
