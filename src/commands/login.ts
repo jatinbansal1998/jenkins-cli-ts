@@ -418,14 +418,34 @@ async function resolveUrl(
     message: "Jenkins URL",
     placeholder: "https://jenkins.example.com",
     initialValue: existingValue,
-    validate: (value) =>
-      value?.trim() || existingValue?.trim() ? undefined : "Value required.",
+    validate: (value) => validateLoginUrl(value, existingValue),
   });
   if (isCancel(response)) {
     throw new CliError("Operation cancelled.");
   }
   const value = String(response).trim();
   return value || existingValue?.trim() || "";
+}
+
+/** Returns concise inline guidance for invalid interactive login URLs. */
+export function validateLoginUrl(
+  value: string | undefined,
+  existingValue?: string,
+): string | undefined {
+  const candidate = value?.trim();
+  if (!candidate) {
+    return existingValue?.trim() ? undefined : "Value required.";
+  }
+
+  try {
+    normalizeUrl(candidate);
+    return undefined;
+  } catch (error) {
+    if (!(error instanceof CliError)) {
+      throw error;
+    }
+    return [error.message, error.hints[0]].filter(Boolean).join(" ");
+  }
 }
 
 async function resolveUser(
