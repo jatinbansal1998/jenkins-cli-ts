@@ -228,8 +228,16 @@ async function probeSecureStore(): Promise<boolean> {
 }
 
 const integrationAvailable = await probeSecureStore();
+const integrationRequired = process.env.REQUIRE_KEYCHAIN_INTEGRATION === "1";
 
 describe("secure store integration (real OS keychain)", () => {
+  test.skipIf(!integrationRequired)(
+    "has a usable OS keychain when integration coverage is required",
+    () => {
+      expect(integrationAvailable).toBeTrue();
+    },
+  );
+
   test.skipIf(!integrationAvailable)(
     "round-trips store -> lookup -> clear",
     async () => {

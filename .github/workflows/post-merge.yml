@@ -23,7 +23,12 @@ permissions:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    name: Test (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v6
 
@@ -35,11 +40,52 @@ jobs:
         run: bun install
 
       - name: Install secure-store tooling (libsecret + keyring)
+        if: runner.os == 'Linux'
         run: |
           sudo apt-get update
           sudo apt-get install -y libsecret-tools gnome-keyring dbus dbus-x11
 
+      - name: Configure unlocked test keychain
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          set -euo pipefail
+          TEST_KEYCHAIN="$RUNNER_TEMP/jenkins-cli-ci.keychain-db"
+          security create-keychain -p "jenkins-cli-ci" "$TEST_KEYCHAIN"
+          security set-keychain-settings -lut 21600 "$TEST_KEYCHAIN"
+          security unlock-keychain -p "jenkins-cli-ci" "$TEST_KEYCHAIN"
+          security list-keychains -d user -s "$TEST_KEYCHAIN"
+          security default-keychain -d user -s "$TEST_KEYCHAIN"
+          # Each isolated test HOME configures this as its default keychain.
+          echo "JENKINS_CLI_TEST_KEYCHAIN=$TEST_KEYCHAIN" >> "$GITHUB_ENV"
+
+      - name: Build and install CLI
+        shell: bash
+        run: |
+          set -euo pipefail
+          bun run build
+          mkdir -p "$RUNNER_TEMP/jenkins-cli-bin"
+          cp dist/jenkins-cli "$RUNNER_TEMP/jenkins-cli-bin/jenkins-cli"
+          chmod +x "$RUNNER_TEMP/jenkins-cli-bin/jenkins-cli"
+          echo "$RUNNER_TEMP/jenkins-cli-bin" >> "$GITHUB_PATH"
+
+      - name: Validate installed CLI version
+        shell: bash
+        run: |
+          set -euo pipefail
+          EXPECTED_VERSION="$(bun -e 'console.log((await Bun.file("package.json").json()).version)')"
+          INSTALLED_VERSION="$(jenkins-cli --version)"
+          echo "$INSTALLED_VERSION"
+          grep -F "$EXPECTED_VERSION" <<< "$INSTALLED_VERSION"
+          case "$RUNNER_OS" in
+            Linux) EXPECTED_TARGET="bun-linux-" ;;
+            macOS) EXPECTED_TARGET="bun-darwin-" ;;
+            *) echo "Unsupported runner OS: $RUNNER_OS" >&2; exit 1 ;;
+          esac
+          grep -F "$EXPECTED_TARGET" <<< "$INSTALLED_VERSION"
+
       - name: Run tests (capture failures)
+        if: runner.os == 'Linux'
         shell: bash
         env:
           NO_COLOR: "1"
@@ -63,6 +109,24 @@ jobs:
             exit "$TEST_EXIT"
           '
 
+      - name: Run tests with macOS Keychain (capture failures)
+        if: runner.os == 'macOS'
+        shell: bash
+        env:
+          NO_COLOR: "1"
+          REQUIRE_KEYCHAIN_INTEGRATION: "1"
+        run: |
+          set -o pipefail
+          mkdir -p test-artifacts
+
+          set +e
+          bun test --only-failures 2>&1 | tee test-artifacts/bun-test.log
+          TEST_EXIT=${PIPESTATUS[0]}
+          set -e
+
+          bun test --reporter=junit --reporter-outfile test-artifacts/bun-junit.xml >/dev/null 2>&1 || true
+          exit "$TEST_EXIT"
+
       - name: Summarize test output
         if: always()
         shell: bash
@@ -81,7 +145,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: bun-test-artifacts
+          name: bun-test-artifacts-${{ matrix.os }}
           path: test-artifacts
           if-no-files-found: ignore
 
