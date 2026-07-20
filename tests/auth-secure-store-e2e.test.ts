@@ -61,9 +61,38 @@ function createIdentity(prefix: string): {
   };
 }
 
+function configureMacOsTestKeychain(home: string): void {
+  const keychain = process.env.JENKINS_CLI_TEST_KEYCHAIN;
+  if (process.platform !== "darwin" || !keychain) {
+    return;
+  }
+
+  mkdirSync(join(home, "Library", "Preferences"), { recursive: true });
+  const commands = [
+    ["list-keychains", "-d", "user", "-s", keychain],
+    ["default-keychain", "-d", "user", "-s", keychain],
+  ];
+
+  for (const args of commands) {
+    const result = Bun.spawnSync({
+      cmd: ["/usr/bin/security", ...args],
+      env: { ...process.env, HOME: home },
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    if (result.exitCode !== 0) {
+      const detail = new TextDecoder().decode(result.stderr).trim();
+      throw new Error(
+        `Failed to configure the macOS test keychain for ${home}: ${detail}`,
+      );
+    }
+  }
+}
+
 function makeHome(config?: StoredConfig): string {
   const home = join(tempRoot, `home-${nextHomeId++}`);
   mkdirSync(home, { recursive: true });
+  configureMacOsTestKeychain(home);
   if (config) {
     const configDir = join(home, ".config", "jenkins-cli");
     mkdirSync(configDir, { recursive: true });
