@@ -117,10 +117,16 @@ jenkins-cli auth login --profile prod --url https://jenkins-prod.example.com --u
 `jenkins-cli login` remains supported as a compatibility alias for
 `jenkins-cli auth login`.
 
-In interactive mode, after you enter the Jenkins URL the CLI asks whether to
-open that host in your browser — handy for signing in and creating an API
-token before the token prompt appears. Declining is the default, and the
-question is skipped entirely with `--non-interactive`.
+Interactive login offers to open the browser twice:
+
+1. After the Jenkins URL, it offers to open the Jenkins home page so you can
+   sign in and confirm your Jenkins username.
+2. After the username, it offers to open that user's Jenkins Security page
+   (`/user/<username>/security/`) so you can create an API token before the
+   token prompt appears.
+
+Declining is the default for both questions, and both are skipped entirely with
+`--non-interactive`.
 
 ### Secure Token Storage
 

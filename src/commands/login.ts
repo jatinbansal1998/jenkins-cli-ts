@@ -68,14 +68,22 @@ export async function runLogin(
   const profileAlreadyExists = Boolean(existingProfile);
 
   const url = await resolveUrl(options, existingProfile?.jenkinsUrl);
-  // Validate the URL right after entry so the browser offer (and any invalid
-  // URL error) happens before the remaining prompts.
+  // Validate the URL right after entry so an invalid value is reported before
+  // the remaining prompts.
   const normalizedUrl = normalizeUrl(url);
   await offerToOpenHostInBrowser(
     { url: normalizedUrl, nonInteractive: options.nonInteractive },
     deps,
   );
   const user = await resolveUser(options, existingProfile?.jenkinsUser);
+  await offerToOpenUserSecurityPageInBrowser(
+    {
+      url: normalizedUrl,
+      user,
+      nonInteractive: options.nonInteractive,
+    },
+    deps,
+  );
   const apiToken = await resolveApiToken(
     options,
     existingProfile?.jenkinsApiToken,
@@ -186,20 +194,63 @@ export function getLoginInstructions(input: {
 }
 
 /**
- * Offers to open the entered Jenkins host in the default browser, so the user
- * can sign in and create an API token before the token prompt appears.
- * Skipped entirely in non-interactive mode; declining is the default. A failed
- * browser launch prints a HINT and never fails the login flow.
+ * Builds the standard Jenkins security-page URL for a user.
+ */
+export function buildJenkinsUserSecurityUrl(url: string, user: string): string {
+  return `${normalizeUrl(url)}/user/${encodeURIComponent(user.trim())}/security/`;
+}
+
+/**
+ * Offers to open the Jenkins host so the user can sign in and confirm their
+ * Jenkins username before the username prompt appears.
  */
 export async function offerToOpenHostInBrowser(
   input: { url: string; nonInteractive: boolean },
   deps: LoginDeps = {},
 ): Promise<void> {
+  await offerToOpenUrlInBrowser(
+    {
+      targetUrl: input.url,
+      message: `Open ${input.url} in your browser? (useful for finding your Jenkins username)`,
+      nonInteractive: input.nonInteractive,
+    },
+    deps,
+  );
+}
+
+/**
+ * Offers to open the user's Jenkins security page so they can create an API
+ * token before the token prompt appears.
+ */
+export async function offerToOpenUserSecurityPageInBrowser(
+  input: { url: string; user: string; nonInteractive: boolean },
+  deps: LoginDeps = {},
+): Promise<void> {
+  const securityUrl = buildJenkinsUserSecurityUrl(input.url, input.user);
+  await offerToOpenUrlInBrowser(
+    {
+      targetUrl: securityUrl,
+      message: `Open ${securityUrl} in your browser? (useful for creating an API token)`,
+      nonInteractive: input.nonInteractive,
+    },
+    deps,
+  );
+}
+
+/** Shared browser offer used by both interactive login navigation prompts. */
+async function offerToOpenUrlInBrowser(
+  input: {
+    targetUrl: string;
+    message: string;
+    nonInteractive: boolean;
+  },
+  deps: LoginDeps,
+): Promise<void> {
   if (input.nonInteractive) {
     return;
   }
   const response = await (deps.confirm ?? confirm)({
-    message: `Open ${input.url} in your browser? (useful for creating an API token)`,
+    message: input.message,
     initialValue: false,
   });
   // confirm resolves to a boolean or clack's cancel symbol; anything that is
@@ -211,10 +262,10 @@ export async function offerToOpenHostInBrowser(
     return;
   }
   try {
-    await (deps.openInBrowser ?? openInBrowser)(input.url);
+    await (deps.openInBrowser ?? openInBrowser)(input.targetUrl);
   } catch {
     printHint(
-      `Could not open the browser automatically. Visit ${input.url} manually.`,
+      `Could not open the browser automatically. Visit ${input.targetUrl} manually.`,
     );
   }
 }
