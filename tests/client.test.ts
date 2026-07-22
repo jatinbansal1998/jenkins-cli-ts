@@ -1,4 +1,7 @@
 import { afterEach, describe, expect, mock, test } from "bun:test";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { JenkinsClient } from "../src/jenkins/client";
 
 const realFetch = globalThis.fetch;
@@ -70,6 +73,48 @@ describe("JenkinsClient triggerBuild", () => {
     expect((triggerCall?.[1] as RequestInit | undefined)?.body).toBe(
       "BRANCH=main",
     );
+    expect(
+      readHeader(triggerCall?.[1] as RequestInit | undefined, "Authorization"),
+    ).toBe(`Basic ${Buffer.from("user:token").toString("base64")}`);
+  });
+
+  test("resolves the queued build from Jenkins' Location header", async () => {
+    const fetchMock = mock(async (input: FetchInput) => {
+      const url = String(input);
+      if (url.includes("/queue/item/17/api/json")) {
+        return Response.json({
+          id: 17,
+          task: { url: "https://jenkins.example.com/job/my-job/" },
+          executable: {
+            number: 9,
+            url: "https://jenkins.example.com/job/my-job/9/",
+          },
+        });
+      }
+      return new Response("", {
+        status: 201,
+        headers: { Location: "/queue/item/17/" },
+      });
+    });
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+    const client = new JenkinsClient({
+      baseUrl: "https://jenkins.example.com",
+      user: "user",
+      apiToken: "token",
+    });
+    const result = await client.triggerBuild(
+      "https://jenkins.example.com/job/my-job/",
+      {},
+    );
+
+    expect(result).toEqual({
+      queueUrl: "https://jenkins.example.com/queue/item/17/",
+      queueId: 17,
+      jobUrl: "https://jenkins.example.com/job/my-job/",
+      buildUrl: "https://jenkins.example.com/job/my-job/9/",
+      buildNumber: 9,
+    });
   });
 
   test("uses build endpoint when no params are provided", async () => {
@@ -275,6 +320,101 @@ describe("JenkinsClient pipeline stage cloning", () => {
   });
 });
 
+describe("JenkinsClient build transport", () => {
+  test("preserves the latest job result", async () => {
+    const fetchMock = mock(async (input: FetchInput) => {
+      const url = String(input);
+      if (url.includes("tree=lastBuild")) {
+        return Response.json({
+          lastBuild: {
+            number: 9,
+            url: "https://jenkins.example.com/job/my-job/9/",
+            result: "SUCCESS",
+            building: false,
+          },
+        });
+      }
+      return new Response("", { status: 404 });
+    });
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+    const client = new JenkinsClient({
+      baseUrl: "https://jenkins.example.com",
+      user: "user",
+      apiToken: "token",
+    });
+
+    expect(
+      await client.getJobStatus("https://jenkins.example.com/job/my-job/"),
+    ).toMatchObject({
+      lastBuildNumber: 9,
+      result: "SUCCESS",
+      building: false,
+    });
+  });
+
+  test("requests and returns progressive console logs", async () => {
+    const fetchMock = mock(async (_input: FetchInput, _init?: FetchInit) =>
+      Promise.resolve(
+        new Response("cli output\n", {
+          headers: { "X-Text-Size": "11", "X-More-Data": "false" },
+        }),
+      ),
+    );
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+    const client = new JenkinsClient({
+      baseUrl: "https://jenkins.example.com",
+      user: "user",
+      apiToken: "token",
+    });
+    const chunk = await client.getConsoleChunk(
+      "https://jenkins.example.com/job/my-job/9/",
+    );
+
+    expect(String(fetchMock.mock.calls[0]?.[0])).toBe(
+      "https://jenkins.example.com/job/my-job/9/logText/progressiveText?start=0",
+    );
+    expect(chunk).toEqual({
+      text: "cli output\n",
+      nextStart: 11,
+      hasMore: false,
+    });
+  });
+
+  test("authenticates artifact downloads", async () => {
+    const home = mkdtempSync(join(tmpdir(), "jenkins-client-artifact-"));
+    const destination = join(home, "artifact.txt");
+    const fetchMock = mock(async (_input: FetchInput, _init?: FetchInit) =>
+      Promise.resolve(new Response("artifact contents\n")),
+    );
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+    try {
+      const client = new JenkinsClient({
+        baseUrl: "https://jenkins.example.com",
+        user: "user",
+        apiToken: "token",
+      });
+      await client.downloadArtifact(
+        "https://jenkins.example.com/job/my-job/9/",
+        "artifact.txt",
+        destination,
+      );
+
+      expect(
+        readHeader(
+          fetchMock.mock.calls[0]?.[1] as RequestInit | undefined,
+          "Authorization",
+        ),
+      ).toBe(`Basic ${Buffer.from("user:token").toString("base64")}`);
+      expect(await Bun.file(destination).text()).toBe("artifact contents\n");
+    } finally {
+      rmSync(home, { recursive: true, force: true });
+    }
+  });
+});
+
 describe("JenkinsClient POST with crumb", () => {
   test("refreshes crumb and retries stopBuild when first attempt gets 403", async () => {
     let crumbRequestCount = 0;
@@ -465,6 +605,7 @@ describe("JenkinsClient listBuildHistory", () => {
     expect(page.builds).toHaveLength(2);
     expect(page.builds[0]).toMatchObject({
       buildNumber: 102,
+      result: "FAILURE",
       branch: "main",
       failure: {
         stageName: "Deploy",
@@ -484,6 +625,7 @@ describe("JenkinsClient listBuildHistory", () => {
     });
     expect(page.builds[1]).toMatchObject({
       buildNumber: 101,
+      result: "SUCCESS",
       stages: [
         {
           name: "Deploy",

@@ -18,6 +18,9 @@
     "typecheck": "tsc --noEmit",
     "check": "bun run lint:fix && bun run format && bun run typecheck",
     "test": "bun test",
+    "test:integration:jenkins": "bun scripts/test-jenkins-integration.ts",
+    "test:mutation": "bun scripts/test-mutation.ts",
+    "test:mutation:jenkins": "bun scripts/test-jenkins-integration.ts --mutation",
     "format": "prettier . --write",
     "format:check": "prettier . --check"
   },

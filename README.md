@@ -872,6 +872,31 @@ Run lint:
 bun run lint
 ```
 
+Run the end-to-end suite against an ephemeral Jenkins LTS controller (Docker is
+required):
+
+```bash
+bun run test:integration:jenkins
+```
+
+The command provisions a secured controller and test job on a random local
+port, tests the compiled CLI from authentication through artifact download,
+and removes the controller afterward. Set `JENKINS_TEST_IMAGE` to test against
+a different Jenkins image tag.
+
+Run semantic mutation canaries against the Jenkins client unit tests:
+
+```bash
+bun run test:mutation
+```
+
+To inject the same protocol bugs into temporary copies of the CLI and require
+the real Jenkins flow to catch each one:
+
+```bash
+bun run test:mutation:jenkins
+```
+
 Apply fixes:
 
 ```bash
