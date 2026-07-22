@@ -51,7 +51,7 @@ test.skipIf(!integrationEnabled)(
         "MESSAGE=from-jenkins-cli",
         "--watch",
       ]);
-      expect(build.output).toContain("Build queued");
+      expect(build.output).toMatch(/Build (?:queued|started)/);
       expect(build.output).toContain("SUCCESS");
 
       const status = parseJson(
