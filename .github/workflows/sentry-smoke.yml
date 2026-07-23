@@ -52,7 +52,8 @@ jobs:
 
           for ATTEMPT in 1 2 3 4 5 6; do
             EVENTS="$(bunx @sentry/cli events list --max-rows 100 --pages 2)"
-            if grep -Fq "$MANUAL_EVENT_ID" <<< "$EVENTS" && grep -Fq "$GLOBAL_EVENT_ID" <<< "$EVENTS"; then
+            NORMALIZED_EVENTS="${EVENTS//-/}"
+            if grep -Fq "$MANUAL_EVENT_ID" <<< "$NORMALIZED_EVENTS" && grep -Fq "$GLOBAL_EVENT_ID" <<< "$NORMALIZED_EVENTS"; then
               echo "Verified Sentry events $MANUAL_EVENT_ID and $GLOBAL_EVENT_ID."
               exit 0
             fi
