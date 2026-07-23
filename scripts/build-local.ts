@@ -24,6 +24,7 @@ const result = await Bun.build({
   // Bun always tree-shakes; package.json sideEffects metadata helps it drop
   // unused internal modules when compiling the executable.
   compile: { outfile: `${DIST}/jenkins-cli` },
+  sourcemap: "linked",
   define: { __BUILD_TARGET__: JSON.stringify(target) },
 });
 

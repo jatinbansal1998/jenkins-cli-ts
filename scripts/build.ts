@@ -67,6 +67,7 @@ const bundleResult = await Bun.build({
   outdir: DIST,
   naming: "jenkins-cli-bundle",
   target: "bun",
+  sourcemap: "inline",
   define: { __BUILD_TARGET__: JSON.stringify(LEGACY_BUNDLE_BUILD_TARGET) },
 });
 
@@ -87,6 +88,7 @@ const results = await Promise.allSettled(
       // Bun always enables tree-shaking for builds, including compiled outputs.
       // @ts-expect-error -- Bun compile targets are valid at runtime
       compile: { target: compileTarget, outfile: outpath },
+      sourcemap: "linked",
       define: { __BUILD_TARGET__: JSON.stringify(compileTarget) },
     });
 

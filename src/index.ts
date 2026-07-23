@@ -28,6 +28,10 @@ import type {
 import { printCliIntro } from "./cli-intro";
 import { runUpdate } from "./commands/update";
 import { loadEnv, getDebugDefault, resolveApiToken } from "./env";
+import {
+  captureUnexpectedError,
+  initializeDefaultErrorReporting,
+} from "./error-reporting";
 import { JenkinsClient } from "./jenkins/api-wrapper";
 import { pruneOldApiLogs, setDebugMode } from "./logger";
 import {
@@ -203,6 +207,7 @@ async function promptForDeferredUpdate(
     return { pendingPromptIntroVersion: undefined };
   } catch (error) {
     handleCliError(error);
+    await captureUnexpectedError(error);
     printHint("Continuing with the requested command.");
     return { pendingPromptIntroVersion: pendingVersion };
   }
@@ -328,11 +333,13 @@ function hasCredentialOverrides(argv: ContextArgv | undefined): boolean {
 }
 
 if (import.meta.main) {
+  await initializeDefaultErrorReporting();
   // Exit handlers must be synchronous; pruneOldApiLogs is. This also runs
   // after explicit process.exit() calls (e.g. yargs --help).
   process.on("exit", () => pruneOldApiLogs());
-  main().catch((error) => {
+  await main().catch(async (error) => {
     handleCliError(error);
     process.exitCode = 1;
+    await captureUnexpectedError(error);
   });
 }

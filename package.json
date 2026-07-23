@@ -18,6 +18,8 @@
     "typecheck": "tsc --noEmit",
     "check": "bun run lint:fix && bun run format && bun run typecheck",
     "test": "bun test",
+    "sentry:smoke": "bun scripts/verify-sentry.ts",
+    "sentry:smoke:build": "bun scripts/build-sentry-smoke.ts",
     "test:integration:jenkins": "bun scripts/test-jenkins-integration.ts",
     "test:mutation": "bun scripts/test-mutation.ts",
     "test:mutation:jenkins": "bun scripts/test-jenkins-integration.ts --mutation",
@@ -36,6 +38,7 @@
   "dependencies": {
     "@clack/core": "1.4.3",
     "@clack/prompts": "^1.7.0",
+    "@sentry/bun": "^10.67.0",
     "cross-keychain": "^1.1.0",
     "yargs": "^18.0.0"
   },

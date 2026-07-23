@@ -1,0 +1,63 @@
+name: Sentry Smoke Test
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    env:
+      SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+      SENTRY_ENVIRONMENT: github-actions-smoke
+      SENTRY_ORG: jatin-bansal
+      SENTRY_PROJECT: jenkins-cli
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Build standalone smoke binary
+        run: bun run sentry:smoke:build
+
+      - name: Send manually captured error from compiled binary
+        shell: bash
+        run: ./dist/jenkins-cli-sentry-smoke | tee sentry-manual.json
+
+      - name: Send globally uncaught error from compiled binary
+        shell: bash
+        run: |
+          set +e
+          ./dist/jenkins-cli-sentry-smoke --global 2>&1 | tee sentry-global.log
+          STATUS=${PIPESTATUS[0]}
+          set -e
+          if [ "$STATUS" -eq 0 ]; then
+            echo "Expected the global smoke process to fail." >&2
+            exit 1
+          fi
+
+      - name: Verify events with Sentry CLI
+        shell: bash
+        run: |
+          test -n "$SENTRY_AUTH_TOKEN"
+          MANUAL_EVENT_ID="$(bun -e 'const lines = (await Bun.file("sentry-manual.json").text()).trim().split("\n"); console.log(JSON.parse(lines.at(-1)).eventId)')"
+          GLOBAL_EVENT_ID="$(bun -e 'const lines = (await Bun.file("sentry-global.log").text()).trim().split("\n").filter((line) => line.startsWith("{")); console.log(JSON.parse(lines.at(-1)).eventId)')"
+
+          for ATTEMPT in 1 2 3 4 5 6; do
+            EVENTS="$(bunx @sentry/cli events list --max-rows 100 --pages 2)"
+            if grep -Fq "$MANUAL_EVENT_ID" <<< "$EVENTS" && grep -Fq "$GLOBAL_EVENT_ID" <<< "$EVENTS"; then
+              echo "Verified Sentry events $MANUAL_EVENT_ID and $GLOBAL_EVENT_ID."
+              exit 0
+            fi
+            sleep 5
+          done
+
+          echo "Sentry events were not visible through sentry-cli within 30 seconds." >&2
+          exit 1

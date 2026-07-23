@@ -259,6 +259,18 @@ Single-account fallback only:
 - Optional: `JENKINS_ANALYTICS_DISABLED=true` to force-disable analytics entirely
 - Optional config: set `"analyticsDisabled": true` to force-disable analytics entirely
 
+### Error Reporting
+
+- Unexpected internal errors are reported to Sentry by default. Expected CLI validation, Jenkins API, network, timeout, and cancellation errors are not reported.
+- Set `JENKINS_ERROR_REPORTING_DISABLED=true` to disable Sentry error reporting entirely.
+- Optional: `SENTRY_DSN` overrides the bundled public Sentry DSN. Setting it to an empty value also disables reporting.
+- Optional: `SENTRY_ENVIRONMENT` overrides the default `production` environment used by built releases.
+- Project GitHub Actions workflows set `SENTRY_ENVIRONMENT=github-actions` so CI events are identifiable separately.
+- Sentry's default integrations capture uncaught exceptions and unhandled promise rejections in addition to errors propagated through the CLI's main execution path.
+- Error reporting is best-effort and never changes CLI output, exit codes, or command behavior.
+- Run `SENTRY_ENVIRONMENT=local-smoke bun run sentry:smoke` for an intentional live verification event. The command refuses to run against the `production` environment.
+- The manually dispatched `Sentry Smoke Test` workflow builds a standalone Bun smoke binary, sends manual and globally uncaught failures, then verifies both through Sentry CLI. It requires a `SENTRY_AUTH_TOKEN` GitHub secret with event read access.
+
 ### Privacy Guardrails
 
 - Analytics never sends Jenkins usernames, API tokens, Jenkins URLs, job names, job URLs, build URLs, queue URLs, branch names, raw search text, build parameter names or values, or log output.
@@ -266,6 +278,8 @@ Single-account fallback only:
   redirect destinations, effective Jenkins users, and Jenkins versions from
   analytics.
 - Analytics only sends anonymous install ID, CLI version, command names, interactivity/TTY flags, high-level outcomes, exact command durations in milliseconds, and coarse Jenkins API health counts.
+- Sentry receives only unexpected exception details and privacy-safe runtime tags: CLI version, build target, Bun version, OS platform, and architecture.
+- SDK-side collection of users, hostnames, command arguments, requests, headers, bodies, query parameters, breadcrumbs, logs, metrics, tracing, local variables, and source context is disabled. Home-directory paths and URLs in exception details are redacted before sending. Sentry may still derive coarse geographic data from the transport IP according to the project's server-side privacy settings.
 
 ## Usage
 

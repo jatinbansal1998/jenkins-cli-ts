@@ -21,6 +21,9 @@ concurrency:
 permissions:
   contents: read
 
+env:
+  SENTRY_ENVIRONMENT: github-actions
+
 jobs:
   test:
     name: Test (${{ matrix.os }})
