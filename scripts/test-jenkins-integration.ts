@@ -4,11 +4,12 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const STARTUP_TIMEOUT_MS = 4 * 60_000;
+const DOWNLOAD_TIMEOUT_MS = 12 * 60_000;
 const POLL_INTERVAL_MS = 1_000;
 const DEFAULT_JENKINS_TEST_IMAGE =
   "jenkins/jenkins:lts-jdk21@sha256:f4f65e6cd1405cd889b7f5ac33f9d5cdc2a099de6b87fe8a3933b9c5d53d1d02";
 const JENKINS_VERSION = "2.568.1";
-const JENKINS_WAR_URL = `https://get.jenkins.io/war-stable/${JENKINS_VERSION}/jenkins.war`;
+const JENKINS_WAR_URL = `https://repo.jenkins-ci.org/releases/org/jenkins-ci/main/jenkins-war/${JENKINS_VERSION}/jenkins-war-${JENKINS_VERSION}.war`;
 const JENKINS_WAR_SHA256 =
   "58f24f3965fbef7708629fbe158d51bf138ffd577cadbc86b46367e8ad0beb83";
 const PLUGIN_MANAGER_VERSION = "2.15.0";
@@ -291,16 +292,36 @@ async function ensureDownload(
   }
   const temporary = `${destination}.${process.pid}.tmp`;
   await rm(temporary, { force: true });
-  const response = await fetch(url);
-  if (!response.ok) {
-    throw new Error(`Download failed with HTTP ${response.status}: ${url}`);
-  }
-  await Bun.write(temporary, response);
+  console.log(`Downloading ${url}...`);
+  await runChecked(
+    [
+      "curl",
+      "--fail",
+      "--location",
+      "--retry",
+      "2",
+      "--retry-all-errors",
+      "--retry-max-time",
+      String(DOWNLOAD_TIMEOUT_MS / 1000),
+      "--connect-timeout",
+      "15",
+      "--max-time",
+      String(DOWNLOAD_TIMEOUT_MS / 1000),
+      "--output",
+      temporary,
+      url,
+    ],
+    {
+      inherit: true,
+      failureMessage: `Download did not complete within ${DOWNLOAD_TIMEOUT_MS / 1000}s: ${url}`,
+    },
+  );
   if (!(await hasExpectedSha256(temporary, expectedSha256))) {
     await rm(temporary, { force: true });
     throw new Error(`Checksum verification failed for ${url}`);
   }
   await rename(temporary, destination);
+  console.log(`Downloaded and verified ${destination}`);
 }
 
 async function hasExpectedSha256(
