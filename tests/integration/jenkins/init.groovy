@@ -46,8 +46,9 @@ def writeToken = { user, name, path ->
   tokenFile.parentFile.mkdirs()
   tokenFile.text = token
 }
-writeToken(adminUser, "jenkins-cli-integration-admin", "/run/jenkins-cli-integration/admin-api-token")
-writeToken(readerUser, "jenkins-cli-integration-reader", "/run/jenkins-cli-integration/reader-api-token")
+def runtimeDir = System.getenv("JENKINS_INTEGRATION_RUNTIME_DIR") ?: "/run/jenkins-cli-integration"
+writeToken(adminUser, "jenkins-cli-integration-admin", "${runtimeDir}/admin-api-token")
+writeToken(readerUser, "jenkins-cli-integration-reader", "${runtimeDir}/reader-api-token")
 
 def job = jenkins.createProject(FreeStyleProject.class, "cli-smoke")
 job.setDescription("Jenkins CLI end-to-end integration fixture")

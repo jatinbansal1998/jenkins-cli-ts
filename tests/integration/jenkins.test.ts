@@ -8,9 +8,13 @@ import {
   pollCli,
   runCli,
   runCliExpectFailure,
+  runInteractiveCli,
   waitForNewBuild,
   withCliHome,
 } from "./jenkins/harness";
+
+const keychainIntegrationRequired =
+  process.env.REQUIRE_KEYCHAIN_INTEGRATION === "1";
 
 describe.skipIf(!integrationEnabled)(
   "compiled CLI against real Jenkins",
@@ -450,6 +454,98 @@ describe.skipIf(!integrationEnabled)(
         );
       });
     }, 60_000);
+
+    test.skipIf(!keychainIntegrationRequired)(
+      "uses interactive profile prompts and the real OS keychain",
+      async () => {
+        await withCliHome(async (home) => {
+          const profile = "default";
+          const token = process.env.JENKINS_INTEGRATION_TOKEN ?? "";
+          expect(token).not.toBe("");
+          const withoutCredentialEnv = {
+            JENKINS_URL: undefined,
+            JENKINS_USER: undefined,
+            JENKINS_API_TOKEN: undefined,
+            TS_KEYRING_BACKEND: undefined,
+          };
+          const login = await runInteractiveCli(
+            home,
+            ["auth", "login", "--no-banner"],
+            [
+              {
+                prompt: "Profile name",
+                input: "\r",
+              },
+              { prompt: "Jenkins URL", input: `${jenkinsUrl}\r` },
+              {
+                prompt: `Open ${jenkinsUrl} in your browser?`,
+                input: "\r",
+              },
+              {
+                prompt: "Jenkins username",
+                input: "integration-test\r",
+              },
+              {
+                prompt: `Open ${jenkinsUrl}/user/integration-test/security/ in your browser?`,
+                input: "\r",
+              },
+              { prompt: "Jenkins API token", input: `${token}\r` },
+              {
+                prompt: "Branch parameter name (default: BRANCH)",
+                input: "\r",
+              },
+            ],
+            withoutCredentialEnv,
+          );
+          expect(login.exitCode, login.output).toBe(0);
+          expect(login.output).toContain(`Saved profile "${profile}"`);
+          expect(login.output).toContain("API token stored securely");
+          expect(login.output).not.toContain(token);
+
+          const config = (await Bun.file(
+            join(home, ".config", "jenkins-cli", "jenkins-cli-config.json"),
+          ).json()) as {
+            profiles: Record<
+              string,
+              { jenkinsApiToken: string; tokenStorage?: string }
+            >;
+          };
+          expect(config.profiles[profile]).toMatchObject({
+            jenkinsApiToken: "@keychain",
+            tokenStorage: "keychain",
+          });
+
+          const status = await runCli(
+            home,
+            ["auth", "status", "--profile", profile],
+            withoutCredentialEnv,
+          );
+          expect(status.output).toContain("Authenticated:    Yes");
+          expect(status.output).toContain("Jenkins user:     integration-test");
+          expect(status.output).not.toContain(token);
+
+          const jobs = parseJson<{ data: Array<{ name: string }> }>(
+            await runCli(
+              home,
+              ["list", "--refresh", "--json", "--profile", profile],
+              withoutCredentialEnv,
+            ),
+          );
+          expect(jobs.data).toEqual(
+            expect.arrayContaining([
+              expect.objectContaining({ name: "cli-smoke" }),
+            ]),
+          );
+
+          await runCli(
+            home,
+            ["auth", "logout", "--profile", profile],
+            withoutCredentialEnv,
+          );
+        });
+      },
+      90_000,
+    );
 
     test("discovers nested jobs and preserves branch parameters through reruns", async () => {
       await withCliHome(async (home) => {

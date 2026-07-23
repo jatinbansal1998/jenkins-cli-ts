@@ -149,9 +149,17 @@ jobs:
           if-no-files-found: ignore
 
   jenkins-integration:
-    name: Jenkins integration
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
+    name: Jenkins integration (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            test-script: test:mutation:jenkins
+          - os: macos-latest
+            test-script: test:integration:jenkins
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v6
 
@@ -159,8 +167,51 @@ jobs:
         with:
           bun-version: latest
 
+      - name: Set up Java for native Jenkins
+        if: runner.os == 'macOS'
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "21"
+
       - name: Install dependencies
         run: bun install
 
-      - name: Run Jenkins integration tests
-        run: bun run test:mutation:jenkins
+      - name: Install Linux keyring tooling
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libsecret-tools gnome-keyring dbus dbus-x11 util-linux
+
+      - name: Configure unlocked macOS test keychain
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          set -euo pipefail
+          TEST_KEYCHAIN="$RUNNER_TEMP/jenkins-cli-integration.keychain-db"
+          security create-keychain -p "jenkins-cli-ci" "$TEST_KEYCHAIN"
+          security set-keychain-settings -lut 21600 "$TEST_KEYCHAIN"
+          security unlock-keychain -p "jenkins-cli-ci" "$TEST_KEYCHAIN"
+          security list-keychains -d user -s "$TEST_KEYCHAIN"
+          security default-keychain -d user -s "$TEST_KEYCHAIN"
+          echo "JENKINS_CLI_TEST_KEYCHAIN=$TEST_KEYCHAIN" >> "$GITHUB_ENV"
+
+      - name: Run Jenkins integration tests with Linux Secret Service
+        if: runner.os == 'Linux'
+        shell: bash
+        env:
+          REQUIRE_KEYCHAIN_INTEGRATION: "1"
+        run: |
+          dbus-run-session -- bash -c '
+            set -euo pipefail
+            echo -n "" | gnome-keyring-daemon --unlock >/dev/null 2>&1 || true
+            bun run "${{ matrix.test-script }}"
+          '
+
+      - name: Run Jenkins integration tests with macOS Keychain
+        if: runner.os == 'macOS'
+        shell: bash
+        env:
+          REQUIRE_KEYCHAIN_INTEGRATION: "1"
+          JENKINS_INTEGRATION_TOOL_CACHE: ${{ runner.temp }}/jenkins-cli-integration-tools
+        run: bun run "${{ matrix.test-script }}"
