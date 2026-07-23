@@ -1,37 +1,53 @@
+import com.cloudbees.hudson.plugins.folder.Folder
 import hudson.model.FreeStyleProject
 import hudson.model.BooleanParameterDefinition
 import hudson.model.ChoiceParameterDefinition
+import hudson.model.Item
 import hudson.model.Label
 import hudson.model.ParametersDefinitionProperty
 import hudson.model.PasswordParameterDefinition
 import hudson.model.StringParameterDefinition
 import hudson.model.TextParameterDefinition
-import hudson.security.FullControlOnceLoggedInAuthorizationStrategy
+import hudson.model.View
+import hudson.security.GlobalMatrixAuthorizationStrategy
 import hudson.security.HudsonPrivateSecurityRealm
+import hudson.slaves.DumbSlave
+import hudson.slaves.JNLPLauncher
 import hudson.tasks.ArtifactArchiver
 import hudson.tasks.Shell
 import jenkins.install.InstallState
 import jenkins.model.Jenkins
 import jenkins.security.ApiTokenProperty
+import org.jenkinsci.plugins.workflow.cps.CpsFlowDefinition
+import org.jenkinsci.plugins.workflow.job.WorkflowJob
 
 def jenkins = Jenkins.get()
+jenkins.setNumExecutors(1)
 
 def securityRealm = new HudsonPrivateSecurityRealm(false)
-def user = securityRealm.createAccount("integration-test", "integration-test-password")
+def adminUser = securityRealm.createAccount("integration-test", "integration-test-password")
+def readerUser = securityRealm.createAccount("integration-reader", "integration-reader-password")
 jenkins.setSecurityRealm(securityRealm)
 
-def authorizationStrategy = new FullControlOnceLoggedInAuthorizationStrategy()
-authorizationStrategy.setAllowAnonymousRead(false)
+def authorizationStrategy = new GlobalMatrixAuthorizationStrategy()
+authorizationStrategy.add(Jenkins.ADMINISTER, "integration-test")
+authorizationStrategy.add(Jenkins.READ, "integration-reader")
+authorizationStrategy.add(Item.DISCOVER, "integration-reader")
+authorizationStrategy.add(Item.READ, "integration-reader")
+authorizationStrategy.add(View.READ, "integration-reader")
 jenkins.setAuthorizationStrategy(authorizationStrategy)
 jenkins.setInstallState(InstallState.INITIAL_SETUP_COMPLETED)
 
-def tokenProperty = user.getProperty(ApiTokenProperty.class)
-def token = tokenProperty.tokenStore.generateNewToken("jenkins-cli-integration").plainValue
-user.save()
-
-def tokenFile = new File("/run/jenkins-cli-integration/api-token")
-tokenFile.parentFile.mkdirs()
-tokenFile.text = token
+def writeToken = { user, name, path ->
+  def tokenProperty = user.getProperty(ApiTokenProperty.class)
+  def token = tokenProperty.tokenStore.generateNewToken(name).plainValue
+  user.save()
+  def tokenFile = new File(path)
+  tokenFile.parentFile.mkdirs()
+  tokenFile.text = token
+}
+writeToken(adminUser, "jenkins-cli-integration-admin", "/run/jenkins-cli-integration/admin-api-token")
+writeToken(readerUser, "jenkins-cli-integration-reader", "/run/jenkins-cli-integration/reader-api-token")
 
 def job = jenkins.createProject(FreeStyleProject.class, "cli-smoke")
 job.setDescription("Jenkins CLI end-to-end integration fixture")
@@ -71,6 +87,10 @@ def noParamsJob = jenkins.createProject(FreeStyleProject.class, "cli-no-params")
 noParamsJob.getBuildersList().add(new Shell("printf 'no-params-success\\n'"))
 noParamsJob.save()
 
+def historyJob = jenkins.createProject(FreeStyleProject.class, "cli-history")
+historyJob.getBuildersList().add(new Shell("printf 'history-success\\n'"))
+historyJob.save()
+
 def spaceJob = jenkins.createProject(FreeStyleProject.class, "cli space job")
 spaceJob.getBuildersList().add(new Shell("printf 'space-job-success\\n'"))
 spaceJob.save()
@@ -88,4 +108,66 @@ sleep 60
 printf 'slow-build-finished\n'
 '''))
 slowJob.save()
+
+def branchJob = jenkins.createProject(FreeStyleProject.class, "cli-branch")
+branchJob.addProperty(new ParametersDefinitionProperty([
+  new StringParameterDefinition("BRANCH", "main", "Branch selected by the CLI"),
+  new StringParameterDefinition("EXTRA", "none", "Additional rerun parameter")
+]))
+branchJob.getBuildersList().add(new Shell('''set -eu
+printf 'branch=%s\n' "$BRANCH"
+printf 'extra=%s\n' "$EXTRA"
+exit 17
+'''))
+branchJob.save()
+
+def transitionJob = jenkins.createProject(FreeStyleProject.class, "cli-transition")
+transitionJob.getBuildersList().add(new Shell('''set -eu
+printf 'transition-started\n'
+sleep 2
+printf 'transition-finished\n'
+'''))
+transitionJob.save()
+
+def teamFolder = jenkins.createProject(Folder.class, "team")
+def nestedJob = teamFolder.createProject(FreeStyleProject.class, "nested smoke")
+nestedJob.getBuildersList().add(new Shell("printf 'nested-success\\n'"))
+nestedJob.save()
+
+def pipelineJob = jenkins.createProject(WorkflowJob.class, "cli-pipeline")
+pipelineJob.addProperty(new ParametersDefinitionProperty([
+  new StringParameterDefinition("BRANCH", "main", "Pipeline branch")
+]))
+pipelineJob.setDefinition(new CpsFlowDefinition('''
+node {
+  stage('Prepare') {
+    echo 'pipeline-prepare'
+  }
+  stage('Verify') {
+    echo "pipeline-branch:${params.BRANCH}"
+  }
+}
+''', true))
+pipelineJob.save()
+
+def failingPipelineJob = jenkins.createProject(WorkflowJob.class, "cli-pipeline-failure")
+failingPipelineJob.setDefinition(new CpsFlowDefinition('''
+node {
+  stage('Prepare') {
+    echo 'pipeline-failure-prepare'
+  }
+  stage('Deploy') {
+    error 'pipeline-deploy-failure'
+  }
+}
+''', true))
+failingPipelineJob.save()
+
+def offlineAgent = new DumbSlave(
+  "offline-agent",
+  "/tmp/jenkins-cli-offline-agent",
+  new JNLPLauncher()
+)
+offlineAgent.setNumExecutors(1)
+jenkins.addNode(offlineAgent)
 jenkins.save()

@@ -1,10 +1,16 @@
 import { describe, expect, test } from "bun:test";
-import { mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
-
-const jenkinsUrl = process.env.JENKINS_INTEGRATION_URL;
-const integrationEnabled = Boolean(jenkinsUrl);
+import { join } from "node:path";
+import {
+  integrationEnabled,
+  invokeCli,
+  jenkinsUrl,
+  parseJson,
+  pollCli,
+  runCli,
+  runCliExpectFailure,
+  waitForNewBuild,
+  withCliHome,
+} from "./jenkins/harness";
 
 describe.skipIf(!integrationEnabled)(
   "compiled CLI against real Jenkins",
@@ -32,7 +38,11 @@ describe.skipIf(!integrationEnabled)(
 
         const nodes = await runCli(home, ["nodes"]);
         expect(nodes.output).toContain("built-in");
+        expect(nodes.output).toContain("offline-agent");
         expect(nodes.output).toMatch(/\d+\/\d+ executors busy/);
+        const offlineNodes = await runCli(home, ["nodes", "--offline-only"]);
+        expect(offlineNodes.output).toContain("offline-agent");
+        expect(offlineNodes.output).not.toContain("built-in");
 
         expect((await runCli(home, ["queue"])).output).toContain(
           "queue is empty",
@@ -323,119 +333,421 @@ describe.skipIf(!integrationEnabled)(
         });
       });
     }, 90_000);
+
+    test("persists and switches multiple live Jenkins profiles", async () => {
+      await withCliHome(async (home) => {
+        const withoutCredentialEnv = {
+          JENKINS_URL: undefined,
+          JENKINS_USER: undefined,
+          JENKINS_API_TOKEN: undefined,
+        };
+        const adminToken = process.env.JENKINS_INTEGRATION_TOKEN ?? "";
+        const readerUser =
+          process.env.JENKINS_INTEGRATION_READER_USER ?? "integration-reader";
+        const readerToken = process.env.JENKINS_INTEGRATION_READER_TOKEN ?? "";
+
+        await runCli(home, [
+          "auth",
+          "login",
+          "--profile",
+          "admin",
+          "--url",
+          jenkinsUrl!,
+          "--user",
+          "integration-test",
+          "--token",
+          adminToken,
+          "--no-keychain",
+        ]);
+        await runCli(home, [
+          "auth",
+          "login",
+          "--profile",
+          "reader",
+          "--url",
+          jenkinsUrl!,
+          "--user",
+          readerUser,
+          "--token",
+          readerToken,
+          "--no-keychain",
+        ]);
+
+        const profiles = await runCli(
+          home,
+          ["auth", "list"],
+          withoutCredentialEnv,
+        );
+        expect(profiles.output).toContain("admin (default)");
+        expect(profiles.output).toContain("reader");
+        expect(profiles.output).toContain("plaintext");
+
+        const readerStatus = await runCli(
+          home,
+          ["auth", "status", "--profile", "reader"],
+          withoutCredentialEnv,
+        );
+        expect(readerStatus.output).toContain("Authenticated:    Yes");
+        expect(readerStatus.output).toContain(
+          "Jenkins user:     integration-reader",
+        );
+        const readerList = parseJson<{
+          data: Array<{ name: string }>;
+        }>(
+          await runCli(
+            home,
+            ["list", "--refresh", "--json", "--profile", "reader"],
+            withoutCredentialEnv,
+          ),
+        );
+        expect(readerList.data).toEqual(
+          expect.arrayContaining([
+            expect.objectContaining({ name: "cli-smoke" }),
+          ]),
+        );
+        const denied = await runCliExpectFailure(
+          home,
+          [
+            "build",
+            "--job",
+            "cli-no-params",
+            "--without-params",
+            "--profile",
+            "reader",
+          ],
+          withoutCredentialEnv,
+        );
+        expect(denied.output).toContain(
+          "Jenkins rejected the request while trying to trigger build.",
+        );
+        expect(denied.output).not.toContain(readerToken);
+
+        await runCli(home, ["auth", "use", "reader"], withoutCredentialEnv);
+        expect(
+          (await runCli(home, ["auth", "current"], withoutCredentialEnv))
+            .output,
+        ).toContain("Profile:          reader");
+        await runCli(
+          home,
+          ["auth", "rename", "reader", "observer"],
+          withoutCredentialEnv,
+        );
+        const renamed = await runCli(
+          home,
+          ["auth", "status", "--profile", "observer"],
+          withoutCredentialEnv,
+        );
+        expect(renamed.output).toContain("Authenticated:    Yes");
+
+        await runCli(home, ["auth", "use", "admin"], withoutCredentialEnv);
+        const adminStatus = await runCli(
+          home,
+          ["auth", "status"],
+          withoutCredentialEnv,
+        );
+        expect(adminStatus.output).toContain(
+          "Jenkins user:     integration-test",
+        );
+      });
+    }, 60_000);
+
+    test("discovers nested jobs and preserves branch parameters through reruns", async () => {
+      await withCliHome(async (home) => {
+        const list = parseJson<{
+          data: Array<{ name: string; fullName?: string; url: string }>;
+        }>(
+          await runCli(home, [
+            "list",
+            "--refresh",
+            "--json",
+            "--folder-depth",
+            "2",
+          ]),
+        );
+        expect(list.data).toEqual(
+          expect.arrayContaining([
+            expect.objectContaining({
+              name: "nested smoke",
+              fullName: "team/nested smoke",
+            }),
+          ]),
+        );
+
+        const nested = await runCli(home, [
+          "build",
+          "--job",
+          "team/nested smoke",
+          "--without-params",
+          "--watch",
+          "--folder-depth",
+          "2",
+        ]);
+        expect(nested.output).toContain("SUCCESS");
+
+        const branch = `feature/integration-${Date.now()}`;
+        const branchBuild = await runCliExpectFailure(home, [
+          "build",
+          "--job",
+          "cli-branch",
+          "--branch",
+          branch,
+          "--param",
+          "EXTRA=preserved",
+          "--watch",
+          "--folder-depth",
+          "2",
+        ]);
+        expect(branchBuild.output).toContain("FAILURE");
+
+        const branchJobUrl = `${jenkinsUrl}/job/cli-branch/`;
+        const history = parseJson<{
+          data: Array<{
+            number: number;
+            branch?: string;
+            parameters?: Array<{ name: string; value: string }>;
+          }>;
+        }>(
+          await runCli(home, ["history", "--job-url", branchJobUrl, "--json"]),
+        );
+        expect(history.data[0]?.branch).toBe(branch);
+        expect(history.data[0]?.parameters).toEqual(
+          expect.arrayContaining([
+            { name: "BRANCH", value: branch },
+            { name: "EXTRA", value: "preserved" },
+          ]),
+        );
+
+        const beforeRerunNumber = history.data[0]?.number ?? 0;
+        await runCli(home, ["rerun", "--job-url", branchJobUrl]);
+        const rerunBuildUrl = await waitForNewBuild(
+          home,
+          branchJobUrl,
+          beforeRerunNumber,
+        );
+        await runCliExpectFailure(home, [
+          "wait",
+          "--build-url",
+          rerunBuildUrl,
+          "--interval",
+          "250ms",
+          "--timeout",
+          "30s",
+        ]);
+        const rerunLogs = await runCli(home, [
+          "logs",
+          "--build-url",
+          rerunBuildUrl,
+          "--no-follow",
+        ]);
+        expect(rerunLogs.output).toContain(`branch=${branch}`);
+        expect(rerunLogs.output).toContain("extra=preserved");
+      });
+    }, 120_000);
+
+    test("reports real Pipeline stages and failure details", async () => {
+      await withCliHome(async (home) => {
+        const pipelineUrl = `${jenkinsUrl}/job/cli-pipeline/`;
+        const built = await runCli(home, [
+          "build",
+          "--job-url",
+          pipelineUrl,
+          "--branch",
+          "release/integration",
+          "--watch",
+        ]);
+        expect(built.output).toContain("SUCCESS");
+
+        const status = parseJson<{
+          data: {
+            build: {
+              branch: string;
+              stages: Array<{ name: string; status: string }>;
+            };
+          };
+        }>(await runCli(home, ["status", "--job-url", pipelineUrl, "--json"]));
+        expect(status.data.build.branch).toBe("release/integration");
+        expect(status.data.build.stages).toEqual(
+          expect.arrayContaining([
+            expect.objectContaining({ name: "Prepare", status: "SUCCESS" }),
+            expect.objectContaining({ name: "Verify", status: "SUCCESS" }),
+          ]),
+        );
+
+        const failureUrl = `${jenkinsUrl}/job/cli-pipeline-failure/`;
+        const failed = await runCliExpectFailure(home, [
+          "build",
+          "--job-url",
+          failureUrl,
+          "--without-params",
+          "--watch",
+        ]);
+        expect(failed.output).toContain("FAILURE");
+        const failedStatus = parseJson<{
+          data: {
+            build: {
+              stages: Array<{ name: string; status: string }>;
+            };
+          };
+        }>(await runCli(home, ["status", "--job-url", failureUrl, "--json"]));
+        expect(failedStatus.data.build.stages).toEqual(
+          expect.arrayContaining([
+            expect.objectContaining({ name: "Deploy", status: "FAILED" }),
+          ]),
+        );
+        const history = await runCli(home, [
+          "history",
+          "--job-url",
+          failureUrl,
+        ]);
+        expect(history.output).toContain("pipeline-deploy-failure");
+      });
+    }, 120_000);
+
+    test("follows logs while a queued item becomes a build", async () => {
+      await withCliHome(async (home) => {
+        const slowJobUrl = `${jenkinsUrl}/job/cli-slow/`;
+        await runCli(home, [
+          "build",
+          "--job-url",
+          slowJobUrl,
+          "--without-params",
+        ]);
+        const running = await pollCli(home, ["run"], (result) =>
+          result.output.includes("cli-slow #"),
+        );
+        const slowBuildUrl = running.output.match(
+          /(http:\/\/[^\s]+\/job\/cli-slow\/\d+\/)/,
+        )?.[1];
+        expect(slowBuildUrl).toBeDefined();
+
+        const transitionJobUrl = `${jenkinsUrl}/job/cli-transition/`;
+        await runCli(home, [
+          "build",
+          "--job-url",
+          transitionJobUrl,
+          "--without-params",
+        ]);
+        const queued = await pollCli(
+          home,
+          ["queue", "--job", "cli-transition"],
+          (result) => result.output.includes("cli-transition"),
+        );
+        const queueId = queued.output.match(/^\s*(\d+)\s+cli-transition/m)?.[1];
+        expect(queueId).toBeDefined();
+        const queueUrl = `${jenkinsUrl}/queue/item/${queueId}/`;
+
+        const waitPromise = invokeCli(home, [
+          "wait",
+          "--queue-url",
+          queueUrl,
+          "--interval",
+          "250ms",
+          "--timeout",
+          "30s",
+          "--json",
+        ]);
+        const logsPromise = invokeCli(home, [
+          "logs",
+          "--queue-url",
+          queueUrl,
+          "--poll",
+          "100ms",
+        ]);
+        await runCli(home, ["cancel", "--build-url", slowBuildUrl!]);
+
+        const [waited, logs] = await Promise.all([waitPromise, logsPromise]);
+        expect(waited.exitCode, waited.output).toBe(0);
+        expect(JSON.parse(waited.stdout)).toMatchObject({
+          data: { result: "SUCCESS", build: { result: "SUCCESS" } },
+        });
+        expect(logs.exitCode, logs.output).toBe(0);
+        expect(logs.output).toContain("transition-started");
+        expect(logs.output).toContain("transition-finished");
+        expect(logs.output.match(/^transition-started$/gm)).toHaveLength(1);
+      });
+    }, 90_000);
+
+    test("uses CSRF crumbs, history offsets, and exact artifact targets", async () => {
+      await withCliHome(async (home) => {
+        const historyJobUrl = `${jenkinsUrl}/job/cli-history/`;
+        for (let index = 0; index < 6; index++) {
+          await runCli(
+            home,
+            [
+              "build",
+              "--job-url",
+              historyJobUrl,
+              "--without-params",
+              "--watch",
+            ],
+            index === 0 ? { JENKINS_USE_CRUMB: "true" } : {},
+          );
+        }
+
+        const secondPage = await pollCli(
+          home,
+          ["history", "--job-url", historyJobUrl, "--offset", "5", "--json"],
+          (result) => {
+            const payload = JSON.parse(result.stdout) as {
+              data?: Array<{ result?: string }>;
+            };
+            return (
+              payload.data?.length === 1 &&
+              payload.data[0]?.result === "SUCCESS"
+            );
+          },
+          30_000,
+        );
+        expect(
+          parseJson<{ data: Array<{ result: string }> }>(secondPage).data,
+        ).toHaveLength(1);
+        const firstPage = parseJson<{ data: Array<unknown> }>(
+          await runCli(home, [
+            "history",
+            "--job-url",
+            historyJobUrl,
+            "--offset",
+            "0",
+            "--json",
+          ]),
+        );
+        expect(firstPage.data).toHaveLength(5);
+
+        const smokeUrl = `${jenkinsUrl}/job/cli-smoke/`;
+        await runCli(home, [
+          "build",
+          "--job-url",
+          smokeUrl,
+          "--param",
+          "MESSAGE=exact-artifact-target",
+          "--watch",
+        ]);
+        const smokeStatus = parseJson<{
+          data: { build: { number: number; url: string } };
+        }>(await runCli(home, ["status", "--job-url", smokeUrl, "--json"]));
+        const byNumber = await runCli(home, [
+          "artifacts",
+          "--job-url",
+          smokeUrl,
+          "--build",
+          String(smokeStatus.data.build.number),
+        ]);
+        expect(byNumber.output).toContain("reports/values.txt");
+
+        const destination = join(home, "exact-artifact");
+        await runCli(home, [
+          "artifacts",
+          "--build-url",
+          smokeStatus.data.build.url,
+          "--artifact",
+          "artifact.txt",
+          "--dest",
+          destination,
+        ]);
+        expect(await Bun.file(join(destination, "artifact.txt")).text()).toBe(
+          "root-artifact\n",
+        );
+      });
+    }, 120_000);
   },
 );
-
-async function withCliHome(
-  action: (home: string) => Promise<void>,
-): Promise<void> {
-  const home = mkdtempSync(join(tmpdir(), "jenkins-cli-integration-home-"));
-  try {
-    await action(home);
-  } finally {
-    rmSync(home, { recursive: true, force: true });
-  }
-}
-
-type CliResult = {
-  exitCode: number;
-  stdout: string;
-  stderr: string;
-  output: string;
-};
-
-async function runCli(
-  home: string,
-  args: string[],
-  envOverrides: Record<string, string> = {},
-): Promise<CliResult> {
-  const result = await invokeCli(home, args, envOverrides);
-  expect(result.exitCode, result.output).toBe(0);
-  return result;
-}
-
-async function runCliExpectFailure(
-  home: string,
-  args: string[],
-  envOverrides: Record<string, string> = {},
-): Promise<CliResult> {
-  const result = await invokeCli(home, args, envOverrides);
-  expect(result.exitCode, result.output).not.toBe(0);
-  return result;
-}
-
-async function invokeCli(
-  home: string,
-  args: string[],
-  envOverrides: Record<string, string>,
-): Promise<CliResult> {
-  const executable = resolve(
-    "dist",
-    process.platform === "win32" ? "jenkins-cli.exe" : "jenkins-cli",
-  );
-  const subprocess = Bun.spawn({
-    cmd: [executable, ...args, "--non-interactive", "--no-banner"],
-    env: {
-      ...process.env,
-      HOME: home,
-      JENKINS_URL: jenkinsUrl,
-      JENKINS_USER: process.env.JENKINS_INTEGRATION_USER,
-      JENKINS_API_TOKEN: process.env.JENKINS_INTEGRATION_TOKEN,
-      JENKINS_ANALYTICS_DISABLED: "true",
-      ...envOverrides,
-    },
-    stdout: "pipe",
-    stderr: "pipe",
-  });
-  const [exitCode, stdout, stderr] = await Promise.all([
-    subprocess.exited,
-    new Response(subprocess.stdout).text(),
-    new Response(subprocess.stderr).text(),
-  ]);
-  const result = { exitCode, stdout, stderr, output: stdout + stderr };
-  return result;
-}
-
-async function pollCli(
-  home: string,
-  args: string[],
-  done: (result: CliResult) => boolean,
-  timeoutMs = 15_000,
-): Promise<CliResult> {
-  const deadline = Date.now() + timeoutMs;
-  let latest: CliResult | undefined;
-  while (Date.now() < deadline) {
-    latest = await runCli(home, args);
-    if (done(latest)) return latest;
-    await Bun.sleep(250);
-  }
-  throw new Error(
-    `Timed out polling CLI: ${args.join(" ")}\n${latest?.output ?? "no output"}`,
-  );
-}
-
-async function waitForNewBuild(
-  home: string,
-  jobUrl: string,
-  previousNumber: number,
-): Promise<string> {
-  const result = await pollCli(
-    home,
-    ["status", "--job-url", jobUrl, "--json"],
-    (candidate) => {
-      const payload = JSON.parse(candidate.stdout) as {
-        data?: { build?: { number?: number } };
-      };
-      return Number(payload.data?.build?.number) > previousNumber;
-    },
-  );
-  const payload = JSON.parse(result.stdout) as {
-    data: { build: { url: string } };
-  };
-  return payload.data.build.url;
-}
-
-function parseJson(result: CliResult): Record<string, unknown> {
-  expect(result.stderr).toBe("");
-  return JSON.parse(result.stdout) as Record<string, unknown>;
-}

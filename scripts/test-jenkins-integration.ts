@@ -1,16 +1,20 @@
-import { chmod, mkdtemp, rm } from "node:fs/promises";
+import { chmod, copyFile, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const STARTUP_TIMEOUT_MS = 4 * 60_000;
 const POLL_INTERVAL_MS = 1_000;
-const image =
-  process.env.JENKINS_TEST_IMAGE?.trim() || "jenkins/jenkins:lts-jdk21";
+const DEFAULT_JENKINS_TEST_IMAGE =
+  "jenkins/jenkins:lts-jdk21@sha256:f4f65e6cd1405cd889b7f5ac33f9d5cdc2a099de6b87fe8a3933b9c5d53d1d02";
+const baseImage =
+  process.env.JENKINS_TEST_IMAGE?.trim() || DEFAULT_JENKINS_TEST_IMAGE;
 const mutationMode = process.argv.includes("--mutation");
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const fixture = join(root, "tests", "integration", "jenkins", "init.groovy");
+const fixtureDir = join(root, "tests", "integration", "jenkins");
+const fixtureSource = join(fixtureDir, "init.groovy");
 const containerName = `jenkins-cli-integration-${process.pid}-${Date.now()}`;
+const image = `jenkins-cli-integration:${process.pid}-${Date.now()}`;
 const runtimeDir = await mkdtemp(
   join(tmpdir(), "jenkins-cli-integration-runtime-"),
 );
@@ -20,10 +24,27 @@ let failed = false;
 
 try {
   await chmod(runtimeDir, 0o777);
+  const fixture = join(runtimeDir, "init.groovy");
+  await copyFile(fixtureSource, fixture);
+  await chmod(fixture, 0o644);
   await runChecked(["docker", "info"], {
     failureMessage:
       "Docker is required for Jenkins integration tests. Start Docker and try again.",
   });
+  await runChecked(
+    [
+      "docker",
+      "build",
+      "--build-arg",
+      `JENKINS_BASE_IMAGE=${baseImage}`,
+      "--file",
+      join(fixtureDir, "Dockerfile"),
+      "--tag",
+      image,
+      fixtureDir,
+    ],
+    { inherit: true },
+  );
   await runChecked([
     "docker",
     "run",
@@ -37,6 +58,8 @@ try {
     "/var/jenkins_home:rw,uid=1000,gid=1000",
     "--env",
     "JAVA_OPTS=-Djenkins.install.runSetupWizard=false",
+    "--env",
+    "JENKINS_OPTS=--prefix=/jenkins",
     "--mount",
     `type=bind,source=${fixture},target=/usr/share/jenkins/ref/init.groovy.d/01-integration.groovy,readonly`,
     "--mount",
@@ -56,27 +79,34 @@ try {
     throw new Error(`Could not determine the Jenkins port from: ${portOutput}`);
   }
 
-  const jenkinsUrl = `http://127.0.0.1:${port}`;
-  const tokenFile = join(runtimeDir, "api-token");
-  const token = await waitForJenkins(jenkinsUrl, tokenFile);
+  const jenkinsUrl = `http://127.0.0.1:${port}/jenkins`;
+  const adminTokenFile = join(runtimeDir, "admin-api-token");
+  const readerTokenFile = join(runtimeDir, "reader-api-token");
+  const adminToken = await waitForJenkins(jenkinsUrl, adminTokenFile);
+  const readerToken = await waitForToken(readerTokenFile);
 
   console.log(`Jenkins integration controller ready at ${jenkinsUrl}`);
-  const testCommand = mutationMode
-    ? ["bun", "scripts/test-mutation.ts", "--integration"]
-    : ["bun", "test", "tests/integration/jenkins.test.ts"];
-  if (!mutationMode) {
-    await runChecked(["bun", "run", "build"], { cwd: root, inherit: true });
-  }
-  await runChecked(testCommand, {
+  await runChecked(["bun", "run", "build"], { cwd: root, inherit: true });
+  const integrationEnv = {
+    ...process.env,
+    JENKINS_INTEGRATION_URL: jenkinsUrl,
+    JENKINS_INTEGRATION_USER: "integration-test",
+    JENKINS_INTEGRATION_TOKEN: adminToken,
+    JENKINS_INTEGRATION_READER_USER: "integration-reader",
+    JENKINS_INTEGRATION_READER_TOKEN: readerToken,
+  };
+  await runChecked(["bun", "test", "tests/integration/jenkins.test.ts"], {
     cwd: root,
     inherit: true,
-    env: {
-      ...process.env,
-      JENKINS_INTEGRATION_URL: jenkinsUrl,
-      JENKINS_INTEGRATION_USER: "integration-test",
-      JENKINS_INTEGRATION_TOKEN: token,
-    },
+    env: integrationEnv,
   });
+  if (mutationMode) {
+    await runChecked(["bun", "scripts/test-mutation.ts", "--integration"], {
+      cwd: root,
+      inherit: true,
+      env: integrationEnv,
+    });
+  }
 } catch (error) {
   failed = true;
   console.error(error instanceof Error ? error.message : String(error));
@@ -89,6 +119,7 @@ try {
   if (containerStarted) {
     await run(["docker", "rm", "--force", containerName]);
   }
+  await run(["docker", "image", "rm", image]);
   await rm(runtimeDir, { recursive: true, force: true });
 }
 
@@ -146,6 +177,16 @@ async function readToken(path: string): Promise<string | undefined> {
   } catch {
     return undefined;
   }
+}
+
+async function waitForToken(path: string): Promise<string> {
+  const deadline = Date.now() + STARTUP_TIMEOUT_MS;
+  while (Date.now() < deadline) {
+    const token = await readToken(path);
+    if (token) return token;
+    await Bun.sleep(POLL_INTERVAL_MS);
+  }
+  throw new Error(`Jenkins did not write the token file ${path}.`);
 }
 
 type RunOptions = {

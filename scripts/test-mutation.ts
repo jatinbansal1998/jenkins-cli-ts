@@ -154,7 +154,11 @@ async function runSuite(): Promise<{ ok: boolean; output: string }> {
     if (!build.ok) {
       return build;
     }
-    return await run(["bun", "test", "tests/integration/jenkins.test.ts"]);
+    return await run([
+      "bun",
+      "test",
+      "tests/integration/jenkins.contract.test.ts",
+    ]);
   }
   return await run(["bun", "test", "tests/client.test.ts"]);
 }
