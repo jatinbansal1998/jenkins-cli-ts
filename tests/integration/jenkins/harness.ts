@@ -53,13 +53,18 @@ export async function runInteractiveCli(
     "stty cols 120 rows 40",
     `exec ${[executable, ...args].map(shellEscape).join(" ")}`,
   ].join("; ");
-  const command =
-    process.platform === "darwin"
-      ? ["script", "-q", "/dev/null", "/bin/sh", "-c", interactiveCommand]
-      : ["script", "-qefc", interactiveCommand, "/dev/null"];
+  const useMacOsExpect = process.platform === "darwin";
+  const env = cliEnv(home, envOverrides);
+  const command = useMacOsExpect
+    ? [
+        "/usr/bin/expect",
+        "-c",
+        macOsExpectScript(interactiveCommand, steps, env),
+      ]
+    : ["script", "-qefc", interactiveCommand, "/dev/null"];
   const subprocess = Bun.spawn({
     cmd: command,
-    env: cliEnv(home, envOverrides),
+    env,
     stdin: "pipe",
     stdout: "pipe",
     stderr: "pipe",
@@ -73,14 +78,16 @@ export async function runInteractiveCli(
     stderr += chunk;
   });
 
-  for (const step of steps) {
-    await waitForInteractivePrompt(
-      () => stripTerminalCodes(stdout + stderr),
-      step.prompt,
-      subprocess,
-    );
-    subprocess.stdin.write(step.input);
-    subprocess.stdin.flush();
+  if (!useMacOsExpect) {
+    for (const step of steps) {
+      await waitForInteractivePrompt(
+        () => stripTerminalCodes(stdout + stderr),
+        step.prompt,
+        subprocess,
+      );
+      subprocess.stdin.write(step.input);
+      subprocess.stdin.flush();
+    }
   }
   subprocess.stdin.end();
 
@@ -227,6 +234,42 @@ function stripTerminalCodes(value: string): string {
 
 function shellEscape(value: string): string {
   return `'${value.replace(/'/g, `'\\''`)}'`;
+}
+
+function macOsExpectScript(
+  interactiveCommand: string,
+  steps: InteractiveStep[],
+  env: Record<string, string | undefined>,
+): string {
+  env.JENKINS_CLI_EXPECT_COMMAND = interactiveCommand;
+  env.JENKINS_CLI_EXPECT_STEP_COUNT = String(steps.length);
+  for (const [index, step] of steps.entries()) {
+    env[`JENKINS_CLI_EXPECT_PROMPT_${index}`] = step.prompt;
+    env[`JENKINS_CLI_EXPECT_INPUT_${index}`] = step.input;
+  }
+  return `
+set timeout 20
+spawn -noecho /bin/sh -c $env(JENKINS_CLI_EXPECT_COMMAND)
+for {set index 0} {$index < $env(JENKINS_CLI_EXPECT_STEP_COUNT)} {incr index} {
+  set promptKey [format "JENKINS_CLI_EXPECT_PROMPT_%d" $index]
+  set inputKey [format "JENKINS_CLI_EXPECT_INPUT_%d" $index]
+  expect {
+    -exact $env($promptKey) {}
+    eof {
+      puts stderr "Interactive CLI exited before prompt \\"$env($promptKey)\\"."
+      exit 97
+    }
+    timeout {
+      puts stderr "Timed out waiting for prompt \\"$env($promptKey)\\"."
+      exit 98
+    }
+  }
+  send -- $env($inputKey)
+}
+expect eof
+set status [wait]
+exit [lindex $status 3]
+`.trim();
 }
 
 export async function pollCli(
