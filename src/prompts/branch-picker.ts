@@ -109,6 +109,8 @@ class BranchPickerPrompt extends Prompt<string> {
   private readonly placeholder?: string;
   private readonly maxItems?: number;
   private cursorIndex: number;
+  private editableInput: string;
+  private editCursor: number;
 
   constructor(options: BranchPickerOptions) {
     super(
@@ -134,6 +136,8 @@ class BranchPickerPrompt extends Prompt<string> {
     this.message = options.message;
     this.placeholder = options.placeholder;
     this.maxItems = options.maxItems;
+    this.editableInput = options.initialUserInput ?? "";
+    this.editCursor = this.editableInput.length;
     this.cursorIndex = Math.max(
       this.pickerOptions.findIndex((option) => !option.disabled),
       0,
@@ -160,6 +164,69 @@ class BranchPickerPrompt extends Prompt<string> {
     this.on("userInput", () => {
       this.syncValue();
     });
+    this.on("key", (character, key) => {
+      this.updateEditableInput(character, key);
+    });
+  }
+
+  /**
+   * Bun's readline keypress parser identifies editing keys correctly, but its
+   * line buffer can append their raw bytes instead of applying the edit. Keep
+   * the prompt's input model from the parsed key events so behavior is the same
+   * in Bun and Node-compatible terminals.
+   */
+  private updateEditableInput(
+    character: string | undefined,
+    key: { name?: string; ctrl?: boolean; meta?: boolean },
+  ): void {
+    switch (key.name) {
+      case "backspace":
+        if (this.editCursor > 0) {
+          this.editableInput =
+            this.editableInput.slice(0, this.editCursor - 1) +
+            this.editableInput.slice(this.editCursor);
+          this.editCursor -= 1;
+        }
+        break;
+      case "delete":
+        this.editableInput =
+          this.editableInput.slice(0, this.editCursor) +
+          this.editableInput.slice(this.editCursor + 1);
+        break;
+      case "left":
+        this.editCursor = Math.max(0, this.editCursor - 1);
+        break;
+      case "right":
+        this.editCursor = Math.min(
+          this.editableInput.length,
+          this.editCursor + 1,
+        );
+        break;
+      case "home":
+        this.editCursor = 0;
+        break;
+      case "end":
+        this.editCursor = this.editableInput.length;
+        break;
+      default:
+        if (
+          !character ||
+          key.ctrl ||
+          key.meta ||
+          key.name === "return" ||
+          key.name === "tab"
+        ) {
+          break;
+        }
+        this.editableInput =
+          this.editableInput.slice(0, this.editCursor) +
+          character +
+          this.editableInput.slice(this.editCursor);
+        this.editCursor += character.length;
+    }
+
+    this._cursor = this.editCursor;
+    this._setUserInput(this.editableInput);
   }
 
   /**
