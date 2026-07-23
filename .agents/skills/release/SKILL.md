@@ -52,13 +52,13 @@ gh release list --limit 20
 
 Identify:
 
-| Variable | How |
-|----------|-----|
-| `CURRENT` | `package.json` version (no `v`) |
-| `PREV_TAG` | previous release tag, usually `v$CURRENT` if last release matched package.json |
+| Variable     | How                                                                                                           |
+| ------------ | ------------------------------------------------------------------------------------------------------------- |
+| `CURRENT`    | `package.json` version (no `v`)                                                                               |
+| `PREV_TAG`   | previous release tag, usually `v$CURRENT` if last release matched package.json                                |
 | `STABLE_TAG` | latest **non-prerelease** release (`gh release list` / `isPrerelease=false`). Example historically: `v0.7.17` |
-| `NEXT` | user-specified version, else patch bump of `CURRENT` (`0.7.26` → `0.7.27`) |
-| `NEXT_TAG` | `v$NEXT` |
+| `NEXT`       | user-specified version, else patch bump of `CURRENT` (`0.7.26` → `0.7.27`)                                    |
+| `NEXT_TAG`   | `v$NEXT`                                                                                                      |
 
 Patch bump only for the default path. If the user requests minor/major or an exact version, use that.
 
