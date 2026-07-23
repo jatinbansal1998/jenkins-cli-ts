@@ -204,7 +204,20 @@ jobs:
         run: |
           dbus-run-session -- bash -c '
             set -euo pipefail
-            echo -n "" | gnome-keyring-daemon --unlock >/dev/null 2>&1 || true
+
+            # Create and unlock a real login collection before D-Bus activates
+            # the Secret Service component.
+            eval "$(printf %s "jenkins-cli-ci" | gnome-keyring-daemon --unlock --components=secrets)"
+            export GNOME_KEYRING_CONTROL
+
+            # Fail before Jenkins startup if Secret Service cannot round-trip
+            # a credential in this exact session.
+            printf %s "keyring-probe" |
+              secret-tool store --label="jenkins-cli integration probe" \
+                service jenkins-cli-ci account integration-probe
+            test "$(secret-tool lookup service jenkins-cli-ci account integration-probe)" = "keyring-probe"
+            secret-tool clear service jenkins-cli-ci account integration-probe
+
             bun run "${{ matrix.test-script }}"
           '
 
