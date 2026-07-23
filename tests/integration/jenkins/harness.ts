@@ -254,7 +254,8 @@ for {set index 0} {$index < $env(JENKINS_CLI_EXPECT_STEP_COUNT)} {incr index} {
   set promptKey [format "JENKINS_CLI_EXPECT_PROMPT_%d" $index]
   set inputKey [format "JENKINS_CLI_EXPECT_INPUT_%d" $index]
   expect {
-    -exact $env($promptKey) {}
+    -exact "◆  $env($promptKey)" {}
+    -exact "*  $env($promptKey)" {}
     eof {
       puts stderr "Interactive CLI exited before prompt \\"$env($promptKey)\\"."
       exit 97
