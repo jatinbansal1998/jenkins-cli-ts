@@ -39,6 +39,9 @@ try {
   const fixture = join(runtimeDir, "init.groovy");
   await copyFile(fixtureSource, fixture);
   await chmod(fixture, 0o644);
+  console.log(
+    `Starting Jenkins integration controller in ${nativeMode ? "native WAR" : "Docker"} mode...`,
+  );
   let jenkinsUrl: string;
   if (nativeMode) {
     const native = await startNativeJenkins(fixture);
