@@ -321,11 +321,12 @@ describe("JenkinsClient pipeline stage cloning", () => {
 });
 
 describe("JenkinsClient build transport", () => {
-  test("preserves the latest job result", async () => {
+  test("preserves the latest job result and disabled state", async () => {
     const fetchMock = mock(async (input: FetchInput) => {
       const url = String(input);
-      if (url.includes("tree=lastBuild")) {
+      if (url.includes("tree=disabled,lastBuild")) {
         return Response.json({
+          disabled: true,
           lastBuild: {
             number: 9,
             url: "https://jenkins.example.com/job/my-job/9/",
@@ -347,10 +348,31 @@ describe("JenkinsClient build transport", () => {
     expect(
       await client.getJobStatus("https://jenkins.example.com/job/my-job/"),
     ).toMatchObject({
+      disabled: true,
       lastBuildNumber: 9,
       result: "SUCCESS",
       building: false,
     });
+    expect(String(fetchMock.mock.calls[0]?.[0])).toContain(
+      "tree=disabled,lastBuild",
+    );
+  });
+
+  test("returns disabled state for a job with no builds", async () => {
+    const fetchMock = mock(async () =>
+      Response.json({ disabled: true, lastBuild: null }),
+    );
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+    const client = new JenkinsClient({
+      baseUrl: "https://jenkins.example.com",
+      user: "user",
+      apiToken: "token",
+    });
+
+    expect(
+      await client.getJobStatus("https://jenkins.example.com/job/my-job/"),
+    ).toEqual({ disabled: true });
   });
 
   test("requests and returns progressive console logs", async () => {

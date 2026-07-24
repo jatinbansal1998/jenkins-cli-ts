@@ -83,6 +83,7 @@ export type JenkinsLastCompletedBuildResponse = {
 };
 
 export type JenkinsJobStatusResponse = {
+  disabled?: boolean;
   lastBuild?: JenkinsApiBuild;
 };
 

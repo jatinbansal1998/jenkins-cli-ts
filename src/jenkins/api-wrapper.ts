@@ -253,7 +253,7 @@ export class JenkinsClient {
   async getJobStatus(jobUrl: string): Promise<JobStatus> {
     const url = this.withJob(
       jobUrl,
-      "api/json?tree=lastBuild[number,url,result,building,timestamp,duration,estimatedDuration]",
+      "api/json?tree=disabled,lastBuild[number,url,result,building,timestamp,duration,estimatedDuration]",
     );
     const data = await this.requestJson<JenkinsJobStatusResponse>(
       url,
@@ -262,7 +262,7 @@ export class JenkinsClient {
 
     const lastBuild = data.lastBuild;
     if (!lastBuild) {
-      return {};
+      return { disabled: data.disabled };
     }
 
     const buildUrl = lastBuild.url;
@@ -287,6 +287,7 @@ export class JenkinsClient {
     const branch = extractBranchParam(parameters);
 
     return {
+      disabled: data.disabled,
       lastBuildNumber: lastBuild.number,
       lastBuildUrl: lastBuild.url,
       result: lastBuild.result ?? null,

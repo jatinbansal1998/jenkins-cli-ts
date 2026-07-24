@@ -51,8 +51,11 @@ type StatusOptions = {
 /** JSON payload for the status command. */
 type StatusJsonData = {
   job: string;
+  jobState?: JobState;
   build: JsonBuild | null;
 };
+
+type JobState = "ENABLED" | "DISABLED";
 
 const SEPARATOR_LINE = "-".repeat(60);
 
@@ -104,8 +107,14 @@ export async function runStatus(options: StatusOptions): Promise<void> {
       });
 
       const status = await options.client.getJobStatus(target.jobUrl);
+      const jobState = getJobState(status.disabled);
       if (!status.lastBuildNumber) {
-        printOk(`No builds found for ${target.jobLabel || target.jobUrl}.`);
+        printOk(
+          appendJobState(
+            `No builds found for ${target.jobLabel || target.jobUrl}.`,
+            jobState,
+          ),
+        );
         continue;
       }
 
@@ -125,7 +134,8 @@ export async function runStatus(options: StatusOptions): Promise<void> {
         toStatusDetailsFromJob(status, { knownTotalStages }),
         url,
       );
-      printOk(details ? `${summary}\n${details}` : summary);
+      const output = details ? `${summary}\n${details}` : summary;
+      printOk(appendJobState(output, jobState));
       if (!status.building && (result === "SUCCESS" || result === "UNSTABLE")) {
         await persistKnownTotalStages({
           env: options.env,
@@ -310,8 +320,10 @@ async function runStatusJson(options: StatusOptions): Promise<void> {
       await recordRecentJob({ env: options.env, jobUrl: target.jobUrl });
 
       const status = await options.client.getJobStatus(target.jobUrl);
+      const jobState = getJobState(status.disabled);
       return {
         job: target.jobLabel,
+        ...(jobState ? { jobState } : {}),
         build: status.lastBuildNumber ? jsonBuildFromJobStatus(status) : null,
       };
     },
@@ -334,8 +346,11 @@ async function runStatusOnce(options: StatusOptions): Promise<void> {
   });
 
   const status = await options.client.getJobStatus(jobUrl);
+  const jobState = getJobState(status.disabled);
   if (!status.lastBuildNumber) {
-    printOk(`No builds found for ${jobLabel || jobUrl}.`);
+    printOk(
+      appendJobState(`No builds found for ${jobLabel || jobUrl}.`, jobState),
+    );
     return;
   }
 
@@ -355,7 +370,8 @@ async function runStatusOnce(options: StatusOptions): Promise<void> {
     toStatusDetailsFromJob(status, { knownTotalStages }),
     url,
   );
-  printOk(details ? `${summary}\n${details}` : summary);
+  const output = details ? `${summary}\n${details}` : summary;
+  printOk(appendJobState(output, jobState));
   if (!status.building && (result === "SUCCESS" || result === "UNSTABLE")) {
     await persistKnownTotalStages({
       env: options.env,
@@ -375,6 +391,20 @@ async function runStatusOnce(options: StatusOptions): Promise<void> {
       suppressExitCode: false,
     });
   }
+}
+
+function getJobState(disabled: boolean | undefined): JobState | undefined {
+  if (typeof disabled !== "boolean") {
+    return undefined;
+  }
+  return disabled ? "DISABLED" : "ENABLED";
+}
+
+function appendJobState(
+  output: string,
+  jobState: JobState | undefined,
+): string {
+  return jobState ? `${output}\nJob state: ${jobState}` : output;
 }
 
 async function runTrackedStatusAction<T>(

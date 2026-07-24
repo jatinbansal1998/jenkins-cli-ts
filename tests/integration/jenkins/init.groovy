@@ -151,6 +151,15 @@ node {
 ''', true))
 pipelineJob.save()
 
+def disabledPipelineJob = jenkins.createProject(WorkflowJob.class, "cli-pipeline-disabled")
+disabledPipelineJob.setDefinition(new CpsFlowDefinition('''
+node {
+  echo 'disabled-pipeline-should-not-run'
+}
+''', true))
+disabledPipelineJob.setDisabled(true)
+disabledPipelineJob.save()
+
 def failingPipelineJob = jenkins.createProject(WorkflowJob.class, "cli-pipeline-failure")
 failingPipelineJob.setDefinition(new CpsFlowDefinition('''
 node {

@@ -34,6 +34,61 @@ describe("status command", () => {
     }
   });
 
+  test("reports disabled state for a job with no builds", async () => {
+    const logSpy = trackRestore(spyOn(console, "log")).mockImplementation(
+      () => undefined,
+    );
+    trackRestore(
+      spyOn(recentJobsModule, "recordRecentJob"),
+    ).mockResolvedValue();
+
+    await runStatus({
+      client: createClient({
+        getJobStatus: mock(async () => ({ disabled: true })),
+      }),
+      env,
+      jobUrl: "https://jenkins.example.com/job/api/",
+      nonInteractive: true,
+    });
+
+    expect(logSpy).toHaveBeenCalledWith(
+      expect.stringContaining("Job state: DISABLED"),
+    );
+  });
+
+  test("reports enabled state separately from the latest build result", async () => {
+    const logSpy = trackRestore(spyOn(console, "log")).mockImplementation(
+      () => undefined,
+    );
+    trackRestore(
+      spyOn(recentJobsModule, "recordRecentJob"),
+    ).mockResolvedValue();
+    trackRestore(
+      spyOn(stageCountCacheModule, "getKnownStageTotal"),
+    ).mockResolvedValue(undefined);
+    trackRestore(
+      spyOn(stageCountCacheModule, "persistKnownTotalStages"),
+    ).mockResolvedValue();
+
+    await runStatus({
+      client: createClient({
+        getJobStatus: mock(async () => ({
+          disabled: false,
+          lastBuildNumber: 42,
+          result: "SUCCESS",
+          building: false,
+        })),
+      }),
+      env,
+      jobUrl: "https://jenkins.example.com/job/api/",
+      nonInteractive: true,
+    });
+
+    expect(logSpy).toHaveBeenCalledWith(
+      expect.stringContaining("Job state: ENABLED"),
+    );
+  });
+
   test("persists known stage totals for completed unstable builds", async () => {
     trackRestore(spyOn(console, "log")).mockImplementation(() => undefined);
     const stages = [{ id: "1", name: "Deploy", status: "UNSTABLE" }];

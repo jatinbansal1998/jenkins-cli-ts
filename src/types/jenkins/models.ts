@@ -60,6 +60,7 @@ export type RunningBuildSummary = {
 };
 
 export type JobStatus = {
+  disabled?: boolean;
   lastBuildNumber?: number;
   lastBuildUrl?: string;
   result?: string | null;

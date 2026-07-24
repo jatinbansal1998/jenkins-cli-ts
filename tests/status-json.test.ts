@@ -69,6 +69,7 @@ describe("status --json", () => {
     await runStatus({
       client: createClient({
         getJobStatus: mock(async () => ({
+          disabled: true,
           lastBuildNumber: 42,
           lastBuildUrl: "https://jenkins.example.com/job/api/42/",
           result: "SUCCESS",
@@ -91,6 +92,7 @@ describe("status --json", () => {
       command: string;
       data: {
         job: string;
+        jobState?: string;
         build: {
           number: number;
           url: string;
@@ -104,6 +106,7 @@ describe("status --json", () => {
     expect(parsed.ok).toBe(true);
     expect(parsed.command).toBe("status");
     expect(parsed.data.job).toBe("https://jenkins.example.com/job/api");
+    expect(parsed.data.jobState).toBe("DISABLED");
     expect(parsed.data.build).toMatchObject({
       number: 42,
       url: "https://jenkins.example.com/job/api/42/",
@@ -120,7 +123,7 @@ describe("status --json", () => {
 
     await runStatus({
       client: createClient({
-        getJobStatus: mock(async () => ({})),
+        getJobStatus: mock(async () => ({ disabled: true })),
       }),
       env,
       jobUrl: "https://jenkins.example.com/job/api/",
@@ -131,9 +134,10 @@ describe("status --json", () => {
 
     const parsed = JSON.parse(sink.output()) as {
       ok: boolean;
-      data: { build: unknown };
+      data: { jobState?: string; build: unknown };
     };
     expect(parsed.ok).toBe(true);
+    expect(parsed.data.jobState).toBe("DISABLED");
     expect(parsed.data.build).toBeNull();
   });
 

@@ -54,6 +54,28 @@ describe.skipIf(!integrationEnabled)(
         expect((await runCli(home, ["run"])).output).toContain(
           "no running builds",
         );
+
+        const disabledPipelineUrl = `${jenkinsUrl}/job/cli-pipeline-disabled/`;
+        const disabledStatus = parseJson(
+          await runCli(home, [
+            "status",
+            "--job-url",
+            disabledPipelineUrl,
+            "--json",
+          ]),
+        );
+        expect(disabledStatus).toMatchObject({
+          ok: true,
+          command: "status",
+          data: {
+            jobState: "DISABLED",
+            build: null,
+          },
+        });
+        expect(
+          (await runCli(home, ["status", "--job-url", disabledPipelineUrl]))
+            .output,
+        ).toContain("Job state: DISABLED");
       });
     }, 30_000);
 

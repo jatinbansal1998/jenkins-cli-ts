@@ -396,6 +396,7 @@ jenkins-cli status --json --job-url https://jenkins.example.com/job/api/
   "command": "status",
   "data": {
     "job": "https://jenkins.example.com/job/api",
+    "jobState": "ENABLED",
     "build": {
       "number": 42,
       "url": "https://jenkins.example.com/job/api/42/",
@@ -407,6 +408,10 @@ jenkins-cli status --json --job-url https://jenkins.example.com/job/api/
   }
 }
 ```
+
+`jobState` is `ENABLED` or `DISABLED` when Jenkins exposes the job's current
+state. It is independent of the latest build's `result` and is also returned
+when `build` is `null`.
 
 **`history` / `builds`** — `data` is an array of builds (most recent first):
 
