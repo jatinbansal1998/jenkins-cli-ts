@@ -130,6 +130,15 @@ export async function invokeCli(
     "dist",
     process.platform === "win32" ? "jenkins-cli.exe" : "jenkins-cli",
   );
+  return invokeCliExecutable(home, executable, args, envOverrides);
+}
+
+export async function invokeCliExecutable(
+  home: string,
+  executable: string,
+  args: string[],
+  envOverrides: Record<string, string | undefined> = {},
+): Promise<CliResult> {
   const subprocess = Bun.spawn({
     cmd: [executable, ...args, "--non-interactive", "--no-banner"],
     env: cliEnv(home, envOverrides),

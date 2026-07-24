@@ -9,6 +9,7 @@ import hudson.model.PasswordParameterDefinition
 import hudson.model.StringParameterDefinition
 import hudson.model.TextParameterDefinition
 import hudson.model.View
+import hudson.plugins.git.GitSCM
 import hudson.security.GlobalMatrixAuthorizationStrategy
 import hudson.security.HudsonPrivateSecurityRealm
 import hudson.slaves.DumbSlave
@@ -19,7 +20,11 @@ import jenkins.install.InstallState
 import jenkins.model.Jenkins
 import jenkins.security.ApiTokenProperty
 import org.jenkinsci.plugins.workflow.cps.CpsFlowDefinition
+import org.jenkinsci.plugins.workflow.cps.CpsScmFlowDefinition
 import org.jenkinsci.plugins.workflow.job.WorkflowJob
+import net.uaznia.lukanus.hudson.plugins.gitparameter.GitParameterDefinition
+import net.uaznia.lukanus.hudson.plugins.gitparameter.SelectedValue
+import net.uaznia.lukanus.hudson.plugins.gitparameter.SortMode
 
 def jenkins = Jenkins.get()
 jenkins.setNumExecutors(1)
@@ -159,6 +164,29 @@ node {
 ''', true))
 disabledPipelineJob.setDisabled(true)
 disabledPipelineJob.save()
+
+def syntheticRepository = "file://${runtimeDir}/demo-app.git"
+def syntheticScm = new GitSCM(syntheticRepository)
+def gitParameter = new GitParameterDefinition(
+  "BRANCH_TAG",
+  "PT_BRANCH",
+  "main",
+  "Synthetic branch selected from the job's configured repository",
+  "",
+  "origin/(.*)",
+  "*",
+  SortMode.NONE,
+  SelectedValue.DEFAULT,
+  "",
+  false
+)
+def buildErrorJob = jenkins.createProject(WorkflowJob.class, "demo-app-deploy")
+buildErrorJob.addProperty(new ParametersDefinitionProperty([
+  gitParameter,
+  new BooleanParameterDefinition("Test", false, "Synthetic test toggle")
+]))
+buildErrorJob.setDefinition(new CpsScmFlowDefinition(syntheticScm, "Jenkinsfile"))
+buildErrorJob.save()
 
 def failingPipelineJob = jenkins.createProject(WorkflowJob.class, "cli-pipeline-failure")
 failingPipelineJob.setDefinition(new CpsFlowDefinition('''

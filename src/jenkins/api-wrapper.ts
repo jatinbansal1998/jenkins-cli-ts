@@ -8,7 +8,6 @@ import { rm } from "node:fs/promises";
 import { dirname } from "node:path";
 import { CliError } from "../cli";
 import { recordJenkinsApiCall, recordJenkinsApiFailure } from "../analytics";
-import { ENV_KEYS } from "../env-keys";
 import { normalizeJobParameterDefinitions } from "../job-parameters";
 import {
   logApiRequest,
@@ -1018,26 +1017,11 @@ export class JenkinsClient {
     context: string,
   ): Promise<never> {
     const status = response.status;
-    if (status === 401 || status === 403) {
-      throw new CliError(
-        `Jenkins rejected the request while trying to ${context}.`,
-        [
-          `Check ${ENV_KEYS.JENKINS_USER} and ${ENV_KEYS.JENKINS_API_TOKEN}.`,
-          `Confirm you can access ${this.baseUrl} in a browser.`,
-          `If your Jenkins requires CSRF crumbs, set ${ENV_KEYS.JENKINS_USE_CRUMB}=true or useCrumb: true in config.`,
-        ],
-        "JENKINS_AUTH_ERROR",
-      );
-    }
-    if (status === 404) {
-      throw new CliError(`Resource not found while trying to ${context}.`, [
-        `Verify ${ENV_KEYS.JENKINS_URL} and job URL are correct.`,
-      ]);
-    }
-
+    const detail = await readJenkinsErrorDetail(response);
     throw new CliError(
-      `Jenkins returned HTTP ${status} while trying to ${context}.`,
-      ["Try again, or check the Jenkins server logs."],
+      `Jenkins returned HTTP ${status} while trying to ${context}${detail ? `: ${detail}` : "."}`,
+      [],
+      status === 401 || status === 403 ? "JENKINS_AUTH_ERROR" : undefined,
     );
   }
 
@@ -1443,6 +1427,86 @@ function serializeUnknownValue(value: unknown): string {
     }
   }
   return String(value);
+}
+
+const MAX_JENKINS_ERROR_DETAIL_LENGTH = 2_000;
+const ANSI_TERMINAL_SEQUENCE = new RegExp(
+  `${String.fromCharCode(27)}\\[[0-?]*[ -/]*[@-~]`,
+  "g",
+);
+
+async function readJenkinsErrorDetail(
+  response: Response,
+): Promise<string | undefined> {
+  const xError = response.headers.get("x-error");
+  if (xError?.trim()) {
+    return truncateErrorDetail(xError.trim());
+  }
+
+  const body = await readResponseText(response);
+  if (!body.trim()) {
+    return undefined;
+  }
+
+  const contentType = response.headers.get("content-type")?.toLowerCase() ?? "";
+  if (contentType.includes("json")) {
+    try {
+      return truncateErrorDetail(JSON.stringify(JSON.parse(body)));
+    } catch {
+      // Fall through to readable text normalization for malformed JSON.
+    }
+  }
+
+  const normalized = normalizeJenkinsErrorBody(body);
+  return normalized ? truncateErrorDetail(normalized) : undefined;
+}
+
+async function readResponseText(response: Response): Promise<string> {
+  try {
+    return await response.text();
+  } catch {
+    return "";
+  }
+}
+
+function normalizeJenkinsErrorBody(body: string): string {
+  const withoutExecutableContent = body
+    .replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, " ")
+    .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, " ");
+  const readable = decodeBasicHtmlEntities(
+    withoutExecutableContent.replace(/<[^>]+>/g, " "),
+  )
+    .replace(/\s+/g, " ")
+    .trim();
+  const jettyMessage = readable.match(
+    /\bMESSAGE:\s*(.+?)(?=\s+(?:SERVLET|URI|STATUS):|$)/i,
+  )?.[1];
+  return jettyMessage?.trim() || readable;
+}
+
+function decodeBasicHtmlEntities(value: string): string {
+  return value
+    .replace(/&nbsp;/gi, " ")
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;|&apos;/gi, "'")
+    .replace(/&lt;/gi, "<")
+    .replace(/&gt;/gi, ">")
+    .replace(/&amp;/gi, "&");
+}
+
+function truncateErrorDetail(value: string): string {
+  const safeValue = Array.from(value.replace(ANSI_TERMINAL_SEQUENCE, ""))
+    .filter((character) => {
+      const code = character.charCodeAt(0);
+      return (
+        code === 9 || code === 10 || code === 13 || (code >= 32 && code !== 127)
+      );
+    })
+    .join("");
+  if (safeValue.length <= MAX_JENKINS_ERROR_DETAIL_LENGTH) {
+    return safeValue;
+  }
+  return `${safeValue.slice(0, MAX_JENKINS_ERROR_DETAIL_LENGTH - 1)}…`;
 }
 
 function normalizeJob(job: JenkinsApiJob): JenkinsJob | null {

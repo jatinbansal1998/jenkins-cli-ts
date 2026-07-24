@@ -21,6 +21,7 @@
     "sentry:smoke": "bun scripts/verify-sentry.ts",
     "sentry:smoke:build": "bun scripts/build-sentry-smoke.ts",
     "test:integration:jenkins": "bun scripts/test-jenkins-integration.ts",
+    "test:integration:jenkins-build-errors": "bun scripts/test-jenkins-integration.ts --build-errors",
     "test:mutation": "bun scripts/test-mutation.ts",
     "test:mutation:jenkins": "bun scripts/test-jenkins-integration.ts --mutation",
     "format": "prettier . --write",

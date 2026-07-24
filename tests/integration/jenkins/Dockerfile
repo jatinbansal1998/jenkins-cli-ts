@@ -3,3 +3,6 @@ FROM ${JENKINS_BASE_IMAGE}
 
 COPY --chown=jenkins:jenkins plugins.txt /usr/share/jenkins/ref/plugins.txt
 RUN jenkins-plugin-cli --plugin-file /usr/share/jenkins/ref/plugins.txt
+USER root
+RUN git config --system --add safe.directory /run/jenkins-cli-integration/demo-app.git
+USER jenkins

@@ -19,6 +19,7 @@ const PLUGIN_MANAGER_SHA256 =
 const baseImage =
   process.env.JENKINS_TEST_IMAGE?.trim() || DEFAULT_JENKINS_TEST_IMAGE;
 const mutationMode = process.argv.includes("--mutation");
+const buildErrorsOnly = process.argv.includes("--build-errors");
 const nativeMode =
   process.argv.includes("--native") || process.platform === "darwin";
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -37,6 +38,7 @@ let failed = false;
 
 try {
   await chmod(runtimeDir, 0o777);
+  await createSyntheticGitRepository();
   const fixture = join(runtimeDir, "init.groovy");
   await copyFile(fixtureSource, fixture);
   await chmod(fixture, 0o644);
@@ -125,7 +127,13 @@ try {
     JENKINS_INTEGRATION_READER_USER: "integration-reader",
     JENKINS_INTEGRATION_READER_TOKEN: readerToken,
   };
-  await runChecked(["bun", "test", "tests/integration/jenkins.test.ts"], {
+  const integrationTests = buildErrorsOnly
+    ? ["tests/integration/jenkins-build-errors.test.ts"]
+    : [
+        "tests/integration/jenkins.test.ts",
+        "tests/integration/jenkins-build-errors.test.ts",
+      ];
+  await runChecked(["bun", "test", ...integrationTests], {
     cwd: root,
     inherit: true,
     env: integrationEnv,
@@ -159,6 +167,48 @@ try {
     await run(["docker", "image", "rm", image]);
   }
   await rm(runtimeDir, { recursive: true, force: true });
+}
+
+async function createSyntheticGitRepository(): Promise<void> {
+  const source = join(runtimeDir, "demo-app-source");
+  const repository = join(runtimeDir, "demo-app.git");
+  await mkdir(source, { recursive: true });
+  await runChecked(["git", "init", "--initial-branch=main"], { cwd: source });
+  await runChecked(["git", "config", "user.name", "Jenkins CLI Integration"], {
+    cwd: source,
+  });
+  await runChecked(
+    ["git", "config", "user.email", "integration@example.invalid"],
+    { cwd: source },
+  );
+  await Bun.write(
+    join(source, "Jenkinsfile"),
+    `node {
+  echo "synthetic-branch:\${params.BRANCH_TAG}"
+  echo "synthetic-test:\${params.Test}"
+}
+`,
+  );
+  await Bun.write(
+    join(source, "README.md"),
+    "# Synthetic Jenkins CLI integration repository\n",
+  );
+  await runChecked(["git", "add", "Jenkinsfile", "README.md"], { cwd: source });
+  await runChecked(["git", "commit", "-m", "Add synthetic pipeline"], {
+    cwd: source,
+  });
+  await runChecked(["git", "switch", "-c", "feature-alpha"], { cwd: source });
+  await Bun.write(
+    join(source, "README.md"),
+    "# Synthetic Jenkins CLI integration repository\n\nFeature alpha.\n",
+  );
+  await runChecked(["git", "add", "README.md"], { cwd: source });
+  await runChecked(["git", "commit", "-m", "Add feature alpha"], {
+    cwd: source,
+  });
+  await runChecked(["git", "switch", "main"], { cwd: source });
+  await runChecked(["git", "clone", "--bare", source, repository]);
+  await runChecked(["chmod", "-R", "a+rX", repository]);
 }
 
 async function waitForJenkins(

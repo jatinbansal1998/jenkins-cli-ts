@@ -2,6 +2,7 @@ import { afterEach, describe, expect, mock, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { CliError } from "../src/cli";
 import { JenkinsClient } from "../src/jenkins/client";
 
 const realFetch = globalThis.fetch;
@@ -235,6 +236,168 @@ describe("JenkinsClient triggerBuild", () => {
       readHeader(triggerCall?.[1] as RequestInit | undefined, "Jenkins-Crumb"),
     ).toBeUndefined();
   });
+
+  test("surfaces Jenkins' x-error without adding a mapped hint", async () => {
+    globalThis.fetch = mock(async () => {
+      return new Response("<html>generic error page</html>", {
+        status: 400,
+        headers: {
+          "x-error":
+            "Parameter BRANCH_TAG provided value 'no-such-branch' is invalid",
+        },
+      });
+    }) as unknown as typeof fetch;
+    const client = createClient();
+
+    const error = await captureCliError(
+      client.triggerBuild("https://jenkins.example.com/job/my-job/", {
+        BRANCH_TAG: "no-such-branch",
+      }),
+    );
+
+    expect(error.message).toBe(
+      "Jenkins returned HTTP 400 while trying to trigger build: Parameter BRANCH_TAG provided value 'no-such-branch' is invalid",
+    );
+    expect(error.hints).toEqual([]);
+  });
+
+  test("surfaces Jenkins' disabled-job detail from the 409 body", async () => {
+    globalThis.fetch = mock(async () => {
+      return new Response(
+        "<html><body>HTTP ERROR 409 URI: /job/demo-app-deploy STATUS: 409 MESSAGE: demo-app-deploy is not buildable SERVLET: Stapler</body></html>",
+        { status: 409, headers: { "content-type": "text/html" } },
+      );
+    }) as unknown as typeof fetch;
+    const client = createClient();
+
+    const error = await captureCliError(
+      client.triggerBuild("https://jenkins.example.com/job/my-job/", {
+        BRANCH_TAG: "main",
+      }),
+    );
+
+    expect(error.message).toBe(
+      "Jenkins returned HTTP 409 while trying to trigger build: demo-app-deploy is not buildable",
+    );
+    expect(error.hints).toEqual([]);
+  });
+
+  test("surfaces a plain-text controller response without mapping it", async () => {
+    globalThis.fetch = mock(
+      async () => new Response("Conflict", { status: 409 }),
+    ) as unknown as typeof fetch;
+    const client = createClient();
+
+    const error = await captureCliError(
+      client.triggerBuild("https://jenkins.example.com/job/my-job/", {}),
+    );
+
+    expect(error.message).toBe(
+      "Jenkins returned HTTP 409 while trying to trigger build: Conflict",
+    );
+    expect(error.hints).toEqual([]);
+  });
+
+  test("surfaces readable HTML from an unknown-job response", async () => {
+    globalThis.fetch = mock(
+      async () =>
+        new Response(
+          "<html><style>private-css</style><body><h1>Not Found</h1><p>This page may not exist, or you may not have permission.</p><script>private-script</script></body></html>",
+          { status: 404, headers: { "content-type": "text/html" } },
+        ),
+    ) as unknown as typeof fetch;
+    const client = createClient();
+
+    const error = await captureCliError(
+      client.triggerBuild("https://jenkins.example.com/job/no-such-job/", {}),
+    );
+
+    expect(error.message).toBe(
+      "Jenkins returned HTTP 404 while trying to trigger build: Not Found This page may not exist, or you may not have permission.",
+    );
+    expect(error.hints).toEqual([]);
+  });
+
+  test("surfaces compact JSON controller errors", async () => {
+    globalThis.fetch = mock(
+      async () =>
+        new Response(
+          JSON.stringify({
+            message: "Build rejected",
+            errors: [{ field: "BRANCH", reason: "unknown" }],
+          }),
+          {
+            status: 422,
+            headers: { "content-type": "application/json" },
+          },
+        ),
+    ) as unknown as typeof fetch;
+    const client = createClient();
+
+    const error = await captureCliError(
+      client.triggerBuild("https://jenkins.example.com/job/my-job/", {}),
+    );
+
+    expect(error.message).toBe(
+      'Jenkins returned HTTP 422 while trying to trigger build: {"message":"Build rejected","errors":[{"field":"BRANCH","reason":"unknown"}]}',
+    );
+    expect(error.hints).toEqual([]);
+  });
+
+  test("keeps the status-only fallback when Jenkins returns no detail", async () => {
+    globalThis.fetch = mock(
+      async () => new Response("", { status: 503 }),
+    ) as unknown as typeof fetch;
+    const client = createClient();
+
+    const error = await captureCliError(
+      client.triggerBuild("https://jenkins.example.com/job/my-job/", {}),
+    );
+
+    expect(error.message).toBe(
+      "Jenkins returned HTTP 503 while trying to trigger build.",
+    );
+    expect(error.hints).toEqual([]);
+  });
+
+  test("bounds controller detail and removes terminal control sequences", async () => {
+    const detail = `rejected\u001b[31m${"x".repeat(2_100)}`;
+    globalThis.fetch = mock(
+      async () =>
+        new Response("", {
+          status: 400,
+          headers: { "x-error": detail },
+        }),
+    ) as unknown as typeof fetch;
+    const client = createClient();
+
+    const error = await captureCliError(
+      client.triggerBuild("https://jenkins.example.com/job/my-job/", {}),
+    );
+    const renderedDetail = error.message.split(": ").at(-1) ?? "";
+
+    expect(renderedDetail).toHaveLength(2_000);
+    expect(renderedDetail).toStartWith("rejected");
+    expect(renderedDetail).not.toContain("\u001b");
+    expect(renderedDetail).toEndWith("…");
+  });
+
+  test("retains the auth error code while exposing Jenkins' response", async () => {
+    globalThis.fetch = mock(
+      async () => new Response("Forbidden by project policy", { status: 403 }),
+    ) as unknown as typeof fetch;
+    const client = createClient();
+
+    const error = await captureCliError(
+      client.triggerBuild("https://jenkins.example.com/job/my-job/", {}),
+    );
+
+    expect(error.message).toBe(
+      "Jenkins returned HTTP 403 while trying to trigger build: Forbidden by project policy",
+    );
+    expect(error.hints).toEqual([]);
+    expect(error.code).toBe("JENKINS_AUTH_ERROR");
+  });
 });
 
 describe("JenkinsClient pipeline stage cloning", () => {
@@ -438,6 +601,25 @@ describe("JenkinsClient build transport", () => {
 });
 
 describe("JenkinsClient POST with crumb", () => {
+  test("uses the same x-error extraction for other POST operations", async () => {
+    globalThis.fetch = mock(async () => {
+      return new Response("", {
+        status: 400,
+        headers: { "x-error": "Build cannot be stopped in its current state" },
+      });
+    }) as unknown as typeof fetch;
+    const client = createClient();
+
+    const error = await captureCliError(
+      client.stopBuild("https://jenkins.example.com/job/my-job/123/"),
+    );
+
+    expect(error.message).toBe(
+      "Jenkins returned HTTP 400 while trying to stop build: Build cannot be stopped in its current state",
+    );
+    expect(error.hints).toEqual([]);
+  });
+
   test("refreshes crumb and retries stopBuild when first attempt gets 403", async () => {
     let crumbRequestCount = 0;
     let stopRequestCount = 0;
@@ -497,6 +679,25 @@ describe("JenkinsClient POST with crumb", () => {
     ).toBe("fresh-crumb");
   });
 });
+
+function createClient(): JenkinsClient {
+  return new JenkinsClient({
+    baseUrl: "https://jenkins.example.com",
+    user: "user",
+    apiToken: "token",
+    timeoutMs: 1_000,
+  });
+}
+
+async function captureCliError(promise: Promise<unknown>): Promise<CliError> {
+  try {
+    await promise;
+  } catch (error) {
+    expect(error).toBeInstanceOf(CliError);
+    return error as CliError;
+  }
+  throw new Error("Expected the Jenkins request to fail.");
+}
 
 describe("JenkinsClient listBuildHistory", () => {
   test("returns paginated build history with failed step details", async () => {

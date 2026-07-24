@@ -444,7 +444,7 @@ describe.skipIf(!integrationEnabled)(
           withoutCredentialEnv,
         );
         expect(denied.output).toContain(
-          "Jenkins rejected the request while trying to trigger build.",
+          "Jenkins returned HTTP 403 while trying to trigger build:",
         );
         expect(denied.output).not.toContain(readerToken);
 
