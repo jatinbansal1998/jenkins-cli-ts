@@ -1,6 +1,6 @@
 {
   "name": "jenkins-cli-ts",
-  "version": "0.8.2",
+  "version": "0.8.3",
   "type": "module",
   "private": true,
   "sideEffects": false,
