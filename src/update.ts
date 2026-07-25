@@ -8,6 +8,10 @@ import {
   UPDATE_COMMAND_SELF,
   isUpdateCommandAlias,
 } from "./cli-constants";
+import {
+  isJsonLinesOutputRequested,
+  isJsonOutputRequested,
+} from "./cli/options";
 import { CliError, printHint } from "./cli";
 import { CONFIG_DIR } from "./config";
 import {
@@ -614,6 +618,9 @@ export async function downloadAndInstall(
 }
 
 function shouldSkipAutoUpdate(rawArgs: string[]): boolean {
+  if (isJsonOutputRequested(rawArgs) || isJsonLinesOutputRequested(rawArgs)) {
+    return true;
+  }
   const skipFlags = new Set<string>([
     CLI_FLAGS.HELP,
     CLI_FLAGS.HELP_SHORT,
@@ -621,8 +628,6 @@ function shouldSkipAutoUpdate(rawArgs: string[]): boolean {
     CLI_FLAGS.VERSION_SHORT,
     CLI_FLAGS.NON_INTERACTIVE,
     CLI_FLAGS.NON_INTERACTIVE_CAMEL,
-    "--json",
-    "--jsonl",
   ]);
   if (rawArgs.some((arg) => skipFlags.has(arg))) {
     return true;

@@ -95,3 +95,20 @@ export function wasWatchExplicitlyPassed(rawArgs: string[]): boolean {
       arg.startsWith("--no-watch="),
   );
 }
+
+export function isJsonOutputRequested(rawArgs: string[]): boolean {
+  return isBooleanOptionEnabled(rawArgs, "--json");
+}
+
+export function isJsonLinesOutputRequested(rawArgs: string[]): boolean {
+  return isBooleanOptionEnabled(rawArgs, "--jsonl");
+}
+
+function isBooleanOptionEnabled(
+  rawArgs: string[],
+  optionName: string,
+): boolean {
+  return rawArgs.some(
+    (arg) => arg === optionName || arg === `${optionName}=true`,
+  );
+}

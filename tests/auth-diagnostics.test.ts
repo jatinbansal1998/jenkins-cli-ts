@@ -513,6 +513,39 @@ describe("auth status reporting", () => {
     expect(lines.join("\n")).toContain("Jenkins user:     ci");
   });
 
+  test("writes JSON diagnostics through the provided output sink", async () => {
+    const lines: string[] = [];
+    await runAuthStatus(
+      { json: true },
+      {
+        diagnose: async () => ({
+          profileLabel: "Environment",
+          controller,
+          username: "ci",
+          tokenStorage: "Environment variables",
+          tokenPresent: true,
+          success: true,
+          probe: {
+            kind: "authenticated",
+            jenkinsUser: "ci",
+          },
+        }),
+      },
+      (line) => lines.push(line),
+    );
+
+    expect(lines).toHaveLength(1);
+    expect(JSON.parse(lines[0] as string)).toMatchObject({
+      ok: true,
+      command: "auth status",
+      data: {
+        profileLabel: "Environment",
+        success: true,
+        probe: { kind: "authenticated", jenkinsUser: "ci" },
+      },
+    });
+  });
+
   test("prints the report before throwing a targeted failure", async () => {
     const lines: string[] = [];
     const failure = runAuthStatus(

@@ -5,6 +5,8 @@ import { join } from "node:path";
 import yargs from "yargs/yargs";
 import { FULL_HELP_COMMANDS } from "../src/cli/full-help";
 import {
+  isJsonLinesOutputRequested,
+  isJsonOutputRequested,
   wasBranchParamExplicitlyPassed,
   wasWatchExplicitlyPassed,
 } from "../src/cli/options";
@@ -143,6 +145,35 @@ describe("structured output registration", () => {
       expect(result.output).not.toContain("Unknown argument: json");
       expect(result.output).toContain("does not support --json");
     }
+
+    expect(
+      runCli(["auth", "login", "--json", "--non-interactive"]).output,
+    ).toContain("'auth login' does not support --json");
+    expect(
+      runCli(["profile", "list", "--json", "--non-interactive"]).output,
+    ).toContain("'profile list' does not support --json");
+  });
+
+  test("keeps structured errors for explicit boolean syntax and help shortcuts", () => {
+    for (const args of [
+      ["auth", "login", "--json=true", "--non-interactive"],
+      ["help", "--json=true"],
+      ["help", "--full", "--json"],
+      ["does-not-exist", "--json=true"],
+    ]) {
+      const result = runCli(args);
+      expect(result.exitCode).toBe(1);
+      expect(result.output).toStartWith('{"ok":false,"error":');
+    }
+
+    for (const args of [
+      ["help", "--jsonl=true"],
+      ["help", "--full", "--jsonl"],
+    ]) {
+      const result = runCli(args);
+      expect(result.exitCode).toBe(1);
+      expect(result.output).toStartWith('{"type":"error","error":');
+    }
   });
 });
 
@@ -210,5 +241,12 @@ describe("hidden defaults and explicit flags", () => {
     expect(wasBranchParamExplicitlyPassed(["--branchParam=GIT_REF"])).toBe(
       true,
     );
+
+    expect(isJsonOutputRequested(["--json"])).toBe(true);
+    expect(isJsonOutputRequested(["--json=true"])).toBe(true);
+    expect(isJsonOutputRequested(["--json=false"])).toBe(false);
+    expect(isJsonLinesOutputRequested(["--jsonl"])).toBe(true);
+    expect(isJsonLinesOutputRequested(["--jsonl=true"])).toBe(true);
+    expect(isJsonLinesOutputRequested(["--jsonl=false"])).toBe(false);
   });
 });

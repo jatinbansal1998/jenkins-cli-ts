@@ -20,18 +20,22 @@ export async function runAuthStatus(
   write: (line: string) => void = console.log,
 ): Promise<void> {
   if (options.json) {
-    await runJsonCommand("auth status", async (): Promise<JsonAuthStatus> => {
-      const result = await (deps.diagnose ?? diagnoseAuthentication)(
-        options,
-        deps,
-      );
-      if (!result.success) {
-        const failure = authFailureMessage(result);
-        throw new CliError(failure.message, failure.hints);
-      }
-      const { problemHints: _problemHints, ...data } = result;
-      return data;
-    });
+    await runJsonCommand(
+      "auth status",
+      async (): Promise<JsonAuthStatus> => {
+        const result = await (deps.diagnose ?? diagnoseAuthentication)(
+          options,
+          deps,
+        );
+        if (!result.success) {
+          const failure = authFailureMessage(result);
+          throw new CliError(failure.message, failure.hints);
+        }
+        const { problemHints: _problemHints, ...data } = result;
+        return data;
+      },
+      { write: (text) => write(text.trimEnd()) },
+    );
     return;
   }
   const result = await (deps.diagnose ?? diagnoseAuthentication)(options, deps);

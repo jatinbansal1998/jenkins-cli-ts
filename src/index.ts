@@ -12,7 +12,11 @@ import {
 } from "./cli/argument-values";
 import { printFullHelp } from "./cli/full-help";
 import { getRootHelpEpilog } from "./cli/help-epilog";
-import { optionalString } from "./cli/options";
+import {
+  isJsonLinesOutputRequested,
+  isJsonOutputRequested,
+  optionalString,
+} from "./cli/options";
 import { registerAuthCommands } from "./cli/register-auth-commands";
 import { registerBuildCommands } from "./cli/register-build-commands";
 import { registerJobCommands } from "./cli/register-job-commands";
@@ -72,12 +76,15 @@ async function main(): Promise<void> {
   const rawArgs = hideBin(process.argv);
   // yargs' built-in `help` command shadows a registered handler, so the
   // aggregated reference is dispatched here before yargs parses.
+  if (rawArgs[0] === "help" && isJsonOutputRequested(rawArgs)) {
+    throw new CliError("'help' does not support --json output.");
+  }
+  if (rawArgs[0] === "help" && isJsonLinesOutputRequested(rawArgs)) {
+    throw new CliError("'help' does not support --jsonl output.");
+  }
   if (rawArgs[0] === "help" && rawArgs.includes("--full")) {
     await printFullHelp(scriptName);
     return;
-  }
-  if (rawArgs[0] === "help" && rawArgs.includes("--json")) {
-    throw new CliError("'help' does not support --json output.");
   }
 
   kickOffMinimumVersionRefresh({ currentVersion: VERSION });
@@ -289,7 +296,9 @@ async function runTrackedCommand(
     !argv?.jsonl &&
     isInteractiveTerminal();
   if (argv?.json && !JSON_COMMANDS.has(command)) {
-    throw new CliError(`'${command}' does not support --json output.`);
+    throw new CliError(
+      `'${command.replaceAll(":", " ")}' does not support --json output.`,
+    );
   }
   let introShown = false;
   const showIntro = (target?: string): void => {
@@ -394,9 +403,9 @@ if (import.meta.main) {
   process.on("exit", () => pruneOldApiLogs());
   await main().catch(async (error) => {
     const rawArgs = hideBin(process.argv);
-    if (rawArgs.includes("--json")) {
+    if (isJsonOutputRequested(rawArgs)) {
       emitJsonError(toJsonError(error));
-    } else if (rawArgs.includes("--jsonl")) {
+    } else if (isJsonLinesOutputRequested(rawArgs)) {
       emitJsonLine({ type: "error", error: toJsonError(error) });
     } else {
       handleCliError(error);

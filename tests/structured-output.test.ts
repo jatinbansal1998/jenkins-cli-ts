@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, mock, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import type { EnvConfig } from "../src/env";
 import type { JenkinsClient } from "../src/jenkins/client";
 import { runArtifacts } from "../src/commands/artifacts";
@@ -47,8 +47,12 @@ function document(output: string): {
   return JSON.parse(lines[0] as string);
 }
 
+beforeEach(() => {
+  process.exitCode = 0;
+});
+
 afterEach(() => {
-  process.exitCode = undefined;
+  process.exitCode = 0;
 });
 
 describe("expanded JSON normalization", () => {
