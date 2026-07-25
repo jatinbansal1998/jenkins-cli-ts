@@ -24,7 +24,7 @@ export function registerJobCommands(
       listHandler,
     )
     .command(
-      "params",
+      "params [job-name]",
       "Show parameter definitions for a Jenkins job",
       (yargsInstance) => addJsonOption(addJobOptions(yargsInstance)),
       async (argv) => {

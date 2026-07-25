@@ -9,7 +9,7 @@ export function getRootHelpEpilog(): string {
       Interactive login (prompts for URL, user, and token).
   $0 auth login --profile work --url https://jenkins.example.com --user ci --token <token> --non-interactive
       Scripted login.
-  $0 build --job "api deploy" --branch main --non-interactive
+  $0 build "api deploy" --branch main --non-interactive
       Trigger a build by fuzzy job name.
   $0 build --job-url https://jenkins.example.com/job/api/ --branch main --param ENV=staging --non-interactive
       Trigger by exact URL with a custom parameter.
@@ -23,9 +23,11 @@ export function getRootHelpEpilog(): string {
       Remove all locally stored credentials.
 
 Job selection (build, status, history, wait, logs, artifacts, cancel, rerun, params):
+  [job-name]        Fuzzy match on job name or description (positional form)
   --job <text>      Fuzzy match on job name or description (uses the local job cache)
   --job-url <url>   Exact Jenkins job URL (skips the cache and search)
-  With neither flag, an interactive job picker opens (requires a TTY).
+  The positional form and --job are equivalent; if both are passed, they must match.
+  With no job argument or flag, an interactive job picker opens (requires a TTY).
 
 Scripting and AI agents:
   Pass --non-interactive to disable every prompt and fail fast; --json implies it.
@@ -43,11 +45,13 @@ Command-specific options:
     --json           Output a single JSON document (implies non-interactive)
 
   params:
+    [job-name]       Job name or description
     --job <text>     Job name or description
     --job-url <url>  Full Jenkins job URL
     --json           Output a single JSON document (implies non-interactive)
 
   build / deploy:
+    [job-name]             Job name or description
     --job <text>           Job name or description
     --job-url <url>        Full Jenkins job URL
     --branch <name>        Branch name to build
@@ -57,18 +61,21 @@ Command-specific options:
     --watch                Watch build status until completion [default: false]
 
   status:
+    [job-name]       Job name or description
     --job <text>     Job name or description
     --job-url <url>  Full Jenkins job URL
     --watch          Watch latest build until completion [default: false]
     --json           Output a single JSON document (implies non-interactive)
 
   history / builds:
+    [job-name]       Job name or description
     --job <text>     Job name or description
     --job-url <url>  Full Jenkins job URL
     --offset <n>     Skip N builds before showing the next 5 [default: 0]
     --json           Output a single JSON document (implies non-interactive)
 
   wait:
+    [job-name]        Job name or description
     --job <text>      Job name or description
     --job-url <url>   Full Jenkins job URL
     --build-url <url> Full Jenkins build URL
@@ -78,6 +85,7 @@ Command-specific options:
     --json            Output a single JSON document (implies non-interactive)
 
   logs:
+    [job-name]        Job name or description
     --job <text>      Job name or description
     --job-url <url>   Full Jenkins job URL
     --build-url <url> Full Jenkins build URL
@@ -86,6 +94,7 @@ Command-specific options:
     --poll <dur>      Polling interval when following [default: ${DEFAULT_LOG_POLL_MS / 1000}s]
 
   artifacts:
+    [job-name]        Job name or description
     --job <text>      Job name or description
     --job-url <url>   Full Jenkins job URL
     --build <n>       Target a specific build number (with --job/--job-url)
@@ -99,6 +108,7 @@ Command-specific options:
     (no command-specific options; interactive picker of running builds)
 
   cancel:
+    [job-name]        Job name or description
     --job <text>      Job name or description
     --job-url <url>   Full Jenkins job URL
     --build-url <url> Full Jenkins build URL
@@ -111,6 +121,7 @@ Command-specific options:
     --offline-only  Show only offline nodes [default: false]
 
   rerun:
+    [job-name]       Job name or description
     --job <text>     Job name or description
     --job-url <url>  Full Jenkins job URL
 

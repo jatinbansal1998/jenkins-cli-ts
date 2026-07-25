@@ -44,7 +44,7 @@ export function registerOperationsCommands(
       },
     )
     .command(
-      "cancel",
+      "cancel [job-name]",
       "Cancel a queued or running build",
       (yargsInstance) =>
         addQueueUrlOption(addBuildUrlOption(addJobOptions(yargsInstance))),
@@ -114,7 +114,7 @@ export function registerOperationsCommands(
       },
     )
     .command(
-      "rerun",
+      "rerun [job-name]",
       "Rerun the last failed build for a job",
       addJobOptions,
       async (argv) => {

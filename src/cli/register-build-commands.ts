@@ -31,7 +31,7 @@ export function registerBuildCommands(
 
   return parser
     .command(
-      ["build", "deploy"],
+      ["build [job-name]", "deploy [job-name]"],
       "Trigger a Jenkins build (alias: deploy)",
       configureBuildOptions,
       async (argv) => {
@@ -63,7 +63,7 @@ export function registerBuildCommands(
       },
     )
     .command(
-      "status",
+      "status [job-name]",
       "Show last build status for a job",
       (yargsInstance) =>
         addJsonOption(
@@ -92,7 +92,7 @@ export function registerBuildCommands(
       },
     )
     .command(
-      ["history", "builds"],
+      ["history [job-name]", "builds [job-name]"],
       "Show paginated build history for a job",
       (yargsInstance) =>
         addJsonOption(
@@ -121,7 +121,7 @@ export function registerBuildCommands(
       },
     )
     .command(
-      "wait",
+      "wait [job-name]",
       "Wait for a Jenkins build to finish",
       configureWaitOptions,
       async (argv) => {
@@ -146,7 +146,7 @@ export function registerBuildCommands(
       },
     )
     .command(
-      "logs",
+      "logs [job-name]",
       "Stream Jenkins build logs",
       configureLogsOptions,
       async (argv) => {
@@ -170,7 +170,7 @@ export function registerBuildCommands(
       },
     )
     .command(
-      "artifacts",
+      "artifacts [job-name]",
       "List or download build artifacts",
       configureArtifactsOptions,
       async (argv) => {

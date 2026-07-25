@@ -79,6 +79,118 @@ describe.skipIf(!integrationEnabled)(
       });
     }, 30_000);
 
+    test("uses positional job names through real Jenkins operations", async () => {
+      await withCliHome(async (home) => {
+        await runCli(home, ["list", "--refresh", "--json"]);
+
+        const positionalParams = parseJson(
+          await runCli(home, ["params", "cli-smoke", "--json"]),
+        );
+        const optionParams = parseJson(
+          await runCli(home, ["params", "--job", "cli-smoke", "--json"]),
+        );
+        expect(positionalParams.data).toEqual(optionParams.data);
+
+        const built = await runCli(home, [
+          "build",
+          "cli-smoke",
+          "--param",
+          "MESSAGE=positional-message",
+          "--param",
+          "NOTES=positional-notes",
+          "--param",
+          "ENABLED=no",
+          "--param",
+          "MODE=safe",
+          "--param",
+          "SECRET=positional-secret",
+          "--watch",
+        ]);
+        expect(built.output).toContain("SUCCESS");
+
+        const status = parseJson(
+          await runCli(home, ["status", "cli-smoke", "--json"]),
+        );
+        expect(status).toMatchObject({
+          ok: true,
+          command: "status",
+          data: { build: { result: "SUCCESS", building: false } },
+        });
+
+        const history = parseJson(
+          await runCli(home, ["history", "cli-smoke", "--json"]),
+        );
+        expect(history).toMatchObject({
+          ok: true,
+          command: "history",
+          data: [expect.objectContaining({ result: "SUCCESS" })],
+        });
+
+        const waited = parseJson(
+          await runCli(home, [
+            "wait",
+            "cli-smoke",
+            "--timeout",
+            "30s",
+            "--json",
+          ]),
+        );
+        expect(waited).toMatchObject({
+          ok: true,
+          command: "wait",
+          data: { result: "SUCCESS" },
+        });
+
+        expect(
+          (await runCli(home, ["logs", "cli-smoke", "--no-follow"])).output,
+        ).toContain("cli-integration:positional-message");
+        expect(
+          (await runCli(home, ["artifacts", "cli-smoke"])).output,
+        ).toContain("artifact.txt");
+
+        const failed = await runCliExpectFailure(home, [
+          "build",
+          "cli-failure",
+          "--param",
+          "REASON=positional-target",
+          "--watch",
+        ]);
+        expect(failed.output).toContain("FAILURE");
+        const beforeRerun = parseJson<{
+          data: Array<{ number: number }>;
+        }>(await runCli(home, ["history", "cli-failure", "--json"])).data[0]!
+          .number;
+
+        expect((await runCli(home, ["rerun", "cli-failure"])).output).toContain(
+          "from failed build #",
+        );
+        await waitForNewBuild(
+          home,
+          `${jenkinsUrl}/job/cli-failure/`,
+          beforeRerun,
+        );
+        const rerunWait = parseJson(
+          await runCliExpectFailure(home, [
+            "wait",
+            "cli-failure",
+            "--timeout",
+            "30s",
+            "--json",
+          ]),
+        );
+        expect(rerunWait).toMatchObject({
+          ok: true,
+          command: "wait",
+          data: { result: "FAILURE" },
+        });
+
+        await runCli(home, ["build", "cli-always-queued", "--without-params"]);
+        expect(
+          (await runCli(home, ["cancel", "cli-always-queued"])).output,
+        ).toContain("Cancelled queue item");
+      });
+    }, 180_000);
+
     test("validates typed parameters and preserves complex values through artifacts", async () => {
       await withCliHome(async (home) => {
         const artifactDir = join(home, "artifacts");

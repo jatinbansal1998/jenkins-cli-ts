@@ -1,7 +1,12 @@
 import type { Argv } from "yargs";
+import { CliError } from "../cli";
 
 export function addJobOptions(yargsInstance: Argv): Argv {
   return yargsInstance
+    .positional("job-name", {
+      type: "string",
+      describe: "Job name or description",
+    })
     .option("job", {
       type: "string",
       describe: "Job name or description",
@@ -9,6 +14,22 @@ export function addJobOptions(yargsInstance: Argv): Argv {
     .option("job-url", {
       type: "string",
       describe: "Full Jenkins job URL",
+    })
+    .middleware((argv) => {
+      const positionalJob =
+        optionalString(argv.jobName) ?? optionalString(argv["job-name"]);
+      const optionJob = optionalString(argv.job);
+
+      if (positionalJob && optionJob && positionalJob !== optionJob) {
+        throw new CliError(
+          `Positional job "${positionalJob}" conflicts with --job "${optionJob}".`,
+          ["Pass the job once, or use the same value for both forms."],
+        );
+      }
+
+      if (positionalJob) {
+        argv.job = positionalJob;
+      }
     });
 }
 
