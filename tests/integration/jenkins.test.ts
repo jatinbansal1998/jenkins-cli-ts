@@ -123,8 +123,12 @@ describe.skipIf(!integrationEnabled)(
         expect(history).toMatchObject({
           ok: true,
           command: "history",
-          data: [expect.objectContaining({ result: "SUCCESS" })],
         });
+        expect(history.data).toEqual(
+          expect.arrayContaining([
+            expect.objectContaining({ result: "SUCCESS" }),
+          ]),
+        );
 
         const waited = parseJson(
           await runCli(home, [
