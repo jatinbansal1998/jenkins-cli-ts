@@ -2,6 +2,11 @@ import { CliError, printHint, printOk } from "../cli";
 import type { EnvConfig } from "../env";
 import type { JenkinsClient } from "../jenkins/api-wrapper";
 import type { RunningBuildSummary } from "../types/jenkins";
+import {
+  jsonRunningBuild,
+  runJsonCommand,
+  type JsonWrite,
+} from "../json-output";
 import { withPromptTarget } from "../tui-target";
 import { runDeps } from "./run-deps";
 
@@ -9,6 +14,8 @@ type RunOptions = {
   client: JenkinsClient;
   env: EnvConfig;
   nonInteractive: boolean;
+  json?: boolean;
+  write?: JsonWrite;
 };
 
 let activeRunDeps = runDeps;
@@ -18,6 +25,15 @@ export function setRunDepsForTesting(overrides?: typeof runDeps): void {
 }
 
 export async function runRunningBuilds(options: RunOptions): Promise<void> {
+  if (options.json) {
+    await runJsonCommand(
+      "run",
+      async () =>
+        (await options.client.listRunningBuilds()).map(jsonRunningBuild),
+      { write: options.write },
+    );
+    return;
+  }
   const builds = await options.client.listRunningBuilds();
   if (builds.length === 0) {
     printOk("no running builds");

@@ -22,6 +22,11 @@ import {
   type ProfileOperationsDeps,
 } from "../profile-operations";
 import { normalizeProfileName } from "../config";
+import {
+  type JsonAuthCurrent,
+  jsonAuthProfiles,
+  runJsonCommand,
+} from "../json-output";
 
 export type AuthCommandDeps = ProfileOperationsDeps & {
   confirm?: typeof confirm;
@@ -35,7 +40,16 @@ const LOGOUT_LOCAL_ONLY_HINT =
 export async function runAuthList(
   deps: ProfileOperationsDeps = {},
   write: WriteLine = console.log,
+  json = false,
 ): Promise<void> {
+  if (json) {
+    await runJsonCommand(
+      "auth list",
+      async () => jsonAuthProfiles(await listProfiles(deps)),
+      { write: (text) => write(text.trimEnd()) },
+    );
+    return;
+  }
   const result = await listProfiles(deps);
   if (result.profiles.length === 0) {
     write("OK: No profiles configured.");
@@ -69,10 +83,35 @@ export async function runAuthUse(
  * never prints the token; `auth status` remains the network-backed check.
  */
 export async function runAuthCurrent(
-  options: AuthStatusOptions,
+  options: AuthStatusOptions & { json?: boolean },
   deps: AuthDiagnosticsDeps = {},
   write: WriteLine = console.log,
 ): Promise<void> {
+  if (options.json) {
+    await runJsonCommand(
+      "auth current",
+      async (): Promise<JsonAuthCurrent> => {
+        const credentials = await resolveAuthCredentials(options, deps);
+        if (credentials.problem) {
+          throw new CliError(
+            credentials.problemMessage ?? "Authentication is not configured.",
+            credentials.problemHints ?? ["Run `jenkins-cli auth login`."],
+          );
+        }
+        return {
+          source: describeCredentialSource(options, credentials),
+          profile: credentials.profileLabel,
+          controller: credentials.controller,
+          username: credentials.username,
+          tokenStorage: credentials.tokenStorage,
+          tokenPresent: credentials.tokenPresent,
+          keychainReadError: credentials.keychainReadError,
+        };
+      },
+      { write: (text) => write(text.trimEnd()) },
+    );
+    return;
+  }
   const credentials = await resolveAuthCredentials(options, deps);
   if (credentials.problem) {
     throw new CliError(

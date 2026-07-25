@@ -79,6 +79,168 @@ describe.skipIf(!integrationEnabled)(
       });
     }, 30_000);
 
+    test("keeps expanded JSON and JSONL contracts pure against real Jenkins", async () => {
+      await withCliHome(async (home) => {
+        const authStatus = parseJson(
+          await runCli(home, ["auth", "status", "--json"]),
+        );
+        expect(authStatus).toMatchObject({
+          ok: true,
+          command: "auth status",
+          data: { success: true, tokenPresent: true },
+        });
+        expect(
+          parseJson(await runCli(home, ["auth", "list", "--json"])),
+        ).toMatchObject({
+          ok: true,
+          command: "auth list",
+          data: { profiles: [] },
+        });
+        expect(
+          parseJson(await runCli(home, ["auth", "current", "--json"])),
+        ).toMatchObject({
+          ok: true,
+          command: "auth current",
+          data: { source: "Environment variables", tokenPresent: true },
+        });
+
+        const nodes = parseJson<{ data: { nodes: unknown[] } }>(
+          await runCli(home, ["nodes", "--json"]),
+        );
+        expect(nodes.data.nodes.length).toBeGreaterThan(0);
+        expect(
+          parseJson(await runCli(home, ["queue", "--json"])),
+        ).toMatchObject({ ok: true, command: "queue", data: [] });
+        expect(parseJson(await runCli(home, ["run", "--json"]))).toMatchObject({
+          ok: true,
+          command: "run",
+          data: [],
+        });
+
+        const build = parseJson<{
+          data: { buildUrl: string; buildNumber: number; result: string };
+        }>(
+          await runCli(home, [
+            "build",
+            "--job-url",
+            `${jenkinsUrl}/job/cli-structured/`,
+            "--param",
+            "MESSAGE=structured-output",
+            "--watch",
+            "--json",
+          ]),
+        );
+        expect(build).toMatchObject({
+          ok: true,
+          command: "build",
+          data: { result: "SUCCESS", queued: false },
+        });
+
+        const artifacts = parseJson<{ data: { artifacts: unknown[] } }>(
+          await runCli(home, [
+            "artifacts",
+            "--build-url",
+            build.data.buildUrl,
+            "--json",
+          ]),
+        );
+        expect(artifacts.data.artifacts).toEqual(
+          expect.arrayContaining([
+            expect.objectContaining({
+              relativePath: "structured-artifact.txt",
+            }),
+          ]),
+        );
+
+        const logs = await runCli(home, [
+          "logs",
+          "--build-url",
+          build.data.buildUrl,
+          "--no-follow",
+          "--jsonl",
+        ]);
+        expect(logs.stderr).toBe("");
+        const events = logs.stdout
+          .split("\n")
+          .filter(Boolean)
+          .map((line) => JSON.parse(line) as { type: string });
+        expect(events.map((event) => event.type)).toEqual([
+          "start",
+          "chunk",
+          "complete",
+        ]);
+
+        const queued = parseJson<{
+          data: { queueUrl: string; queued: boolean };
+        }>(
+          await runCli(home, [
+            "build",
+            "--job-url",
+            `${jenkinsUrl}/job/cli-structured-queued/`,
+            "--without-params",
+            "--json",
+          ]),
+        );
+        expect(queued.data.queued).toBe(true);
+        expect(
+          parseJson(
+            await runCli(home, [
+              "cancel",
+              "--queue-url",
+              queued.data.queueUrl,
+              "--json",
+            ]),
+          ),
+        ).toMatchObject({
+          ok: true,
+          command: "cancel",
+          data: { targetType: "queue", url: queued.data.queueUrl },
+        });
+
+        const failed = parseJson<{
+          data: { result: string; buildNumber: number };
+        }>(
+          await runCliExpectFailure(home, [
+            "build",
+            "--job-url",
+            `${jenkinsUrl}/job/cli-structured-failure/`,
+            "--param",
+            "REASON=structured-output",
+            "--watch",
+            "--json",
+          ]),
+        );
+        expect(failed.data.result).toBe("FAILURE");
+        expect(
+          parseJson(
+            await runCli(home, [
+              "rerun",
+              "--job-url",
+              `${jenkinsUrl}/job/cli-structured-failure/`,
+              "--json",
+            ]),
+          ),
+        ).toMatchObject({
+          ok: true,
+          command: "rerun",
+          data: {
+            source: { buildNumber: failed.data.buildNumber },
+            target: expect.objectContaining({ jobUrl: expect.any(String) }),
+          },
+        });
+
+        const denied = await runCliExpectFailure(home, ["nodes", "--json"], {
+          JENKINS_API_TOKEN: "invalid-token",
+        });
+        const deniedDocument = parseJson<{
+          ok: boolean;
+          error: { code: string };
+        }>(denied);
+        expect(deniedDocument.ok).toBe(false);
+        expect(deniedDocument.error.code).toBe("JENKINS_AUTH_ERROR");
+      });
+    }, 90_000);
+
     test("uses positional job names through real Jenkins operations", async () => {
       await withCliHome(async (home) => {
         await runCli(home, ["list", "--refresh", "--json"]);

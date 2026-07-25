@@ -10,6 +10,7 @@ import type { JenkinsClient } from "../jenkins/api-wrapper";
 import { formatTable, truncateCell } from "../table";
 import { withPromptTarget } from "../tui-target";
 import type { QueueItemSummary } from "../types/jenkins";
+import { jsonQueueItem, runJsonCommand, type JsonWrite } from "../json-output";
 import { runCancel } from "./cancel-core";
 
 const BACK_VALUE = "__jenkins_cli_queue_back__";
@@ -22,10 +23,22 @@ type QueueOptions = {
   env: EnvConfig;
   job?: string;
   nonInteractive: boolean;
+  json?: boolean;
+  write?: JsonWrite;
 };
 
 export async function runQueue(options: QueueOptions): Promise<void> {
   const jobFilter = options.job?.trim() ?? "";
+
+  if (options.json) {
+    await runJsonCommand(
+      "queue",
+      async () =>
+        (await loadQueueItems(options.client, jobFilter)).map(jsonQueueItem),
+      { write: options.write },
+    );
+    return;
+  }
 
   if (options.nonInteractive) {
     const items = await loadQueueItems(options.client, jobFilter);

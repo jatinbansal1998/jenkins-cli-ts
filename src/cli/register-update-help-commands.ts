@@ -1,4 +1,5 @@
 import type { Argv } from "yargs";
+import { CliError } from "../cli";
 import { runUpdate } from "../commands/update";
 import { optionalString } from "./options";
 import type { CommandRegistrationDependencies } from "./registration-types";
@@ -30,6 +31,7 @@ export function registerUpdateHelpCommands(
             enableAutoInstall: Boolean(argv.enableAutoInstall),
             disableAutoInstall: Boolean(argv.disableAutoInstall),
             channel: optionalString(argv.channel),
+            json: Boolean(argv.json),
           });
         });
       },
@@ -45,6 +47,9 @@ export function registerUpdateHelpCommands(
             "Print the complete option reference for every command in one output",
         }),
       async (argv) => {
+        if (argv.json) {
+          throw new CliError("'help' does not support --json output.");
+        }
         if (argv.full) {
           await options.printFullHelp();
           return;

@@ -48,6 +48,7 @@ import {
   writeUpdateState,
 } from "./update";
 import { BUILD_TARGET } from "./build-target";
+import { emitJsonError, emitJsonLine, toJsonError } from "./json-output";
 import packageJson from "../package.json";
 
 // Keep these public helpers as declarations owned by this entry point. Bun's
@@ -75,6 +76,9 @@ async function main(): Promise<void> {
     await printFullHelp(scriptName);
     return;
   }
+  if (rawArgs[0] === "help" && rawArgs.includes("--json")) {
+    throw new CliError("'help' does not support --json output.");
+  }
 
   kickOffMinimumVersionRefresh({ currentVersion: VERSION });
   await enforceMinimumVersionFromCache({ currentVersion: VERSION, rawArgs });
@@ -98,6 +102,12 @@ async function main(): Promise<void> {
       type: "boolean",
       default: true,
       describe: "Show the interactive ASCII intro banner",
+    })
+    .option("json", {
+      type: "boolean",
+      default: false,
+      describe:
+        "Output structured JSON when supported (implies non-interactive)",
     })
     .option("debug", {
       type: "boolean",
@@ -274,7 +284,13 @@ async function runTrackedCommand(
 ): Promise<void> {
   // --json implies non-interactive: no prompts, no banner on stdout.
   const interactive =
-    !argv?.nonInteractive && !argv?.json && isInteractiveTerminal();
+    !argv?.nonInteractive &&
+    !argv?.json &&
+    !argv?.jsonl &&
+    isInteractiveTerminal();
+  if (argv?.json && !JSON_COMMANDS.has(command)) {
+    throw new CliError(`'${command}' does not support --json output.`);
+  }
   let introShown = false;
   const showIntro = (target?: string): void => {
     if (introShown || !interactive || argv?.banner === false) {
@@ -297,6 +313,25 @@ async function runTrackedCommand(
   );
 }
 
+const JSON_COMMANDS = new Set([
+  "list",
+  "params",
+  "build",
+  "status",
+  "history",
+  "wait",
+  "artifacts",
+  "run",
+  "cancel",
+  "queue",
+  "nodes",
+  "rerun",
+  "auth:status",
+  "auth:list",
+  "auth:current",
+  "update",
+]);
+
 async function runTrackedCommandWithContext<
   TArgv extends ContextualCommandArgv,
 >(
@@ -310,12 +345,26 @@ async function runTrackedCommandWithContext<
   ) => Promise<void>,
 ): Promise<void> {
   await runTrackedCommand(command, argv, async ({ showIntro, interactive }) => {
-    const context = await prepareContext(argv, showIntro, interactive);
-    await action({
-      ...context,
-      argv,
-      showIntro,
-    });
+    try {
+      const context = await prepareContext(argv, showIntro, interactive);
+      await action({
+        ...context,
+        argv,
+        showIntro,
+      });
+    } catch (error) {
+      if (argv.json) {
+        emitJsonError(toJsonError(error));
+        process.exitCode ||= 1;
+        return;
+      }
+      if (argv.jsonl) {
+        emitJsonLine({ type: "error", error: toJsonError(error) });
+        process.exitCode ||= 1;
+        return;
+      }
+      throw error;
+    }
   });
 }
 
@@ -334,11 +383,24 @@ function hasCredentialOverrides(argv: ContextArgv | undefined): boolean {
 
 if (import.meta.main) {
   await initializeDefaultErrorReporting();
+  process.stdout.on("error", (error) => {
+    if ((error as NodeJS.ErrnoException).code === "EPIPE") {
+      process.exit(0);
+    }
+    throw error;
+  });
   // Exit handlers must be synchronous; pruneOldApiLogs is. This also runs
   // after explicit process.exit() calls (e.g. yargs --help).
   process.on("exit", () => pruneOldApiLogs());
   await main().catch(async (error) => {
-    handleCliError(error);
+    const rawArgs = hideBin(process.argv);
+    if (rawArgs.includes("--json")) {
+      emitJsonError(toJsonError(error));
+    } else if (rawArgs.includes("--jsonl")) {
+      emitJsonLine({ type: "error", error: toJsonError(error) });
+    } else {
+      handleCliError(error);
+    }
     process.exitCode = 1;
     await captureUnexpectedError(error);
   });

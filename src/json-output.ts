@@ -11,12 +11,20 @@
  */
 import { CliError } from "./cli";
 import type {
+  ArtifactEntry,
   BuildHistoryEntry,
   BuildStatus,
   JenkinsBuildParameter,
   JenkinsPipelineStage,
   JobStatus,
+  NodeSummary,
+  NodesSummary,
+  QueueItemSummary,
+  RunningBuildSummary,
+  TriggerBuildResult,
 } from "./types/jenkins";
+import type { AuthDiagnosticsResult } from "./auth-diagnostics";
+import type { ProfileListResult } from "./profile-operations";
 
 /** Sink for the single JSON document. Defaults to stdout. */
 export type JsonWrite = (text: string) => void;
@@ -63,6 +71,116 @@ export type JsonError = {
   error: JsonErrorBody;
 };
 
+export type JsonQueueItem = {
+  id: number;
+  url: string;
+  jobName?: string;
+  jobUrl?: string;
+  state: "stuck" | "blocked" | "buildable" | "waiting";
+  reason?: string;
+  inQueueSinceMs?: number;
+};
+
+export type JsonNode = {
+  name: string;
+  status: "online" | "offline" | "temporarily-offline";
+  offlineReason?: string;
+  labels: string[];
+  executors: { busy: number; total: number };
+};
+
+export type JsonNodes = {
+  nodes: JsonNode[];
+  summary: {
+    totalNodes: number;
+    offlineNodes: number;
+    busyExecutors: number;
+    totalExecutors: number;
+  };
+};
+
+export type JsonRunningBuild = {
+  jobName: string;
+  fullJobName?: string;
+  number: number;
+  url: string;
+};
+
+export type JsonArtifact = {
+  fileName: string;
+  relativePath: string;
+};
+
+export type JsonMutationTarget = {
+  queueUrl?: string;
+  queueId?: number;
+  buildUrl?: string;
+  buildNumber?: number;
+  jobUrl?: string;
+};
+
+export type JsonBuildReceipt = JsonMutationTarget & {
+  job: string;
+  queued: boolean;
+  result?: string | null;
+};
+
+export type JsonCancelReceipt = {
+  targetType: "build" | "queue";
+  url: string;
+};
+
+export type JsonRerunReceipt = {
+  source: { buildUrl?: string; buildNumber?: number };
+  target: JsonMutationTarget;
+};
+
+export type JsonAuthStatus = Omit<AuthDiagnosticsResult, "problemHints">;
+
+export type JsonAuthCurrent = {
+  source: string;
+  profile: string;
+  controller?: string;
+  username?: string;
+  tokenStorage?: string;
+  tokenPresent?: boolean;
+  keychainReadError?: boolean;
+};
+
+export type JsonUpdateCheck = {
+  currentVersion: string;
+  latestVersion: string;
+  updateAvailable: boolean;
+  channel: string;
+  installReason?: string;
+  checkedAt: string;
+};
+
+export type JsonLogEvent =
+  | {
+      type: "start";
+      buildUrl: string;
+      buildNumber?: number;
+      offset: number;
+    }
+  | {
+      type: "chunk";
+      offset: number;
+      nextOffset: number;
+      text: string;
+      more: boolean;
+    }
+  | {
+      type: "complete";
+      buildUrl: string;
+      offset: number;
+      result?: string | null;
+    }
+  | {
+      type: "error";
+      error: JsonErrorBody;
+    };
+
 /** Emit a success envelope: `{ ok: true, command, data }`. */
 export function emitJsonSuccess<T>(
   command: string,
@@ -80,6 +198,14 @@ export function emitJsonError(
 ): void {
   const payload: JsonError = { ok: false, error };
   write(`${JSON.stringify(payload)}\n`);
+}
+
+/** Emit one compact JSON event followed by a newline. */
+export function emitJsonLine(
+  event: JsonLogEvent,
+  write: JsonWrite = defaultWrite,
+): void {
+  write(`${JSON.stringify(event)}\n`);
 }
 
 /** Convert an arbitrary thrown value into a stable JSON error body. */
@@ -211,4 +337,91 @@ export function jsonBuildFromHistoryEntry(entry: BuildHistoryEntry): JsonBuild {
     parameters: entry.parameters,
     stages: entry.stages,
   });
+}
+
+export function jsonQueueItem(item: QueueItemSummary): JsonQueueItem {
+  return {
+    id: item.id,
+    url: item.queueUrl,
+    jobName: item.jobName,
+    jobUrl: item.jobUrl,
+    state: item.stuck
+      ? "stuck"
+      : item.blocked
+        ? "blocked"
+        : item.buildable
+          ? "buildable"
+          : "waiting",
+    reason: item.reason,
+    inQueueSinceMs: item.inQueueSince,
+  };
+}
+
+export function jsonNodes(
+  summary: NodesSummary,
+  nodes: NodeSummary[] = summary.nodes,
+): JsonNodes {
+  return {
+    nodes: nodes.map((node) => ({
+      name: node.displayName,
+      status: node.temporarilyOffline
+        ? "temporarily-offline"
+        : node.offline
+          ? "offline"
+          : "online",
+      offlineReason: node.offlineCauseReason,
+      labels: node.labels,
+      executors: {
+        busy: node.busyExecutors,
+        total: node.totalExecutors,
+      },
+    })),
+    summary: {
+      totalNodes: summary.totalNodes,
+      offlineNodes: summary.offlineNodes,
+      busyExecutors: summary.busyExecutors,
+      totalExecutors: summary.totalExecutors,
+    },
+  };
+}
+
+export function jsonRunningBuild(build: RunningBuildSummary): JsonRunningBuild {
+  return {
+    jobName: build.jobName,
+    fullJobName: build.fullJobName,
+    number: build.buildNumber,
+    url: build.buildUrl,
+  };
+}
+
+export function jsonArtifact(artifact: ArtifactEntry): JsonArtifact {
+  return {
+    fileName: artifact.fileName,
+    relativePath: artifact.relativePath,
+  };
+}
+
+export function jsonTriggerTarget(
+  result: TriggerBuildResult,
+): JsonMutationTarget {
+  return {
+    queueUrl: result.queueUrl,
+    queueId: result.queueId ?? queueIdFromUrl(result.queueUrl),
+    buildUrl: result.buildUrl,
+    buildNumber: result.buildNumber,
+    jobUrl: result.jobUrl,
+  };
+}
+
+export function jsonAuthProfiles(result: ProfileListResult): ProfileListResult {
+  return result;
+}
+
+function queueIdFromUrl(url: string | undefined): number | undefined {
+  const match = url?.match(/\/queue\/item\/(\d+)\/?$/);
+  if (!match?.[1]) {
+    return undefined;
+  }
+  const value = Number(match[1]);
+  return Number.isSafeInteger(value) ? value : undefined;
 }

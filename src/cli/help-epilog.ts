@@ -17,6 +17,8 @@ export function getRootHelpEpilog(): string {
       Last build status as a JSON document.
   $0 wait --job api --timeout 30m --json
       Wait for the latest build to finish.
+  $0 logs --job api --jsonl
+      Stream one compact JSON log event per line.
   $0 artifacts --job api --download --dest ./out --non-interactive
       Download the last build's artifacts.
   $0 auth logout --all --non-interactive
@@ -30,13 +32,14 @@ Job selection (build, status, history, wait, logs, artifacts, cancel, rerun, par
   With no job argument or flag, an interactive job picker opens (requires a TTY).
 
 Scripting and AI agents:
-  Pass --non-interactive to disable every prompt and fail fast; --json implies it.
-  --json is supported by: list, params, status, history, wait.
+  Pass --non-interactive to disable every prompt and fail fast; --json/--jsonl imply it.
+  --json: list, params, build, status, history, wait, artifacts, run, cancel,
+          queue, nodes, rerun, auth status/list/current, and update --check.
+  --jsonl: logs.
   Output lines are prefixed OK: (success), ERROR: (failure), HINT: (guidance).
   Exit code is 0 on success and 1 on any error.
   Run "$0 help --full" to print every command's full option reference at once.
-  Note: the --search/--refresh/--json entries in "Options:" above belong to the
-  default "list" command, not to every command.
+  Unsupported --json combinations fail with a clear message, never an unknown flag.
 
 Command-specific options:
   list:
@@ -59,6 +62,7 @@ Command-specific options:
     --param KEY=VALUE      Custom build parameter (repeatable)
     --without-params       Trigger without parameters (non-interactive only)
     --watch                Watch build status until completion [default: false]
+    --json                 Output one build receipt (implies non-interactive)
 
   status:
     [job-name]       Job name or description
@@ -92,6 +96,7 @@ Command-specific options:
     --queue-url <url> Full Jenkins queue item URL
     --follow          Keep streaming logs until build completes [default: true]
     --poll <dur>      Polling interval when following [default: ${DEFAULT_LOG_POLL_MS / 1000}s]
+    --jsonl           Stream one compact JSON event per line
 
   artifacts:
     [job-name]        Job name or description
@@ -103,9 +108,10 @@ Command-specific options:
     --dest <dir>      Destination directory for downloads [default: cwd]
     --artifact <path> Only this relativePath (repeatable; implies --download)
     --force           Overwrite existing files [default: false]
+    --json            List artifacts as one JSON document
 
   run:
-    (no command-specific options; interactive picker of running builds)
+    --json  List running builds as one JSON document
 
   cancel:
     [job-name]        Job name or description
@@ -113,17 +119,21 @@ Command-specific options:
     --job-url <url>   Full Jenkins job URL
     --build-url <url> Full Jenkins build URL
     --queue-url <url> Full Jenkins queue item URL
+    --json            Output one cancellation receipt
 
   queue:
     --job <text>  Filter queued items to a job name
+    --json        Output normalized queue items
 
   nodes:
     --offline-only  Show only offline nodes [default: false]
+    --json          Output normalized nodes and executor summary
 
   rerun:
     [job-name]       Job name or description
     --job <text>     Job name or description
     --job-url <url>  Full Jenkins job URL
+    --json           Output source and new target receipt
 
   auth login / login:
     --url <url>            Jenkins base URL
@@ -139,6 +149,7 @@ Command-specific options:
     --url <url>       Direct Jenkins base URL (use with --user and --token)
     --user <name>     Direct Jenkins username (use with --url and --token)
     --token <token>   Direct Jenkins API token (use with --url and --user)
+    --json            Output normalized diagnostics without secrets
 
   auth profile management:
     auth list                    List stored credential profiles
@@ -179,6 +190,7 @@ Command-specific options:
     --disable-auto         Disable daily update checks
     --enable-auto-install  Enable auto-install of updates
     --disable-auto-install Disable auto-install of updates
+    --json                  Output update check data (requires --check)
 
 Cache directory: ${getJobCacheDir()}
 Cache files are separated by Jenkins URL.

@@ -8,7 +8,7 @@ import {
 } from "../commands/auth-profile";
 import { runAuthStatus } from "../commands/auth-status";
 import { runLogin } from "../commands/login";
-import { optionalString } from "./options";
+import { addJsonOption, optionalString } from "./options";
 import type {
   CommandRegistrationDependencies,
   RunTrackedCommand,
@@ -35,7 +35,7 @@ export function registerAuthCommands(
           .command(
             "status",
             "Validate credentials against Jenkins",
-            (statusYargs) => statusYargs,
+            addJsonOption,
             async (argv) => {
               await runTrackedCommand("auth:status", argv, async () => {
                 await runAuthStatus({
@@ -44,6 +44,7 @@ export function registerAuthCommands(
                   user: optionalString(argv.user),
                   apiToken:
                     optionalString(argv.token) ?? optionalString(argv.apiToken),
+                  json: Boolean(argv.json),
                 });
               });
             },
@@ -51,10 +52,10 @@ export function registerAuthCommands(
           .command(
             "list",
             "List stored credential profiles",
-            (listYargs) => listYargs,
+            addJsonOption,
             async (argv) => {
               await runTrackedCommand("auth:list", argv, async () => {
-                await runAuthList();
+                await runAuthList(undefined, undefined, Boolean(argv.json));
               });
             },
           )
@@ -75,7 +76,7 @@ export function registerAuthCommands(
           .command(
             "current",
             "Show which credentials would be used",
-            (currentYargs) => currentYargs,
+            addJsonOption,
             async (argv) => {
               await runTrackedCommand("auth:current", argv, async () => {
                 await runAuthCurrent({
@@ -84,6 +85,7 @@ export function registerAuthCommands(
                   user: optionalString(argv.user),
                   apiToken:
                     optionalString(argv.token) ?? optionalString(argv.apiToken),
+                  json: Boolean(argv.json),
                 });
               });
             },

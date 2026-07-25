@@ -102,6 +102,50 @@ describe("command aliases", () => {
   });
 });
 
+describe("structured output registration", () => {
+  test("documents JSON on supported commands and JSONL on logs", () => {
+    for (const command of [
+      ["build"],
+      ["artifacts"],
+      ["run"],
+      ["cancel"],
+      ["queue"],
+      ["nodes"],
+      ["rerun"],
+      ["auth", "status"],
+      ["auth", "list"],
+      ["auth", "current"],
+      ["update"],
+    ]) {
+      const result = runCli([...command, "--help"]);
+      expect(result.exitCode).toBe(0);
+      expect(result.output).toContain("--json");
+    }
+
+    const logs = runCli(["logs", "--help"]);
+    expect(logs.exitCode).toBe(0);
+    expect(logs.output).toContain("--jsonl");
+  });
+
+  test("unsupported commands recognize --json and fail informatively", () => {
+    for (const command of [
+      ["auth", "login"],
+      ["auth", "use", "work"],
+      ["auth", "rename", "old", "new"],
+      ["auth", "logout"],
+      ["login"],
+      ["profile", "list"],
+      ["logs"],
+      ["help"],
+    ]) {
+      const result = runCli([...command, "--json", "--non-interactive"]);
+      expect(result.exitCode).toBe(1);
+      expect(result.output).not.toContain("Unknown argument: json");
+      expect(result.output).toContain("does not support --json");
+    }
+  });
+});
+
 describe("command help and global options", () => {
   test("every canonical command keeps command help and inherited global options", () => {
     for (const commandPath of FULL_HELP_COMMANDS) {

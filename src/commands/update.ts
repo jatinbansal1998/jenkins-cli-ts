@@ -23,6 +23,11 @@ import {
   withPendingUpdateState,
   writeUpdateState,
 } from "../update";
+import {
+  type JsonUpdateCheck,
+  runJsonCommand,
+  type JsonWrite,
+} from "../json-output";
 
 type UpdateOptions = {
   currentVersion: string;
@@ -33,9 +38,17 @@ type UpdateOptions = {
   enableAutoInstall?: boolean;
   disableAutoInstall?: boolean;
   channel?: string;
+  json?: boolean;
+  write?: JsonWrite;
 };
 
 export async function runUpdate(options: UpdateOptions): Promise<void> {
+  if (options.json) {
+    await runJsonCommand("update", async () => runUpdateCheckJson(options), {
+      write: options.write,
+    });
+    return;
+  }
   const preferredUpdateCommand = getPreferredUpdateCommand();
   const homebrewManaged = preferredUpdateCommand === UPDATE_COMMAND_BREW;
   const requestedChannel =
@@ -200,6 +213,67 @@ export async function runUpdate(options: UpdateOptions): Promise<void> {
     );
     printHint("Bun must be installed on this machine to run this CLI.");
   }
+}
+
+async function runUpdateCheckJson(
+  options: UpdateOptions,
+): Promise<JsonUpdateCheck> {
+  if (!options.check) {
+    throw new CliError("--json is supported only with update --check.", [
+      "Pass --check to inspect update availability without installing.",
+    ]);
+  }
+  if (
+    options.tag ||
+    options.enableAuto ||
+    options.disableAuto ||
+    options.enableAutoInstall ||
+    options.disableAutoInstall
+  ) {
+    throw new CliError(
+      "--json --check cannot be combined with a version tag or settings changes.",
+    );
+  }
+  const requestedChannel =
+    typeof options.channel === "string"
+      ? parseUpdateChannel(options.channel)
+      : undefined;
+  if (options.channel && !requestedChannel) {
+    throw new CliError(`Unknown update channel "${options.channel}".`, [
+      "Use one of: stable, prerelease.",
+    ]);
+  }
+  const state = await readUpdateState();
+  const effectiveState = requestedChannel
+    ? { ...state, updateChannel: requestedChannel }
+    : state;
+  const channel = resolveUpdateChannel(effectiveState);
+  const latest = await fetchLatestRelease({
+    currentVersion: options.currentVersion,
+    channel,
+  });
+  const preferredUpdateCommand = getPreferredUpdateCommand();
+  const installDecision = getReleaseInstallDecision({
+    release: latest,
+    currentVersion: options.currentVersion,
+    currentBuildTarget: BUILD_TARGET,
+    allowNativeBinaryMigration: preferredUpdateCommand !== UPDATE_COMMAND_BREW,
+  });
+  const checkedAt = new Date().toISOString();
+  const checkedState = { ...effectiveState, lastCheckedAt: checkedAt };
+  await writeUpdateState(
+    installDecision.shouldInstall
+      ? withPendingUpdateState(checkedState, latest.tag_name, checkedAt)
+      : clearPendingUpdateState(checkedState),
+  );
+  return {
+    currentVersion: options.currentVersion,
+    latestVersion: latest.tag_name,
+    updateAvailable: installDecision.shouldInstall,
+    channel,
+    installReason: installDecision.reason,
+    checkedAt,
+  };
 }
 
 function printUpdatePreferences(state: UpdateState): void {

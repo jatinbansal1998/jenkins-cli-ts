@@ -106,6 +106,32 @@ queuedJob.setAssignedLabel(Label.get("integration-agent-that-does-not-exist"))
 queuedJob.getBuildersList().add(new Shell("printf 'unexpectedly-ran\\n'"))
 queuedJob.save()
 
+def structuredJob = jenkins.createProject(FreeStyleProject.class, "cli-structured")
+structuredJob.addProperty(new ParametersDefinitionProperty([
+  new StringParameterDefinition("MESSAGE", "structured-default", "Structured output fixture")
+]))
+structuredJob.getBuildersList().add(new Shell('''set -eu
+printf 'structured:%s\n' "$MESSAGE"
+printf 'structured-artifact\n' > structured-artifact.txt
+'''))
+structuredJob.getPublishersList().add(new ArtifactArchiver("structured-artifact.txt"))
+structuredJob.save()
+
+def structuredFailureJob = jenkins.createProject(FreeStyleProject.class, "cli-structured-failure")
+structuredFailureJob.addProperty(new ParametersDefinitionProperty([
+  new StringParameterDefinition("REASON", "structured-failure", "Structured failure marker")
+]))
+structuredFailureJob.getBuildersList().add(new Shell('''set -eu
+printf 'structured-failure:%s\n' "$REASON"
+exit 24
+'''))
+structuredFailureJob.save()
+
+def structuredQueuedJob = jenkins.createProject(FreeStyleProject.class, "cli-structured-queued")
+structuredQueuedJob.setAssignedLabel(Label.get("structured-agent-that-does-not-exist"))
+structuredQueuedJob.getBuildersList().add(new Shell("printf 'unexpectedly-ran\\n'"))
+structuredQueuedJob.save()
+
 def slowJob = jenkins.createProject(FreeStyleProject.class, "cli-slow")
 slowJob.setConcurrentBuild(false)
 slowJob.getBuildersList().add(new Shell('''set -eu

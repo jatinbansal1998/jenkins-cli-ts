@@ -46,8 +46,9 @@ describe("root help for agents", () => {
     expect(result.output).toContain("Fuzzy match on job name or description");
     expect(result.output).toContain("Scripting and AI agents:");
     expect(result.output).toContain(
-      "--json is supported by: list, params, status, history, wait.",
+      "--json: list, params, build, status, history, wait, artifacts",
     );
+    expect(result.output).toContain("--jsonl: logs.");
     expect(result.output).toContain(
       "OK: (success), ERROR: (failure), HINT: (guidance)",
     );
@@ -59,7 +60,7 @@ describe("root help for agents", () => {
 
     expect(result.output).toContain("params:");
     expect(result.output).toContain(
-      "(no command-specific options; interactive picker of running builds)",
+      "--json  List running builds as one JSON document",
     );
     expect(result.output).toContain(
       "--branch-param <name>  Parameter name for the branch [default: BRANCH]",
@@ -67,11 +68,11 @@ describe("root help for agents", () => {
     expect(result.output).toContain("[default: 0]");
   });
 
-  test("clarifies that default-command options are not global", () => {
+  test("explains unsupported structured combinations", () => {
     const result = runCli(["--help"]);
 
     expect(result.output).toContain(
-      'default "list" command, not to every command',
+      "Unsupported --json combinations fail with a clear message",
     );
   });
 

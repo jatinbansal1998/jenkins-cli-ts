@@ -6,6 +6,7 @@ import type { EnvConfig } from "../env";
 import type { JenkinsClient } from "../jenkins/api-wrapper";
 import { normalizeJobUrl } from "../job-url";
 import type { ArtifactEntry } from "../types/jenkins";
+import { jsonArtifact, runJsonCommand, type JsonWrite } from "../json-output";
 import { ensureValidUrl, resolveJobTarget } from "./ops-helpers";
 
 type ArtifactsOptions = {
@@ -20,11 +21,33 @@ type ArtifactsOptions = {
   artifact?: string[];
   force?: boolean;
   nonInteractive: boolean;
+  json?: boolean;
+  write?: JsonWrite;
 };
 
 export async function runArtifacts(options: ArtifactsOptions): Promise<void> {
-  validateArtifactsOptions(options);
+  if (options.json) {
+    await runJsonCommand(
+      "artifacts",
+      async () => {
+        validateArtifactsOptions(options);
+        const { buildUrl } = await resolveBuildTarget({
+          ...options,
+          nonInteractive: true,
+        });
+        const result = await options.client.listArtifacts(buildUrl);
+        return {
+          buildUrl: result.buildUrl,
+          buildNumber: result.buildNumber,
+          artifacts: result.artifacts.map(jsonArtifact),
+        };
+      },
+      { write: options.write },
+    );
+    return;
+  }
 
+  validateArtifactsOptions(options);
   const { buildUrl, label } = await resolveBuildTarget(options);
   const { artifacts } = await options.client.listArtifacts(buildUrl);
 
@@ -53,6 +76,18 @@ export async function runArtifacts(options: ArtifactsOptions): Promise<void> {
 }
 
 function validateArtifactsOptions(options: ArtifactsOptions): void {
+  if (
+    options.json &&
+    (options.download ||
+      options.dest !== undefined ||
+      options.artifact !== undefined ||
+      options.force)
+  ) {
+    throw new CliError(
+      "--json supports artifact listing only and cannot be combined with download options.",
+      ["Remove --download, --dest, --artifact, and --force."],
+    );
+  }
   if (options.job && options.jobUrl) {
     throw new CliError("Provide either --job or --job-url, not both.", [
       "Remove one of the flags and try again.",

@@ -55,6 +55,15 @@ export function addJsonOption(yargsInstance: Argv): Argv {
   });
 }
 
+export function addJsonLinesOption(yargsInstance: Argv): Argv {
+  return yargsInstance.option("jsonl", {
+    type: "boolean",
+    default: false,
+    describe:
+      "Stream one compact JSON event per line (implies non-interactive)",
+  });
+}
+
 export function addWatchOption(yargsInstance: Argv, describe: string): Argv {
   return yargsInstance.option("watch", {
     type: "boolean",

@@ -7,6 +7,7 @@ import {
   parseOptionalDurationMs,
   resolveJobTarget,
 } from "./ops-helpers";
+import { emitJsonLine, toJsonError, type JsonWrite } from "../json-output";
 
 export const DEFAULT_LOG_POLL_MS = 1_000;
 
@@ -20,20 +21,16 @@ type LogsOptions = {
   follow?: boolean;
   poll?: string;
   nonInteractive: boolean;
+  jsonl?: boolean;
+  write?: JsonWrite;
 };
 
 export async function runLogs(options: LogsOptions): Promise<void> {
-  if (options.job && options.jobUrl) {
-    throw new CliError("Provide either --job or --job-url, not both.", [
-      "Remove one of the flags and try again.",
-    ]);
+  if (options.jsonl) {
+    await runLogsJsonl({ ...options, nonInteractive: true }, options.write);
+    return;
   }
-  if (options.buildUrl && (options.job || options.jobUrl)) {
-    throw new CliError(
-      "When --build-url is provided, do not pass --job or --job-url.",
-      ["Use a single log target at a time."],
-    );
-  }
+  validateLogTargets(options);
 
   const follow = options.follow !== false;
   if (follow) {
@@ -58,6 +55,121 @@ export async function runLogs(options: LogsOptions): Promise<void> {
     follow,
     pollMs,
   });
+}
+
+async function runLogsJsonl(
+  options: LogsOptions,
+  write?: JsonWrite,
+): Promise<void> {
+  try {
+    validateLogTargets(options);
+    const follow = options.follow !== false;
+    if (follow) {
+      markAnalyticsPollingCommand();
+    }
+    const pollMs = parseOptionalDurationMs(
+      options.poll,
+      DEFAULT_LOG_POLL_MS,
+      "poll",
+    );
+    if (pollMs <= 0) {
+      throw new CliError("Invalid --poll value.", [
+        "Use an interval greater than 0ms (e.g. --poll 1s).",
+      ]);
+    }
+    const { buildUrl } = await resolveBuildUrl(options, pollMs);
+    const initial = await options.client.getBuildStatus(buildUrl);
+    emitJsonLine(
+      {
+        type: "start",
+        buildUrl: initial.buildUrl ?? buildUrl,
+        buildNumber: initial.buildNumber,
+        offset: 0,
+      },
+      write,
+    );
+
+    let offset = 0;
+    while (true) {
+      const chunk = await options.client.getConsoleChunk(buildUrl, offset);
+      const status =
+        !chunk.hasMore || !follow
+          ? await options.client.getBuildStatus(buildUrl)
+          : undefined;
+      if (chunk.text) {
+        emitJsonLine(
+          {
+            type: "chunk",
+            offset,
+            nextOffset: chunk.nextStart,
+            text: chunk.text,
+            more: chunk.hasMore || Boolean(follow && status?.building),
+          },
+          write,
+        );
+      }
+      offset = chunk.nextStart;
+      if (!follow) {
+        emitJsonLine(
+          {
+            type: "complete",
+            buildUrl: status?.buildUrl ?? buildUrl,
+            offset,
+            result: status?.building ? undefined : status?.result,
+          },
+          write,
+        );
+        return;
+      }
+      if (chunk.hasMore) {
+        await Bun.sleep(pollMs);
+        continue;
+      }
+      if (!status?.building) {
+        emitJsonLine(
+          {
+            type: "complete",
+            buildUrl: status?.buildUrl ?? buildUrl,
+            offset,
+            result: status?.result,
+          },
+          write,
+        );
+        return;
+      }
+      await Bun.sleep(pollMs);
+    }
+  } catch (error) {
+    emitJsonLine({ type: "error", error: toJsonError(error) }, write);
+    if (!process.exitCode) {
+      process.exitCode = 1;
+    }
+  }
+}
+
+function validateLogTargets(options: LogsOptions): void {
+  if (options.job && options.jobUrl) {
+    throw new CliError("Provide either --job or --job-url, not both.", [
+      "Remove one of the flags and try again.",
+    ]);
+  }
+  if (options.buildUrl && (options.job || options.jobUrl)) {
+    throw new CliError(
+      "When --build-url is provided, do not pass --job or --job-url.",
+      ["Use a single log target at a time."],
+    );
+  }
+  if (options.queueUrl && (options.job || options.jobUrl)) {
+    throw new CliError(
+      "When --queue-url is provided, do not pass --job or --job-url.",
+      ["Use a single log target at a time."],
+    );
+  }
+  if (options.buildUrl && options.queueUrl) {
+    throw new CliError("Provide either --build-url or --queue-url, not both.", [
+      "Use a single log target at a time.",
+    ]);
+  }
 }
 
 async function resolveBuildUrl(

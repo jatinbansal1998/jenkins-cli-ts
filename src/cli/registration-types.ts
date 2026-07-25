@@ -6,6 +6,7 @@ export type TrackedArgv = {
   nonInteractive?: unknown;
   banner?: unknown;
   json?: unknown;
+  jsonl?: unknown;
 };
 
 export type ContextArgv = {

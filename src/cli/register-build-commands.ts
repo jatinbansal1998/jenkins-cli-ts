@@ -14,6 +14,7 @@ import {
   addBuildUrlOption,
   addJobOptions,
   addJsonOption,
+  addJsonLinesOption,
   addQueueUrlOption,
   addWatchOption,
   optionalString,
@@ -53,10 +54,11 @@ export function registerBuildCommands(
                 ? optionalString(argv.branchParam)
                 : env.branchParamDefault,
               defaultBranch:
-                Boolean(argv.nonInteractive) &&
+                Boolean(argv.nonInteractive || argv.json) &&
                 (Boolean(argv.withoutParams) || Boolean(argv.defaultBranch)),
-              nonInteractive: Boolean(argv.nonInteractive),
+              nonInteractive: Boolean(argv.nonInteractive || argv.json),
               watch: watchExplicitlyPassed ? Boolean(argv.watch) : undefined,
+              json: Boolean(argv.json),
             });
           },
         );
@@ -83,7 +85,7 @@ export function registerBuildCommands(
               env,
               job: optionalString(argv.job),
               jobUrl: optionalString(argv.jobUrl),
-              nonInteractive: Boolean(argv.nonInteractive),
+              nonInteractive: Boolean(argv.nonInteractive || argv.json),
               watch: watchExplicitlyPassed ? Boolean(argv.watch) : undefined,
               json: Boolean(argv.json),
             });
@@ -113,7 +115,7 @@ export function registerBuildCommands(
               job: optionalString(argv.job),
               jobUrl: optionalString(argv.jobUrl),
               offset: typeof argv.offset === "number" ? argv.offset : 0,
-              nonInteractive: Boolean(argv.nonInteractive),
+              nonInteractive: Boolean(argv.nonInteractive || argv.json),
               json: Boolean(argv.json),
             });
           },
@@ -138,7 +140,7 @@ export function registerBuildCommands(
               queueUrl: optionalString(argv.queueUrl),
               interval: optionalString(argv.interval),
               timeout: optionalString(argv.timeout),
-              nonInteractive: Boolean(argv.nonInteractive),
+              nonInteractive: Boolean(argv.nonInteractive || argv.json),
               json: Boolean(argv.json),
             });
           },
@@ -163,7 +165,8 @@ export function registerBuildCommands(
               queueUrl: optionalString(argv.queueUrl),
               follow: Boolean(argv.follow),
               poll: optionalString(argv.poll),
-              nonInteractive: Boolean(argv.nonInteractive),
+              nonInteractive: Boolean(argv.nonInteractive || argv.jsonl),
+              jsonl: Boolean(argv.jsonl),
             });
           },
         );
@@ -189,7 +192,8 @@ export function registerBuildCommands(
               dest: optionalString(argv.dest),
               artifact: parseArtifactFilters(argv.artifact),
               force: Boolean(argv.force),
-              nonInteractive: Boolean(argv.nonInteractive),
+              nonInteractive: Boolean(argv.nonInteractive || argv.json),
+              json: Boolean(argv.json),
             });
           },
         );
@@ -198,34 +202,36 @@ export function registerBuildCommands(
 }
 
 function configureBuildOptions(yargsInstance: Argv): Argv {
-  return addWatchOption(
-    addJobOptions(yargsInstance)
-      .option("branch", {
-        type: "string",
-        describe: "Branch name to build",
-      })
-      .option("branch-param", {
-        type: "string",
-        default: "BRANCH",
-        describe: "Parameter name for the branch",
-      })
-      .option("param", {
-        type: "string",
-        array: true,
-        describe: "Custom build parameter in KEY=VALUE format (repeatable)",
-      })
-      .option("without-params", {
-        type: "boolean",
-        default: false,
-        describe:
-          "Trigger build without parameters (non-interactive only; ignored when prompts are shown)",
-      })
-      .option("default-branch", {
-        type: "boolean",
-        default: false,
-        hidden: true,
-      }),
-    "Watch build status until completion",
+  return addJsonOption(
+    addWatchOption(
+      addJobOptions(yargsInstance)
+        .option("branch", {
+          type: "string",
+          describe: "Branch name to build",
+        })
+        .option("branch-param", {
+          type: "string",
+          default: "BRANCH",
+          describe: "Parameter name for the branch",
+        })
+        .option("param", {
+          type: "string",
+          array: true,
+          describe: "Custom build parameter in KEY=VALUE format (repeatable)",
+        })
+        .option("without-params", {
+          type: "boolean",
+          default: false,
+          describe:
+            "Trigger build without parameters (non-interactive only; ignored when prompts are shown)",
+        })
+        .option("default-branch", {
+          type: "boolean",
+          default: false,
+          hidden: true,
+        }),
+      "Watch build status until completion",
+    ),
   );
 }
 
@@ -244,7 +250,9 @@ function configureWaitOptions(yargsInstance: Argv): Argv {
 }
 
 function configureLogsOptions(yargsInstance: Argv): Argv {
-  return addQueueUrlOption(addBuildUrlOption(addJobOptions(yargsInstance)))
+  return addJsonLinesOption(
+    addQueueUrlOption(addBuildUrlOption(addJobOptions(yargsInstance))),
+  )
     .option("follow", {
       type: "boolean",
       default: true,
@@ -257,11 +265,13 @@ function configureLogsOptions(yargsInstance: Argv): Argv {
 }
 
 function configureArtifactsOptions(yargsInstance: Argv): Argv {
-  return addBuildUrlOption(
-    addJobOptions(yargsInstance).option("build", {
-      type: "number",
-      describe: "Target a specific build number (with --job/--job-url)",
-    }),
+  return addJsonOption(
+    addBuildUrlOption(
+      addJobOptions(yargsInstance).option("build", {
+        type: "number",
+        describe: "Target a specific build number (with --job/--job-url)",
+      }),
+    ),
   )
     .option("download", {
       type: "boolean",

@@ -6,6 +6,11 @@ import type { QueueItemSummary, RunningBuildSummary } from "../types/jenkins";
 import { ensureValidUrl } from "./ops-helpers";
 import { cancelDeps } from "./cancel-deps";
 import { DEFAULT_WATCH_INTERVAL_MS } from "./watch-utils";
+import {
+  type JsonCancelReceipt,
+  runJsonCommand,
+  type JsonWrite,
+} from "../json-output";
 
 type CancelOptions = {
   client: JenkinsClient;
@@ -15,6 +20,8 @@ type CancelOptions = {
   buildUrl?: string;
   queueUrl?: string;
   nonInteractive: boolean;
+  json?: boolean;
+  write?: JsonWrite;
 };
 
 type CancelTarget =
@@ -32,6 +39,34 @@ export function setCancelDepsForTesting(overrides?: typeof cancelDeps): void {
 }
 
 export async function runCancel(options: CancelOptions): Promise<void> {
+  if (options.json) {
+    await runJsonCommand(
+      "cancel",
+      async (): Promise<JsonCancelReceipt> => {
+        const structuredOptions = { ...options, nonInteractive: true };
+        validateCancelOptions(structuredOptions);
+        const targets = await resolveCancelTargets(structuredOptions);
+        const target = targets[0];
+        if (!target) {
+          throw new CliError("No cancellation target selected.");
+        }
+        if (target.kind === "build") {
+          await options.client.stopBuild(target.buildUrl);
+          return { targetType: "build", url: target.buildUrl };
+        }
+        const cancelled = await options.client.cancelQueueItem(target.queueUrl);
+        if (!cancelled) {
+          throw new CliError("Queue item not found.", [
+            "The queue item may have already started or finished.",
+          ]);
+        }
+        return { targetType: "queue", url: target.queueUrl };
+      },
+      { write: options.write },
+    );
+    return;
+  }
+
   validateCancelOptions(options);
   const targets = await resolveCancelTargets(options);
 

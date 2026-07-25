@@ -80,6 +80,11 @@ import {
   validateBuildParameters,
 } from "../job-parameters";
 import type { JobParameterDefinition } from "../types/jenkins";
+import {
+  type JsonBuildReceipt,
+  runJsonCommand,
+  type JsonWrite,
+} from "../json-output";
 
 /** Options for the build command. */
 type BuildOptions = {
@@ -94,6 +99,8 @@ type BuildOptions = {
   nonInteractive: boolean;
   watch?: boolean;
   returnToCaller?: boolean;
+  json?: boolean;
+  write?: JsonWrite;
 };
 
 type ActiveBuild = {
@@ -171,6 +178,28 @@ export function setBuildDepsForTesting(overrides?: Partial<BuildDeps>): void {
 
 export async function runBuild(options: BuildOptions): Promise<BuildRunResult> {
   const deps = activeBuildDeps;
+  if (options.json) {
+    await runJsonCommand(
+      "build",
+      async () => {
+        validateBuildOptions(options);
+        return await runBuildOnce({
+          client: options.client,
+          env: options.env,
+          job: options.job,
+          jobUrl: options.jobUrl,
+          branch: options.branch,
+          customParams: options.customParams,
+          defaultBranch: options.defaultBranch ?? false,
+          branchParam: normalizeBranchParam(options.branchParam),
+          watch: options.watch,
+          structured: true,
+        });
+      },
+      { write: options.write },
+    );
+    return {};
+  }
   validateBuildOptions(options);
   const branchParam = normalizeBranchParam(options.branchParam);
 
@@ -590,7 +619,8 @@ async function runBuildOnce(options: {
   defaultBranch: boolean;
   branchParam: string;
   watch?: boolean;
-}): Promise<void> {
+  structured?: boolean;
+}): Promise<JsonBuildReceipt> {
   const deps = activeBuildDeps;
   const { jobUrl, jobLabel, matchedFromSearch } = await resolveJobTarget({
     client: options.client,
@@ -600,7 +630,7 @@ async function runBuildOnce(options: {
     nonInteractive: true,
   });
 
-  if (matchedFromSearch) {
+  if (matchedFromSearch && !options.structured) {
     printOk(`Selected job: ${jobLabel || jobUrl}.`);
   }
 
@@ -627,17 +657,21 @@ async function runBuildOnce(options: {
     if (error instanceof CliError && error.code === "JENKINS_AUTH_ERROR") {
       throw error;
     }
-    printHint(
-      "Could not discover job parameters; continuing with the supplied parameters.",
-    );
+    if (!options.structured) {
+      printHint(
+        "Could not discover job parameters; continuing with the supplied parameters.",
+      );
+    }
   }
   if (definitions?.length && Object.keys(params).length > 0) {
     const validated = validateBuildParameters(definitions, params);
     params = validated.params;
     for (const name of validated.unknownNames) {
-      printHint(
-        `Parameter "${name}" was not present in discovered Jenkins metadata; sending it unchanged.`,
-      );
+      if (!options.structured) {
+        printHint(
+          `Parameter "${name}" was not present in discovered Jenkins metadata; sending it unchanged.`,
+        );
+      }
     }
   }
 
@@ -669,13 +703,15 @@ async function runBuildOnce(options: {
   });
 
   const displayJob = jobLabel || jobUrl;
-  if (result.buildUrl) {
-    printOk(`Build started at ${result.buildUrl}.`);
-  } else if (result.queueUrl) {
-    const trackingUrl = result.jobUrl || jobUrl;
-    printOk(`Build queued for ${displayJob}. Track at ${trackingUrl}.`);
-  } else {
-    printOk(`Build triggered for ${displayJob}.`);
+  if (!options.structured) {
+    if (result.buildUrl) {
+      printOk(`Build started at ${result.buildUrl}.`);
+    } else if (result.queueUrl) {
+      const trackingUrl = result.jobUrl || jobUrl;
+      printOk(`Build queued for ${displayJob}. Track at ${trackingUrl}.`);
+    } else {
+      printOk(`Build triggered for ${displayJob}.`);
+    }
   }
 
   const shouldWatch = await resolveWatchDecision({
@@ -684,18 +720,36 @@ async function runBuildOnce(options: {
     nonInteractive: true,
   });
   if (shouldWatch) {
-    const finalStatus = await watchBuildStatus({
-      client: options.client,
-      env: options.env,
-      jobUrl,
-      jobLabel: displayJob,
-      buildUrl: result.buildUrl,
-      buildNumber: result.buildNumber,
-      queueUrl: result.queueUrl,
-      baselineBuildNumber,
-    });
+    const finalStatus = options.structured
+      ? await watchBuildStatusStructured({
+          client: options.client,
+          jobUrl,
+          buildUrl: result.buildUrl,
+          buildNumber: result.buildNumber,
+          queueUrl: result.queueUrl,
+          baselineBuildNumber,
+        })
+      : await watchBuildStatus({
+          client: options.client,
+          env: options.env,
+          jobUrl,
+          jobLabel: displayJob,
+          buildUrl: result.buildUrl,
+          buildNumber: result.buildNumber,
+          queueUrl: result.queueUrl,
+          baselineBuildNumber,
+        });
     if (finalStatus.cancelled) {
-      return;
+      return {
+        job: displayJob,
+        jobUrl: result.jobUrl ?? jobUrl,
+        queueUrl: result.queueUrl,
+        queueId: result.queueId,
+        buildUrl: result.buildUrl,
+        buildNumber: finalStatus.buildNumber ?? result.buildNumber,
+        queued: Boolean(result.queueUrl && !result.buildUrl),
+        result: finalStatus.result,
+      };
     }
     if (!finalStatus.cancelIssued) {
       await deps.notifyBuildComplete({
@@ -709,6 +763,82 @@ async function runBuildOnce(options: {
         process.exitCode = 1;
       }
     }
+    return {
+      job: displayJob,
+      jobUrl: result.jobUrl ?? jobUrl,
+      queueUrl: result.queueUrl,
+      queueId: result.queueId,
+      buildUrl: finalStatus.buildUrl ?? result.buildUrl,
+      buildNumber: finalStatus.buildNumber ?? result.buildNumber,
+      queued: false,
+      result: finalStatus.result,
+    };
+  }
+  return {
+    job: displayJob,
+    jobUrl: result.jobUrl ?? jobUrl,
+    queueUrl: result.queueUrl,
+    queueId: result.queueId,
+    buildUrl: result.buildUrl,
+    buildNumber: result.buildNumber,
+    queued: Boolean(result.queueUrl && !result.buildUrl),
+  };
+}
+
+async function watchBuildStatusStructured(options: {
+  client: JenkinsClient;
+  jobUrl: string;
+  buildUrl?: string;
+  buildNumber?: number;
+  queueUrl?: string;
+  baselineBuildNumber?: number;
+}): Promise<{
+  result: string;
+  buildNumber?: number;
+  buildUrl?: string;
+  cancelled?: boolean;
+  cancelIssued?: boolean;
+}> {
+  markAnalyticsPollingCommand();
+  let buildUrl = options.buildUrl;
+  let buildNumber = options.buildNumber;
+  while (true) {
+    if (!buildUrl && options.queueUrl) {
+      const queued = await options.client.getQueueBuild(options.queueUrl);
+      if (queued?.buildUrl) {
+        buildUrl = queued.buildUrl;
+        buildNumber = queued.buildNumber;
+      }
+    }
+    if (buildUrl) {
+      const status = await options.client.getBuildStatus(buildUrl);
+      if (!status.building) {
+        return {
+          result: status.result ?? "UNKNOWN",
+          buildNumber: status.buildNumber ?? buildNumber,
+          buildUrl: status.buildUrl ?? buildUrl,
+        };
+      }
+    } else {
+      const status = await options.client.getJobStatus(options.jobUrl);
+      if (
+        typeof status.lastBuildNumber === "number" &&
+        (options.baselineBuildNumber === undefined ||
+          status.lastBuildNumber !== options.baselineBuildNumber ||
+          status.building)
+      ) {
+        buildNumber = status.lastBuildNumber;
+        buildUrl = status.lastBuildUrl;
+        if (!status.building) {
+          return {
+            result: status.result ?? "UNKNOWN",
+            buildNumber,
+            buildUrl,
+          };
+        }
+      }
+    }
+    await Bun.sleep(DEFAULT_WATCH_INTERVAL_MS);
   }
 }
 
@@ -966,6 +1096,7 @@ async function watchBuildStatus(options: {
 }): Promise<{
   result: string;
   buildNumber?: number;
+  buildUrl?: string;
   cancelled?: boolean;
   cancelIssued?: boolean;
 }> {

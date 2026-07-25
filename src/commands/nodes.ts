@@ -8,6 +8,7 @@ import type { EnvConfig } from "../env";
 import type { JenkinsClient } from "../jenkins/api-wrapper";
 import { formatTable, truncateCell } from "../table";
 import type { NodeSummary, NodesSummary } from "../types/jenkins";
+import { jsonNodes, runJsonCommand, type JsonWrite } from "../json-output";
 
 const LABELS_COLUMN_WIDTH = 40;
 const STATUS_COLUMN_WIDTH = 40;
@@ -17,9 +18,28 @@ type NodesOptions = {
   env: EnvConfig;
   offlineOnly: boolean;
   nonInteractive: boolean;
+  json?: boolean;
+  write?: JsonWrite;
 };
 
 export async function runNodes(options: NodesOptions): Promise<void> {
+  if (options.json) {
+    await runJsonCommand(
+      "nodes",
+      async () => {
+        const summary = await options.client.listNodes();
+        const nodes = options.offlineOnly
+          ? summary.nodes.filter(
+              (node) => node.offline || node.temporarilyOffline,
+            )
+          : summary.nodes;
+        return jsonNodes(summary, nodes);
+      },
+      { write: options.write },
+    );
+    return;
+  }
+
   const summary = await options.client.listNodes();
   const nodes = options.offlineOnly
     ? summary.nodes.filter((node) => node.offline || node.temporarilyOffline)

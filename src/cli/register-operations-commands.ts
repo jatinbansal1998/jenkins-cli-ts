@@ -13,6 +13,7 @@ import { runRunningBuilds } from "../commands/run";
 import {
   addBuildUrlOption,
   addJobOptions,
+  addJsonOption,
   addQueueUrlOption,
   optionalString,
 } from "./options";
@@ -28,7 +29,7 @@ export function registerOperationsCommands(
     .command(
       "run",
       "List running builds and open one in the browser",
-      () => {},
+      addJsonOption,
       async (argv) => {
         await runTrackedCommandWithContext(
           "run",
@@ -37,7 +38,8 @@ export function registerOperationsCommands(
             await runRunningBuilds({
               client,
               env,
-              nonInteractive: Boolean(argv.nonInteractive),
+              nonInteractive: Boolean(argv.nonInteractive || argv.json),
+              json: Boolean(argv.json),
             });
           },
         );
@@ -47,7 +49,9 @@ export function registerOperationsCommands(
       "cancel [job-name]",
       "Cancel a queued or running build",
       (yargsInstance) =>
-        addQueueUrlOption(addBuildUrlOption(addJobOptions(yargsInstance))),
+        addJsonOption(
+          addQueueUrlOption(addBuildUrlOption(addJobOptions(yargsInstance))),
+        ),
       async (argv) => {
         await runTrackedCommandWithContext(
           "cancel",
@@ -60,7 +64,8 @@ export function registerOperationsCommands(
               jobUrl: optionalString(argv.jobUrl),
               buildUrl: optionalString(argv.buildUrl),
               queueUrl: optionalString(argv.queueUrl),
-              nonInteractive: Boolean(argv.nonInteractive),
+              nonInteractive: Boolean(argv.nonInteractive || argv.json),
+              json: Boolean(argv.json),
             });
           },
         );
@@ -70,10 +75,12 @@ export function registerOperationsCommands(
       "queue",
       "Show the Jenkins build queue",
       (yargsInstance) =>
-        yargsInstance.option("job", {
-          type: "string",
-          describe: "Filter queued items to a job name",
-        }),
+        addJsonOption(
+          yargsInstance.option("job", {
+            type: "string",
+            describe: "Filter queued items to a job name",
+          }),
+        ),
       async (argv) => {
         await runTrackedCommandWithContext(
           "queue",
@@ -83,7 +90,8 @@ export function registerOperationsCommands(
               client,
               env,
               job: optionalString(argv.job),
-              nonInteractive: Boolean(argv.nonInteractive),
+              nonInteractive: Boolean(argv.nonInteractive || argv.json),
+              json: Boolean(argv.json),
             });
           },
         );
@@ -93,11 +101,13 @@ export function registerOperationsCommands(
       "nodes",
       "Show Jenkins agents and executor usage",
       (yargsInstance) =>
-        yargsInstance.option("offline-only", {
-          type: "boolean",
-          default: false,
-          describe: "Show only offline nodes",
-        }),
+        addJsonOption(
+          yargsInstance.option("offline-only", {
+            type: "boolean",
+            default: false,
+            describe: "Show only offline nodes",
+          }),
+        ),
       async (argv) => {
         await runTrackedCommandWithContext(
           "nodes",
@@ -107,7 +117,8 @@ export function registerOperationsCommands(
               client,
               env,
               offlineOnly: Boolean(argv.offlineOnly),
-              nonInteractive: Boolean(argv.nonInteractive),
+              nonInteractive: Boolean(argv.nonInteractive || argv.json),
+              json: Boolean(argv.json),
             });
           },
         );
@@ -116,7 +127,7 @@ export function registerOperationsCommands(
     .command(
       "rerun [job-name]",
       "Rerun the last failed build for a job",
-      addJobOptions,
+      (yargsInstance) => addJsonOption(addJobOptions(yargsInstance)),
       async (argv) => {
         await runTrackedCommandWithContext(
           "rerun",
@@ -127,7 +138,8 @@ export function registerOperationsCommands(
               env,
               job: optionalString(argv.job),
               jobUrl: optionalString(argv.jobUrl),
-              nonInteractive: Boolean(argv.nonInteractive),
+              nonInteractive: Boolean(argv.nonInteractive || argv.json),
+              json: Boolean(argv.json),
             });
           },
         );

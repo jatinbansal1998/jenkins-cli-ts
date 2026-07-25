@@ -621,6 +621,8 @@ function shouldSkipAutoUpdate(rawArgs: string[]): boolean {
     CLI_FLAGS.VERSION_SHORT,
     CLI_FLAGS.NON_INTERACTIVE,
     CLI_FLAGS.NON_INTERACTIVE_CAMEL,
+    "--json",
+    "--jsonl",
   ]);
   if (rawArgs.some((arg) => skipFlags.has(arg))) {
     return true;

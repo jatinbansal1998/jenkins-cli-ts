@@ -295,15 +295,26 @@ If you have not installed the global CLI, replace `jenkins-cli` with
 
 #### JSON Output (`--json`)
 
-The read commands `list`, `params`, `status`, `history` (alias `builds`), and `wait`
-accept a `--json` flag for scripting and automation:
+Automation-relevant read and mutation commands accept `--json`:
 
 - `--json` prints **exactly one JSON document** to stdout and nothing else — no
   banner, no `OK:`/`HINT:` lines, no prompts, no spinner. Hints and warnings, if
   any, go to stderr.
 - `--json` implies `--non-interactive`: the command never prompts and fails fast.
-- `--json` cannot be combined with `--watch` (or streaming flags); doing so is an
-  error.
+- `build --json --watch` waits and returns the final result in the same
+  one-document receipt. Other streaming output uses `logs --jsonl`.
+
+| Command                                       | Structured mode | `data` summary                                          |
+| --------------------------------------------- | --------------- | ------------------------------------------------------- |
+| `list`, `params`, `status`, `history`, `wait` | `--json`        | Existing compatible read contracts                      |
+| `queue`, `nodes`, `run`, `artifacts`          | `--json`        | Normalized collections; empty results are `[]`          |
+| `auth status`, `auth list`, `auth current`    | `--json`        | Credential diagnostics without tokens                   |
+| `update --check`                              | `--json`        | Current/latest version and update decision              |
+| `build`, `cancel`, `rerun`                    | `--json`        | Canonical queue/build/source/target receipts            |
+| `logs`                                        | `--jsonl`       | Ordered `start`, `chunk`, `complete`, or `error` events |
+
+Commands without a structured contract still recognize `--json` and return a
+clear unsupported-output error instead of treating the flag as unknown.
 
 Success envelope:
 
@@ -461,6 +472,46 @@ jenkins-cli wait --json --build-url https://jenkins.example.com/job/api/42/
   }
 }
 ```
+
+**Mutation receipts** — `build`, `cancel`, and `rerun` return canonical targets
+instead of human status lines:
+
+```bash
+jenkins-cli build --job api --branch main --json
+jenkins-cli cancel --queue-url https://jenkins.example.com/queue/item/17/ --json
+jenkins-cli rerun --job api --json
+```
+
+```json
+{
+  "ok": true,
+  "command": "build",
+  "data": {
+    "job": "api",
+    "jobUrl": "https://jenkins.example.com/job/api/",
+    "queueUrl": "https://jenkins.example.com/queue/item/17/",
+    "queueId": 17,
+    "queued": true
+  }
+}
+```
+
+#### JSON Lines Log Streaming (`--jsonl`)
+
+`logs --jsonl` emits one compact JSON event per line. Each line is independently
+valid JSON; raw log text is carried in `chunk.text`.
+
+```bash
+jenkins-cli logs --build-url https://jenkins.example.com/job/api/42/ --jsonl
+```
+
+```jsonl
+{"type":"start","buildUrl":"https://jenkins.example.com/job/api/42/","buildNumber":42,"offset":0}
+{"type":"chunk","offset":0,"nextOffset":128,"text":"Compiling...\n","more":true}
+{"type":"complete","buildUrl":"https://jenkins.example.com/job/api/42/","offset":128,"result":"SUCCESS"}
+```
+
+A mid-stream failure ends with an `error` event and a non-zero exit code.
 
 ### Authentication Troubleshooting
 
