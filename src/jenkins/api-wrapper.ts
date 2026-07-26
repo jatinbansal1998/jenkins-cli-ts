@@ -1018,10 +1018,18 @@ export class JenkinsClient {
   ): Promise<never> {
     const status = response.status;
     const detail = await readJenkinsErrorDetail(response);
+    const code =
+      status === 401 || status === 403
+        ? "JENKINS_AUTH_ERROR"
+        : status === 404 && isBuildResourceContext(context)
+          ? "BUILD_NOT_FOUND"
+          : status === 404
+            ? "JENKINS_NOT_FOUND"
+            : undefined;
     throw new CliError(
       `Jenkins returned HTTP ${status} while trying to ${context}${detail ? `: ${detail}` : "."}`,
       [],
-      status === 401 || status === 403 ? "JENKINS_AUTH_ERROR" : undefined,
+      code,
     );
   }
 
@@ -1229,6 +1237,16 @@ export class JenkinsClient {
       return null;
     }
   }
+}
+
+function isBuildResourceContext(context: string): boolean {
+  return (
+    context === "fetch build status" ||
+    context === "fetch build logs" ||
+    context === "list build artifacts" ||
+    context === "stop build" ||
+    context.startsWith("download artifact ")
+  );
 }
 
 const CLOUDBEES_FOLDER_CLASS = "com.cloudbees.hudson.plugins.folder.Folder";

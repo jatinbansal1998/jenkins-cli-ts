@@ -144,7 +144,7 @@ describe("wait command", () => {
       client: createClient({
         getBuildStatus,
       }),
-      env: {} as EnvConfig,
+      env,
       buildUrl: "https://jenkins.example.com/job/api/9/",
       nonInteractive: true,
       suppressExitCode: true,

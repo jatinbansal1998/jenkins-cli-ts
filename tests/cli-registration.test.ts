@@ -178,6 +178,22 @@ describe("structured output registration", () => {
 });
 
 describe("command help and global options", () => {
+  test("all exact-build commands expose the shared selectors", () => {
+    for (const command of [
+      "status",
+      "wait",
+      "logs",
+      "artifacts",
+      "cancel",
+      "rerun",
+    ]) {
+      const result = runCli([command, "--help"]);
+      expect(result.exitCode).toBe(0);
+      expect(result.output).toContain("--build");
+      expect(result.output).toContain("--build-url");
+    }
+  });
+
   test("every canonical command keeps command help and inherited global options", () => {
     for (const commandPath of FULL_HELP_COMMANDS) {
       const result = runCli([...commandPath, "--help"]);

@@ -357,6 +357,253 @@ describe.skipIf(!integrationEnabled)(
       });
     }, 180_000);
 
+    test("targets one immutable build across every build-scoped command", async () => {
+      await withCliHome(async (home) => {
+        const exactUrl = `${jenkinsUrl}/job/cli-exact/`;
+        const first = parseJson<{
+          data: { buildNumber: number; buildUrl: string };
+        }>(
+          await runCli(home, [
+            "build",
+            "--job-url",
+            exactUrl,
+            "--param",
+            "MESSAGE=exact-first",
+            "--watch",
+            "--json",
+          ]),
+        );
+        const second = parseJson<{
+          data: { buildNumber: number; buildUrl: string };
+        }>(
+          await runCli(home, [
+            "build",
+            "--job-url",
+            exactUrl,
+            "--param",
+            "MESSAGE=exact-second",
+            "--watch",
+            "--json",
+          ]),
+        );
+        expect(second.data.buildNumber).toBeGreaterThan(first.data.buildNumber);
+
+        for (const args of [
+          [
+            "status",
+            "--job-url",
+            exactUrl,
+            "--build",
+            String(first.data.buildNumber),
+            "--json",
+          ],
+          ["status", "--build-url", first.data.buildUrl, "--json"],
+        ]) {
+          expect(parseJson(await runCli(home, args))).toMatchObject({
+            ok: true,
+            command: "status",
+            data: {
+              build: {
+                number: first.data.buildNumber,
+                url: first.data.buildUrl,
+              },
+            },
+          });
+        }
+
+        expect(
+          parseJson(
+            await runCli(home, [
+              "wait",
+              "--job-url",
+              exactUrl,
+              "--build",
+              String(first.data.buildNumber),
+              "--json",
+            ]),
+          ),
+        ).toMatchObject({
+          ok: true,
+          command: "wait",
+          data: { build: { number: first.data.buildNumber } },
+        });
+
+        const logs = await runCli(home, [
+          "logs",
+          "--job-url",
+          exactUrl,
+          "--build",
+          String(first.data.buildNumber),
+          "--no-follow",
+        ]);
+        expect(logs.output).toContain("exact-build:exact-first");
+        expect(logs.output).not.toContain("exact-build:exact-second");
+
+        expect(
+          parseJson(
+            await runCli(home, [
+              "artifacts",
+              "--job-url",
+              exactUrl,
+              "--build",
+              String(first.data.buildNumber),
+              "--json",
+            ]),
+          ),
+        ).toMatchObject({
+          ok: true,
+          command: "artifacts",
+          data: { buildNumber: first.data.buildNumber },
+        });
+
+        const rerun = parseJson<{
+          data: { source: { buildNumber: number } };
+        }>(
+          await runCli(home, [
+            "rerun",
+            "--job-url",
+            exactUrl,
+            "--build",
+            String(first.data.buildNumber),
+            "--json",
+          ]),
+        );
+        expect(rerun.data.source.buildNumber).toBe(first.data.buildNumber);
+        const rerunBuildUrl = await waitForNewBuild(
+          home,
+          exactUrl,
+          second.data.buildNumber,
+        );
+        await runCli(home, [
+          "wait",
+          "--build-url",
+          rerunBuildUrl,
+          "--timeout",
+          "30s",
+        ]);
+        expect(
+          (
+            await runCli(home, [
+              "logs",
+              "--build-url",
+              rerunBuildUrl,
+              "--no-follow",
+            ])
+          ).output,
+        ).toContain("exact-build:exact-first");
+
+        const nestedUrl = `${jenkinsUrl}/job/team/job/nested%20smoke/`;
+        await runCli(home, [
+          "build",
+          "--job-url",
+          nestedUrl,
+          "--without-params",
+          "--watch",
+        ]);
+        const nestedNumber = parseJson<{
+          data: Array<{ number: number }>;
+        }>(await runCli(home, ["history", "--job-url", nestedUrl, "--json"]))
+          .data[0]!.number;
+        expect(
+          parseJson(
+            await runCli(home, [
+              "status",
+              "--job-url",
+              nestedUrl,
+              "--build",
+              String(nestedNumber),
+              "--json",
+            ]),
+          ),
+        ).toMatchObject({
+          ok: true,
+          data: { build: { number: nestedNumber } },
+        });
+
+        const missing = parseJson<{
+          error: { code: string };
+        }>(
+          await runCliExpectFailure(home, [
+            "status",
+            "--job-url",
+            exactUrl,
+            "--build",
+            "999999",
+            "--json",
+          ]),
+        );
+        expect(missing.error.code).toBe("BUILD_NOT_FOUND");
+
+        const crossController = parseJson<{
+          error: { code: string };
+        }>(
+          await runCliExpectFailure(home, [
+            "status",
+            "--build-url",
+            "http://127.0.0.1:1/job/cli-smoke/1/",
+            "--json",
+          ]),
+        );
+        expect(crossController.error.code).toBe("CROSS_CONTROLLER_URL");
+
+        const readerDenied = parseJson<{
+          error: { code: string };
+        }>(
+          await runCliExpectFailure(
+            home,
+            [
+              "rerun",
+              "--job-url",
+              exactUrl,
+              "--build",
+              String(first.data.buildNumber),
+              "--json",
+            ],
+            {
+              JENKINS_USER:
+                process.env.JENKINS_INTEGRATION_READER_USER ??
+                "integration-reader",
+              JENKINS_API_TOKEN:
+                process.env.JENKINS_INTEGRATION_READER_TOKEN ?? "",
+            },
+          ),
+        );
+        expect(readerDenied.error.code).toBe("JENKINS_AUTH_ERROR");
+
+        const slowUrl = `${jenkinsUrl}/job/cli-slow/`;
+        await runCli(home, ["build", "--job-url", slowUrl, "--without-params"]);
+        const running = await pollCli(home, ["run", "--json"], (result) => {
+          const payload = parseJson<{
+            data: Array<{ url: string; number: number }>;
+          }>(result);
+          return payload.data.some((build) => build.url.startsWith(slowUrl));
+        });
+        const slowBuild = parseJson<{
+          data: Array<{ url: string; number: number }>;
+        }>(running).data.find((build) => build.url.startsWith(slowUrl))!;
+        expect(
+          parseJson(
+            await runCli(home, [
+              "cancel",
+              "--job-url",
+              slowUrl,
+              "--build",
+              String(slowBuild.number),
+              "--json",
+            ]),
+          ),
+        ).toMatchObject({
+          ok: true,
+          command: "cancel",
+          data: {
+            targetType: "build",
+            url: slowBuild.url,
+            buildNumber: slowBuild.number,
+          },
+        });
+      });
+    }, 180_000);
+
     test("validates typed parameters and preserves complex values through artifacts", async () => {
       await withCliHome(async (home) => {
         const artifactDir = join(home, "artifacts");

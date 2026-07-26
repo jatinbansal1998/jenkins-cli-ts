@@ -23,6 +23,22 @@ After making all changes, always ask to run:
 
 Report any failures — do not claim work is validated if these fail.
 
+## Real Jenkins validation
+
+Every implementation that changes Jenkins-facing behavior must add or update a
+synthetic scenario in `tests/integration/jenkins.test.ts` and, when fixture
+configuration is needed, `tests/integration/jenkins/init.groovy`.
+
+- Run `bun run test:integration:jenkins`; it must build and exercise
+  `dist/jenkins-cli` against the disposable `jenkins/jenkins:lts-jdk21`
+  controller. Unit tests or a successful compile are not substitutes.
+- Use only synthetic disposable-controller jobs and credentials. Never target a
+  production Jenkins controller.
+- Keep `test:integration:jenkins` in both pull-request and post-merge GitHub
+  Actions workflows so the same real-controller scenario runs in CI.
+- Report the local integration result and the exact GitHub Actions run when
+  changes are published.
+
 ## Test isolation (Bun-specific)
 
 Bun runs all test files in the **same process**. Mocks and spies are global.

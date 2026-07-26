@@ -1,6 +1,7 @@
 import { CliError } from "../cli";
 import type { EnvConfig } from "../env";
 import type { JenkinsClient } from "../jenkins/api-wrapper";
+import { normalizeControllerTargetUrl } from "../jenkins-target-url";
 import { normalizeOptionalJobUrl } from "../job-url";
 import { pickJobs, type JobPickerResult } from "../job-picker";
 import type { JenkinsJob } from "../types/jenkins";
@@ -42,11 +43,15 @@ export async function resolveJobTargets(options: {
 }): Promise<{ jobUrl: string; jobLabel: string }[]> {
   const providedUrl = normalizeOptionalJobUrl(options.jobUrl);
   if (providedUrl) {
-    ensureValidUrl(providedUrl, "job-url");
+    const controllerUrl = normalizeControllerTargetUrl(
+      providedUrl,
+      options.env.jenkinsUrl,
+      "job-url",
+    );
     return [
       {
-        jobUrl: providedUrl,
-        jobLabel: providedUrl,
+        jobUrl: controllerUrl,
+        jobLabel: controllerUrl,
       },
     ];
   }

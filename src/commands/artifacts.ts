@@ -4,10 +4,9 @@ import { isCancel, multiselect, text } from "../clack";
 import { CliError, printHint, printOk } from "../cli";
 import type { EnvConfig } from "../env";
 import type { JenkinsClient } from "../jenkins/api-wrapper";
-import { normalizeJobUrl } from "../job-url";
 import type { ArtifactEntry } from "../types/jenkins";
 import { jsonArtifact, runJsonCommand, type JsonWrite } from "../json-output";
-import { ensureValidUrl, resolveJobTarget } from "./ops-helpers";
+import { resolveBuildSelector } from "../build-selector";
 
 type ArtifactsOptions = {
   client: JenkinsClient;
@@ -88,55 +87,29 @@ function validateArtifactsOptions(options: ArtifactsOptions): void {
       ["Remove --download, --dest, --artifact, and --force."],
     );
   }
-  if (options.job && options.jobUrl) {
-    throw new CliError("Provide either --job or --job-url, not both.", [
-      "Remove one of the flags and try again.",
-    ]);
-  }
-  if (options.buildUrl && (options.job || options.jobUrl)) {
-    throw new CliError(
-      "When --build-url is provided, do not pass --job or --job-url.",
-      ["Use a single build target at a time."],
-    );
-  }
-  if (options.buildUrl && typeof options.build === "number") {
-    throw new CliError("When --build-url is provided, do not pass --build.", [
-      "Use a single build target at a time.",
-    ]);
-  }
-  if (
-    typeof options.build === "number" &&
-    (!Number.isFinite(options.build) || options.build <= 0)
-  ) {
-    throw new CliError("Invalid --build value.", [
-      "Provide a positive build number (e.g. --build 184).",
-    ]);
-  }
 }
 
 async function resolveBuildTarget(
   options: ArtifactsOptions,
 ): Promise<{ buildUrl: string; label: string }> {
-  const providedBuildUrl = options.buildUrl?.trim() ?? "";
-  if (providedBuildUrl) {
-    ensureValidUrl(providedBuildUrl, "build-url");
-    return { buildUrl: providedBuildUrl, label: providedBuildUrl };
-  }
-
-  const target = await resolveJobTarget({
+  const target = await resolveBuildSelector({
     client: options.client,
     env: options.env,
     job: options.job,
     jobUrl: options.jobUrl,
+    build: options.build,
+    buildUrl: options.buildUrl,
     nonInteractive: options.nonInteractive,
   });
 
-  if (typeof options.build === "number") {
-    const buildUrl = `${normalizeJobUrl(target.jobUrl)}/${options.build}/`;
+  if (target.kind === "build") {
     return {
-      buildUrl,
-      label: `${target.jobLabel} #${options.build}`,
+      buildUrl: target.buildUrl,
+      label: `${target.jobLabel} #${target.buildNumber}`,
     };
+  }
+  if (target.kind !== "job") {
+    throw new CliError("Artifacts require a build or job target.");
   }
 
   const completed = await options.client.getLastCompletedBuild(target.jobUrl);

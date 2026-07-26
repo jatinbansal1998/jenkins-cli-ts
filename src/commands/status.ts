@@ -4,9 +4,11 @@
  */
 import { autocomplete, confirm, isCancel, select, text } from "../clack";
 import { runInteractiveSubcommandWithAnalytics } from "../analytics";
+import { resolveBuildSelector } from "../build-selector";
 import { CliError, printError, printHint, printOk } from "../cli";
 import {
   jsonBuildFromJobStatus,
+  jsonBuildFromBuildStatus,
   type JsonBuild,
   type JsonWrite,
   runJsonCommand,
@@ -26,9 +28,11 @@ import {
   formatStatusDetails,
   formatStatusSummary,
   toStatusDetailsFromJob,
+  toStatusDetailsFromBuild,
 } from "../status-format";
 import type { EnvConfig } from "../env";
 import type { JenkinsClient } from "../jenkins/api-wrapper";
+import { normalizeControllerTargetUrl } from "../jenkins-target-url";
 import { normalizeOptionalJobUrl } from "../job-url";
 import { recordRecentJob } from "../recent-jobs";
 import { runFlow } from "../flows/runner";
@@ -42,6 +46,8 @@ type StatusOptions = {
   env: EnvConfig;
   job?: string;
   jobUrl?: string;
+  build?: number;
+  buildUrl?: string;
   nonInteractive: boolean;
   watch?: boolean;
   json?: boolean;
@@ -65,6 +71,11 @@ export async function runStatus(options: StatusOptions): Promise<void> {
     return;
   }
 
+  if (options.build !== undefined || options.buildUrl?.trim()) {
+    await runExactStatus(options);
+    return;
+  }
+
   if (options.job && options.jobUrl) {
     throw new CliError("Provide either --job or --job-url, not both.", [
       "Remove one of the flags and try again.",
@@ -77,13 +88,19 @@ export async function runStatus(options: StatusOptions): Promise<void> {
   }
 
   let jobUrl = normalizeOptionalJobUrl(options.jobUrl);
+  if (jobUrl) {
+    jobUrl = normalizeControllerTargetUrl(
+      jobUrl,
+      options.env.jenkinsUrl,
+      "job-url",
+    );
+  }
   let jobQuery = options.job?.trim() ?? "";
 
   while (true) {
     let targets: { jobUrl: string; jobLabel: string }[] = [];
 
     if (jobUrl) {
-      ensureValidUrl(jobUrl, "job-url");
       targets = [{ jobUrl, jobLabel: jobUrl }];
     } else {
       targets = await resolveJobTargets({
@@ -303,22 +320,29 @@ async function runStatusJson(options: StatusOptions): Promise<void> {
           "INVALID_USAGE",
         );
       }
-      if (options.job && options.jobUrl) {
-        throw new CliError("Provide either --job or --job-url, not both.", [
-          "Remove one of the flags and try again.",
-        ]);
-      }
-
-      const target = await resolveJobTarget({
+      const target = await resolveBuildSelector({
         client: options.client,
         env: options.env,
         job: options.job,
         jobUrl: options.jobUrl,
+        build: options.build,
+        buildUrl: options.buildUrl,
         nonInteractive: true,
       });
 
-      await recordRecentJob({ env: options.env, jobUrl: target.jobUrl });
+      if (target.kind === "build") {
+        await recordRecentJob({ env: options.env, jobUrl: target.jobUrl });
+        const status = await options.client.getBuildStatus(target.buildUrl);
+        return {
+          job: target.jobLabel,
+          build: jsonBuildFromBuildStatus(status),
+        };
+      }
+      if (target.kind !== "job") {
+        throw new CliError("Status requires a build or job target.");
+      }
 
+      await recordRecentJob({ env: options.env, jobUrl: target.jobUrl });
       const status = await options.client.getJobStatus(target.jobUrl);
       const jobState = getJobState(status.disabled);
       return {
@@ -329,6 +353,63 @@ async function runStatusJson(options: StatusOptions): Promise<void> {
     },
     { write: options.write },
   );
+}
+
+async function runExactStatus(options: StatusOptions): Promise<void> {
+  const target = await resolveBuildSelector({
+    client: options.client,
+    env: options.env,
+    job: options.job,
+    jobUrl: options.jobUrl,
+    build: options.build,
+    buildUrl: options.buildUrl,
+    nonInteractive: options.nonInteractive,
+  });
+  if (target.kind !== "build") {
+    throw new CliError("Status requires an exact build target.");
+  }
+
+  await recordRecentJob({ env: options.env, jobUrl: target.jobUrl });
+  const status = await options.client.getBuildStatus(target.buildUrl);
+  const result = status.building ? "RUNNING" : status.result || "UNKNOWN";
+  const buildUrl = status.buildUrl || target.buildUrl;
+  const buildNumber = status.buildNumber ?? target.buildNumber;
+  const knownTotalStages = await getKnownStageTotal({
+    env: options.env,
+    jobUrl: target.jobUrl,
+    buildUrl,
+  });
+  const summary = formatStatusSummary({
+    jobLabel: target.jobLabel,
+    buildNumber,
+    result,
+    exact: true,
+  });
+  const details = formatStatusDetails(
+    toStatusDetailsFromBuild(status, { knownTotalStages }),
+    buildUrl,
+  );
+  printOk(details ? `${summary}\n${details}` : summary);
+
+  if (!status.building && (result === "SUCCESS" || result === "UNSTABLE")) {
+    await persistKnownTotalStages({
+      env: options.env,
+      jobUrl: target.jobUrl,
+      buildUrl,
+      stages: status.stages,
+      jobLabel: target.jobLabel,
+    });
+  }
+
+  if (options.watch) {
+    await runWait({
+      client: options.client,
+      env: options.env,
+      buildUrl,
+      nonInteractive: options.nonInteractive,
+      suppressExitCode: false,
+    });
+  }
 }
 
 async function runStatusOnce(options: StatusOptions): Promise<void> {
@@ -428,15 +509,5 @@ async function runMenuAction<T>(
       return undefined;
     }
     throw error;
-  }
-}
-
-function ensureValidUrl(value: string, label: string): void {
-  try {
-    new URL(value);
-  } catch {
-    throw new CliError(`Invalid --${label} value.`, [
-      `Provide a full URL like https://jenkins.example.com/job/example/.`,
-    ]);
   }
 }

@@ -538,6 +538,23 @@ describe("JenkinsClient build transport", () => {
     ).toEqual({ disabled: true });
   });
 
+  test("assigns a stable code when an exact build does not exist", async () => {
+    globalThis.fetch = mock(
+      async () => new Response("Not Found", { status: 404 }),
+    ) as unknown as typeof fetch;
+    const client = new JenkinsClient({
+      baseUrl: "https://jenkins.example.com",
+      user: "user",
+      apiToken: "token",
+    });
+
+    const error = await captureCliError(
+      client.getBuildStatus("https://jenkins.example.com/job/my-job/999/"),
+    );
+
+    expect(error.code).toBe("BUILD_NOT_FOUND");
+  });
+
   test("requests and returns progressive console logs", async () => {
     const fetchMock = mock(async (_input: FetchInput, _init?: FetchInit) =>
       Promise.resolve(

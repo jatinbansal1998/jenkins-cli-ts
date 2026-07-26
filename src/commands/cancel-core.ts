@@ -1,9 +1,9 @@
 import { CliError, printError, printHint, printOk } from "../cli";
+import { resolveBuildSelector } from "../build-selector";
 import type { EnvConfig } from "../env";
 import { areSameJobUrls } from "../job-url";
 import type { JenkinsClient } from "../jenkins/api-wrapper";
 import type { QueueItemSummary, RunningBuildSummary } from "../types/jenkins";
-import { ensureValidUrl } from "./ops-helpers";
 import { cancelDeps } from "./cancel-deps";
 import { DEFAULT_WATCH_INTERVAL_MS } from "./watch-utils";
 import {
@@ -17,6 +17,7 @@ type CancelOptions = {
   env: EnvConfig;
   job?: string;
   jobUrl?: string;
+  build?: number;
   buildUrl?: string;
   queueUrl?: string;
   nonInteractive: boolean;
@@ -25,7 +26,12 @@ type CancelOptions = {
 };
 
 type CancelTarget =
-  | { kind: "build"; buildUrl: string; label: string }
+  | {
+      kind: "build";
+      buildUrl: string;
+      buildNumber?: number;
+      label: string;
+    }
   | { kind: "queue"; queueUrl: string; label: string };
 
 const MULTIPLE_VALUE = "__jenkins_cli_cancel_multiple__";
@@ -44,7 +50,6 @@ export async function runCancel(options: CancelOptions): Promise<void> {
       "cancel",
       async (): Promise<JsonCancelReceipt> => {
         const structuredOptions = { ...options, nonInteractive: true };
-        validateCancelOptions(structuredOptions);
         const targets = await resolveCancelTargets(structuredOptions);
         const target = targets[0];
         if (!target) {
@@ -52,7 +57,11 @@ export async function runCancel(options: CancelOptions): Promise<void> {
         }
         if (target.kind === "build") {
           await options.client.stopBuild(target.buildUrl);
-          return { targetType: "build", url: target.buildUrl };
+          return {
+            targetType: "build",
+            url: target.buildUrl,
+            buildNumber: target.buildNumber,
+          };
         }
         const cancelled = await options.client.cancelQueueItem(target.queueUrl);
         if (!cancelled) {
@@ -67,7 +76,6 @@ export async function runCancel(options: CancelOptions): Promise<void> {
     return;
   }
 
-  validateCancelOptions(options);
   const targets = await resolveCancelTargets(options);
 
   if (targets.length > 1) {
@@ -262,6 +270,7 @@ function hasExplicitCancelTarget(options: CancelOptions): boolean {
   return Boolean(
     options.job?.trim() ||
     options.jobUrl?.trim() ||
+    options.build !== undefined ||
     options.buildUrl?.trim() ||
     options.queueUrl?.trim(),
   );
@@ -271,6 +280,7 @@ function toCancelTarget(build: RunningBuildSummary): CancelTarget {
   return {
     kind: "build",
     buildUrl: build.buildUrl,
+    buildNumber: build.buildNumber,
     label: `running build for ${formatRunningBuildLabel(build)}`,
   };
 }
@@ -283,66 +293,45 @@ function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : "Unexpected error.";
 }
 
-function validateCancelOptions(options: CancelOptions): void {
-  if (options.job && options.jobUrl) {
-    throw new CliError("Provide either --job or --job-url, not both.", [
-      "Remove one of the flags and try again.",
-    ]);
-  }
-  if (options.buildUrl && options.queueUrl) {
-    throw new CliError("Provide either --build-url or --queue-url, not both.", [
-      "Use a single cancel target at a time.",
-    ]);
-  }
-  if (options.buildUrl && (options.job || options.jobUrl)) {
-    throw new CliError(
-      "When --build-url is provided, do not pass --job or --job-url.",
-      ["Use a single cancel target at a time."],
-    );
-  }
-  if (options.queueUrl && (options.job || options.jobUrl)) {
-    throw new CliError(
-      "When --queue-url is provided, do not pass --job or --job-url.",
-      ["Use a single cancel target at a time."],
-    );
-  }
-}
-
 async function resolveCancelTarget(
   options: CancelOptions,
 ): Promise<CancelTarget> {
-  const buildUrl = options.buildUrl?.trim() ?? "";
-  if (buildUrl) {
-    ensureValidUrl(buildUrl, "build-url");
-    return {
-      kind: "build",
-      buildUrl,
-      label: `build ${buildUrl}`,
-    };
-  }
-
-  const queueUrl = options.queueUrl?.trim() ?? "";
-  if (queueUrl) {
-    ensureValidUrl(queueUrl, "queue-url");
-    return {
-      kind: "queue",
-      queueUrl,
-      label: `queue item ${queueUrl}`,
-    };
-  }
-
-  const target = await activeCancelDeps.resolveJobTarget({
+  const target = await resolveBuildSelector({
     client: options.client,
     env: options.env,
     job: options.job,
     jobUrl: options.jobUrl,
+    build: options.build,
+    buildUrl: options.buildUrl,
+    queueUrl: options.queueUrl,
     nonInteractive: options.nonInteractive,
+    allowQueue: true,
+    resolveJob: activeCancelDeps.resolveJobTarget,
   });
+
+  if (target.kind === "build") {
+    return {
+      kind: "build",
+      buildUrl: target.buildUrl,
+      buildNumber: target.buildNumber,
+      label: `build ${target.buildUrl}`,
+    };
+  }
+
+  if (target.kind === "queue") {
+    return {
+      kind: "queue",
+      queueUrl: target.queueUrl,
+      label: `queue item ${target.queueUrl}`,
+    };
+  }
+
   const jobStatus = await options.client.getJobStatus(target.jobUrl);
   if (jobStatus.building && jobStatus.lastBuildUrl) {
     return {
       kind: "build",
       buildUrl: jobStatus.lastBuildUrl,
+      buildNumber: jobStatus.lastBuildNumber,
       label: `running build for ${target.jobLabel}`,
     };
   }

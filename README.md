@@ -1,21 +1,125 @@
 # Jenkins CLI
 
-Jenkins CLI for listing jobs, triggering builds, checking status, streaming
-logs, inspecting build history, and managing multiple Jenkins profiles from the
-terminal. Built for interactive use and automation with clear, parseable
-output.
+[![CI](https://github.com/jatinbansal1998/jenkins-cli-ts/actions/workflows/pull-request.yml/badge.svg)](https://github.com/jatinbansal1998/jenkins-cli-ts/actions/workflows/pull-request.yml)
+[![CodeQL](https://github.com/jatinbansal1998/jenkins-cli-ts/actions/workflows/codeql.yml/badge.svg)](https://github.com/jatinbansal1998/jenkins-cli-ts/actions/workflows/codeql.yml)
+[![stable](https://img.shields.io/github/v/release/jatinbansal1998/jenkins-cli-ts?color=blue&label=stable)](https://github.com/jatinbansal1998/jenkins-cli-ts/releases)
+[![prerelease](https://img.shields.io/github/v/release/jatinbansal1998/jenkins-cli-ts?include_prereleases&color=orange&label=prerelease)](https://github.com/jatinbansal1998/jenkins-cli-ts/releases)
+[![built with Bun](https://img.shields.io/badge/built%20with-Bun-F9F1E5?logo=bun&logoColor=000)](https://bun.sh)
+[![License: MIT](https://img.shields.io/github/license/jatinbansal1998/jenkins-cli-ts?color=green)](LICENSE)
+
+A fast, single-binary Jenkins CLI for triggering builds, streaming logs, and
+managing multiple profiles from the terminal — **no Java required**. Built for
+both interactive use (fuzzy job search, watch mode, macOS notifications) and
+automation (parseable `OK:`/`HINT:` output and `--json` receipts), with
+OS-keychain token storage and multi-profile support.
+
+## Table of Contents
+
+- [Demo](#demo)
+- [Install](#install)
+  - [Homebrew](#homebrew)
+  - [Alternative install methods](#alternative-install-methods)
+  - [Upgrade](#upgrade)
+- [Supported Features](#supported-features)
+- [Quick Start](#quick-start)
+- [Setup](#setup)
+  - [Config File](#config-file)
+  - [Add Credentials](#add-credentials)
+  - [Secure Token Storage](#secure-token-storage)
+  - [Manage Profiles](#manage-profiles)
+  - [Credential Selection Order](#credential-selection-order)
+  - [Environment Variable Fallback](#environment-variable-fallback)
+  - [Analytics](#analytics)
+  - [Error Reporting](#error-reporting)
+  - [Privacy Guardrails](#privacy-guardrails)
+- [Usage](#usage)
+  - [JSON Output](#json-output---json)
+  - [JSON Lines Log Streaming](#json-lines-log-streaming---jsonl)
+  - [Authentication Troubleshooting](#authentication-troubleshooting)
+  - [List Jobs](#list-jobs)
+  - [Trigger Builds](#trigger-builds)
+  - [Check Status](#check-status)
+  - [Build History](#build-history)
+  - [Wait For Completion](#wait-for-completion)
+  - [Stream Logs](#stream-logs)
+  - [Artifacts](#artifacts)
+  - [Cancel Work](#cancel-work)
+  - [Running Builds](#running-builds)
+  - [Queue](#queue)
+  - [Nodes](#nodes)
+  - [Rerun Failed Builds](#rerun-failed-builds)
+- [Update](#update)
+- [Development](#development)
+- [Docs](#docs)
+- [Notes](#notes)
+
+## Demo
+
+![Jenkins CLI demo](docs/media/jenkins-cli-demo.gif)
 
 ## Install
 
 Installs the latest supported native `jenkins-cli` binary to your PATH
 (defaults to `$HOME/.local/bin`). Bun is not required on the target machine.
 
-Primary install URL:
-
 ```bash
 curl -fsSL https://jatinbansal.com/jenkins-cli/install/ | bash
+# or
 wget -qO- https://jatinbansal.com/jenkins-cli/install/ | bash
 ```
+
+### Homebrew
+
+```bash
+brew tap jatinbansal1998/tap
+brew install jatinbansal1998/tap/jenkins-cli
+```
+
+### Alternative install methods
+
+<details>
+<summary>GitHub raw mirror</summary>
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/jatinbansal1998/jenkins-cli-ts/main/install | bash
+wget -qO- https://raw.githubusercontent.com/jatinbansal1998/jenkins-cli-ts/main/install | bash
+```
+
+</details>
+
+<details>
+<summary>Custom install directory</summary>
+
+```bash
+JENKINS_CLI_INSTALL_DIR="$HOME/.local/bin" curl -fsSL https://jatinbansal.com/jenkins-cli/install/ | bash
+JENKINS_CLI_INSTALL_DIR="$HOME/.local/bin" wget -qO- https://jatinbansal.com/jenkins-cli/install/ | bash
+```
+
+</details>
+
+<details>
+<summary>Older versions, Alpine, and maintainer notes</summary>
+
+Older versions are not installed through the script. If you need an older
+release, download it manually from GitHub Releases.
+
+On minimal Alpine images, if the installer falls back to the legacy Bun bundle
+before a native musl binary is available, it may need `bash` and `unzip` to
+bootstrap Bun. The script will try `apk add --no-cache bash unzip` when it can.
+
+Maintainers: see `docs/homebrew.md` for tap publishing steps.
+
+</details>
+
+### Upgrade
+
+For Homebrew installs:
+
+```bash
+brew upgrade jenkins-cli
+```
+
+For standalone installs, use the built-in updater (see [Update](#update)).
 
 ## Supported Features
 
@@ -33,46 +137,6 @@ wget -qO- https://jatinbansal.com/jenkins-cli/install/ | bash
 | Artifacts                   | Yes       | List build artifacts and stream them to disk, preserving paths      |
 | One-off credentials         | Yes       | Override profile config with `--url`, `--user`, and `--token`       |
 | Script-friendly output      | Yes       | Parseable `OK:` and `HINT:` output for automation                   |
-
-GitHub install mirror:
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/jatinbansal1998/jenkins-cli-ts/main/install | bash
-wget -qO- https://raw.githubusercontent.com/jatinbansal1998/jenkins-cli-ts/main/install | bash
-```
-
-Optional override:
-
-```bash
-JENKINS_CLI_INSTALL_DIR="$HOME/.local/bin" curl -fsSL https://jatinbansal.com/jenkins-cli/install/ | bash
-JENKINS_CLI_INSTALL_DIR="$HOME/.local/bin" wget -qO- https://jatinbansal.com/jenkins-cli/install/ | bash
-```
-
-Older versions are not installed through the script. If you need an older
-release, download it manually from GitHub Releases.
-
-On minimal Alpine images, if the installer falls back to the legacy Bun bundle
-before a native musl binary is available, it may need `bash` and `unzip` to
-bootstrap Bun. The script will try `apk add --no-cache bash unzip` when it can.
-
-Homebrew (tap, alternative):
-
-```bash
-brew tap jatinbansal1998/tap
-brew install jatinbansal1998/tap/jenkins-cli
-```
-
-Upgrade:
-
-```bash
-brew upgrade jenkins-cli
-```
-
-Maintainers: see `docs/homebrew.md` for tap publishing steps.
-
-## Demo
-
-![Jenkins CLI demo](docs/media/jenkins-cli-demo.gif)
 
 ## Quick Start
 
@@ -704,6 +768,8 @@ Check status:
 
 ```bash
 jenkins-cli status --job "api-prod"
+jenkins-cli status --job "api-prod" --build 184
+jenkins-cli status --build-url "https://jenkins.example.com/job/api-prod/184/"
 ```
 
 Watch the latest build status from status command:
@@ -737,6 +803,7 @@ Wait for a build to finish:
 
 ```bash
 jenkins-cli wait --job "api-prod" --timeout 30m --interval 5s
+jenkins-cli wait --job "api-prod" --build 184
 jenkins-cli wait --build-url "https://jenkins.example.com/job/api-prod/184/"
 jenkins-cli wait --queue-url "https://jenkins.example.com/queue/item/123/"
 ```
@@ -747,6 +814,7 @@ Stream logs:
 
 ```bash
 jenkins-cli logs --job "api-prod" --follow
+jenkins-cli logs --job "api-prod" --build 184 --no-follow
 jenkins-cli logs --job "api-prod" --follow --poll 1s
 jenkins-cli logs --build-url "https://jenkins.example.com/job/api-prod/184/" --no-follow
 ```
@@ -788,6 +856,7 @@ Cancel queued or running work:
 ```bash
 jenkins-cli cancel
 jenkins-cli cancel --job "api-prod"
+jenkins-cli cancel --job "api-prod" --build 184
 jenkins-cli cancel --queue-url "https://jenkins.example.com/queue/item/123/"
 jenkins-cli cancel --build-url "https://jenkins.example.com/job/api-prod/184/"
 ```
@@ -852,6 +921,26 @@ Rerun from last failed build:
 ```bash
 jenkins-cli rerun --job "api-prod"
 ```
+
+Rerun one exact historical build with its original parameters:
+
+```bash
+jenkins-cli rerun --job "api-prod" --build 184
+jenkins-cli rerun --build-url "https://jenkins.example.com/job/api-prod/184/"
+```
+
+### Exact Build Selectors
+
+`status`, `wait`, `logs`, `artifacts`, `cancel`, and `rerun` share one exact
+build contract. Use `--build <positive-integer>` with exactly one of `--job` or
+`--job-url`, or use a complete numeric `--build-url` by itself. Exact selectors
+never fall back to a newer build. Direct job, build, and queue URLs must belong
+to the active Jenkins controller, including its configured context path.
+
+When no exact selector is supplied, existing defaults remain unchanged:
+`artifacts` uses the latest completed build, `rerun` uses the last failed build,
+and the other commands keep their documented latest/running behavior. Queue
+items remain separate targets until Jenkins assigns an executable build.
 
 ## Update
 

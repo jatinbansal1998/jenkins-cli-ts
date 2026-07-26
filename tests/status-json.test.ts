@@ -141,6 +141,43 @@ describe("status --json", () => {
     expect(parsed.data.build).toBeNull();
   });
 
+  test("returns the selected immutable build instead of fetching latest", async () => {
+    const sink = capture();
+    const getBuildStatus = mock(async () => ({
+      buildNumber: 17,
+      buildUrl: "https://jenkins.example.com/job/api/17/",
+      result: "FAILURE",
+      building: false,
+      parameters: [{ name: "MESSAGE", value: "historical" }],
+    }));
+    const getJobStatus = mock(async () => {
+      throw new Error("must not fetch latest status");
+    });
+
+    await runStatus({
+      client: createClient({ getBuildStatus, getJobStatus }),
+      env,
+      jobUrl: "https://jenkins.example.com/job/api/",
+      build: 17,
+      nonInteractive: true,
+      json: true,
+      write: sink.write,
+    });
+
+    const parsed = JSON.parse(sink.output()) as {
+      data: { build: { number: number; url: string; result: string } };
+    };
+    expect(parsed.data.build).toMatchObject({
+      number: 17,
+      url: "https://jenkins.example.com/job/api/17/",
+      result: "FAILURE",
+    });
+    expect(getBuildStatus).toHaveBeenCalledWith(
+      "https://jenkins.example.com/job/api/17/",
+    );
+    expect(getJobStatus).not.toHaveBeenCalled();
+  });
+
   test("rejects --json combined with --watch", async () => {
     const sink = capture();
 

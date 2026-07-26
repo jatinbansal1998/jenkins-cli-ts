@@ -1,7 +1,29 @@
 import { describe, expect, test } from "bun:test";
-import { formatCompactStatus, formatStatusDetails } from "../src/status-format";
+import {
+  formatCompactStatus,
+  formatStatusDetails,
+  formatStatusSummary,
+} from "../src/status-format";
 
 describe("status formatting", () => {
+  test("distinguishes an exact build from the latest build", () => {
+    expect(
+      formatStatusSummary({
+        jobLabel: "api",
+        buildNumber: 17,
+        result: "SUCCESS",
+        exact: true,
+      }),
+    ).toContain("Build for api: #17");
+    expect(
+      formatStatusSummary({
+        jobLabel: "api",
+        buildNumber: 18,
+        result: "SUCCESS",
+      }),
+    ).toContain("Last build for api: #18");
+  });
+
   test("shows only stage content without an ordinal when total is unknown", () => {
     const message = formatCompactStatus({
       buildNumber: 417,

@@ -79,6 +79,17 @@ printf 'root-artifact\n' > artifact.txt
 job.getPublishersList().add(new ArtifactArchiver("artifact.txt,reports/values.txt"))
 job.save()
 
+def exactJob = jenkins.createProject(FreeStyleProject.class, "cli-exact")
+exactJob.addProperty(new ParametersDefinitionProperty([
+  new StringParameterDefinition("MESSAGE", "exact-default", "Immutable build selector fixture")
+]))
+exactJob.getBuildersList().add(new Shell('''set -eu
+printf 'exact-build:%s\n' "$MESSAGE"
+printf 'exact-artifact:%s\n' "$MESSAGE" > exact-artifact.txt
+'''))
+exactJob.getPublishersList().add(new ArtifactArchiver("exact-artifact.txt"))
+exactJob.save()
+
 def failingJob = jenkins.createProject(FreeStyleProject.class, "cli-failure")
 failingJob.addProperty(new ParametersDefinitionProperty([
   new StringParameterDefinition("REASON", "expected-failure", "Failure marker")

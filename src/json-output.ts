@@ -128,6 +128,7 @@ export type JsonBuildReceipt = JsonMutationTarget & {
 export type JsonCancelReceipt = {
   targetType: "build" | "queue";
   url: string;
+  buildNumber?: number;
 };
 
 export type JsonRerunReceipt = {

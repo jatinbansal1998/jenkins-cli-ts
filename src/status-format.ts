@@ -54,10 +54,12 @@ type StatusSummaryInput = {
   jobLabel: string;
   buildNumber: number;
   result: string;
+  exact?: boolean;
 };
 
 export function formatStatusSummary(options: StatusSummaryInput): string {
-  return `Last build for ${options.jobLabel}: #${options.buildNumber} ${bold(
+  const subject = options.exact ? "Build" : "Last build";
+  return `${subject} for ${options.jobLabel}: #${options.buildNumber} ${bold(
     options.result,
   )}`;
 }

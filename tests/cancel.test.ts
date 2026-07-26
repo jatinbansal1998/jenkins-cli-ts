@@ -7,6 +7,10 @@ function createClient(stubs: Partial<JenkinsClient>): JenkinsClient {
   return stubs as JenkinsClient;
 }
 
+const env = {
+  jenkinsUrl: "https://jenkins.example.com",
+} as EnvConfig;
+
 describe("runCancel", () => {
   beforeEach(() => {});
 
@@ -46,7 +50,7 @@ describe("runCancel", () => {
           stopBuild,
           getBuildStatus,
         }),
-        env: {} as EnvConfig,
+        env,
         buildUrl: "https://jenkins.example.com/job/my-job/123/",
         nonInteractive: true,
       });
@@ -93,7 +97,7 @@ describe("runCancel", () => {
           stopBuild,
           getBuildStatus,
         }),
-        env: {} as EnvConfig,
+        env,
         buildUrl: "https://jenkins.example.com/job/my-job/123/",
         nonInteractive: true,
       });
@@ -117,7 +121,7 @@ describe("runCancel", () => {
 describe("runCancel option validation", () => {
   const baseOptions = {
     client: createClient({}),
-    env: {} as EnvConfig,
+    env,
     nonInteractive: true,
   };
 
@@ -197,7 +201,7 @@ describe("runCancel queue target", () => {
       const cancelQueueItem = mock(async () => true);
       await runCancel({
         client: createClient({ cancelQueueItem }),
-        env: {} as EnvConfig,
+        env,
         queueUrl: "https://jenkins.example.com/queue/item/42/",
         nonInteractive: true,
       });
@@ -225,7 +229,7 @@ describe("runCancel queue target", () => {
     await expect(
       runCancel({
         client: createClient({ cancelQueueItem }),
-        env: {} as EnvConfig,
+        env,
         queueUrl: "https://jenkins.example.com/queue/item/42/",
         nonInteractive: true,
       }),
@@ -254,7 +258,7 @@ describe("runCancel job target resolution", () => {
 
       await runCancel({
         client: createClient({ stopBuild, getJobStatus, getBuildStatus }),
-        env: {} as EnvConfig,
+        env,
         jobUrl,
         nonInteractive: true,
       });
@@ -298,7 +302,7 @@ describe("runCancel job target resolution", () => {
 
       await runCancel({
         client: createClient({ getJobStatus, listQueueItems, cancelQueueItem }),
-        env: {} as EnvConfig,
+        env,
         jobUrl,
         nonInteractive: true,
       });
@@ -318,7 +322,7 @@ describe("runCancel job target resolution", () => {
     await expect(
       runCancel({
         client: createClient({ getJobStatus, listQueueItems }),
-        env: {} as EnvConfig,
+        env,
         jobUrl,
         nonInteractive: true,
       }),

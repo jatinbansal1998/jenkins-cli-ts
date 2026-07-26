@@ -1,12 +1,9 @@
 import { markAnalyticsPollingCommand } from "../analytics";
 import { CliError, printOk } from "../cli";
+import { resolveBuildSelector } from "../build-selector";
 import type { EnvConfig } from "../env";
 import type { JenkinsClient } from "../jenkins/api-wrapper";
-import {
-  ensureValidUrl,
-  parseOptionalDurationMs,
-  resolveJobTarget,
-} from "./ops-helpers";
+import { parseOptionalDurationMs } from "./ops-helpers";
 import { emitJsonLine, toJsonError, type JsonWrite } from "../json-output";
 
 export const DEFAULT_LOG_POLL_MS = 1_000;
@@ -16,6 +13,7 @@ type LogsOptions = {
   env: EnvConfig;
   job?: string;
   jobUrl?: string;
+  build?: number;
   buildUrl?: string;
   queueUrl?: string;
   follow?: boolean;
@@ -30,8 +28,6 @@ export async function runLogs(options: LogsOptions): Promise<void> {
     await runLogsJsonl({ ...options, nonInteractive: true }, options.write);
     return;
   }
-  validateLogTargets(options);
-
   const follow = options.follow !== false;
   if (follow) {
     markAnalyticsPollingCommand();
@@ -62,7 +58,6 @@ async function runLogsJsonl(
   write?: JsonWrite,
 ): Promise<void> {
   try {
-    validateLogTargets(options);
     const follow = options.follow !== false;
     if (follow) {
       markAnalyticsPollingCommand();
@@ -147,61 +142,41 @@ async function runLogsJsonl(
   }
 }
 
-function validateLogTargets(options: LogsOptions): void {
-  if (options.job && options.jobUrl) {
-    throw new CliError("Provide either --job or --job-url, not both.", [
-      "Remove one of the flags and try again.",
-    ]);
-  }
-  if (options.buildUrl && (options.job || options.jobUrl)) {
-    throw new CliError(
-      "When --build-url is provided, do not pass --job or --job-url.",
-      ["Use a single log target at a time."],
-    );
-  }
-  if (options.queueUrl && (options.job || options.jobUrl)) {
-    throw new CliError(
-      "When --queue-url is provided, do not pass --job or --job-url.",
-      ["Use a single log target at a time."],
-    );
-  }
-  if (options.buildUrl && options.queueUrl) {
-    throw new CliError("Provide either --build-url or --queue-url, not both.", [
-      "Use a single log target at a time.",
-    ]);
-  }
-}
-
 async function resolveBuildUrl(
   options: LogsOptions,
   pollMs: number,
 ): Promise<{ buildUrl: string; jobLabel: string }> {
-  const providedBuildUrl = options.buildUrl?.trim() ?? "";
-  if (providedBuildUrl) {
-    ensureValidUrl(providedBuildUrl, "build-url");
+  const target = await resolveBuildSelector({
+    client: options.client,
+    env: options.env,
+    job: options.job,
+    jobUrl: options.jobUrl,
+    build: options.build,
+    buildUrl: options.buildUrl,
+    queueUrl: options.queueUrl,
+    nonInteractive: options.nonInteractive,
+    allowQueue: true,
+  });
+
+  if (target.kind === "build") {
     return {
-      buildUrl: providedBuildUrl,
-      jobLabel: providedBuildUrl,
+      buildUrl: target.buildUrl,
+      jobLabel: `${target.jobLabel} #${target.buildNumber}`,
     };
   }
 
-  const queueUrl = options.queueUrl?.trim() ?? "";
-  if (queueUrl) {
-    ensureValidUrl(queueUrl, "queue-url");
-    const buildUrl = await waitForQueuedBuild(options.client, queueUrl, pollMs);
+  if (target.kind === "queue") {
+    const buildUrl = await waitForQueuedBuild(
+      options.client,
+      target.queueUrl,
+      pollMs,
+    );
     return {
       buildUrl,
       jobLabel: buildUrl,
     };
   }
 
-  const target = await resolveJobTarget({
-    client: options.client,
-    env: options.env,
-    job: options.job,
-    jobUrl: options.jobUrl,
-    nonInteractive: options.nonInteractive,
-  });
   const status = await options.client.getJobStatus(target.jobUrl);
   if (!status.lastBuildUrl) {
     throw new CliError(`No builds found for ${target.jobLabel}.`, [

@@ -1,8 +1,8 @@
 import { markAnalyticsPollingCommand } from "../analytics";
+import { resolveBuildSelector } from "../build-selector";
 import { CliError, printError, printHint, printOk } from "../cli";
 import type { EnvConfig } from "../env";
 import type { JenkinsClient } from "../jenkins/api-wrapper";
-import { normalizeOptionalJobUrl } from "../job-url";
 import {
   emitJsonError,
   emitJsonSuccess,
@@ -22,11 +22,7 @@ import {
   toStatusDetailsFromBuild,
   toStatusDetailsFromJob,
 } from "../status-format";
-import {
-  ensureValidUrl,
-  parseOptionalDurationMs,
-  resolveJobTarget,
-} from "./ops-helpers";
+import { parseOptionalDurationMs } from "./ops-helpers";
 import {
   createWatchControlSignal,
   DEFAULT_WATCH_INTERVAL_MS,
@@ -42,6 +38,7 @@ type WaitOptions = {
   env: EnvConfig;
   job?: string;
   jobUrl?: string;
+  build?: number;
   buildUrl?: string;
   queueUrl?: string;
   interval?: string;
@@ -76,7 +73,6 @@ export async function runWait(options: WaitOptions): Promise<WaitResult> {
     return await runWaitJson(options);
   }
 
-  validateWaitOptions(options);
   markAnalyticsPollingCommand();
 
   const intervalMs = parseOptionalDurationMs(
@@ -122,7 +118,6 @@ async function runWaitJson(options: WaitOptions): Promise<WaitResult> {
   const write = options.write;
   const startedAt = Date.now();
   try {
-    validateWaitOptions(options);
     markAnalyticsPollingCommand();
 
     const intervalMs = parseOptionalDurationMs(
@@ -211,20 +206,6 @@ function applyWaitExitCode(result: WaitResult): void {
   }
 }
 
-function validateWaitOptions(options: WaitOptions): void {
-  if (options.job && options.jobUrl) {
-    throw new CliError("Provide either --job or --job-url, not both.", [
-      "Remove one of the flags and try again.",
-    ]);
-  }
-  if (options.buildUrl && (options.job || options.jobUrl || options.queueUrl)) {
-    throw new CliError(
-      "When --build-url is provided, do not pass --job, --job-url, or --queue-url.",
-      ["Use a single wait target at a time."],
-    );
-  }
-}
-
 async function resolveWaitTarget(options: WaitOptions): Promise<{
   jobUrl?: string;
   jobLabel: string;
@@ -232,35 +213,39 @@ async function resolveWaitTarget(options: WaitOptions): Promise<{
   buildNumber?: number;
   queueUrl?: string;
 }> {
-  const buildUrl = options.buildUrl?.trim() ?? "";
-  if (buildUrl) {
-    ensureValidUrl(buildUrl, "build-url");
-    return {
-      buildUrl,
-      jobLabel: buildUrl,
-    };
-  }
-
-  const queueUrl = options.queueUrl?.trim() ?? "";
-  if (queueUrl) {
-    ensureValidUrl(queueUrl, "queue-url");
-    return {
-      queueUrl,
-      jobLabel: queueUrl,
-      jobUrl: normalizeOptionalJobUrl(options.jobUrl),
-    };
-  }
-
-  const jobTarget = await resolveJobTarget({
+  const target = await resolveBuildSelector({
     client: options.client,
     env: options.env,
     job: options.job,
     jobUrl: options.jobUrl,
+    build: options.build,
+    buildUrl: options.buildUrl,
+    queueUrl: options.queueUrl,
     nonInteractive: options.nonInteractive,
+    allowQueue: true,
+    allowQueueWithJob: true,
   });
+
+  if (target.kind === "build") {
+    return {
+      jobUrl: target.jobUrl,
+      buildUrl: target.buildUrl,
+      buildNumber: target.buildNumber,
+      jobLabel: target.jobLabel,
+    };
+  }
+
+  if (target.kind === "queue") {
+    return {
+      queueUrl: target.queueUrl,
+      jobLabel: target.jobLabel,
+      jobUrl: target.jobUrl,
+    };
+  }
+
   return {
-    jobUrl: jobTarget.jobUrl,
-    jobLabel: jobTarget.jobLabel,
+    jobUrl: target.jobUrl,
+    jobLabel: target.jobLabel,
   };
 }
 

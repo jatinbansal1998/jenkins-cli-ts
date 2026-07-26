@@ -11,6 +11,7 @@ import { runQueue } from "../commands/queue";
 import { runRerun } from "../commands/rerun";
 import { runRunningBuilds } from "../commands/run";
 import {
+  addBuildOption,
   addBuildUrlOption,
   addJobOptions,
   addJsonOption,
@@ -50,7 +51,9 @@ export function registerOperationsCommands(
       "Cancel a queued or running build",
       (yargsInstance) =>
         addJsonOption(
-          addQueueUrlOption(addBuildUrlOption(addJobOptions(yargsInstance))),
+          addQueueUrlOption(
+            addBuildUrlOption(addBuildOption(addJobOptions(yargsInstance))),
+          ),
         ),
       async (argv) => {
         await runTrackedCommandWithContext(
@@ -62,6 +65,7 @@ export function registerOperationsCommands(
               env,
               job: optionalString(argv.job),
               jobUrl: optionalString(argv.jobUrl),
+              build: typeof argv.build === "number" ? argv.build : undefined,
               buildUrl: optionalString(argv.buildUrl),
               queueUrl: optionalString(argv.queueUrl),
               nonInteractive: Boolean(argv.nonInteractive || argv.json),
@@ -127,7 +131,10 @@ export function registerOperationsCommands(
     .command(
       "rerun [job-name]",
       "Rerun the last failed build for a job",
-      (yargsInstance) => addJsonOption(addJobOptions(yargsInstance)),
+      (yargsInstance) =>
+        addJsonOption(
+          addBuildUrlOption(addBuildOption(addJobOptions(yargsInstance))),
+        ),
       async (argv) => {
         await runTrackedCommandWithContext(
           "rerun",
@@ -138,6 +145,8 @@ export function registerOperationsCommands(
               env,
               job: optionalString(argv.job),
               jobUrl: optionalString(argv.jobUrl),
+              build: typeof argv.build === "number" ? argv.build : undefined,
+              buildUrl: optionalString(argv.buildUrl),
               nonInteractive: Boolean(argv.nonInteractive || argv.json),
               json: Boolean(argv.json),
             });

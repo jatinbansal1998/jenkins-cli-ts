@@ -15,6 +15,8 @@ export function getRootHelpEpilog(): string {
       Trigger by exact URL with a custom parameter.
   $0 status --job api --json
       Last build status as a JSON document.
+  $0 status --job api --build 128 --json
+      Status for one immutable build.
   $0 wait --job api --timeout 30m --json
       Wait for the latest build to finish.
   $0 logs --job api --jsonl
@@ -30,6 +32,13 @@ Job selection (build, status, history, wait, logs, artifacts, cancel, rerun, par
   --job-url <url>   Exact Jenkins job URL (skips the cache and search)
   The positional form and --job are equivalent; if both are passed, they must match.
   With no job argument or flag, an interactive job picker opens (requires a TTY).
+
+Exact build selection (status, wait, logs, artifacts, cancel, rerun):
+  --build <n>       Positive integer build number; requires --job or --job-url
+  --build-url <url> Complete numeric Jenkins build URL; cannot be combined with
+                    --build, --job, --job-url, or --queue-url
+  Direct job/build/queue URLs must belong to the active Jenkins controller.
+  Without an exact selector, each command keeps its documented latest behavior.
 
 Scripting and AI agents:
   Pass --non-interactive to disable every prompt and fail fast; --json/--jsonl imply it.
@@ -68,7 +77,9 @@ Command-specific options:
     [job-name]       Job name or description
     --job <text>     Job name or description
     --job-url <url>  Full Jenkins job URL
-    --watch          Watch latest build until completion [default: false]
+    --build <n>       Target a specific build number (with --job/--job-url)
+    --build-url <url> Full Jenkins build URL
+    --watch          Watch selected build until completion [default: false]
     --json           Output a single JSON document (implies non-interactive)
 
   history / builds:
@@ -82,6 +93,7 @@ Command-specific options:
     [job-name]        Job name or description
     --job <text>      Job name or description
     --job-url <url>   Full Jenkins job URL
+    --build <n>       Target a specific build number (with --job/--job-url)
     --build-url <url> Full Jenkins build URL
     --queue-url <url> Full Jenkins queue item URL
     --interval <dur>  Polling interval (e.g. 30s, 1m) [default: ${DEFAULT_WATCH_INTERVAL_MS / 1000}s]
@@ -92,6 +104,7 @@ Command-specific options:
     [job-name]        Job name or description
     --job <text>      Job name or description
     --job-url <url>   Full Jenkins job URL
+    --build <n>       Target a specific build number (with --job/--job-url)
     --build-url <url> Full Jenkins build URL
     --queue-url <url> Full Jenkins queue item URL
     --follow          Keep streaming logs until build completes [default: true]
@@ -117,6 +130,7 @@ Command-specific options:
     [job-name]        Job name or description
     --job <text>      Job name or description
     --job-url <url>   Full Jenkins job URL
+    --build <n>       Target a specific build number (with --job/--job-url)
     --build-url <url> Full Jenkins build URL
     --queue-url <url> Full Jenkins queue item URL
     --json            Output one cancellation receipt
@@ -133,6 +147,8 @@ Command-specific options:
     [job-name]       Job name or description
     --job <text>     Job name or description
     --job-url <url>  Full Jenkins job URL
+    --build <n>       Target a specific build number (with --job/--job-url)
+    --build-url <url> Full Jenkins build URL
     --json           Output source and new target receipt
 
   auth login / login:

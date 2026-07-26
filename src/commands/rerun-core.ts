@@ -65,10 +65,27 @@ export async function rerunLastFailedBuildForJob(
   });
 }
 
+export async function rerunExactBuild(
+  options: RerunSharedOptions & {
+    buildUrl: string;
+    buildNumber: number;
+  },
+): Promise<RerunBuildResult> {
+  const status = await options.client.getBuildStatus(options.buildUrl);
+  return await triggerBuildWithRecordedParams({
+    client: options.client,
+    env: options.env,
+    jobUrl: options.jobUrl,
+    status,
+    sourceBuildUrl: status.buildUrl ?? options.buildUrl,
+    sourceBuildNumber: status.buildNumber ?? options.buildNumber,
+  });
+}
+
 export function printRerunResult(options: {
   jobLabel: string;
   jobUrl?: string;
-  source: "last build" | "failed build";
+  source: "last build" | "failed build" | "selected build";
   rerun: RerunBuildResult;
 }): void {
   const sourceReference = formatBuildReference(
@@ -95,7 +112,7 @@ export function printRerunResult(options: {
 }
 
 function formatBuildReference(
-  source: "last build" | "failed build",
+  source: "last build" | "failed build" | "selected build",
   buildNumber?: number,
   buildUrl?: string,
 ): string {

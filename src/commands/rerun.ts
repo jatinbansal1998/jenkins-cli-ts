@@ -1,9 +1,11 @@
 import { CliError } from "../cli";
+import { resolveBuildSelector } from "../build-selector";
 import type { EnvConfig } from "../env";
 import type { JenkinsClient } from "../jenkins/api-wrapper";
 import { resolveJobTarget } from "./ops-helpers";
 import {
   printRerunResult,
+  rerunExactBuild,
   rerunLastBuildForJob,
   rerunLastFailedBuildForJob,
 } from "./rerun-core";
@@ -19,6 +21,8 @@ type RerunOptions = {
   env: EnvConfig;
   job?: string;
   jobUrl?: string;
+  build?: number;
+  buildUrl?: string;
   nonInteractive: boolean;
   json?: boolean;
   write?: JsonWrite;
@@ -29,20 +33,34 @@ export async function runRerun(options: RerunOptions): Promise<void> {
     await runJsonCommand(
       "rerun",
       async (): Promise<JsonRerunReceipt> => {
-        validateRerunOptions(options);
-        const target = await resolveJobTarget({
+        const target = await resolveBuildSelector({
           client: options.client,
           env: options.env,
           job: options.job,
           jobUrl: options.jobUrl,
+          build: options.build,
+          buildUrl: options.buildUrl,
           nonInteractive: true,
         });
-        const rerun = await rerunLastFailedBuildForJob({
-          client: options.client,
-          env: options.env,
-          jobUrl: target.jobUrl,
-          jobLabel: target.jobLabel,
-        });
+        if (target.kind === "queue") {
+          throw new CliError("Rerun requires a build or job target.");
+        }
+        const rerun =
+          target.kind === "build"
+            ? await rerunExactBuild({
+                client: options.client,
+                env: options.env,
+                jobUrl: target.jobUrl,
+                jobLabel: target.jobLabel,
+                buildUrl: target.buildUrl,
+                buildNumber: target.buildNumber,
+              })
+            : await rerunLastFailedBuildForJob({
+                client: options.client,
+                env: options.env,
+                jobUrl: target.jobUrl,
+                jobLabel: target.jobLabel,
+              });
         return {
           source: {
             buildUrl: rerun.sourceBuildUrl,
@@ -55,40 +73,45 @@ export async function runRerun(options: RerunOptions): Promise<void> {
     );
     return;
   }
-  validateRerunOptions(options);
   await runRerunInteractive(options);
 }
 
 async function runRerunInteractive(options: RerunOptions): Promise<void> {
-  validateRerunOptions(options);
-  const target = await resolveJobTarget({
+  const target = await resolveBuildSelector({
     client: options.client,
     env: options.env,
     job: options.job,
     jobUrl: options.jobUrl,
+    build: options.build,
+    buildUrl: options.buildUrl,
     nonInteractive: options.nonInteractive,
   });
+  if (target.kind === "queue") {
+    throw new CliError("Rerun requires a build or job target.");
+  }
 
-  const rerun = await rerunLastFailedBuildForJob({
-    client: options.client,
-    env: options.env,
-    jobUrl: target.jobUrl,
-    jobLabel: target.jobLabel,
-  });
+  const rerun =
+    target.kind === "build"
+      ? await rerunExactBuild({
+          client: options.client,
+          env: options.env,
+          jobUrl: target.jobUrl,
+          jobLabel: target.jobLabel,
+          buildUrl: target.buildUrl,
+          buildNumber: target.buildNumber,
+        })
+      : await rerunLastFailedBuildForJob({
+          client: options.client,
+          env: options.env,
+          jobUrl: target.jobUrl,
+          jobLabel: target.jobLabel,
+        });
   printRerunResult({
     jobLabel: target.jobLabel,
     jobUrl: target.jobUrl,
-    source: "failed build",
+    source: target.kind === "build" ? "selected build" : "failed build",
     rerun,
   });
-}
-
-function validateRerunOptions(options: RerunOptions): void {
-  if (options.job && options.jobUrl) {
-    throw new CliError("Provide either --job or --job-url, not both.", [
-      "Remove one of the flags and try again.",
-    ]);
-  }
 }
 
 export async function runRerunLastBuild(options: RerunOptions): Promise<void> {

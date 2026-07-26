@@ -11,6 +11,7 @@ import {
   parseBuildCustomParams,
 } from "./argument-values";
 import {
+  addBuildOption,
   addBuildUrlOption,
   addJobOptions,
   addJsonOption,
@@ -70,8 +71,8 @@ export function registerBuildCommands(
       (yargsInstance) =>
         addJsonOption(
           addWatchOption(
-            addJobOptions(yargsInstance),
-            "Watch latest build status until completion",
+            addBuildUrlOption(addBuildOption(addJobOptions(yargsInstance))),
+            "Watch selected build status until completion",
           ),
         ),
       async (argv) => {
@@ -85,6 +86,8 @@ export function registerBuildCommands(
               env,
               job: optionalString(argv.job),
               jobUrl: optionalString(argv.jobUrl),
+              build: typeof argv.build === "number" ? argv.build : undefined,
+              buildUrl: optionalString(argv.buildUrl),
               nonInteractive: Boolean(argv.nonInteractive || argv.json),
               watch: watchExplicitlyPassed ? Boolean(argv.watch) : undefined,
               json: Boolean(argv.json),
@@ -136,6 +139,7 @@ export function registerBuildCommands(
               env,
               job: optionalString(argv.job),
               jobUrl: optionalString(argv.jobUrl),
+              build: typeof argv.build === "number" ? argv.build : undefined,
               buildUrl: optionalString(argv.buildUrl),
               queueUrl: optionalString(argv.queueUrl),
               interval: optionalString(argv.interval),
@@ -161,6 +165,7 @@ export function registerBuildCommands(
               env,
               job: optionalString(argv.job),
               jobUrl: optionalString(argv.jobUrl),
+              build: typeof argv.build === "number" ? argv.build : undefined,
               buildUrl: optionalString(argv.buildUrl),
               queueUrl: optionalString(argv.queueUrl),
               follow: Boolean(argv.follow),
@@ -237,7 +242,9 @@ function configureBuildOptions(yargsInstance: Argv): Argv {
 
 function configureWaitOptions(yargsInstance: Argv): Argv {
   return addJsonOption(
-    addQueueUrlOption(addBuildUrlOption(addJobOptions(yargsInstance)))
+    addQueueUrlOption(
+      addBuildUrlOption(addBuildOption(addJobOptions(yargsInstance))),
+    )
       .option("interval", {
         type: "string",
         describe: `Polling interval (e.g. ${DEFAULT_WATCH_INTERVAL_MS / 1000}s, 1m)`,
@@ -251,7 +258,9 @@ function configureWaitOptions(yargsInstance: Argv): Argv {
 
 function configureLogsOptions(yargsInstance: Argv): Argv {
   return addJsonLinesOption(
-    addQueueUrlOption(addBuildUrlOption(addJobOptions(yargsInstance))),
+    addQueueUrlOption(
+      addBuildUrlOption(addBuildOption(addJobOptions(yargsInstance))),
+    ),
   )
     .option("follow", {
       type: "boolean",
@@ -266,12 +275,7 @@ function configureLogsOptions(yargsInstance: Argv): Argv {
 
 function configureArtifactsOptions(yargsInstance: Argv): Argv {
   return addJsonOption(
-    addBuildUrlOption(
-      addJobOptions(yargsInstance).option("build", {
-        type: "number",
-        describe: "Target a specific build number (with --job/--job-url)",
-      }),
-    ),
+    addBuildUrlOption(addBuildOption(addJobOptions(yargsInstance))),
   )
     .option("download", {
       type: "boolean",

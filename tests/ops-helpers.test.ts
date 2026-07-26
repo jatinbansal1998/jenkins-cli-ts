@@ -21,6 +21,10 @@ mock.module("../src/jobs", () => ({
 const { resolveJobTarget, resolveJobTargets } =
   await import("../src/commands/ops-helpers");
 
+const env = {
+  jenkinsUrl: "https://jenkins.example.com",
+} as EnvConfig;
+
 describe("ops helpers", () => {
   beforeEach(() => {
     loadJobsMock.mockReset();
@@ -42,7 +46,7 @@ describe("ops helpers", () => {
 
     const result = await resolveJobTarget({
       client: {} as JenkinsClient,
-      env: {} as EnvConfig,
+      env,
       job: "alpha",
       nonInteractive: true,
     });
@@ -56,7 +60,7 @@ describe("ops helpers", () => {
   test("resolveJobTarget uses an explicit jobUrl without loading jobs", async () => {
     const result = await resolveJobTarget({
       client: {} as JenkinsClient,
-      env: {} as EnvConfig,
+      env,
       jobUrl: " https://jenkins.example.com/job/direct/ ",
       nonInteractive: true,
     });

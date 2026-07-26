@@ -22,7 +22,7 @@ mock.module("../src/branches", () => ({
   recordBranchSelection: recordBranchSelectionMock,
 }));
 
-const { rerunLastBuildForJob, rerunLastFailedBuildForJob } =
+const { rerunExactBuild, rerunLastBuildForJob, rerunLastFailedBuildForJob } =
   await import("../src/commands/rerun-core");
 
 const TEST_ENV = {} as EnvConfig;
@@ -131,5 +131,39 @@ describe("rerun-core", () => {
     });
     expect(result.sourceBuildNumber).toBe(41);
     expect(result.result.buildNumber).toBe(42);
+  });
+
+  test("rerunExactBuild reuses only the selected build parameters", async () => {
+    const getBuildStatus = mock(async () => ({
+      buildNumber: 12,
+      buildUrl: `${JOB_URL}12/`,
+      parameters: [
+        { name: "BRANCH", value: "release/12" },
+        { name: "MESSAGE", value: "immutable-source" },
+      ],
+    }));
+    const triggerBuild = mock(async () => ({
+      queueUrl: "https://jenkins.example.com/queue/item/124/",
+    }));
+    const client = {
+      getBuildStatus,
+      triggerBuild,
+    } as unknown as JenkinsClient;
+
+    const result = await rerunExactBuild({
+      client,
+      env: TEST_ENV,
+      jobUrl: JOB_URL,
+      jobLabel: "api",
+      buildUrl: `${JOB_URL}12/`,
+      buildNumber: 12,
+    });
+
+    expect(getBuildStatus).toHaveBeenCalledWith(`${JOB_URL}12/`);
+    expect(triggerBuild).toHaveBeenCalledWith(JOB_URL, {
+      BRANCH: "release/12",
+      MESSAGE: "immutable-source",
+    });
+    expect(result.sourceBuildNumber).toBe(12);
   });
 });
