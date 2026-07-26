@@ -1,6 +1,6 @@
 # Jenkins CLI
 
-[![CI](https://github.com/jatinbansal1998/jenkins-cli-ts/actions/workflows/pull-request.yml/badge.svg)](https://github.com/jatinbansal1998/jenkins-cli-ts/actions/workflows/pull-request.yml)
+[![CI](https://github.com/jatinbansal1998/jenkins-cli-ts/actions/workflows/post-merge.yml/badge.svg?branch=main)](https://github.com/jatinbansal1998/jenkins-cli-ts/actions/workflows/post-merge.yml?query=branch%3Amain)
 [![CodeQL](https://github.com/jatinbansal1998/jenkins-cli-ts/actions/workflows/codeql.yml/badge.svg)](https://github.com/jatinbansal1998/jenkins-cli-ts/actions/workflows/codeql.yml)
 [![stable](https://img.shields.io/github/v/release/jatinbansal1998/jenkins-cli-ts?color=blue&label=stable)](https://github.com/jatinbansal1998/jenkins-cli-ts/releases)
 [![prerelease](https://img.shields.io/github/v/release/jatinbansal1998/jenkins-cli-ts?include_prereleases&color=orange&label=prerelease)](https://github.com/jatinbansal1998/jenkins-cli-ts/releases)
