@@ -187,7 +187,6 @@ jobs:
     env:
       GH_TOKEN: ${{ github.token }}
       TAG_NAME: ${{ needs.release.outputs.tag_name }}
-      JENKINS_INTEGRATION_TOOL_CACHE: ${{ runner.temp }}/jenkins-cli-integration-tools
     steps:
       - uses: actions/checkout@v6
         with:
@@ -323,4 +322,6 @@ jobs:
           "JENKINS_INTEGRATION_CLI_PATH=$([IO.Path]::GetFullPath($cliPath))" >> $env:GITHUB_ENV
 
       - name: Run downloaded asset against native Jenkins
+        env:
+          JENKINS_INTEGRATION_TOOL_CACHE: ${{ runner.temp }}/jenkins-cli-integration-tools
         run: bun run test:integration:jenkins --native
