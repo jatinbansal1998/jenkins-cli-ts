@@ -320,7 +320,7 @@ jobs:
         env:
           JENKINS_INTEGRATION_TOOL_CACHE: ${{ runner.temp }}/jenkins-cli-integration-tools
         run: |
-          ./scripts/test-windows-jenkins-acceptance.ps1 `
+          . ./scripts/test-windows-jenkins-acceptance.ps1 `
             -CliPath $env:WINDOWS_JENKINS_CLI_PATH `
             -ExpectedVersion $env:WINDOWS_EXPECTED_VERSION `
             -ExpectedTarget "bun-win32-x64" `

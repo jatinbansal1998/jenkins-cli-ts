@@ -334,7 +334,7 @@ jobs:
           JENKINS_INTEGRATION_TOOL_CACHE: ${{ runner.temp }}/jenkins-cli-integration-tools
         run: |
           $expectedVersion = (Get-Content package.json -Raw | ConvertFrom-Json).version
-          ./scripts/test-windows-jenkins-acceptance.ps1 `
+          . ./scripts/test-windows-jenkins-acceptance.ps1 `
             -CliPath $env:JENKINS_INTEGRATION_CLI_PATH `
             -ExpectedVersion $expectedVersion `
             -ExpectedTarget $env:EXPECTED_TARGET `

@@ -38,45 +38,10 @@ $EnvironmentNames = @(
 )
 $PreviousEnvironment = @{}
 
-function Invoke-AcceptanceCli {
-  param(
-    [Parameter(Mandatory = $true)]
-    [string[]]$Arguments,
-    [int[]]$ExpectedExitCodes = @(0)
-  )
-
-  # Keep this as a plain assignment with no stream redirection or array
-  # subexpression. This is the exact invocation shape that runs Bun-compiled
-  # Windows executables reliably on GitHub-hosted runners.
-  $nativeOutput = & $script:CliExecutable @Arguments
-  $exitCode = $LASTEXITCODE
-  $output = ($nativeOutput | Out-String).Trim()
-  if ($exitCode -notin $ExpectedExitCodes) {
-    $displayArguments = @($Arguments)
-    $safeOutput = $output
-    for ($index = 0; $index -lt $displayArguments.Count; $index++) {
-      if ($displayArguments[$index] -ceq "--token") {
-        if ($index + 1 -lt $displayArguments.Count) {
-          $safeOutput = $safeOutput.Replace(
-            $displayArguments[$index + 1],
-            "<redacted>"
-          )
-          $displayArguments[$index + 1] = "<redacted>"
-        }
-        break
-      }
-    }
-    throw "jenkins-cli $($displayArguments -join ' ') exited with $exitCode.`n$safeOutput"
-  }
-  return [pscustomobject]@{
-    ExitCode = $exitCode
-    Output = $output
-  }
-}
-
 function Assert-OutputContains {
   param(
     [Parameter(Mandatory = $true)]
+    [AllowEmptyString()]
     [string]$Output,
     [Parameter(Mandatory = $true)]
     [string]$Expected,
@@ -86,6 +51,22 @@ function Assert-OutputContains {
 
   if (-not $Output.Contains($Expected)) {
     throw "$Context did not contain '$Expected'.`n$Output"
+  }
+}
+
+function Assert-AcceptanceCliExit {
+  param(
+    [Parameter(Mandatory = $true)]
+    [int]$ExitCode,
+    [Parameter(Mandatory = $true)]
+    [AllowEmptyString()]
+    [string]$Output,
+    [Parameter(Mandatory = $true)]
+    [string]$Context
+  )
+
+  if ($ExitCode -ne 0) {
+    throw "$Context exited with $ExitCode.`n$Output"
   }
 }
 
@@ -162,10 +143,21 @@ try {
   New-Item -ItemType Directory -Force -Path $CliHome | Out-Null
   New-Item -ItemType Directory -Force -Path $DownloadDirectory | Out-Null
 
-  $identity = Invoke-AcceptanceCli -Arguments @("--version")
-  Assert-OutputContains $identity.Output $ExpectedVersion "Version output"
-  Assert-OutputContains $identity.Output $ExpectedTarget "Version output"
-  $null = Invoke-AcceptanceCli -Arguments @("--help")
+  # Bun-compiled Windows executables must be invoked directly from the Actions
+  # PowerShell scope. Launching one from a function or child process can return
+  # exit code 0 without running the CLI entrypoint.
+  $identityNativeOutput = & $CliExecutable --version
+  $identityExitCode = $LASTEXITCODE
+  $identityOutput = ($identityNativeOutput | Out-String).Trim()
+  Assert-AcceptanceCliExit $identityExitCode $identityOutput "Version command"
+  Assert-OutputContains $identityOutput $ExpectedVersion "Version output"
+  Assert-OutputContains $identityOutput $ExpectedTarget "Version output"
+
+  $helpNativeOutput = & $CliExecutable --help
+  $helpExitCode = $LASTEXITCODE
+  $helpOutput = ($helpNativeOutput | Out-String).Trim()
+  Assert-AcceptanceCliExit $helpExitCode $helpOutput "Help command"
+  Assert-OutputContains $helpOutput "jenkins-cli" "Help output"
 
   $env:JENKINS_INTEGRATION_TOOL_CACHE = $ToolCache
   & bun scripts/test-jenkins-integration.ts --prepare-native $ManifestPath
@@ -225,24 +217,29 @@ try {
   }
 
   $LoggedIn = $true
-  $login = Invoke-AcceptanceCli -Arguments @(
-    "auth",
-    "login",
-    "--profile",
-    $ProfileName,
-    "--url",
-    [string]$Manifest.jenkinsUrl,
-    "--user",
-    "integration-test",
-    "--token",
-    $adminToken,
+  $loginNativeOutput = & $CliExecutable `
+    "auth" `
+    "login" `
+    "--profile" `
+    $ProfileName `
+    "--url" `
+    ([string]$Manifest.jenkinsUrl) `
+    "--user" `
+    "integration-test" `
+    "--token" `
+    $adminToken `
     "--non-interactive"
-  )
+  $loginExitCode = $LASTEXITCODE
+  $loginOutput = ($loginNativeOutput | Out-String).Trim()
+  Assert-AcceptanceCliExit `
+    $loginExitCode `
+    $loginOutput.Replace($adminToken, "<redacted>") `
+    "Secure-store login"
   Assert-OutputContains `
-    $login.Output `
+    $loginOutput `
     "API token stored securely" `
     "Windows secure-store login"
-  if ($login.Output.Contains($adminToken)) {
+  if ($loginOutput.Contains($adminToken)) {
     throw "Windows secure-store login exposed the Jenkins API token."
   }
 
@@ -260,114 +257,142 @@ try {
     throw "The Windows profile was not backed by Credential Manager."
   }
 
-  $current = Invoke-AcceptanceCli -Arguments @(
-    "auth",
-    "current",
-    "--profile",
-    $ProfileName,
+  $currentNativeOutput = & $CliExecutable `
+    "auth" `
+    "current" `
+    "--profile" `
+    $ProfileName `
     "--non-interactive"
-  )
-  Assert-OutputContains $current.Output "Token present:    Yes" "auth current"
+  $currentExitCode = $LASTEXITCODE
+  $currentOutput = ($currentNativeOutput | Out-String).Trim()
+  Assert-AcceptanceCliExit $currentExitCode $currentOutput "auth current"
+  Assert-OutputContains $currentOutput "Token present:    Yes" "auth current"
   Assert-OutputContains `
-    $current.Output `
+    $currentOutput `
     "Windows Credential Manager" `
     "auth current"
 
-  $status = Invoke-AcceptanceCli -Arguments @(
-    "auth",
-    "status",
-    "--profile",
-    $ProfileName,
+  $authStatusNativeOutput = & $CliExecutable `
+    "auth" `
+    "status" `
+    "--profile" `
+    $ProfileName `
     "--non-interactive"
-  )
-  Assert-OutputContains $status.Output "Authenticated:    Yes" "auth status"
+  $authStatusExitCode = $LASTEXITCODE
+  $authStatusOutput = ($authStatusNativeOutput | Out-String).Trim()
+  Assert-AcceptanceCliExit `
+    $authStatusExitCode `
+    $authStatusOutput `
+    "auth status"
+  Assert-OutputContains $authStatusOutput "Authenticated:    Yes" "auth status"
   Assert-OutputContains `
-    $status.Output `
+    $authStatusOutput `
     "Jenkins user:     integration-test" `
     "auth status"
 
-  $list = Invoke-AcceptanceCli -Arguments @(
-    "list",
-    "--refresh",
-    "--json",
-    "--profile",
+  $listNativeOutput = & $CliExecutable `
+    "list" `
+    "--refresh" `
+    "--json" `
+    "--profile" `
     $ProfileName
-  )
-  $listPayload = $list.Output | ConvertFrom-Json
+  $listExitCode = $LASTEXITCODE
+  $listOutput = ($listNativeOutput | Out-String).Trim()
+  Assert-AcceptanceCliExit $listExitCode $listOutput "Job list"
+  $listPayload = $listOutput | ConvertFrom-Json
   if ("cli-structured" -notin @($listPayload.data.name)) {
     throw "Real Jenkins job discovery did not return cli-structured."
   }
 
   $marker = "windows-acceptance-$RunId"
   $jobUrl = "$($Manifest.jenkinsUrl)/job/cli-structured/"
-  $build = Invoke-AcceptanceCli -Arguments @(
-    "build",
-    "--job-url",
-    $jobUrl,
-    "--param",
-    "MESSAGE=$marker",
-    "--watch",
-    "--json",
-    "--profile",
+  $buildNativeOutput = & $CliExecutable `
+    "build" `
+    "--job-url" `
+    $jobUrl `
+    "--param" `
+    "MESSAGE=$marker" `
+    "--watch" `
+    "--json" `
+    "--profile" `
     $ProfileName
-  )
-  $buildPayload = $build.Output | ConvertFrom-Json
+  $buildExitCode = $LASTEXITCODE
+  $buildOutput = ($buildNativeOutput | Out-String).Trim()
+  Assert-AcceptanceCliExit $buildExitCode $buildOutput "Build command"
+  $buildPayload = $buildOutput | ConvertFrom-Json
   if ($buildPayload.data.result -cne "SUCCESS") {
-    throw "The Windows acceptance build did not succeed.`n$($build.Output)"
+    throw "The Windows acceptance build did not succeed.`n$buildOutput"
   }
   $buildUrl = [string]$buildPayload.data.buildUrl
   if ([string]::IsNullOrWhiteSpace($buildUrl)) {
     throw "The Windows acceptance build did not return a build URL."
   }
 
-  $buildStatus = Invoke-AcceptanceCli -Arguments @(
-    "status",
-    "--build-url",
-    $buildUrl,
-    "--json",
-    "--profile",
+  $buildStatusNativeOutput = & $CliExecutable `
+    "status" `
+    "--build-url" `
+    $buildUrl `
+    "--json" `
+    "--profile" `
     $ProfileName
-  )
-  $statusPayload = $buildStatus.Output | ConvertFrom-Json
+  $buildStatusExitCode = $LASTEXITCODE
+  $buildStatusOutput = ($buildStatusNativeOutput | Out-String).Trim()
+  Assert-AcceptanceCliExit `
+    $buildStatusExitCode `
+    $buildStatusOutput `
+    "Exact-build status"
+  $statusPayload = $buildStatusOutput | ConvertFrom-Json
   if ($statusPayload.data.build.result -cne "SUCCESS") {
     throw "Exact-build status did not report SUCCESS."
   }
 
-  $logs = Invoke-AcceptanceCli -Arguments @(
-    "logs",
-    "--build-url",
-    $buildUrl,
-    "--no-follow",
-    "--profile",
-    $ProfileName,
+  $logsNativeOutput = & $CliExecutable `
+    "logs" `
+    "--build-url" `
+    $buildUrl `
+    "--no-follow" `
+    "--profile" `
+    $ProfileName `
     "--non-interactive"
-  )
-  Assert-OutputContains $logs.Output "structured:$marker" "Exact-build logs"
+  $logsExitCode = $LASTEXITCODE
+  $logsOutput = ($logsNativeOutput | Out-String).Trim()
+  Assert-AcceptanceCliExit $logsExitCode $logsOutput "Exact-build logs"
+  Assert-OutputContains $logsOutput "structured:$marker" "Exact-build logs"
 
-  $artifacts = Invoke-AcceptanceCli -Arguments @(
-    "artifacts",
-    "--build-url",
-    $buildUrl,
-    "--json",
-    "--profile",
+  $artifactsNativeOutput = & $CliExecutable `
+    "artifacts" `
+    "--build-url" `
+    $buildUrl `
+    "--json" `
+    "--profile" `
     $ProfileName
-  )
+  $artifactsExitCode = $LASTEXITCODE
+  $artifactsOutput = ($artifactsNativeOutput | Out-String).Trim()
+  Assert-AcceptanceCliExit `
+    $artifactsExitCode `
+    $artifactsOutput `
+    "Exact-build artifacts"
   Assert-OutputContains `
-    $artifacts.Output `
+    $artifactsOutput `
     "structured-artifact.txt" `
     "Exact-build artifacts"
 
-  $null = Invoke-AcceptanceCli -Arguments @(
-    "artifacts",
-    "--build-url",
-    $buildUrl,
-    "--download",
-    "--dest",
-    $DownloadDirectory,
-    "--profile",
-    $ProfileName,
+  $artifactDownloadNativeOutput = & $CliExecutable `
+    "artifacts" `
+    "--build-url" `
+    $buildUrl `
+    "--download" `
+    "--dest" `
+    $DownloadDirectory `
+    "--profile" `
+    $ProfileName `
     "--non-interactive"
-  )
+  $artifactDownloadExitCode = $LASTEXITCODE
+  $artifactDownloadOutput = ($artifactDownloadNativeOutput | Out-String).Trim()
+  Assert-AcceptanceCliExit `
+    $artifactDownloadExitCode `
+    $artifactDownloadOutput `
+    "Exact-build artifact download"
   $downloadedArtifact = Join-Path $DownloadDirectory "structured-artifact.txt"
   if (
     -not (Test-Path -LiteralPath $downloadedArtifact -PathType Leaf) -or
@@ -378,13 +403,15 @@ try {
     throw "The exact-build artifact was not downloaded correctly."
   }
 
-  $null = Invoke-AcceptanceCli -Arguments @(
-    "auth",
-    "logout",
-    "--profile",
-    $ProfileName,
+  $logoutNativeOutput = & $CliExecutable `
+    "auth" `
+    "logout" `
+    "--profile" `
+    $ProfileName `
     "--non-interactive"
-  )
+  $logoutExitCode = $LASTEXITCODE
+  $logoutOutput = ($logoutNativeOutput | Out-String).Trim()
+  Assert-AcceptanceCliExit $logoutExitCode $logoutOutput "Credential logout"
   if (Test-Path -LiteralPath $configPath -PathType Leaf) {
     $configAfterLogout =
       Get-Content -LiteralPath $configPath -Raw | ConvertFrom-Json
@@ -397,13 +424,17 @@ try {
 } finally {
   if ($LoggedIn) {
     try {
-      $null = Invoke-AcceptanceCli -Arguments @(
-        "auth",
-        "logout",
-        "--profile",
-        $ProfileName,
+      $cleanupLogoutNativeOutput = & $CliExecutable `
+        "auth" `
+        "logout" `
+        "--profile" `
+        $ProfileName `
         "--non-interactive"
-      )
+      $cleanupLogoutExitCode = $LASTEXITCODE
+      $cleanupLogoutOutput = ($cleanupLogoutNativeOutput | Out-String).Trim()
+      if ($cleanupLogoutExitCode -ne 0) {
+        throw "Credential cleanup exited with $cleanupLogoutExitCode.`n$cleanupLogoutOutput"
+      }
     } catch {
       Write-Warning "Could not remove the Windows acceptance credential."
     }
