@@ -6,10 +6,10 @@
  * are pruned on CLI shutdown.
  */
 import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
+import { resolveUserHome } from "./user-home";
 
-const CONFIG_DIR = path.join(os.homedir(), ".config", "jenkins-cli");
+const CONFIG_DIR = path.join(resolveUserHome(), ".config", "jenkins-cli");
 const LEGACY_LOG_FILE = path.join(CONFIG_DIR, "api.log");
 const DATED_LOG_FILE_PATTERN = /^api-(\d{4}-\d{2}-\d{2})\.log$/;
 const LOG_RETENTION_DAYS = 7;

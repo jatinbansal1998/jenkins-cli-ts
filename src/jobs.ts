@@ -5,7 +5,6 @@
  */
 import { mkdir, rename, rm } from "node:fs/promises";
 import { createHash, randomUUID } from "node:crypto";
-import os from "node:os";
 import path from "node:path";
 import { CliError } from "./cli";
 import { MIN_SCORE, AMBIGUITY_GAP, MAX_OPTIONS, SCORES } from "./config/fuzzy";
@@ -14,6 +13,7 @@ import type { JenkinsClient } from "./jenkins/api-wrapper";
 import { normalizeRecentJobs, pruneRecentJobs } from "./recent-job-data";
 import { findJobByUrl, getJobUrlKey, normalizeOptionalJobUrl } from "./job-url";
 import type { JenkinsJob } from "./types/jenkins";
+import { resolveUserHome } from "./user-home";
 
 /** Cached job data with metadata. */
 export type CachedJob = JenkinsJob & {
@@ -50,7 +50,7 @@ export function getJobCachePath(jenkinsUrl?: string): string {
 }
 
 function resolveCacheDir(): string {
-  const home = os.homedir();
+  const home = resolveUserHome();
   if (process.platform === "darwin") {
     return path.join(home, "Library", "Caches", "jenkins-cli");
   }

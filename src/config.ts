@@ -1,12 +1,16 @@
 import { randomUUID } from "node:crypto";
 import fs from "node:fs";
 import { chmod, mkdir, rename, rm } from "node:fs/promises";
-import os from "node:os";
 import path from "node:path";
 import { CliError } from "./cli";
 import { ENV_KEYS } from "./env-keys";
+import { resolveUserHome } from "./user-home";
 
-export const CONFIG_DIR = path.join(os.homedir(), ".config", "jenkins-cli");
+export const CONFIG_DIR = path.join(
+  resolveUserHome(),
+  ".config",
+  "jenkins-cli",
+);
 export const CONFIG_FILE = path.join(CONFIG_DIR, "jenkins-cli-config.json");
 export const DEFAULT_PROFILE_NAME = "default";
 const CONFIG_VERSION = 2;

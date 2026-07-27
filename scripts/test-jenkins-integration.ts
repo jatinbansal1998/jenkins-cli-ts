@@ -155,11 +155,13 @@ try {
         "tests/integration/jenkins.test.ts",
         "tests/integration/jenkins-build-errors.test.ts",
       ];
-  await runChecked(["bun", "test", ...integrationTests], {
-    cwd: root,
-    inherit: true,
-    env: integrationEnv,
-  });
+  for (const integrationTest of integrationTests) {
+    await runChecked(["bun", "test", integrationTest], {
+      cwd: root,
+      inherit: true,
+      env: integrationEnv,
+    });
+  }
   if (mutationMode) {
     await runChecked(["bun", "scripts/test-mutation.ts", "--integration"], {
       cwd: root,

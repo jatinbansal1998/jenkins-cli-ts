@@ -510,14 +510,36 @@ describe("GitHub headers", () => {
         new Response("binary", { status: 200 }),
     );
     globalThis.fetch = fetchMock as unknown as typeof fetch;
+    let retainedWindowsTempDir: string | undefined;
 
     try {
-      await downloadAndInstall(
+      const install = downloadAndInstall(
         "https://github.com/jatinbansal1998/jenkins-cli-ts/releases/download/v1.2.3/jenkins-cli",
         targetPath,
         "0.7.0",
       );
-      expect(fs.readFileSync(targetPath, "utf8")).toBe("binary");
+      if (process.platform === "win32") {
+        const error = await install.catch((caught: unknown) => caught);
+        expect(error).toBeInstanceOf(CliError);
+        expect((error as CliError).message).toBe(
+          "In-place updates are not yet perfectly supported on Windows.",
+        );
+        const downloadHint = (error as CliError).hints.find((hint) =>
+          hint.startsWith(
+            "The update was downloaded to a temporary location: ",
+          ),
+        );
+        expect(downloadHint).toBeDefined();
+        const downloadedPath = downloadHint?.slice(
+          "The update was downloaded to a temporary location: ".length,
+        );
+        expect(downloadedPath).toBeDefined();
+        expect(fs.readFileSync(downloadedPath!, "utf8")).toBe("binary");
+        retainedWindowsTempDir = path.dirname(downloadedPath!);
+      } else {
+        await install;
+        expect(fs.readFileSync(targetPath, "utf8")).toBe("binary");
+      }
       const requestInit = fetchMock.mock.calls[0]?.[1] as
         RequestInit | undefined;
       expect(readHeader(requestInit, "User-Agent")).toBe(
@@ -525,6 +547,9 @@ describe("GitHub headers", () => {
       );
     } finally {
       fs.rmSync(tempDir, { recursive: true, force: true });
+      if (retainedWindowsTempDir) {
+        fs.rmSync(retainedWindowsTempDir, { recursive: true, force: true });
+      }
     }
   });
 });

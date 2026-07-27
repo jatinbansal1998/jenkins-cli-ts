@@ -2,6 +2,7 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { nativeExecutableInvocation } from "./helpers.native-executable";
 
 type CliRun = {
   exitCode: number;
@@ -27,16 +28,25 @@ function makeHome(config?: Record<string, unknown>): string {
 }
 
 function runCompiled(args: string[], home = makeHome()): CliRun {
+  const env = {
+    ...process.env,
+    HOME: home,
+    ...(process.platform === "win32"
+      ? {
+          USERPROFILE: home,
+          LOCALAPPDATA: join(home, "AppData", "Local"),
+          APPDATA: join(home, "AppData", "Roaming"),
+        }
+      : {}),
+    JENKINS_URL: undefined,
+    JENKINS_USER: undefined,
+    JENKINS_API_TOKEN: undefined,
+    JENKINS_ANALYTICS_DISABLED: "true",
+  };
+  const invocation = nativeExecutableInvocation(executable, args, env);
   const result = Bun.spawnSync({
-    cmd: [executable, ...args],
-    env: {
-      ...process.env,
-      HOME: home,
-      JENKINS_URL: undefined,
-      JENKINS_USER: undefined,
-      JENKINS_API_TOKEN: undefined,
-      JENKINS_ANALYTICS_DISABLED: "true",
-    },
+    cmd: invocation.cmd,
+    env: invocation.env,
     stdout: "pipe",
     stderr: "pipe",
   });
