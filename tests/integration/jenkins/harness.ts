@@ -2,7 +2,7 @@ import { expect } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { nativeExecutableInvocation } from "../../helpers.native-executable";
+import { runNativeExecutable } from "../../helpers.native-executable";
 
 export const jenkinsUrl = process.env.JENKINS_INTEGRATION_URL;
 export const integrationEnabled = Boolean(jenkinsUrl);
@@ -150,23 +150,12 @@ export async function invokeCliExecutable(
   args: string[],
   envOverrides: Record<string, string | undefined> = {},
 ): Promise<CliResult> {
-  const invocation = nativeExecutableInvocation(
+  const result = await runNativeExecutable({
     executable,
-    [...args, "--non-interactive", "--no-banner"],
-    cliEnv(home, envOverrides),
-  );
-  const subprocess = Bun.spawn({
-    cmd: invocation.cmd,
-    env: invocation.env,
-    stdout: "pipe",
-    stderr: "pipe",
+    args: [...args, "--non-interactive", "--no-banner"],
+    env: cliEnv(home, envOverrides),
   });
-  const [exitCode, stdout, stderr] = await Promise.all([
-    subprocess.exited,
-    new Response(subprocess.stdout).text(),
-    new Response(subprocess.stderr).text(),
-  ]);
-  return { exitCode, stdout, stderr, output: stdout + stderr };
+  return { ...result, output: result.stdout + result.stderr };
 }
 
 function cliEnv(

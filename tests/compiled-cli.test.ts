@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { nativeExecutableInvocation } from "./helpers.native-executable";
+import { runNativeExecutableSync } from "./helpers.native-executable";
 
 type CliRun = {
   exitCode: number;
@@ -43,18 +43,14 @@ function runCompiled(args: string[], home = makeHome()): CliRun {
     JENKINS_API_TOKEN: undefined,
     JENKINS_ANALYTICS_DISABLED: "true",
   };
-  const invocation = nativeExecutableInvocation(executable, args, env);
-  const result = Bun.spawnSync({
-    cmd: invocation.cmd,
-    env: invocation.env,
-    stdout: "pipe",
-    stderr: "pipe",
+  const result = runNativeExecutableSync({
+    executable,
+    args,
+    env,
   });
   return {
     exitCode: result.exitCode,
-    output:
-      new TextDecoder().decode(result.stdout) +
-      new TextDecoder().decode(result.stderr),
+    output: result.stdout + result.stderr,
   };
 }
 
