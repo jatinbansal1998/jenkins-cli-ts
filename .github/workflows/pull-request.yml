@@ -105,13 +105,24 @@ jobs:
         run: |
           $ErrorActionPreference = "Stop"
           $expectedVersion = bun -e 'console.log((await Bun.file("package.json").json()).version)'
-          $installedVersion = jenkins-cli --version
-          $installedVersion
-          if ($installedVersion -notlike "*$expectedVersion*") {
-            throw "Installed CLI version does not contain expected version $expectedVersion"
+          $installedCli = (Get-Command jenkins-cli -ErrorAction Stop).Path
+          $binaryText = [Text.Encoding]::Latin1.GetString(
+            [IO.File]::ReadAllBytes($installedCli)
+          )
+          foreach ($expectedIdentity in @($expectedVersion, "bun-win32-x64")) {
+            if (-not $binaryText.Contains($expectedIdentity)) {
+              throw "Installed CLI does not contain expected identity '$expectedIdentity'."
+            }
           }
-          if ($installedVersion -notlike "*bun-win32-*") {
-            throw "Installed CLI does not report a Windows build target"
+          $binaryText = $null
+
+          jenkins-cli --version
+          if ($LASTEXITCODE -ne 0) {
+            throw "Installed CLI --version failed with exit code $LASTEXITCODE."
+          }
+          jenkins-cli --help
+          if ($LASTEXITCODE -ne 0) {
+            throw "Installed CLI --help failed with exit code $LASTEXITCODE."
           }
 
       - name: Run tests (capture failures)

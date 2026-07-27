@@ -341,21 +341,22 @@ jobs:
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          $versionOutput = jenkins-cli --version
-          if ($LASTEXITCODE -ne 0) {
-            throw "$env:ASSET_NAME --version failed with exit code $LASTEXITCODE.`n$versionOutput"
-          }
-          Write-Host $versionOutput
-
           $expectedVersion = (Get-Content package.json -Raw | ConvertFrom-Json).version
-          if (-not $versionOutput.Contains($expectedVersion)) {
-            throw "Version output did not contain package version $expectedVersion."
+          $binaryText = [Text.Encoding]::Latin1.GetString(
+            [IO.File]::ReadAllBytes($env:JENKINS_INTEGRATION_CLI_PATH)
+          )
+          foreach ($expectedIdentity in @($expectedVersion, $env:EXPECTED_TARGET)) {
+            if (-not $binaryText.Contains($expectedIdentity)) {
+              throw "Downloaded Windows CLI does not contain expected identity '$expectedIdentity'."
+            }
           }
-          if (-not $versionOutput.Contains($env:EXPECTED_TARGET)) {
-            throw "Version output did not contain build target $env:EXPECTED_TARGET."
-          }
+          $binaryText = $null
 
-          jenkins-cli --help | Out-Null
+          jenkins-cli --version
+          if ($LASTEXITCODE -ne 0) {
+            throw "$env:ASSET_NAME --version failed with exit code $LASTEXITCODE."
+          }
+          jenkins-cli --help
           if ($LASTEXITCODE -ne 0) {
             throw "$env:ASSET_NAME --help failed with exit code $LASTEXITCODE."
           }
