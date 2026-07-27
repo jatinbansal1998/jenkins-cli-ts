@@ -18,14 +18,16 @@ inputs:
 runs:
   using: composite
   steps:
-    - name: Prepare disposable Jenkins
-      id: prepare
+    - name: Run Windows CLI, Credential Manager, and Jenkins acceptance
       shell: pwsh
       env:
         WINDOWS_ACCEPTANCE_CLI_PATH: ${{ inputs.cli-path }}
         WINDOWS_ACCEPTANCE_EXPECTED_VERSION: ${{ inputs.expected-version }}
         WINDOWS_ACCEPTANCE_EXPECTED_TARGET: ${{ inputs.expected-target }}
         WINDOWS_ACCEPTANCE_TOOL_CACHE: ${{ inputs.tool-cache }}
+        NO_COLOR: "1"
+        JENKINS_ANALYTICS_DISABLED: "true"
+        JENKINS_ERROR_REPORTING_DISABLED: "true"
       run: |
         $ErrorActionPreference = "Stop"
         if (Test-Path variable:PSNativeCommandUseErrorActionPreference) {
@@ -53,12 +55,11 @@ runs:
         $DownloadDirectory = Join-Path $env:RUNNER_TEMP "jenkins-cli-windows-artifacts-$RunId"
         $ProfileName = "windows-acceptance-$RunId"
         $LoginMarkerPath = Join-Path $env:RUNNER_TEMP "jenkins-cli-windows-login-$RunId"
-
-        "cli_path=$CliPath" >> $env:GITHUB_OUTPUT
-        "manifest_path=$ManifestPath" >> $env:GITHUB_OUTPUT
-        "download_directory=$DownloadDirectory" >> $env:GITHUB_OUTPUT
-        "profile_name=$ProfileName" >> $env:GITHUB_OUTPUT
-        "login_marker_path=$LoginMarkerPath" >> $env:GITHUB_OUTPUT
+        $JenkinsProcess = $null
+        $runtimeDirectory = $null
+        $jenkinsStdoutPath = $null
+        $jenkinsStderrPath = $null
+        $acceptanceSucceeded = $false
 
         New-Item -ItemType Directory -Force -Path $DownloadDirectory | Out-Null
 
@@ -124,495 +125,122 @@ runs:
           throw "Jenkins did not become ready within 240 seconds. $lastProblem"
         }
 
-        $env:JENKINS_INTEGRATION_TOOL_CACHE = $env:WINDOWS_ACCEPTANCE_TOOL_CACHE
-        & bun scripts/test-jenkins-integration.ts --prepare-native $ManifestPath
-        if ($LASTEXITCODE -ne 0) {
-          throw "Native Jenkins preparation failed with exit code $LASTEXITCODE."
-        }
-
-        $Manifest = Get-Content -LiteralPath $ManifestPath -Raw | ConvertFrom-Json
-        if ($Manifest.schemaVersion -ne 1) {
-          throw "Unsupported native Jenkins manifest version."
-        }
-        "runtime_directory=$([string]$Manifest.runtimeDir)" >> $env:GITHUB_OUTPUT
-
-        $jenkinsStdoutPath = Join-Path ([string]$Manifest.runtimeDir) "jenkins.stdout.log"
-        $jenkinsStderrPath = Join-Path ([string]$Manifest.runtimeDir) "jenkins.stderr.log"
-        "jenkins_stdout_path=$jenkinsStdoutPath" >> $env:GITHUB_OUTPUT
-        "jenkins_stderr_path=$jenkinsStderrPath" >> $env:GITHUB_OUTPUT
-
-        $previousLaunchEnvironment = @{}
-        foreach ($property in $Manifest.launch.env.PSObject.Properties) {
-          $previousLaunchEnvironment[$property.Name] = [Environment]::GetEnvironmentVariable(
-            $property.Name,
-            "Process"
-          )
-          [Environment]::SetEnvironmentVariable(
-            $property.Name,
-            [string]$property.Value,
-            "Process"
-          )
-        }
-
         try {
-          # A child attached to the Actions PowerShell console is terminated
-          # when that step exits. Start-Process creates an independent Windows
-          # process whose output is file-backed, so the controller remains
-          # alive for the following acceptance step.
-          $JenkinsProcess = Start-Process `
-            -FilePath ([string]$Manifest.launch.executable) `
-            -ArgumentList @($Manifest.launch.args) `
-            -WorkingDirectory ([string]$Manifest.launch.cwd) `
-            -RedirectStandardOutput $jenkinsStdoutPath `
-            -RedirectStandardError $jenkinsStderrPath `
-            -PassThru
-        } finally {
-          foreach ($name in $previousLaunchEnvironment.Keys) {
+          $env:JENKINS_INTEGRATION_TOOL_CACHE = $env:WINDOWS_ACCEPTANCE_TOOL_CACHE
+          & bun scripts/test-jenkins-integration.ts --prepare-native $ManifestPath
+          if ($LASTEXITCODE -ne 0) {
+            throw "Native Jenkins preparation failed with exit code $LASTEXITCODE."
+          }
+
+          $Manifest = Get-Content -LiteralPath $ManifestPath -Raw | ConvertFrom-Json
+          if ($Manifest.schemaVersion -ne 1) {
+            throw "Unsupported native Jenkins manifest version."
+          }
+          $runtimeDirectory = [string]$Manifest.runtimeDir
+          $jenkinsStdoutPath = Join-Path $runtimeDirectory "jenkins.stdout.log"
+          $jenkinsStderrPath = Join-Path $runtimeDirectory "jenkins.stderr.log"
+
+          $previousLaunchEnvironment = @{}
+          foreach ($property in $Manifest.launch.env.PSObject.Properties) {
+            $previousLaunchEnvironment[$property.Name] = [Environment]::GetEnvironmentVariable(
+              $property.Name,
+              "Process"
+            )
             [Environment]::SetEnvironmentVariable(
-              $name,
-              $previousLaunchEnvironment[$name],
+              $property.Name,
+              [string]$property.Value,
               "Process"
             )
           }
-        }
-        "jenkins_pid=$($JenkinsProcess.Id)" >> $env:GITHUB_OUTPUT
 
-        $adminToken = Wait-ForToken `
-          -Path ([string]$Manifest.adminTokenFile) `
-          -Process $JenkinsProcess
-        Wait-ForJenkins `
-          -Url ([string]$Manifest.jenkinsUrl) `
-          -Token $adminToken `
-          -Process $JenkinsProcess
-
-        $JenkinsProcess.Dispose()
-        Write-Host "Disposable Jenkins is ready at $($Manifest.jenkinsUrl)"
-
-    - name: Run Windows CLI acceptance
-      id: acceptance
-      shell: pwsh
-      env:
-        WINDOWS_ACCEPTANCE_CLI_PATH: ${{ steps.prepare.outputs.cli_path }}
-        WINDOWS_ACCEPTANCE_EXPECTED_VERSION: ${{ inputs.expected-version }}
-        WINDOWS_ACCEPTANCE_EXPECTED_TARGET: ${{ inputs.expected-target }}
-        WINDOWS_ACCEPTANCE_MANIFEST_PATH: ${{ steps.prepare.outputs.manifest_path }}
-        WINDOWS_ACCEPTANCE_DOWNLOAD_DIRECTORY: ${{ steps.prepare.outputs.download_directory }}
-        WINDOWS_ACCEPTANCE_PROFILE_NAME: ${{ steps.prepare.outputs.profile_name }}
-        WINDOWS_ACCEPTANCE_LOGIN_MARKER_PATH: ${{ steps.prepare.outputs.login_marker_path }}
-        NO_COLOR: "1"
-        JENKINS_ANALYTICS_DISABLED: "true"
-        JENKINS_ERROR_REPORTING_DISABLED: "true"
-      run: |
-        $ErrorActionPreference = "Stop"
-        if (Test-Path variable:PSNativeCommandUseErrorActionPreference) {
-          $PSNativeCommandUseErrorActionPreference = $false
-        }
-
-        function Assert-AcceptanceCliExit {
-          param(
-            [Parameter(Mandatory = $true)]
-            [int]$ExitCode,
-            [Parameter(Mandatory = $true)]
-            [string]$Context
-          )
-
-          if ($ExitCode -ne 0) {
-            throw "$Context exited with $ExitCode."
-          }
-        }
-
-        $CliExecutable = (Resolve-Path -LiteralPath $env:WINDOWS_ACCEPTANCE_CLI_PATH).Path
-        $ExpectedVersion = $env:WINDOWS_ACCEPTANCE_EXPECTED_VERSION
-        $ExpectedTarget = $env:WINDOWS_ACCEPTANCE_EXPECTED_TARGET
-        $Manifest = Get-Content `
-          -LiteralPath $env:WINDOWS_ACCEPTANCE_MANIFEST_PATH `
-          -Raw |
-          ConvertFrom-Json
-        $adminToken = (
-          Get-Content -LiteralPath ([string]$Manifest.adminTokenFile) -Raw
-        ).Trim()
-        Write-Output "::add-mask::$adminToken"
-        $ProfileName = $env:WINDOWS_ACCEPTANCE_PROFILE_NAME
-        $DownloadDirectory = $env:WINDOWS_ACCEPTANCE_DOWNLOAD_DIRECTORY
-        $LoginMarkerPath = $env:WINDOWS_ACCEPTANCE_LOGIN_MARKER_PATH
-
-        foreach ($name in @(
-            "JENKINS_URL",
-            "JENKINS_USER",
-            "JENKINS_API_TOKEN",
-            "TS_KEYRING_BACKEND",
-            "HTTP_PROXY",
-            "HTTPS_PROXY",
-            "ALL_PROXY",
-            "http_proxy",
-            "https_proxy",
-            "all_proxy"
-          )) {
-          [Environment]::SetEnvironmentVariable($name, $null, "Process")
-        }
-        # Every acceptance request targets the disposable loopback controller.
-        # Do not allow runner-level proxy configuration to intercept it.
-        $env:NO_PROXY = "127.0.0.1,localhost"
-        $env:no_proxy = $env:NO_PROXY
-
-        $resolvedCommand = Get-Command jenkins-cli -ErrorAction Stop
-        if (
-          $resolvedCommand.CommandType -ne
-            [Management.Automation.CommandTypes]::Application -or
-          -not [IO.Path]::GetFullPath($resolvedCommand.Path).Equals(
-            [IO.Path]::GetFullPath($CliExecutable),
-            [StringComparison]::OrdinalIgnoreCase
-          )
-        ) {
-          throw "jenkins-cli resolved to an unexpected command: $resolvedCommand"
-        }
-
-        # Bun-compiled Windows executables currently exit without running their
-        # entrypoint when stdout is redirected to a PowerShell pipeline. Keep
-        # every CLI invocation attached to the Actions console. Runtime behavior
-        # is asserted below through exit codes and observable side effects.
-        $binaryText = [Text.Encoding]::Latin1.GetString(
-          [IO.File]::ReadAllBytes($CliExecutable)
-        )
-        foreach ($expectedIdentity in @($ExpectedVersion, $ExpectedTarget)) {
-          if (-not $binaryText.Contains($expectedIdentity)) {
-            throw "The Windows executable does not contain expected identity '$expectedIdentity'."
-          }
-        }
-        $binaryText = $null
-
-        jenkins-cli --version
-        Assert-AcceptanceCliExit $LASTEXITCODE "Version command"
-
-        jenkins-cli --help
-        Assert-AcceptanceCliExit $LASTEXITCODE "Help command"
-
-        [IO.File]::WriteAllText(
-          $LoginMarkerPath,
-          $ProfileName,
-          [Text.UTF8Encoding]::new($false)
-        )
-        jenkins-cli `
-          "auth" `
-          "login" `
-          "--profile" `
-          $ProfileName `
-          "--url" `
-          ([string]$Manifest.jenkinsUrl) `
-          "--user" `
-          "integration-test" `
-          "--token" `
-          $adminToken `
-          "--non-interactive"
-        Assert-AcceptanceCliExit $LASTEXITCODE "Secure-store login"
-
-        $configPath = bun -e `
-          'import { CONFIG_FILE } from "./src/config"; console.log(CONFIG_FILE);'
-        Assert-AcceptanceCliExit $LASTEXITCODE "Config path resolution"
-        $configPath = ($configPath | Out-String).Trim()
-        $configText = Get-Content -LiteralPath $configPath -Raw
-        if ($configText.Contains($adminToken)) {
-          throw "The Jenkins API token was written to the CLI config."
-        }
-        $config = $configText | ConvertFrom-Json
-        $profile = $config.profiles.PSObject.Properties[$ProfileName].Value
-        if (
-          $profile.jenkinsApiToken -cne "@keychain" -or
-          $profile.tokenStorage -cne "keychain"
-        ) {
-          throw "The Windows profile was not backed by Credential Manager."
-        }
-
-        $secureStoreAccount = bun -e `
-          'import { buildSecureStoreAccount } from "./src/secure-store"; console.log(buildSecureStoreAccount(process.argv[1], process.argv[2]));' `
-          $ProfileName `
-          ([string]$Manifest.jenkinsUrl)
-        Assert-AcceptanceCliExit $LASTEXITCODE "Secure-store account derivation"
-        $secureStoreAccount = ($secureStoreAccount | Out-String).Trim()
-        $env:JENKINS_CLI_ACCEPTANCE_ACCOUNT = $secureStoreAccount
-        $env:JENKINS_CLI_ACCEPTANCE_TOKEN = $adminToken
-        $credentialRoundTripScript = @'
-        import { getPassword, listBackends } from "cross-keychain";
-        const backends = await listBackends();
-        if (!backends.some(({ id }) => id === "native-windows" || id === "windows")) {
-          throw new Error("Windows Credential Manager backend is unavailable");
-        }
-        const token = await getPassword(
-          "jenkins-cli",
-          process.env.JENKINS_CLI_ACCEPTANCE_ACCOUNT,
-        );
-        if (token !== process.env.JENKINS_CLI_ACCEPTANCE_TOKEN) {
-          throw new Error("Credential Manager did not return the stored Jenkins token");
-        }
-        '@
-        bun -e $credentialRoundTripScript
-        Assert-AcceptanceCliExit $LASTEXITCODE "Credential Manager round trip"
-        [Environment]::SetEnvironmentVariable(
-          "JENKINS_CLI_ACCEPTANCE_TOKEN",
-          $null,
-          "Process"
-        )
-
-        $credentials = [Convert]::ToBase64String(
-          [Text.Encoding]::UTF8.GetBytes("integration-test:$adminToken")
-        )
-        $identity = Invoke-RestMethod `
-          -Uri "$($Manifest.jenkinsUrl)/whoAmI/api/json" `
-          -Headers @{ Authorization = "Basic $credentials" } `
-          -TimeoutSec 20
-        if (-not $identity.authenticated) {
-          throw "Disposable Jenkins stopped responding before CLI network acceptance."
-        }
-
-        jenkins-cli `
-          "auth" `
-          "current" `
-          "--profile" `
-          $ProfileName `
-          "--non-interactive"
-        Assert-AcceptanceCliExit $LASTEXITCODE "auth current"
-
-        jenkins-cli `
-          "auth" `
-          "status" `
-          "--profile" `
-          $ProfileName `
-          "--non-interactive"
-        Assert-AcceptanceCliExit $LASTEXITCODE "auth status"
-
-        jenkins-cli `
-          "list" `
-          "--refresh" `
-          "--json" `
-          "--profile" `
-          $ProfileName
-        Assert-AcceptanceCliExit $LASTEXITCODE "Job list"
-
-        $marker = "windows-acceptance-$([guid]::NewGuid().ToString('N'))"
-        $jobUrl = "$($Manifest.jenkinsUrl)/job/cli-structured/"
-        $headers = @{ Authorization = "Basic $credentials" }
-        $jobState = Invoke-RestMethod `
-          -Uri "${jobUrl}api/json" `
-          -Headers $headers `
-          -TimeoutSec 20
-        $expectedBuildNumber = [int]$jobState.nextBuildNumber
-
-        jenkins-cli `
-          "build" `
-          "--job-url" `
-          $jobUrl `
-          "--param" `
-          "MESSAGE=$marker" `
-          "--watch" `
-          "--json" `
-          "--profile" `
-          $ProfileName
-        Assert-AcceptanceCliExit $LASTEXITCODE "Build command"
-        $buildUrl = "$jobUrl$expectedBuildNumber/"
-        $buildState = Invoke-RestMethod `
-          -Uri "${buildUrl}api/json" `
-          -Headers $headers `
-          -TimeoutSec 20
-        if ($buildState.building -or $buildState.result -cne "SUCCESS") {
-          throw "The Windows acceptance build did not finish successfully."
-        }
-        if (
-          "structured-artifact.txt" -notin
-            @($buildState.artifacts | ForEach-Object { $_.fileName })
-        ) {
-          throw "Real Jenkins did not publish structured-artifact.txt."
-        }
-        $jenkinsConsole = (
-          Invoke-WebRequest `
-            -Uri "${buildUrl}consoleText" `
-            -Headers $headers `
-            -TimeoutSec 20
-        ).Content
-        if (-not $jenkinsConsole.Contains("structured:$marker")) {
-          throw "Real Jenkins did not receive the Windows CLI build parameter."
-        }
-
-        jenkins-cli `
-          "status" `
-          "--build-url" `
-          $buildUrl `
-          "--json" `
-          "--profile" `
-          $ProfileName
-        Assert-AcceptanceCliExit $LASTEXITCODE "Exact-build status"
-
-        jenkins-cli `
-          "logs" `
-          "--build-url" `
-          $buildUrl `
-          "--no-follow" `
-          "--profile" `
-          $ProfileName `
-          "--non-interactive"
-        Assert-AcceptanceCliExit $LASTEXITCODE "Exact-build logs"
-
-        jenkins-cli `
-          "artifacts" `
-          "--build-url" `
-          $buildUrl `
-          "--json" `
-          "--profile" `
-          $ProfileName
-        Assert-AcceptanceCliExit $LASTEXITCODE "Exact-build artifacts"
-
-        jenkins-cli `
-          "artifacts" `
-          "--build-url" `
-          $buildUrl `
-          "--download" `
-          "--dest" `
-          $DownloadDirectory `
-          "--profile" `
-          $ProfileName `
-          "--non-interactive"
-        Assert-AcceptanceCliExit $LASTEXITCODE "Exact-build artifact download"
-        $downloadedArtifact = Join-Path $DownloadDirectory "structured-artifact.txt"
-        if (
-          -not (Test-Path -LiteralPath $downloadedArtifact -PathType Leaf) -or
-          -not (Get-Content -LiteralPath $downloadedArtifact -Raw).Contains(
-            "structured-artifact"
-          )
-        ) {
-          throw "The exact-build artifact was not downloaded correctly."
-        }
-
-        jenkins-cli `
-          "auth" `
-          "logout" `
-          "--profile" `
-          $ProfileName `
-          "--non-interactive"
-        Assert-AcceptanceCliExit $LASTEXITCODE "Credential logout"
-        Remove-Item -LiteralPath $LoginMarkerPath -Force
-
-        $credentialDeletionScript = @'
-        import { getPassword } from "cross-keychain";
-        const token = await getPassword(
-          "jenkins-cli",
-          process.env.JENKINS_CLI_ACCEPTANCE_ACCOUNT,
-        );
-        if (token !== null) {
-          throw new Error("Credential Manager retained the Jenkins token after logout");
-        }
-        '@
-        bun -e $credentialDeletionScript
-        Assert-AcceptanceCliExit $LASTEXITCODE "Credential Manager deletion"
-        [Environment]::SetEnvironmentVariable(
-          "JENKINS_CLI_ACCEPTANCE_ACCOUNT",
-          $null,
-          "Process"
-        )
-
-        if (Test-Path -LiteralPath $configPath -PathType Leaf) {
-          $configAfterLogout =
-            Get-Content -LiteralPath $configPath -Raw | ConvertFrom-Json
-          if (
-            $configAfterLogout.profiles.PSObject.Properties.Name -contains
-              $ProfileName
-          ) {
-            throw "Windows Credential Manager cleanup left the acceptance profile configured."
-          }
-        }
-        Write-Host "Windows CLI, Credential Manager, and real Jenkins acceptance passed."
-
-    - name: Clean up Windows acceptance
-      if: always()
-      shell: pwsh
-      env:
-        WINDOWS_ACCEPTANCE_CLI_PATH: ${{ steps.prepare.outputs.cli_path }}
-        WINDOWS_ACCEPTANCE_MANIFEST_PATH: ${{ steps.prepare.outputs.manifest_path }}
-        WINDOWS_ACCEPTANCE_RUNTIME_DIRECTORY: ${{ steps.prepare.outputs.runtime_directory }}
-        WINDOWS_ACCEPTANCE_DOWNLOAD_DIRECTORY: ${{ steps.prepare.outputs.download_directory }}
-        WINDOWS_ACCEPTANCE_PROFILE_NAME: ${{ steps.prepare.outputs.profile_name }}
-        WINDOWS_ACCEPTANCE_LOGIN_MARKER_PATH: ${{ steps.prepare.outputs.login_marker_path }}
-        WINDOWS_ACCEPTANCE_JENKINS_PID: ${{ steps.prepare.outputs.jenkins_pid }}
-        WINDOWS_ACCEPTANCE_JENKINS_STDOUT_PATH: ${{ steps.prepare.outputs.jenkins_stdout_path }}
-        WINDOWS_ACCEPTANCE_JENKINS_STDERR_PATH: ${{ steps.prepare.outputs.jenkins_stderr_path }}
-        WINDOWS_ACCEPTANCE_FAILED: ${{ steps.acceptance.outcome != 'success' }}
-        NO_COLOR: "1"
-        JENKINS_ANALYTICS_DISABLED: "true"
-        JENKINS_ERROR_REPORTING_DISABLED: "true"
-      run: |
-        $ErrorActionPreference = "Continue"
-        if (Test-Path variable:PSNativeCommandUseErrorActionPreference) {
-          $PSNativeCommandUseErrorActionPreference = $false
-        }
-
-        if ($env:WINDOWS_ACCEPTANCE_FAILED -eq "true") {
-          foreach ($path in @(
-              $env:WINDOWS_ACCEPTANCE_JENKINS_STDOUT_PATH,
-              $env:WINDOWS_ACCEPTANCE_JENKINS_STDERR_PATH
-            )) {
-            if (Test-Path -LiteralPath $path -PathType Leaf) {
-              Write-Host "Last Jenkins output from ${path}:"
-              Get-Content -LiteralPath $path -Tail 100
+          try {
+            $JenkinsProcess = Start-Process `
+              -FilePath ([string]$Manifest.launch.executable) `
+              -ArgumentList @($Manifest.launch.args) `
+              -WorkingDirectory ([string]$Manifest.launch.cwd) `
+              -RedirectStandardOutput $jenkinsStdoutPath `
+              -RedirectStandardError $jenkinsStderrPath `
+              -PassThru
+          } finally {
+            foreach ($name in $previousLaunchEnvironment.Keys) {
+              [Environment]::SetEnvironmentVariable(
+                $name,
+                $previousLaunchEnvironment[$name],
+                "Process"
+              )
             }
           }
-        }
 
-        if (
-          -not [string]::IsNullOrWhiteSpace(
-            $env:WINDOWS_ACCEPTANCE_LOGIN_MARKER_PATH
-          ) -and
-          (Test-Path `
-            -LiteralPath $env:WINDOWS_ACCEPTANCE_LOGIN_MARKER_PATH `
-            -PathType Leaf)
-        ) {
-          jenkins-cli `
-            "auth" `
-            "logout" `
-            "--profile" `
-            $env:WINDOWS_ACCEPTANCE_PROFILE_NAME `
-            "--non-interactive"
-          $cleanupLogoutExitCode = $LASTEXITCODE
-          if ($cleanupLogoutExitCode -ne 0) {
-            Write-Warning "Credential cleanup exited with $cleanupLogoutExitCode."
+          $adminToken = Wait-ForToken `
+            -Path ([string]$Manifest.adminTokenFile) `
+            -Process $JenkinsProcess
+          Wait-ForJenkins `
+            -Url ([string]$Manifest.jenkinsUrl) `
+            -Token $adminToken `
+            -Process $JenkinsProcess
+          Write-Host "Disposable Jenkins is ready at $($Manifest.jenkinsUrl)"
+
+          & "$env:GITHUB_ACTION_PATH/run-acceptance.ps1" `
+            -CliExecutable $CliPath `
+            -ExpectedVersion $env:WINDOWS_ACCEPTANCE_EXPECTED_VERSION `
+            -ExpectedTarget $env:WINDOWS_ACCEPTANCE_EXPECTED_TARGET `
+            -ManifestPath $ManifestPath `
+            -DownloadDirectory $DownloadDirectory `
+            -ProfileName $ProfileName `
+            -LoginMarkerPath $LoginMarkerPath
+          $acceptanceSucceeded = $true
+        } finally {
+          if (-not $acceptanceSucceeded) {
+            foreach ($path in @($jenkinsStdoutPath, $jenkinsStderrPath)) {
+              if (
+                -not [string]::IsNullOrWhiteSpace($path) -and
+                (Test-Path -LiteralPath $path -PathType Leaf)
+              ) {
+                Write-Host "Last Jenkins output from ${path}:"
+                Get-Content -LiteralPath $path -Tail 100
+              }
+            }
           }
-        }
 
-        $jenkinsPid = 0
-        if (
-          [int]::TryParse(
-            $env:WINDOWS_ACCEPTANCE_JENKINS_PID,
-            [ref]$jenkinsPid
-          ) -and
-          $jenkinsPid -gt 0
-        ) {
-          & taskkill.exe /PID $jenkinsPid /T /F *> $null
-          if ($LASTEXITCODE -ne 0) {
-            Stop-Process `
-              -Id $jenkinsPid `
-              -Force `
-              -ErrorAction SilentlyContinue
+          if (Test-Path -LiteralPath $LoginMarkerPath -PathType Leaf) {
+            & $CliPath `
+              "auth" `
+              "logout" `
+              "--profile" `
+              $ProfileName `
+              "--non-interactive"
+            if ($LASTEXITCODE -ne 0) {
+              Write-Warning "Credential cleanup exited with $LASTEXITCODE."
+            }
           }
-        }
 
-        foreach ($path in @(
-            $env:WINDOWS_ACCEPTANCE_RUNTIME_DIRECTORY,
-            $env:WINDOWS_ACCEPTANCE_DOWNLOAD_DIRECTORY
-          )) {
-          if (-not [string]::IsNullOrWhiteSpace($path)) {
+          if ($null -ne $JenkinsProcess) {
+            $JenkinsProcess.Refresh()
+            if (-not $JenkinsProcess.HasExited) {
+              & taskkill.exe /PID $JenkinsProcess.Id /T /F *> $null
+              if ($LASTEXITCODE -ne 0) {
+                Stop-Process `
+                  -Id $JenkinsProcess.Id `
+                  -Force `
+                  -ErrorAction SilentlyContinue
+              }
+            }
+            $JenkinsProcess.Dispose()
+          }
+
+          foreach ($path in @($runtimeDirectory, $DownloadDirectory)) {
+            if (-not [string]::IsNullOrWhiteSpace($path)) {
+              Remove-Item `
+                -LiteralPath $path `
+                -Recurse `
+                -Force `
+                -ErrorAction SilentlyContinue
+            }
+          }
+          foreach ($path in @($ManifestPath, $LoginMarkerPath)) {
             Remove-Item `
               -LiteralPath $path `
-              -Recurse `
               -Force `
               -ErrorAction SilentlyContinue
           }
         }
-        foreach ($path in @(
-            $env:WINDOWS_ACCEPTANCE_MANIFEST_PATH,
-            $env:WINDOWS_ACCEPTANCE_LOGIN_MARKER_PATH
-          )) {
-          if (-not [string]::IsNullOrWhiteSpace($path)) {
-            Remove-Item `
-              -LiteralPath $path `
-              -Force `
-              -ErrorAction SilentlyContinue
-          }
-        }
-        exit 0
