@@ -337,6 +337,7 @@ jobs:
           "JENKINS_INTEGRATION_CLI_PATH=$([IO.Path]::GetFullPath($validationCliPath))" >> $env:GITHUB_ENV
 
       - name: Validate installed Windows release asset
+        id: windows_release_asset
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
@@ -358,6 +359,8 @@ jobs:
           if ($LASTEXITCODE -ne 0) {
             throw "$env:ASSET_NAME --help failed with exit code $LASTEXITCODE."
           }
+          "cli_path=$env:JENKINS_INTEGRATION_CLI_PATH" >> $env:GITHUB_OUTPUT
+          "expected_version=$expectedVersion" >> $env:GITHUB_OUTPUT
 
       - name: Run downloaded asset against native Jenkins
         if: runner.os != 'Windows'
@@ -367,13 +370,9 @@ jobs:
 
       - name: Run downloaded asset against native Jenkins on Windows
         if: runner.os == 'Windows'
-        shell: pwsh
-        env:
-          JENKINS_INTEGRATION_TOOL_CACHE: ${{ runner.temp }}/jenkins-cli-integration-tools
-        run: |
-          $expectedVersion = (Get-Content package.json -Raw | ConvertFrom-Json).version
-          . ./scripts/test-windows-jenkins-acceptance.ps1 `
-            -CliPath $env:JENKINS_INTEGRATION_CLI_PATH `
-            -ExpectedVersion $expectedVersion `
-            -ExpectedTarget $env:EXPECTED_TARGET `
-            -ToolCache $env:JENKINS_INTEGRATION_TOOL_CACHE
+        uses: ./.github/actions/windows-jenkins-acceptance
+        with:
+          cli-path: ${{ steps.windows_release_asset.outputs.cli_path }}
+          expected-version: ${{ steps.windows_release_asset.outputs.expected_version }}
+          expected-target: bun-windows-x64
+          tool-cache: ${{ runner.temp }}/jenkins-cli-integration-tools

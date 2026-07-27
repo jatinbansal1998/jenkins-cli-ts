@@ -17,7 +17,7 @@ export async function runNativeExecutable(
 ): Promise<NativeExecutableResult> {
   if (process.platform === "win32") {
     throw new Error(
-      "Windows native executables must be validated by scripts/test-windows-jenkins-acceptance.ps1.",
+      "Windows native executables must be validated by the windows-jenkins-acceptance composite action.",
     );
   }
 
