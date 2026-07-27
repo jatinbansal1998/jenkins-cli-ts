@@ -21,8 +21,18 @@ const baseImage =
 const mutationMode = process.argv.includes("--mutation");
 const buildErrorsOnly = process.argv.includes("--build-errors");
 const nativeMode =
-  process.argv.includes("--native") || process.platform === "darwin";
+  process.argv.includes("--native") ||
+  process.platform === "darwin" ||
+  process.platform === "win32";
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+const externalCliPath = process.env.JENKINS_INTEGRATION_CLI_PATH?.trim();
+const cliPath = externalCliPath
+  ? resolve(externalCliPath)
+  : resolve(
+      root,
+      "dist",
+      process.platform === "win32" ? "jenkins-cli.exe" : "jenkins-cli",
+    );
 const fixtureDir = join(root, "tests", "integration", "jenkins");
 const fixtureSource = join(fixtureDir, "init.groovy");
 const containerName = `jenkins-cli-integration-${process.pid}-${Date.now()}`;
@@ -37,11 +47,18 @@ let nativeProcess: ReturnType<typeof Bun.spawn> | undefined;
 let failed = false;
 
 try {
-  await chmod(runtimeDir, 0o777);
+  if (externalCliPath && !(await Bun.file(cliPath).exists())) {
+    throw new Error(`JENKINS_INTEGRATION_CLI_PATH does not exist: ${cliPath}`);
+  }
+  if (process.platform !== "win32") {
+    await chmod(runtimeDir, 0o777);
+  }
   await createSyntheticGitRepository();
   const fixture = join(runtimeDir, "init.groovy");
   await copyFile(fixtureSource, fixture);
-  await chmod(fixture, 0o644);
+  if (process.platform !== "win32") {
+    await chmod(fixture, 0o644);
+  }
   console.log(
     `Starting Jenkins integration controller in ${nativeMode ? "native WAR" : "Docker"} mode...`,
   );
@@ -118,9 +135,14 @@ try {
   const readerToken = await waitForToken(readerTokenFile);
 
   console.log(`Jenkins integration controller ready at ${jenkinsUrl}`);
-  await runChecked(["bun", "run", "build"], { cwd: root, inherit: true });
+  if (externalCliPath) {
+    console.log(`Testing external Jenkins CLI executable at ${cliPath}`);
+  } else {
+    await runChecked(["bun", "run", "build"], { cwd: root, inherit: true });
+  }
   const integrationEnv = {
     ...process.env,
+    JENKINS_INTEGRATION_CLI_PATH: cliPath,
     JENKINS_INTEGRATION_URL: jenkinsUrl,
     JENKINS_INTEGRATION_USER: "integration-test",
     JENKINS_INTEGRATION_TOKEN: adminToken,
@@ -208,7 +230,9 @@ async function createSyntheticGitRepository(): Promise<void> {
   });
   await runChecked(["git", "switch", "main"], { cwd: source });
   await runChecked(["git", "clone", "--bare", source, repository]);
-  await runChecked(["chmod", "-R", "a+rX", repository]);
+  if (process.platform !== "win32") {
+    await runChecked(["chmod", "-R", "a+rX", repository]);
+  }
 }
 
 async function waitForJenkins(

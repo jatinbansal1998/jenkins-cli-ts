@@ -17,18 +17,23 @@ permissions:
 jobs:
   release:
     runs-on: ubuntu-latest
+    outputs:
+      tag_name: ${{ steps.resolve_release_inputs.outputs.tag_name }}
     env:
       HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
       SENTRY_ENVIRONMENT: github-actions
     steps:
       - name: Resolve release inputs
+        id: resolve_release_inputs
         shell: bash
         run: |
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            echo "TAG_NAME=${{ inputs.tag }}" >> "$GITHUB_ENV"
+            TAG_NAME="${{ inputs.tag }}"
           else
-            echo "TAG_NAME=${GITHUB_REF_NAME}" >> "$GITHUB_ENV"
+            TAG_NAME="${GITHUB_REF_NAME}"
           fi
+          echo "TAG_NAME=$TAG_NAME" >> "$GITHUB_ENV"
+          echo "tag_name=$TAG_NAME" >> "$GITHUB_OUTPUT"
 
       - uses: actions/checkout@v6
         with:
@@ -167,3 +172,155 @@ jobs:
               echo "Failed: tap sync step outcome was \`$TAP_SYNC_OUTCOME\`."
             fi
           } >> "$GITHUB_STEP_SUMMARY"
+
+  validate-release-assets:
+    name: Validate release asset (${{ matrix.os }})
+    needs: release
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 40
+    env:
+      GH_TOKEN: ${{ github.token }}
+      TAG_NAME: ${{ needs.release.outputs.tag_name }}
+      JENKINS_INTEGRATION_TOOL_CACHE: ${{ runner.temp }}/jenkins-cli-integration-tools
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: refs/tags/${{ needs.release.outputs.tag_name }}
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Set up Java for native Jenkins
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Install dependencies
+        run: bun install
+
+      - name: Cache native Jenkins tools
+        uses: actions/cache@v5
+        with:
+          path: ${{ runner.temp }}/jenkins-cli-integration-tools
+          key: jenkins-native-release-${{ runner.os }}-${{ runner.arch }}-2.568.1-2.15.0-${{ hashFiles('tests/integration/jenkins/plugins.txt') }}
+
+      - name: Expose Git shell to Jenkins on Windows
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $gitBin = Join-Path $env:ProgramFiles "Git\bin"
+          if (-not (Test-Path (Join-Path $gitBin "sh.exe"))) {
+            throw "Git for Windows sh.exe was not found at $gitBin."
+          }
+          $gitBin >> $env:GITHUB_PATH
+
+      - name: Select release asset for runner
+        shell: pwsh
+        run: |
+          switch ($env:RUNNER_OS) {
+            "Linux" {
+              if ($env:RUNNER_ARCH -ne "X64") {
+                throw "The Linux release validation requires an x64 runner, got $env:RUNNER_ARCH."
+              }
+              $assetName = "jenkins-cli-linux-x64"
+              $expectedTarget = "bun-linux-x64"
+            }
+            "macOS" {
+              switch ($env:RUNNER_ARCH) {
+                "X64" {
+                  $assetName = "jenkins-cli-darwin-x64"
+                  $expectedTarget = "bun-darwin-x64"
+                }
+                "ARM64" {
+                  $assetName = "jenkins-cli-darwin-arm64"
+                  $expectedTarget = "bun-darwin-arm64"
+                }
+                default {
+                  throw "No macOS release asset is published for runner architecture $env:RUNNER_ARCH."
+                }
+              }
+            }
+            "Windows" {
+              if ($env:RUNNER_ARCH -ne "X64") {
+                throw "The Windows release validation requires an x64 runner, got $env:RUNNER_ARCH."
+              }
+              $assetName = "jenkins-cli-windows-x64.exe"
+              $expectedTarget = "bun-windows-x64"
+            }
+            default {
+              throw "Unsupported release validation runner OS: $env:RUNNER_OS."
+            }
+          }
+
+          "ASSET_NAME=$assetName" >> $env:GITHUB_ENV
+          "EXPECTED_TARGET=$expectedTarget" >> $env:GITHUB_ENV
+
+      - name: Download and verify exact release asset
+        shell: pwsh
+        run: |
+          $assetDirectory = Join-Path $env:RUNNER_TEMP "release-assets"
+          New-Item -ItemType Directory -Force -Path $assetDirectory | Out-Null
+
+          gh release download $env:TAG_NAME `
+            --repo $env:GITHUB_REPOSITORY `
+            --pattern $env:ASSET_NAME `
+            --pattern "checksums.txt" `
+            --dir $assetDirectory `
+            --clobber
+          if ($LASTEXITCODE -ne 0) {
+            throw "Failed to download $env:ASSET_NAME and checksums.txt from release $env:TAG_NAME."
+          }
+
+          $cliPath = Join-Path $assetDirectory $env:ASSET_NAME
+          $checksumPath = Join-Path $assetDirectory "checksums.txt"
+          $checksumPattern = "^(?<hash>[0-9a-fA-F]{64})  " + [regex]::Escape($env:ASSET_NAME) + "$"
+          $checksumMatches = @(Get-Content $checksumPath | Where-Object { $_ -match $checksumPattern })
+          if ($checksumMatches.Count -ne 1) {
+            throw "Expected exactly one checksum entry for $env:ASSET_NAME, found $($checksumMatches.Count)."
+          }
+
+          $null = $checksumMatches[0] -match $checksumPattern
+          $expectedChecksum = $Matches.hash.ToLowerInvariant()
+          $actualChecksum = (Get-FileHash -Algorithm SHA256 -Path $cliPath).Hash.ToLowerInvariant()
+          if ($actualChecksum -cne $expectedChecksum) {
+            throw "SHA-256 mismatch for $env:ASSET_NAME. Expected $expectedChecksum, got $actualChecksum."
+          }
+
+          if ($env:RUNNER_OS -ne "Windows") {
+            chmod +x $cliPath
+            if ($LASTEXITCODE -ne 0) {
+              throw "Failed to make $env:ASSET_NAME executable."
+            }
+          }
+
+          $versionOutput = (& $cliPath --version 2>&1 | Out-String).Trim()
+          if ($LASTEXITCODE -ne 0) {
+            throw "$env:ASSET_NAME --version failed with exit code $LASTEXITCODE.`n$versionOutput"
+          }
+          Write-Host $versionOutput
+
+          $expectedVersion = (Get-Content package.json -Raw | ConvertFrom-Json).version
+          if (-not $versionOutput.Contains($expectedVersion)) {
+            throw "Version output did not contain package version $expectedVersion."
+          }
+          if (-not $versionOutput.Contains($env:EXPECTED_TARGET)) {
+            throw "Version output did not contain build target $env:EXPECTED_TARGET."
+          }
+
+          & $cliPath --help | Out-Null
+          if ($LASTEXITCODE -ne 0) {
+            throw "$env:ASSET_NAME --help failed with exit code $LASTEXITCODE."
+          }
+
+          "JENKINS_INTEGRATION_CLI_PATH=$([IO.Path]::GetFullPath($cliPath))" >> $env:GITHUB_ENV
+
+      - name: Run downloaded asset against native Jenkins
+        run: bun run test:integration:jenkins --native

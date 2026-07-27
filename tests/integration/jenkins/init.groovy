@@ -202,7 +202,7 @@ node {
 disabledPipelineJob.setDisabled(true)
 disabledPipelineJob.save()
 
-def syntheticRepository = "file://${runtimeDir}/demo-app.git"
+def syntheticRepository = new File(runtimeDir, "demo-app.git").toURI().toString()
 def syntheticScm = new GitSCM(syntheticRepository)
 def gitParameter = new GitParameterDefinition(
   "BRANCH_TAG",

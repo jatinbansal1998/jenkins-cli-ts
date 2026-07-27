@@ -30,7 +30,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest]
+        os: [ubuntu-latest, macos-latest, windows-latest]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v6
@@ -63,6 +63,7 @@ jobs:
           echo "JENKINS_CLI_TEST_KEYCHAIN=$TEST_KEYCHAIN" >> "$GITHUB_ENV"
 
       - name: Build and install CLI
+        if: runner.os != 'Windows'
         shell: bash
         run: |
           set -euo pipefail
@@ -72,7 +73,18 @@ jobs:
           chmod +x "$RUNNER_TEMP/jenkins-cli-bin/jenkins-cli"
           echo "$RUNNER_TEMP/jenkins-cli-bin" >> "$GITHUB_PATH"
 
+      - name: Build and install CLI on Windows
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          bun run build
+          New-Item -ItemType Directory -Force -Path "$env:RUNNER_TEMP\jenkins-cli-bin" | Out-Null
+          Copy-Item "dist\jenkins-cli.exe" "$env:RUNNER_TEMP\jenkins-cli-bin\jenkins-cli.exe"
+          "$env:RUNNER_TEMP\jenkins-cli-bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+
       - name: Validate installed CLI version
+        if: runner.os != 'Windows'
         shell: bash
         run: |
           set -euo pipefail
@@ -86,6 +98,21 @@ jobs:
             *) echo "Unsupported runner OS: $RUNNER_OS" >&2; exit 1 ;;
           esac
           grep -F "$EXPECTED_TARGET" <<< "$INSTALLED_VERSION"
+
+      - name: Validate installed CLI version on Windows
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $expectedVersion = bun -e 'console.log((await Bun.file("package.json").json()).version)'
+          $installedVersion = jenkins-cli --version
+          $installedVersion
+          if ($installedVersion -notlike "*$expectedVersion*") {
+            throw "Installed CLI version does not contain expected version $expectedVersion"
+          }
+          if ($installedVersion -notlike "*bun-win32-*") {
+            throw "Installed CLI does not report a Windows build target"
+          }
 
       - name: Run tests (capture failures)
         if: runner.os == 'Linux'
@@ -130,6 +157,21 @@ jobs:
           bun test --reporter=junit --reporter-outfile test-artifacts/bun-junit.xml >/dev/null 2>&1 || true
           exit "$TEST_EXIT"
 
+      - name: Run tests with Windows Credential Manager (capture failures)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          NO_COLOR: "1"
+          REQUIRE_KEYCHAIN_INTEGRATION: "1"
+        run: |
+          New-Item -ItemType Directory -Force -Path test-artifacts | Out-Null
+
+          bun test --only-failures 2>&1 | Tee-Object -FilePath test-artifacts\bun-test.log
+          $testExit = $LASTEXITCODE
+
+          bun test --reporter=junit --reporter-outfile test-artifacts\bun-junit.xml *> $null
+          exit $testExit
+
       - name: Summarize test output
         if: always()
         shell: bash
@@ -162,6 +204,8 @@ jobs:
             test-script: test:mutation:jenkins
           - os: macos-latest
             test-script: test:integration:jenkins
+          - os: windows-latest
+            test-script: test:integration:jenkins
     runs-on: ${{ matrix.os }}
     timeout-minutes: 40
     steps:
@@ -172,7 +216,7 @@ jobs:
           bun-version: latest
 
       - name: Set up Java for native Jenkins
-        if: runner.os == 'macOS'
+        if: runner.os == 'macOS' || runner.os == 'Windows'
         uses: actions/setup-java@v5
         with:
           distribution: temurin
@@ -182,7 +226,7 @@ jobs:
         run: bun install
 
       - name: Cache native Jenkins tools
-        if: runner.os == 'macOS'
+        if: runner.os == 'macOS' || runner.os == 'Windows'
         uses: actions/cache@v5
         with:
           path: ${{ runner.temp }}/jenkins-cli-integration-tools
@@ -206,6 +250,16 @@ jobs:
           security list-keychains -d user -s "$TEST_KEYCHAIN"
           security default-keychain -d user -s "$TEST_KEYCHAIN"
           echo "JENKINS_CLI_TEST_KEYCHAIN=$TEST_KEYCHAIN" >> "$GITHUB_ENV"
+
+      - name: Expose Git shell to native Jenkins on Windows
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $gitBin = Join-Path $env:ProgramFiles "Git\bin"
+          if (-not (Test-Path (Join-Path $gitBin "sh.exe"))) {
+            throw "Git for Windows sh.exe was not found in $gitBin"
+          }
+          $gitBin | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
 
       - name: Run Jenkins integration tests with Linux Secret Service
         if: runner.os == 'Linux'
@@ -239,3 +293,10 @@ jobs:
           REQUIRE_KEYCHAIN_INTEGRATION: "1"
           JENKINS_INTEGRATION_TOOL_CACHE: ${{ runner.temp }}/jenkins-cli-integration-tools
         run: bun run "${{ matrix.test-script }}"
+
+      - name: Run Jenkins integration tests on Windows
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          JENKINS_INTEGRATION_TOOL_CACHE: ${{ runner.temp }}/jenkins-cli-integration-tools
+        run: bun run "${{ matrix.test-script }}" --native

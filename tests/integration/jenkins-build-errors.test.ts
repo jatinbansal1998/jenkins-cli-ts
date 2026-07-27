@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { resolve } from "node:path";
 import {
+  integrationCliExecutable,
   integrationEnabled,
   invokeCliExecutable,
   jenkinsUrl,
@@ -114,10 +114,7 @@ describe.skipIf(!integrationEnabled)(
       ];
       const baselineExecutable =
         process.env.JENKINS_INTEGRATION_BEFORE_CLI?.trim();
-      const currentExecutable = resolve(
-        "dist",
-        process.platform === "win32" ? "jenkins-cli.exe" : "jenkins-cli",
-      );
+      const currentExecutable = integrationCliExecutable;
 
       await withCliHome(async (home) => {
         for (const scenario of enabledScenarios) {

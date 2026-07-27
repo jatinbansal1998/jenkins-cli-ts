@@ -1002,7 +1002,7 @@ describe.skipIf(!integrationEnabled)(
       });
     }, 60_000);
 
-    test.skipIf(!keychainIntegrationRequired)(
+    test.skipIf(!keychainIntegrationRequired || process.platform === "win32")(
       "uses interactive profile prompts and the real OS keychain",
       async () => {
         await withCliHome(async (home) => {

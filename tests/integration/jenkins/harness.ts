@@ -5,6 +5,14 @@ import { join, resolve } from "node:path";
 
 export const jenkinsUrl = process.env.JENKINS_INTEGRATION_URL;
 export const integrationEnabled = Boolean(jenkinsUrl);
+const requestedIntegrationCliPath =
+  process.env.JENKINS_INTEGRATION_CLI_PATH?.trim();
+export const integrationCliExecutable = requestedIntegrationCliPath
+  ? resolve(requestedIntegrationCliPath)
+  : resolve(
+      "dist",
+      process.platform === "win32" ? "jenkins-cli.exe" : "jenkins-cli",
+    );
 
 export type CliResult = {
   exitCode: number;
@@ -45,13 +53,14 @@ export async function runInteractiveCli(
   steps: InteractiveStep[],
   envOverrides: Record<string, string | undefined> = {},
 ): Promise<CliResult> {
-  const executable = resolve(
-    "dist",
-    process.platform === "win32" ? "jenkins-cli.exe" : "jenkins-cli",
-  );
+  if (process.platform === "win32") {
+    throw new Error(
+      "Interactive Jenkins integration scenarios require a POSIX pseudo-terminal and are not supported on Windows.",
+    );
+  }
   const interactiveCommand = [
     "stty cols 120 rows 40",
-    `exec ${[executable, ...args].map(shellEscape).join(" ")}`,
+    `exec ${[integrationCliExecutable, ...args].map(shellEscape).join(" ")}`,
   ].join("; ");
   const useMacOsExpect = process.platform === "darwin";
   const env = cliEnv(home, envOverrides);
@@ -126,11 +135,12 @@ export async function invokeCli(
   args: string[],
   envOverrides: Record<string, string | undefined> = {},
 ): Promise<CliResult> {
-  const executable = resolve(
-    "dist",
-    process.platform === "win32" ? "jenkins-cli.exe" : "jenkins-cli",
+  return invokeCliExecutable(
+    home,
+    integrationCliExecutable,
+    args,
+    envOverrides,
   );
-  return invokeCliExecutable(home, executable, args, envOverrides);
 }
 
 export async function invokeCliExecutable(
@@ -160,6 +170,13 @@ function cliEnv(
   return {
     ...process.env,
     HOME: home,
+    ...(process.platform === "win32"
+      ? {
+          USERPROFILE: home,
+          LOCALAPPDATA: join(home, "AppData", "Local"),
+          APPDATA: join(home, "AppData", "Roaming"),
+        }
+      : {}),
     JENKINS_URL: jenkinsUrl,
     JENKINS_USER: process.env.JENKINS_INTEGRATION_USER,
     JENKINS_API_TOKEN: process.env.JENKINS_INTEGRATION_TOKEN,
