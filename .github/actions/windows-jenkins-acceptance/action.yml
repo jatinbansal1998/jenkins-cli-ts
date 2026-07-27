@@ -136,22 +136,44 @@ runs:
         }
         "runtime_directory=$([string]$Manifest.runtimeDir)" >> $env:GITHUB_OUTPUT
 
-        $startInfo = [Diagnostics.ProcessStartInfo]::new()
-        $startInfo.FileName = [string]$Manifest.launch.executable
-        $startInfo.WorkingDirectory = [string]$Manifest.launch.cwd
-        $startInfo.UseShellExecute = $false
-        foreach ($argument in @($Manifest.launch.args)) {
-          $startInfo.ArgumentList.Add([string]$argument)
-        }
+        $jenkinsStdoutPath = Join-Path ([string]$Manifest.runtimeDir) "jenkins.stdout.log"
+        $jenkinsStderrPath = Join-Path ([string]$Manifest.runtimeDir) "jenkins.stderr.log"
+        "jenkins_stdout_path=$jenkinsStdoutPath" >> $env:GITHUB_OUTPUT
+        "jenkins_stderr_path=$jenkinsStderrPath" >> $env:GITHUB_OUTPUT
+
+        $previousLaunchEnvironment = @{}
         foreach ($property in $Manifest.launch.env.PSObject.Properties) {
-          $startInfo.Environment[$property.Name] = [string]$property.Value
+          $previousLaunchEnvironment[$property.Name] = [Environment]::GetEnvironmentVariable(
+            $property.Name,
+            "Process"
+          )
+          [Environment]::SetEnvironmentVariable(
+            $property.Name,
+            [string]$property.Value,
+            "Process"
+          )
         }
 
-        $JenkinsProcess = [Diagnostics.Process]::new()
-        $JenkinsProcess.StartInfo = $startInfo
-        if (-not $JenkinsProcess.Start()) {
-          $JenkinsProcess.Dispose()
-          throw "The native Jenkins process did not start."
+        try {
+          # A child attached to the Actions PowerShell console is terminated
+          # when that step exits. Start-Process creates an independent Windows
+          # process whose output is file-backed, so the controller remains
+          # alive for the following acceptance step.
+          $JenkinsProcess = Start-Process `
+            -FilePath ([string]$Manifest.launch.executable) `
+            -ArgumentList @($Manifest.launch.args) `
+            -WorkingDirectory ([string]$Manifest.launch.cwd) `
+            -RedirectStandardOutput $jenkinsStdoutPath `
+            -RedirectStandardError $jenkinsStderrPath `
+            -PassThru
+        } finally {
+          foreach ($name in $previousLaunchEnvironment.Keys) {
+            [Environment]::SetEnvironmentVariable(
+              $name,
+              $previousLaunchEnvironment[$name],
+              "Process"
+            )
+          }
         }
         "jenkins_pid=$($JenkinsProcess.Id)" >> $env:GITHUB_OUTPUT
 
@@ -509,6 +531,9 @@ runs:
         WINDOWS_ACCEPTANCE_PROFILE_NAME: ${{ steps.prepare.outputs.profile_name }}
         WINDOWS_ACCEPTANCE_LOGIN_MARKER_PATH: ${{ steps.prepare.outputs.login_marker_path }}
         WINDOWS_ACCEPTANCE_JENKINS_PID: ${{ steps.prepare.outputs.jenkins_pid }}
+        WINDOWS_ACCEPTANCE_JENKINS_STDOUT_PATH: ${{ steps.prepare.outputs.jenkins_stdout_path }}
+        WINDOWS_ACCEPTANCE_JENKINS_STDERR_PATH: ${{ steps.prepare.outputs.jenkins_stderr_path }}
+        WINDOWS_ACCEPTANCE_FAILED: ${{ steps.acceptance.outcome != 'success' }}
         NO_COLOR: "1"
         JENKINS_ANALYTICS_DISABLED: "true"
         JENKINS_ERROR_REPORTING_DISABLED: "true"
@@ -516,6 +541,18 @@ runs:
         $ErrorActionPreference = "Continue"
         if (Test-Path variable:PSNativeCommandUseErrorActionPreference) {
           $PSNativeCommandUseErrorActionPreference = $false
+        }
+
+        if ($env:WINDOWS_ACCEPTANCE_FAILED -eq "true") {
+          foreach ($path in @(
+              $env:WINDOWS_ACCEPTANCE_JENKINS_STDOUT_PATH,
+              $env:WINDOWS_ACCEPTANCE_JENKINS_STDERR_PATH
+            )) {
+            if (Test-Path -LiteralPath $path -PathType Leaf) {
+              Write-Host "Last Jenkins output from ${path}:"
+              Get-Content -LiteralPath $path -Tail 100
+            }
+          }
         }
 
         if (
