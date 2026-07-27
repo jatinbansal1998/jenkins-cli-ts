@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { runNativeExecutableSync } from "./helpers.native-executable";
+import { runNativeExecutable } from "./helpers.native-executable";
 
 type CliRun = {
   exitCode: number;
@@ -27,7 +27,7 @@ function makeHome(config?: Record<string, unknown>): string {
   return home;
 }
 
-function runCompiled(args: string[], home = makeHome()): CliRun {
+async function runCompiled(args: string[], home = makeHome()): Promise<CliRun> {
   const env = {
     ...process.env,
     HOME: home,
@@ -43,7 +43,7 @@ function runCompiled(args: string[], home = makeHome()): CliRun {
     JENKINS_API_TOKEN: undefined,
     JENKINS_ANALYTICS_DISABLED: "true",
   };
-  const result = runNativeExecutableSync({
+  const result = await runNativeExecutable({
     executable,
     args,
     env,
@@ -84,9 +84,9 @@ afterAll(() => {
 });
 
 describe("compiled CLI", () => {
-  test("starts and reports its version through both aliases", () => {
+  test("starts and reports its version through both aliases", async () => {
     for (const flag of ["-v", "--version"]) {
-      const result = runCompiled([flag]);
+      const result = await runCompiled([flag]);
       expect(result.exitCode).toBe(0);
       expect(result.output).toContain(
         `bun-${process.platform}-${process.arch}`,
@@ -95,22 +95,22 @@ describe("compiled CLI", () => {
     }
   });
 
-  test("renders root and command help", () => {
-    const root = runCompiled(["--help"]);
+  test("renders root and command help", async () => {
+    const root = await runCompiled(["--help"]);
     expect(root.exitCode).toBe(0);
     expect(root.output).toContain("Usage: jenkins-cli [command] [options]");
     expect(root.output).toContain("jenkins-cli auth");
     expect(root.output).toContain("jenkins-cli build");
 
-    const build = runCompiled(["build", "--help"]);
+    const build = await runCompiled(["build", "--help"]);
     expect(build.exitCode).toBe(0);
     expect(build.output).toContain("jenkins-cli build");
     expect(build.output).toContain("--param");
     expect(build.output).toContain("--watch");
   });
 
-  test("renders the full compiled command reference", () => {
-    const result = runCompiled(["help", "--full"]);
+  test("renders the full compiled command reference", async () => {
+    const result = await runCompiled(["help", "--full"]);
 
     expect(result.exitCode).toBe(0);
     expect(result.output).toContain("jenkins-cli auth login --help");
@@ -119,7 +119,7 @@ describe("compiled CLI", () => {
     expect(result.output).toContain("jenkins-cli update --help");
   });
 
-  test("runs local profile commands without contacting Jenkins", () => {
+  test("runs local profile commands without contacting Jenkins", async () => {
     const home = makeHome({
       version: 2,
       defaultProfile: "work",
@@ -133,19 +133,22 @@ describe("compiled CLI", () => {
       },
     });
 
-    const list = runCompiled(["auth", "list", "--non-interactive"], home);
+    const list = await runCompiled(["auth", "list", "--non-interactive"], home);
     expect(list.exitCode).toBe(0);
     expect(list.output).toContain(
       "work (default)  https://jenkins.example.com  ci-user  plaintext",
     );
 
-    const current = runCompiled(["auth", "current", "--non-interactive"], home);
+    const current = await runCompiled(
+      ["auth", "current", "--non-interactive"],
+      home,
+    );
     expect(current.exitCode).toBe(0);
     expect(current.output).toContain("Source:           Default profile");
     expect(current.output).toContain("Profile:          work");
     expect(current.output).not.toContain("secret-token");
 
-    const compatibility = runCompiled(
+    const compatibility = await runCompiled(
       ["profile", "list", "--non-interactive"],
       home,
     );
@@ -153,12 +156,12 @@ describe("compiled CLI", () => {
     expect(compatibility.output).toBe(list.output);
   });
 
-  test("handles offline validation errors through the compiled entry point", () => {
-    const login = runCompiled(["login", "--non-interactive"]);
+  test("handles offline validation errors through the compiled entry point", async () => {
+    const login = await runCompiled(["login", "--non-interactive"]);
     expect(login.exitCode).toBe(1);
     expect(login.output).toContain("ERROR: Missing required --url.");
 
-    const unknownOption = runCompiled([
+    const unknownOption = await runCompiled([
       "--definitely-not-a-real-option",
       "--non-interactive",
     ]);

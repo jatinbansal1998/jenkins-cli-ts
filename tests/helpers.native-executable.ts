@@ -1,12 +1,8 @@
-import {
-  closeSync,
-  mkdtempSync,
-  openSync,
-  readFileSync,
-  rmSync,
-} from "node:fs";
-import { tmpdir } from "node:os";
+import { rename, rm } from "node:fs/promises";
 import { join } from "node:path";
+
+const PROTOCOL_VERSION = 1;
+const DEFAULT_TIMEOUT_MS = 3 * 60_000;
 
 export type NativeExecutableResult = {
   exitCode: number;
@@ -18,147 +14,145 @@ type NativeExecutableOptions = {
   executable: string;
   args: string[];
   env: Record<string, string | undefined>;
+  cwd?: string;
+  timeoutMs?: number;
 };
 
-/**
- * Bun-managed pipes can report EPIPE to another compiled Bun executable on
- * Windows. The CLI deliberately treats EPIPE as a successful early exit, which
- * makes the child appear to have produced no output. Give the child real file
- * handles on Windows, then read the captured output after it exits.
- */
-export function runNativeExecutableSync(
-  options: NativeExecutableOptions,
-): NativeExecutableResult {
-  if (process.platform !== "win32") {
-    const result = Bun.spawnSync({
-      cmd: [options.executable, ...options.args],
-      env: options.env,
-      stdout: "pipe",
-      stderr: "pipe",
-    });
-    return {
-      exitCode: result.exitCode,
-      stdout: new TextDecoder().decode(result.stdout),
-      stderr: new TextDecoder().decode(result.stderr),
-    };
-  }
-
-  return withOutputFiles((stdout, stderr) => {
-    const result = Bun.spawnSync({
-      cmd: [options.executable, ...options.args],
-      env: options.env,
-      stdout,
-      stderr,
-    });
-    return result.exitCode;
-  });
-}
+type NativeRunnerResponse = NativeExecutableResult & {
+  protocolVersion: number;
+  requestId: string;
+  ok: boolean;
+  timedOut: boolean;
+};
 
 export async function runNativeExecutable(
   options: NativeExecutableOptions,
 ): Promise<NativeExecutableResult> {
   if (process.platform !== "win32") {
-    const subprocess = Bun.spawn({
-      cmd: [options.executable, ...options.args],
-      env: options.env,
-      stdout: "pipe",
-      stderr: "pipe",
-    });
-    const [exitCode, stdout, stderr] = await Promise.all([
-      subprocess.exited,
-      new Response(subprocess.stdout).text(),
-      new Response(subprocess.stderr).text(),
-    ]);
-    return { exitCode, stdout, stderr };
+    return await runWithBunPipes(options);
   }
 
-  return await withOutputFilesAsync(async (stdout, stderr) => {
-    const subprocess = Bun.spawn({
-      cmd: [options.executable, ...options.args],
-      env: options.env,
-      stdout,
-      stderr,
-    });
-    return await subprocess.exited;
-  });
-}
-
-function withOutputFiles(
-  run: (stdout: number, stderr: number) => number,
-): NativeExecutableResult {
-  const capture = openOutputFiles();
-  try {
-    const exitCode = run(capture.stdout, capture.stderr);
-    capture.closed = true;
-    closeOutputFiles(capture);
-    return readOutputFiles(capture.directory, exitCode);
-  } finally {
-    if (!capture.closed) {
-      closeOutputFiles(capture);
+  const runnerDirectory = process.env.JENKINS_CLI_NATIVE_RUNNER_DIR?.trim();
+  const runnerToken = process.env.JENKINS_CLI_NATIVE_RUNNER_TOKEN?.trim();
+  const runnerProtocol = process.env.JENKINS_CLI_NATIVE_RUNNER_PROTOCOL?.trim();
+  const configuredParts = [runnerDirectory, runnerToken, runnerProtocol].filter(
+    Boolean,
+  ).length;
+  if (configuredParts > 0 && configuredParts < 3) {
+    throw new Error(
+      "Windows native runner configuration is incomplete. Run this command through scripts/run-with-windows-native-runner.ps1.",
+    );
+  }
+  if (runnerDirectory && runnerToken && runnerProtocol) {
+    if (Number(runnerProtocol) !== PROTOCOL_VERSION) {
+      throw new Error(
+        `Unsupported Windows native runner protocol version: ${runnerProtocol}`,
+      );
     }
-    rmSync(capture.directory, { recursive: true, force: true });
+    return await runThroughWindowsSidecar(options, {
+      directory: runnerDirectory,
+      token: runnerToken,
+    });
   }
+  throw new Error(
+    "Windows compiled-executable tests must run through scripts/run-with-windows-native-runner.ps1.",
+  );
 }
 
-async function withOutputFilesAsync(
-  run: (stdout: number, stderr: number) => Promise<number>,
+async function runWithBunPipes(
+  options: NativeExecutableOptions,
 ): Promise<NativeExecutableResult> {
-  const capture = openOutputFiles();
-  try {
-    const exitCode = await run(capture.stdout, capture.stderr);
-    capture.closed = true;
-    closeOutputFiles(capture);
-    return readOutputFiles(capture.directory, exitCode);
-  } finally {
-    if (!capture.closed) {
-      closeOutputFiles(capture);
-    }
-    rmSync(capture.directory, { recursive: true, force: true });
-  }
+  const subprocess = Bun.spawn({
+    cmd: [options.executable, ...options.args],
+    cwd: options.cwd,
+    env: options.env,
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+  const [exitCode, stdout, stderr] = await Promise.all([
+    subprocess.exited,
+    new Response(subprocess.stdout).text(),
+    new Response(subprocess.stderr).text(),
+  ]);
+  return { exitCode, stdout, stderr };
 }
 
-function openOutputFiles(): {
-  directory: string;
-  stdout: number;
-  stderr: number;
-  closed: boolean;
-} {
-  const directory = mkdtempSync(join(tmpdir(), "jenkins-cli-output-"));
-  let stdout: number | undefined;
-  try {
-    stdout = openSync(join(directory, "stdout"), "w");
-    return {
-      directory,
-      stdout,
-      stderr: openSync(join(directory, "stderr"), "w"),
-      closed: false,
-    };
-  } catch (error) {
-    if (stdout !== undefined) closeSync(stdout);
-    rmSync(directory, { recursive: true, force: true });
-    throw error;
-  }
-}
-
-function closeOutputFiles(capture: { stdout: number; stderr: number }): void {
-  let firstError: unknown;
-  for (const descriptor of [capture.stdout, capture.stderr]) {
-    try {
-      closeSync(descriptor);
-    } catch (error) {
-      firstError ??= error;
-    }
-  }
-  if (firstError) throw firstError;
-}
-
-function readOutputFiles(
-  directory: string,
-  exitCode: number,
-): NativeExecutableResult {
-  return {
-    exitCode,
-    stdout: readFileSync(join(directory, "stdout"), "utf8"),
-    stderr: readFileSync(join(directory, "stderr"), "utf8"),
+async function runThroughWindowsSidecar(
+  options: NativeExecutableOptions,
+  runner: { directory: string; token: string },
+): Promise<NativeExecutableResult> {
+  const ready = (await Bun.file(
+    join(runner.directory, "ready.json"),
+  ).json()) as {
+    protocolVersion?: number;
   };
+  if (ready.protocolVersion !== PROTOCOL_VERSION) {
+    throw new Error("Windows native runner is not ready.");
+  }
+
+  const requestId = crypto.randomUUID();
+  const requestPath = join(runner.directory, `request-${requestId}.json`);
+  const temporaryRequestPath = `${requestPath}.${process.pid}.tmp`;
+  const responsePath = join(runner.directory, `response-${requestId}.json`);
+  const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+  const request = {
+    protocolVersion: PROTOCOL_VERSION,
+    requestId,
+    token: runner.token,
+    executable: options.executable,
+    args: options.args,
+    env: Object.fromEntries(
+      Object.entries(options.env).filter(
+        (entry): entry is [string, string] =>
+          entry[1] !== undefined &&
+          !entry[0].startsWith("JENKINS_CLI_NATIVE_RUNNER_"),
+      ),
+    ),
+    cwd: options.cwd ?? process.cwd(),
+    timeoutMs,
+  };
+
+  try {
+    await Bun.write(temporaryRequestPath, JSON.stringify(request));
+    await rename(temporaryRequestPath, requestPath);
+    const deadline = Date.now() + timeoutMs + 15_000;
+    while (Date.now() < deadline) {
+      if (await Bun.file(responsePath).exists()) {
+        const response = (await Bun.file(
+          responsePath,
+        ).json()) as NativeRunnerResponse;
+        if (
+          response.protocolVersion !== PROTOCOL_VERSION ||
+          response.requestId !== requestId
+        ) {
+          throw new Error(
+            "Windows native runner returned an invalid response.",
+          );
+        }
+        if (!response.ok) {
+          throw new Error(response.stderr || "Windows native runner failed.");
+        }
+        return {
+          exitCode: response.exitCode,
+          stdout: response.stdout,
+          stderr: response.stderr,
+        };
+      }
+      if (!(await Bun.file(join(runner.directory, "ready.json")).exists())) {
+        throw new Error(
+          "Windows native runner stopped before returning a response.",
+        );
+      }
+      await Bun.sleep(10);
+    }
+    throw new Error(
+      `Timed out waiting for Windows native runner response ${requestId}.`,
+    );
+  } finally {
+    await Promise.all([
+      rm(temporaryRequestPath, { force: true }),
+      rm(requestPath, { force: true }),
+      rm(responsePath, { force: true }),
+    ]);
+  }
 }

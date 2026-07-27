@@ -322,6 +322,17 @@ jobs:
           "JENKINS_INTEGRATION_CLI_PATH=$([IO.Path]::GetFullPath($cliPath))" >> $env:GITHUB_ENV
 
       - name: Run downloaded asset against native Jenkins
+        if: runner.os != 'Windows'
         env:
           JENKINS_INTEGRATION_TOOL_CACHE: ${{ runner.temp }}/jenkins-cli-integration-tools
         run: bun run test:integration:jenkins --native
+
+      - name: Run downloaded asset against native Jenkins on Windows
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          JENKINS_INTEGRATION_TOOL_CACHE: ${{ runner.temp }}/jenkins-cli-integration-tools
+        run: >-
+          pwsh -NoLogo -NoProfile -NonInteractive
+          -File scripts/run-with-windows-native-runner.ps1
+          bun run test:integration:jenkins --native

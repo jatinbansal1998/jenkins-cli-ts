@@ -165,10 +165,17 @@ jobs:
         run: |
           New-Item -ItemType Directory -Force -Path test-artifacts | Out-Null
 
-          bun test --only-failures 2>&1 | Tee-Object -FilePath test-artifacts\bun-test.log
+          pwsh -NoLogo -NoProfile -NonInteractive `
+            -File scripts/run-with-windows-native-runner.ps1 `
+            bun test --only-failures 2>&1 |
+            Tee-Object -FilePath test-artifacts\bun-test.log
           $testExit = $LASTEXITCODE
 
-          bun test --reporter=junit --reporter-outfile test-artifacts\bun-junit.xml *> $null
+          pwsh -NoLogo -NoProfile -NonInteractive `
+            -File scripts/run-with-windows-native-runner.ps1 `
+            bun test `
+            --reporter=junit `
+            --reporter-outfile test-artifacts\bun-junit.xml *> $null
           exit $testExit
 
       - name: Summarize test output
@@ -298,4 +305,7 @@ jobs:
         shell: pwsh
         env:
           JENKINS_INTEGRATION_TOOL_CACHE: ${{ runner.temp }}/jenkins-cli-integration-tools
-        run: bun run "${{ matrix.test-script }}" --native
+        run: >-
+          pwsh -NoLogo -NoProfile -NonInteractive
+          -File scripts/run-with-windows-native-runner.ps1
+          bun run "${{ matrix.test-script }}" --native
