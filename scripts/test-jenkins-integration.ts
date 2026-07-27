@@ -20,6 +20,7 @@ const baseImage =
   process.env.JENKINS_TEST_IMAGE?.trim() || DEFAULT_JENKINS_TEST_IMAGE;
 const mutationMode = process.argv.includes("--mutation");
 const buildErrorsOnly = process.argv.includes("--build-errors");
+const prepareNativeManifestPath = readArgumentValue("--prepare-native");
 const nativeMode =
   process.argv.includes("--native") ||
   process.platform === "darwin" ||
@@ -46,151 +47,194 @@ let imageBuilt = false;
 let nativeProcess: ReturnType<typeof Bun.spawn> | undefined;
 let failed = false;
 
-try {
-  if (externalCliPath && !(await Bun.file(cliPath).exists())) {
-    throw new Error(`JENKINS_INTEGRATION_CLI_PATH does not exist: ${cliPath}`);
+function readArgumentValue(name: string): string | undefined {
+  const index = process.argv.indexOf(name);
+  if (index < 0) return undefined;
+  const value = process.argv[index + 1]?.trim();
+  if (!value || value.startsWith("--")) {
+    throw new Error(`${name} requires a value.`);
   }
-  if (process.platform !== "win32") {
-    await chmod(runtimeDir, 0o777);
+  return value;
+}
+
+if (prepareNativeManifestPath) {
+  const manifestPath = resolve(prepareNativeManifestPath);
+  const temporaryManifestPath = `${manifestPath}.${process.pid}.tmp`;
+  let manifestWritten = false;
+  try {
+    if (process.platform !== "win32") {
+      await chmod(runtimeDir, 0o777);
+    }
+    const fixture = await prepareIntegrationFixture();
+    const manifest = await prepareNativeJenkins(fixture);
+    await mkdir(dirname(manifestPath), { recursive: true });
+    await Bun.write(temporaryManifestPath, JSON.stringify(manifest, null, 2));
+    await rename(temporaryManifestPath, manifestPath);
+    manifestWritten = true;
+    console.log(`Prepared native Jenkins controller: ${manifestPath}`);
+  } catch (error) {
+    console.error(error instanceof Error ? error.message : String(error));
+    process.exitCode = 1;
+  } finally {
+    if (!manifestWritten) {
+      await rm(temporaryManifestPath, { force: true });
+      await rm(runtimeDir, { recursive: true, force: true });
+    }
   }
+} else {
+  try {
+    if (externalCliPath && !(await Bun.file(cliPath).exists())) {
+      throw new Error(
+        `JENKINS_INTEGRATION_CLI_PATH does not exist: ${cliPath}`,
+      );
+    }
+    if (process.platform !== "win32") {
+      await chmod(runtimeDir, 0o777);
+    }
+    const fixture = await prepareIntegrationFixture();
+    console.log(
+      `Starting Jenkins integration controller in ${nativeMode ? "native WAR" : "Docker"} mode...`,
+    );
+    let jenkinsUrl: string;
+    if (nativeMode) {
+      const native = launchNativeJenkins(await prepareNativeJenkins(fixture));
+      nativeProcess = native.process;
+      jenkinsUrl = native.jenkinsUrl;
+    } else {
+      await runChecked(["docker", "info"], {
+        failureMessage:
+          "Docker is required for Jenkins integration tests. Start Docker and try again.",
+      });
+      await runChecked(
+        [
+          "docker",
+          "build",
+          "--build-arg",
+          `JENKINS_BASE_IMAGE=${baseImage}`,
+          "--file",
+          join(fixtureDir, "Dockerfile"),
+          "--tag",
+          image,
+          fixtureDir,
+        ],
+        { inherit: true },
+      );
+      imageBuilt = true;
+      await runChecked([
+        "docker",
+        "run",
+        "--detach",
+        "--rm",
+        "--name",
+        containerName,
+        "--publish",
+        "127.0.0.1::8080",
+        "--tmpfs",
+        "/var/jenkins_home:rw,uid=1000,gid=1000",
+        "--env",
+        "JAVA_OPTS=-Djenkins.install.runSetupWizard=false",
+        "--env",
+        "JENKINS_OPTS=--prefix=/jenkins",
+        "--env",
+        "JENKINS_INTEGRATION_RUNTIME_DIR=/run/jenkins-cli-integration",
+        "--mount",
+        `type=bind,source=${fixture},target=/usr/share/jenkins/ref/init.groovy.d/01-integration.groovy,readonly`,
+        "--mount",
+        `type=bind,source=${runtimeDir},target=/run/jenkins-cli-integration`,
+        image,
+      ]);
+      containerStarted = true;
+
+      const portOutput = await runChecked([
+        "docker",
+        "port",
+        containerName,
+        "8080/tcp",
+      ]);
+      const port = portOutput.trim().match(/:(\d+)$/)?.[1];
+      if (!port) {
+        throw new Error(
+          `Could not determine the Jenkins port from: ${portOutput}`,
+        );
+      }
+      jenkinsUrl = `http://127.0.0.1:${port}/jenkins`;
+    }
+
+    const adminTokenFile = join(runtimeDir, "admin-api-token");
+    const readerTokenFile = join(runtimeDir, "reader-api-token");
+    const adminToken = await waitForJenkins(jenkinsUrl, adminTokenFile, {
+      checkDockerContainer: !nativeMode,
+    });
+    const readerToken = await waitForToken(readerTokenFile);
+
+    console.log(`Jenkins integration controller ready at ${jenkinsUrl}`);
+    if (externalCliPath) {
+      console.log(`Testing external Jenkins CLI executable at ${cliPath}`);
+    } else {
+      await runChecked(["bun", "run", "build"], { cwd: root, inherit: true });
+    }
+    const integrationEnv = {
+      ...process.env,
+      JENKINS_INTEGRATION_CLI_PATH: cliPath,
+      JENKINS_INTEGRATION_URL: jenkinsUrl,
+      JENKINS_INTEGRATION_USER: "integration-test",
+      JENKINS_INTEGRATION_TOKEN: adminToken,
+      JENKINS_INTEGRATION_READER_USER: "integration-reader",
+      JENKINS_INTEGRATION_READER_TOKEN: readerToken,
+    };
+    const integrationTests = buildErrorsOnly
+      ? ["tests/integration/jenkins-build-errors.test.ts"]
+      : [
+          "tests/integration/jenkins.test.ts",
+          "tests/integration/jenkins-build-errors.test.ts",
+        ];
+    for (const integrationTest of integrationTests) {
+      await runChecked(["bun", "test", integrationTest], {
+        cwd: root,
+        inherit: true,
+        env: integrationEnv,
+      });
+    }
+    if (mutationMode) {
+      await runChecked(["bun", "scripts/test-mutation.ts", "--integration"], {
+        cwd: root,
+        inherit: true,
+        env: integrationEnv,
+      });
+    }
+  } catch (error) {
+    failed = true;
+    console.error(error instanceof Error ? error.message : String(error));
+    process.exitCode = 1;
+  } finally {
+    if (failed && containerStarted) {
+      console.error("\nJenkins container logs:");
+      await run(["docker", "logs", containerName], { inherit: true });
+    }
+    if (containerStarted) {
+      await run(["docker", "rm", "--force", containerName]);
+    }
+    if (nativeProcess) {
+      if (nativeProcess.exitCode === null) {
+        nativeProcess.kill();
+      }
+      await nativeProcess.exited;
+    }
+    if (imageBuilt) {
+      await run(["docker", "image", "rm", image]);
+    }
+    await rm(runtimeDir, { recursive: true, force: true });
+  }
+}
+
+async function prepareIntegrationFixture(): Promise<string> {
   await createSyntheticGitRepository();
   const fixture = join(runtimeDir, "init.groovy");
   await copyFile(fixtureSource, fixture);
   if (process.platform !== "win32") {
     await chmod(fixture, 0o644);
   }
-  console.log(
-    `Starting Jenkins integration controller in ${nativeMode ? "native WAR" : "Docker"} mode...`,
-  );
-  let jenkinsUrl: string;
-  if (nativeMode) {
-    const native = await startNativeJenkins(fixture);
-    nativeProcess = native.process;
-    jenkinsUrl = native.jenkinsUrl;
-  } else {
-    await runChecked(["docker", "info"], {
-      failureMessage:
-        "Docker is required for Jenkins integration tests. Start Docker and try again.",
-    });
-    await runChecked(
-      [
-        "docker",
-        "build",
-        "--build-arg",
-        `JENKINS_BASE_IMAGE=${baseImage}`,
-        "--file",
-        join(fixtureDir, "Dockerfile"),
-        "--tag",
-        image,
-        fixtureDir,
-      ],
-      { inherit: true },
-    );
-    imageBuilt = true;
-    await runChecked([
-      "docker",
-      "run",
-      "--detach",
-      "--rm",
-      "--name",
-      containerName,
-      "--publish",
-      "127.0.0.1::8080",
-      "--tmpfs",
-      "/var/jenkins_home:rw,uid=1000,gid=1000",
-      "--env",
-      "JAVA_OPTS=-Djenkins.install.runSetupWizard=false",
-      "--env",
-      "JENKINS_OPTS=--prefix=/jenkins",
-      "--env",
-      "JENKINS_INTEGRATION_RUNTIME_DIR=/run/jenkins-cli-integration",
-      "--mount",
-      `type=bind,source=${fixture},target=/usr/share/jenkins/ref/init.groovy.d/01-integration.groovy,readonly`,
-      "--mount",
-      `type=bind,source=${runtimeDir},target=/run/jenkins-cli-integration`,
-      image,
-    ]);
-    containerStarted = true;
-
-    const portOutput = await runChecked([
-      "docker",
-      "port",
-      containerName,
-      "8080/tcp",
-    ]);
-    const port = portOutput.trim().match(/:(\d+)$/)?.[1];
-    if (!port) {
-      throw new Error(
-        `Could not determine the Jenkins port from: ${portOutput}`,
-      );
-    }
-    jenkinsUrl = `http://127.0.0.1:${port}/jenkins`;
-  }
-
-  const adminTokenFile = join(runtimeDir, "admin-api-token");
-  const readerTokenFile = join(runtimeDir, "reader-api-token");
-  const adminToken = await waitForJenkins(jenkinsUrl, adminTokenFile, {
-    checkDockerContainer: !nativeMode,
-  });
-  const readerToken = await waitForToken(readerTokenFile);
-
-  console.log(`Jenkins integration controller ready at ${jenkinsUrl}`);
-  if (externalCliPath) {
-    console.log(`Testing external Jenkins CLI executable at ${cliPath}`);
-  } else {
-    await runChecked(["bun", "run", "build"], { cwd: root, inherit: true });
-  }
-  const integrationEnv = {
-    ...process.env,
-    JENKINS_INTEGRATION_CLI_PATH: cliPath,
-    JENKINS_INTEGRATION_URL: jenkinsUrl,
-    JENKINS_INTEGRATION_USER: "integration-test",
-    JENKINS_INTEGRATION_TOKEN: adminToken,
-    JENKINS_INTEGRATION_READER_USER: "integration-reader",
-    JENKINS_INTEGRATION_READER_TOKEN: readerToken,
-  };
-  const integrationTests = buildErrorsOnly
-    ? ["tests/integration/jenkins-build-errors.test.ts"]
-    : [
-        "tests/integration/jenkins.test.ts",
-        "tests/integration/jenkins-build-errors.test.ts",
-      ];
-  for (const integrationTest of integrationTests) {
-    await runChecked(["bun", "test", integrationTest], {
-      cwd: root,
-      inherit: true,
-      env: integrationEnv,
-    });
-  }
-  if (mutationMode) {
-    await runChecked(["bun", "scripts/test-mutation.ts", "--integration"], {
-      cwd: root,
-      inherit: true,
-      env: integrationEnv,
-    });
-  }
-} catch (error) {
-  failed = true;
-  console.error(error instanceof Error ? error.message : String(error));
-  process.exitCode = 1;
-} finally {
-  if (failed && containerStarted) {
-    console.error("\nJenkins container logs:");
-    await run(["docker", "logs", containerName], { inherit: true });
-  }
-  if (containerStarted) {
-    await run(["docker", "rm", "--force", containerName]);
-  }
-  if (nativeProcess) {
-    if (nativeProcess.exitCode === null) {
-      nativeProcess.kill();
-    }
-    await nativeProcess.exited;
-  }
-  if (imageBuilt) {
-    await run(["docker", "image", "rm", image]);
-  }
-  await rm(runtimeDir, { recursive: true, force: true });
+  return fixture;
 }
 
 async function createSyntheticGitRepository(): Promise<void> {
@@ -291,9 +335,24 @@ async function waitForJenkins(
   );
 }
 
-async function startNativeJenkins(
+type NativeJenkinsManifest = {
+  schemaVersion: 1;
+  runtimeDir: string;
+  jenkinsHome: string;
+  jenkinsUrl: string;
+  adminTokenFile: string;
+  readerTokenFile: string;
+  launch: {
+    executable: string;
+    args: string[];
+    cwd: string;
+    env: Record<string, string>;
+  };
+};
+
+async function prepareNativeJenkins(
   fixture: string,
-): Promise<{ process: ReturnType<typeof Bun.spawn>; jenkinsUrl: string }> {
+): Promise<NativeJenkinsManifest> {
   const toolRoot =
     process.env.JENKINS_INTEGRATION_TOOL_CACHE?.trim() ||
     join(tmpdir(), "jenkins-cli-integration-tools");
@@ -338,24 +397,50 @@ async function startNativeJenkins(
   const port = portProbe.port;
   portProbe.stop(true);
   const jenkinsUrl = `http://127.0.0.1:${port}/jenkins`;
+  const java = Bun.which("java");
+  if (!java) {
+    throw new Error("Java is required for native Jenkins integration tests.");
+  }
+  return {
+    schemaVersion: 1,
+    runtimeDir,
+    jenkinsHome,
+    jenkinsUrl,
+    adminTokenFile: join(runtimeDir, "admin-api-token"),
+    readerTokenFile: join(runtimeDir, "reader-api-token"),
+    launch: {
+      executable: java,
+      args: [
+        "-Djenkins.install.runSetupWizard=false",
+        "-jar",
+        war,
+        `--httpPort=${port}`,
+        "--prefix=/jenkins",
+      ],
+      cwd: root,
+      env: {
+        JENKINS_HOME: jenkinsHome,
+        JENKINS_INTEGRATION_RUNTIME_DIR: runtimeDir,
+      },
+    },
+  };
+}
+
+function launchNativeJenkins(manifest: NativeJenkinsManifest): {
+  process: ReturnType<typeof Bun.spawn>;
+  jenkinsUrl: string;
+} {
   const processHandle = Bun.spawn({
-    cmd: [
-      "java",
-      "-Djenkins.install.runSetupWizard=false",
-      "-jar",
-      war,
-      `--httpPort=${port}`,
-      "--prefix=/jenkins",
-    ],
+    cmd: [manifest.launch.executable, ...manifest.launch.args],
+    cwd: manifest.launch.cwd,
     env: {
       ...process.env,
-      JENKINS_HOME: jenkinsHome,
-      JENKINS_INTEGRATION_RUNTIME_DIR: runtimeDir,
+      ...manifest.launch.env,
     },
     stdout: "inherit",
     stderr: "inherit",
   });
-  return { process: processHandle, jenkinsUrl };
+  return { process: processHandle, jenkinsUrl: manifest.jenkinsUrl };
 }
 
 async function ensureDownload(

@@ -165,13 +165,14 @@ jobs:
         run: |
           New-Item -ItemType Directory -Force -Path test-artifacts | Out-Null
 
-          & ./scripts/run-with-windows-native-runner.ps1 `
-            bun test --only-failures 2>&1 |
+          bun test `
+            --only-failures `
+            --path-ignore-patterns="**/compiled-cli.test.ts" 2>&1 |
             Tee-Object -FilePath test-artifacts\bun-test.log
           $testExit = $LASTEXITCODE
 
-          & ./scripts/run-with-windows-native-runner.ps1 `
-            bun test `
+          bun test `
+            --path-ignore-patterns="**/compiled-cli.test.ts" `
             --reporter=junit `
             --reporter-outfile test-artifacts\bun-junit.xml *> $null
           exit $testExit
@@ -265,6 +266,20 @@ jobs:
           }
           $gitBin | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
 
+      - name: Build Windows CLI for real Jenkins acceptance
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          bun run build
+          $cliDirectory = Join-Path $env:RUNNER_TEMP "jenkins-cli-source-acceptance"
+          New-Item -ItemType Directory -Force -Path $cliDirectory | Out-Null
+          $cliPath = Join-Path $cliDirectory "jenkins-cli.exe"
+          Copy-Item -LiteralPath "dist\jenkins-cli.exe" -Destination $cliPath
+          $version = (Get-Content package.json -Raw | ConvertFrom-Json).version
+          "WINDOWS_JENKINS_CLI_PATH=$cliPath" >> $env:GITHUB_ENV
+          "WINDOWS_EXPECTED_VERSION=$version" >> $env:GITHUB_ENV
+
       - name: Run Jenkins integration tests with Linux Secret Service
         if: runner.os == 'Linux'
         shell: bash
@@ -303,6 +318,9 @@ jobs:
         shell: pwsh
         env:
           JENKINS_INTEGRATION_TOOL_CACHE: ${{ runner.temp }}/jenkins-cli-integration-tools
-        run: >-
-          ./scripts/run-with-windows-native-runner.ps1
-          bun run "${{ matrix.test-script }}" --native
+        run: |
+          ./scripts/test-windows-jenkins-acceptance.ps1 `
+            -CliPath $env:WINDOWS_JENKINS_CLI_PATH `
+            -ExpectedVersion $env:WINDOWS_EXPECTED_VERSION `
+            -ExpectedTarget "bun-win32-x64" `
+            -ToolCache $env:JENKINS_INTEGRATION_TOOL_CACHE
