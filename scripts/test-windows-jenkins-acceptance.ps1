@@ -45,12 +45,12 @@ function Invoke-AcceptanceCli {
     [int[]]$ExpectedExitCodes = @(0)
   )
 
-  # Do not merge native stderr here. Bun-compiled Windows executables can exit
-  # silently when PowerShell applies 2>&1, while stdout capture alone preserves
-  # the direct invocation path used by the workflow's successful version probe.
-  $lines = @(& $script:CliExecutable @Arguments)
+  # Keep this as a plain assignment with no stream redirection or array
+  # subexpression. This is the exact invocation shape that runs Bun-compiled
+  # Windows executables reliably on GitHub-hosted runners.
+  $nativeOutput = & $script:CliExecutable @Arguments
   $exitCode = $LASTEXITCODE
-  $output = ($lines | Out-String).Trim()
+  $output = ($nativeOutput | Out-String).Trim()
   if ($exitCode -notin $ExpectedExitCodes) {
     $displayArguments = @($Arguments)
     $safeOutput = $output
