@@ -8,13 +8,24 @@ param(
   [string]$ToolCache = (Join-Path $env:RUNNER_TEMP "jenkins-cli-integration-tools")
 )
 
+$PreviousErrorActionPreference = $ErrorActionPreference
+$HadNativeErrorPreference = Test-Path `
+  variable:PSNativeCommandUseErrorActionPreference
+if ($HadNativeErrorPreference) {
+  $PreviousNativeErrorPreference =
+    $PSNativeCommandUseErrorActionPreference
+}
 $ErrorActionPreference = "Stop"
-if (Test-Path variable:PSNativeCommandUseErrorActionPreference) {
+if ($HadNativeErrorPreference) {
   $PSNativeCommandUseErrorActionPreference = $false
 }
 
-$CliExecutable = (Resolve-Path -LiteralPath $CliPath).Path
+$CliSourcePath = (Resolve-Path -LiteralPath $CliPath).Path
 $RunId = [guid]::NewGuid().ToString("N")
+$CliCommandDirectory = Join-Path `
+  $env:RUNNER_TEMP `
+  "jenkins-cli-windows-command-$RunId"
+$CliExecutable = Join-Path $CliCommandDirectory "jenkins-cli.exe"
 $ManifestPath = Join-Path $env:RUNNER_TEMP "jenkins-cli-windows-$RunId.json"
 $CliHome = Join-Path $env:RUNNER_TEMP "jenkins-cli-windows-home-$RunId"
 $DownloadDirectory = Join-Path $env:RUNNER_TEMP "jenkins-cli-windows-artifacts-$RunId"
@@ -34,7 +45,8 @@ $EnvironmentNames = @(
   "JENKINS_USER",
   "JENKINS_API_TOKEN",
   "TS_KEYRING_BACKEND",
-  "JENKINS_INTEGRATION_TOOL_CACHE"
+  "JENKINS_INTEGRATION_TOOL_CACHE",
+  "PATH"
 )
 $PreviousEnvironment = @{}
 
@@ -142,18 +154,39 @@ foreach ($name in $EnvironmentNames) {
 try {
   New-Item -ItemType Directory -Force -Path $CliHome | Out-Null
   New-Item -ItemType Directory -Force -Path $DownloadDirectory | Out-Null
+  New-Item -ItemType Directory -Force -Path $CliCommandDirectory | Out-Null
+  Copy-Item -LiteralPath $CliSourcePath -Destination $CliExecutable
+  $sourceCliHash = (Get-FileHash -LiteralPath $CliSourcePath -Algorithm SHA256).Hash
+  $installedCliHash = (
+    Get-FileHash -LiteralPath $CliExecutable -Algorithm SHA256
+  ).Hash
+  if ($sourceCliHash -cne $installedCliHash) {
+    throw "The installed Windows CLI does not match the input executable."
+  }
+  $env:PATH = "$CliCommandDirectory$([IO.Path]::PathSeparator)$env:PATH"
+  $resolvedCommand = Get-Command jenkins-cli -ErrorAction Stop
+  if (
+    $resolvedCommand.CommandType -ne
+      [Management.Automation.CommandTypes]::Application -or
+    -not [IO.Path]::GetFullPath($resolvedCommand.Path).Equals(
+      [IO.Path]::GetFullPath($CliExecutable),
+      [StringComparison]::OrdinalIgnoreCase
+    )
+  ) {
+    throw "jenkins-cli resolved to an unexpected command: $resolvedCommand"
+  }
 
   # Bun-compiled Windows executables must be invoked directly from the Actions
-  # PowerShell scope. Launching one from a function or child process can return
-  # exit code 0 without running the CLI entrypoint.
-  $identityNativeOutput = & $CliExecutable --version
+  # PowerShell scope by its command name. Launching one through a path variable,
+  # function, or child process can return 0 without running the CLI entrypoint.
+  $identityNativeOutput = jenkins-cli --version
   $identityExitCode = $LASTEXITCODE
   $identityOutput = ($identityNativeOutput | Out-String).Trim()
   Assert-AcceptanceCliExit $identityExitCode $identityOutput "Version command"
   Assert-OutputContains $identityOutput $ExpectedVersion "Version output"
   Assert-OutputContains $identityOutput $ExpectedTarget "Version output"
 
-  $helpNativeOutput = & $CliExecutable --help
+  $helpNativeOutput = jenkins-cli --help
   $helpExitCode = $LASTEXITCODE
   $helpOutput = ($helpNativeOutput | Out-String).Trim()
   Assert-AcceptanceCliExit $helpExitCode $helpOutput "Help command"
@@ -217,7 +250,7 @@ try {
   }
 
   $LoggedIn = $true
-  $loginNativeOutput = & $CliExecutable `
+  $loginNativeOutput = jenkins-cli `
     "auth" `
     "login" `
     "--profile" `
@@ -257,7 +290,7 @@ try {
     throw "The Windows profile was not backed by Credential Manager."
   }
 
-  $currentNativeOutput = & $CliExecutable `
+  $currentNativeOutput = jenkins-cli `
     "auth" `
     "current" `
     "--profile" `
@@ -272,7 +305,7 @@ try {
     "Windows Credential Manager" `
     "auth current"
 
-  $authStatusNativeOutput = & $CliExecutable `
+  $authStatusNativeOutput = jenkins-cli `
     "auth" `
     "status" `
     "--profile" `
@@ -290,7 +323,7 @@ try {
     "Jenkins user:     integration-test" `
     "auth status"
 
-  $listNativeOutput = & $CliExecutable `
+  $listNativeOutput = jenkins-cli `
     "list" `
     "--refresh" `
     "--json" `
@@ -306,7 +339,7 @@ try {
 
   $marker = "windows-acceptance-$RunId"
   $jobUrl = "$($Manifest.jenkinsUrl)/job/cli-structured/"
-  $buildNativeOutput = & $CliExecutable `
+  $buildNativeOutput = jenkins-cli `
     "build" `
     "--job-url" `
     $jobUrl `
@@ -328,7 +361,7 @@ try {
     throw "The Windows acceptance build did not return a build URL."
   }
 
-  $buildStatusNativeOutput = & $CliExecutable `
+  $buildStatusNativeOutput = jenkins-cli `
     "status" `
     "--build-url" `
     $buildUrl `
@@ -346,7 +379,7 @@ try {
     throw "Exact-build status did not report SUCCESS."
   }
 
-  $logsNativeOutput = & $CliExecutable `
+  $logsNativeOutput = jenkins-cli `
     "logs" `
     "--build-url" `
     $buildUrl `
@@ -359,7 +392,7 @@ try {
   Assert-AcceptanceCliExit $logsExitCode $logsOutput "Exact-build logs"
   Assert-OutputContains $logsOutput "structured:$marker" "Exact-build logs"
 
-  $artifactsNativeOutput = & $CliExecutable `
+  $artifactsNativeOutput = jenkins-cli `
     "artifacts" `
     "--build-url" `
     $buildUrl `
@@ -377,7 +410,7 @@ try {
     "structured-artifact.txt" `
     "Exact-build artifacts"
 
-  $artifactDownloadNativeOutput = & $CliExecutable `
+  $artifactDownloadNativeOutput = jenkins-cli `
     "artifacts" `
     "--build-url" `
     $buildUrl `
@@ -403,7 +436,7 @@ try {
     throw "The exact-build artifact was not downloaded correctly."
   }
 
-  $logoutNativeOutput = & $CliExecutable `
+  $logoutNativeOutput = jenkins-cli `
     "auth" `
     "logout" `
     "--profile" `
@@ -424,7 +457,7 @@ try {
 } finally {
   if ($LoggedIn) {
     try {
-      $cleanupLogoutNativeOutput = & $CliExecutable `
+      $cleanupLogoutNativeOutput = jenkins-cli `
         "auth" `
         "logout" `
         "--profile" `
@@ -474,6 +507,11 @@ try {
     -Recurse `
     -Force `
     -ErrorAction SilentlyContinue
+  Remove-Item `
+    -LiteralPath $CliCommandDirectory `
+    -Recurse `
+    -Force `
+    -ErrorAction SilentlyContinue
 
   foreach ($name in $EnvironmentNames) {
     [Environment]::SetEnvironmentVariable(
@@ -482,4 +520,9 @@ try {
       "Process"
     )
   }
+  if ($HadNativeErrorPreference) {
+    $PSNativeCommandUseErrorActionPreference =
+      $PreviousNativeErrorPreference
+  }
+  $ErrorActionPreference = $PreviousErrorActionPreference
 }
