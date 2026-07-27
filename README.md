@@ -1,8 +1,9 @@
 # Jenkins CLI
 
 [![CI](https://github.com/jatinbansal1998/jenkins-cli-ts/actions/workflows/post-merge.yml/badge.svg?branch=main)](https://github.com/jatinbansal1998/jenkins-cli-ts/actions/workflows/post-merge.yml?query=branch%3Amain)
+[![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/jatinbansal1998/jenkins-cli-ts)
 [![CodeQL](https://github.com/jatinbansal1998/jenkins-cli-ts/actions/workflows/codeql.yml/badge.svg)](https://github.com/jatinbansal1998/jenkins-cli-ts/actions/workflows/codeql.yml)
-[![stable](https://img.shields.io/github/v/release/jatinbansal1998/jenkins-cli-ts?color=blue&label=stable)](https://github.com/jatinbansal1998/jenkins-cli-ts/releases)
+[![stable](https://img.shields.io/github/v/release/jatinbansal1998/jenkins-cli-ts?color=blue&label=stable)](https://github.com/jatinbansal1998/jenkins-cli-ts/releases/latest)
 [![prerelease](https://img.shields.io/github/v/release/jatinbansal1998/jenkins-cli-ts?include_prereleases&color=orange&label=prerelease)](https://github.com/jatinbansal1998/jenkins-cli-ts/releases)
 [![built with Bun](https://img.shields.io/badge/built%20with-Bun-F9F1E5?logo=bun&logoColor=000)](https://bun.sh)
 [![License: MIT](https://img.shields.io/github/license/jatinbansal1998/jenkins-cli-ts?color=green)](LICENSE)
