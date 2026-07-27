@@ -50,19 +50,16 @@ runs:
 
         $RunId = [guid]::NewGuid().ToString("N")
         $ManifestPath = Join-Path $env:RUNNER_TEMP "jenkins-cli-windows-$RunId.json"
-        $CliHome = Join-Path $env:RUNNER_TEMP "jenkins-cli-windows-home-$RunId"
         $DownloadDirectory = Join-Path $env:RUNNER_TEMP "jenkins-cli-windows-artifacts-$RunId"
         $ProfileName = "windows-acceptance-$RunId"
         $LoginMarkerPath = Join-Path $env:RUNNER_TEMP "jenkins-cli-windows-login-$RunId"
 
         "cli_path=$CliPath" >> $env:GITHUB_OUTPUT
         "manifest_path=$ManifestPath" >> $env:GITHUB_OUTPUT
-        "cli_home=$CliHome" >> $env:GITHUB_OUTPUT
         "download_directory=$DownloadDirectory" >> $env:GITHUB_OUTPUT
         "profile_name=$ProfileName" >> $env:GITHUB_OUTPUT
         "login_marker_path=$LoginMarkerPath" >> $env:GITHUB_OUTPUT
 
-        New-Item -ItemType Directory -Force -Path $CliHome | Out-Null
         New-Item -ItemType Directory -Force -Path $DownloadDirectory | Out-Null
 
         function Wait-ForToken {
@@ -180,10 +177,6 @@ runs:
         WINDOWS_ACCEPTANCE_DOWNLOAD_DIRECTORY: ${{ steps.prepare.outputs.download_directory }}
         WINDOWS_ACCEPTANCE_PROFILE_NAME: ${{ steps.prepare.outputs.profile_name }}
         WINDOWS_ACCEPTANCE_LOGIN_MARKER_PATH: ${{ steps.prepare.outputs.login_marker_path }}
-        HOME: ${{ steps.prepare.outputs.cli_home }}
-        USERPROFILE: ${{ steps.prepare.outputs.cli_home }}
-        LOCALAPPDATA: ${{ steps.prepare.outputs.cli_home }}\AppData\Local
-        APPDATA: ${{ steps.prepare.outputs.cli_home }}\AppData\Roaming
         NO_COLOR: "1"
         JENKINS_ANALYTICS_DISABLED: "true"
         JENKINS_ERROR_REPORTING_DISABLED: "true"
@@ -281,7 +274,10 @@ runs:
           "--non-interactive"
         Assert-AcceptanceCliExit $LASTEXITCODE "Secure-store login"
 
-        $configPath = Join-Path $env:HOME ".config\jenkins-cli\jenkins-cli-config.json"
+        $configPath = bun -e `
+          'import { CONFIG_FILE } from "./src/config"; console.log(CONFIG_FILE);'
+        Assert-AcceptanceCliExit $LASTEXITCODE "Config path resolution"
+        $configPath = ($configPath | Out-String).Trim()
         $configText = Get-Content -LiteralPath $configPath -Raw
         if ($configText.Contains($adminToken)) {
           throw "The Jenkins API token was written to the CLI config."
@@ -491,15 +487,10 @@ runs:
         WINDOWS_ACCEPTANCE_CLI_PATH: ${{ steps.prepare.outputs.cli_path }}
         WINDOWS_ACCEPTANCE_MANIFEST_PATH: ${{ steps.prepare.outputs.manifest_path }}
         WINDOWS_ACCEPTANCE_RUNTIME_DIRECTORY: ${{ steps.prepare.outputs.runtime_directory }}
-        WINDOWS_ACCEPTANCE_CLI_HOME: ${{ steps.prepare.outputs.cli_home }}
         WINDOWS_ACCEPTANCE_DOWNLOAD_DIRECTORY: ${{ steps.prepare.outputs.download_directory }}
         WINDOWS_ACCEPTANCE_PROFILE_NAME: ${{ steps.prepare.outputs.profile_name }}
         WINDOWS_ACCEPTANCE_LOGIN_MARKER_PATH: ${{ steps.prepare.outputs.login_marker_path }}
         WINDOWS_ACCEPTANCE_JENKINS_PID: ${{ steps.prepare.outputs.jenkins_pid }}
-        HOME: ${{ steps.prepare.outputs.cli_home }}
-        USERPROFILE: ${{ steps.prepare.outputs.cli_home }}
-        LOCALAPPDATA: ${{ steps.prepare.outputs.cli_home }}\AppData\Local
-        APPDATA: ${{ steps.prepare.outputs.cli_home }}\AppData\Roaming
         NO_COLOR: "1"
         JENKINS_ANALYTICS_DISABLED: "true"
         JENKINS_ERROR_REPORTING_DISABLED: "true"
@@ -548,7 +539,6 @@ runs:
 
         foreach ($path in @(
             $env:WINDOWS_ACCEPTANCE_RUNTIME_DIRECTORY,
-            $env:WINDOWS_ACCEPTANCE_CLI_HOME,
             $env:WINDOWS_ACCEPTANCE_DOWNLOAD_DIRECTORY
           )) {
           if (-not [string]::IsNullOrWhiteSpace($path)) {
