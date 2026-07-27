@@ -169,7 +169,10 @@ async function run(
   const subprocess = Bun.spawn({
     cmd: command,
     cwd: sandbox,
-    env: process.env,
+    env: {
+      ...process.env,
+      ...(integration ? { JENKINS_INTEGRATION_CLI_PATH: undefined } : {}),
+    },
     stdout: "pipe",
     stderr: "pipe",
   });
