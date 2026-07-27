@@ -68,7 +68,7 @@ function Invoke-NativeRequest {
   $startInfo = [Diagnostics.ProcessStartInfo]::new()
   $startInfo.FileName = [string]$Request.executable
   $startInfo.UseShellExecute = $false
-  $startInfo.CreateNoWindow = $true
+  $startInfo.CreateNoWindow = $false
   $startInfo.RedirectStandardOutput = $true
   $startInfo.RedirectStandardError = $true
   if (-not [string]::IsNullOrWhiteSpace([string]$Request.cwd)) {

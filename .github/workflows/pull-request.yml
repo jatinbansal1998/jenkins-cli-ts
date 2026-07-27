@@ -117,7 +117,7 @@ jobs:
       - name: Diagnose Windows native execution
         if: runner.os == 'Windows'
         shell: pwsh
-        run: pwsh -NoLogo -NoProfile -NonInteractive -File scripts/diagnose-windows-native-execution.ps1
+        run: ./scripts/diagnose-windows-native-execution.ps1
 
       - name: Run tests (capture failures)
         if: runner.os == 'Linux'
@@ -171,14 +171,12 @@ jobs:
         run: |
           New-Item -ItemType Directory -Force -Path test-artifacts | Out-Null
 
-          pwsh -NoLogo -NoProfile -NonInteractive `
-            -File scripts/run-with-windows-native-runner.ps1 `
+          & ./scripts/run-with-windows-native-runner.ps1 `
             bun test --only-failures 2>&1 |
             Tee-Object -FilePath test-artifacts\bun-test.log
           $testExit = $LASTEXITCODE
 
-          pwsh -NoLogo -NoProfile -NonInteractive `
-            -File scripts/run-with-windows-native-runner.ps1 `
+          & ./scripts/run-with-windows-native-runner.ps1 `
             bun test `
             --reporter=junit `
             --reporter-outfile test-artifacts\bun-junit.xml *> $null
@@ -312,6 +310,5 @@ jobs:
         env:
           JENKINS_INTEGRATION_TOOL_CACHE: ${{ runner.temp }}/jenkins-cli-integration-tools
         run: >-
-          pwsh -NoLogo -NoProfile -NonInteractive
-          -File scripts/run-with-windows-native-runner.ps1
+          ./scripts/run-with-windows-native-runner.ps1
           bun run "${{ matrix.test-script }}" --native
