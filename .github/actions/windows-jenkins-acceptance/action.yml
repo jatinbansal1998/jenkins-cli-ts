@@ -218,10 +218,20 @@ runs:
             "JENKINS_URL",
             "JENKINS_USER",
             "JENKINS_API_TOKEN",
-            "TS_KEYRING_BACKEND"
+            "TS_KEYRING_BACKEND",
+            "HTTP_PROXY",
+            "HTTPS_PROXY",
+            "ALL_PROXY",
+            "http_proxy",
+            "https_proxy",
+            "all_proxy"
           )) {
           [Environment]::SetEnvironmentVariable($name, $null, "Process")
         }
+        # Every acceptance request targets the disposable loopback controller.
+        # Do not allow runner-level proxy configuration to intercept it.
+        $env:NO_PROXY = "127.0.0.1,localhost"
+        $env:no_proxy = $env:NO_PROXY
 
         $resolvedCommand = Get-Command jenkins-cli -ErrorAction Stop
         if (
@@ -321,6 +331,17 @@ runs:
           "Process"
         )
 
+        $credentials = [Convert]::ToBase64String(
+          [Text.Encoding]::UTF8.GetBytes("integration-test:$adminToken")
+        )
+        $identity = Invoke-RestMethod `
+          -Uri "$($Manifest.jenkinsUrl)/whoAmI/api/json" `
+          -Headers @{ Authorization = "Basic $credentials" } `
+          -TimeoutSec 20
+        if (-not $identity.authenticated) {
+          throw "Disposable Jenkins stopped responding before CLI network acceptance."
+        }
+
         jenkins-cli `
           "auth" `
           "current" `
@@ -347,9 +368,6 @@ runs:
 
         $marker = "windows-acceptance-$([guid]::NewGuid().ToString('N'))"
         $jobUrl = "$($Manifest.jenkinsUrl)/job/cli-structured/"
-        $credentials = [Convert]::ToBase64String(
-          [Text.Encoding]::UTF8.GetBytes("integration-test:$adminToken")
-        )
         $headers = @{ Authorization = "Basic $credentials" }
         $jobState = Invoke-RestMethod `
           -Uri "${jobUrl}api/json" `
