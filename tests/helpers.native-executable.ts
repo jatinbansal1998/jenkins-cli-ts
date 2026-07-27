@@ -1,5 +1,6 @@
-import { rename, rm } from "node:fs/promises";
-import { join } from "node:path";
+import { copyFile, mkdtemp, rename, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { basename, join } from "node:path";
 
 const PROTOCOL_VERSION = 1;
 const DEFAULT_TIMEOUT_MS = 3 * 60_000;
@@ -49,14 +50,38 @@ export async function runNativeExecutable(
         `Unsupported Windows native runner protocol version: ${runnerProtocol}`,
       );
     }
-    return await runThroughWindowsSidecar(options, {
-      directory: runnerDirectory,
-      token: runnerToken,
+    return await runWindowsExecutableCopy(options, async (executable) => {
+      return await runThroughWindowsSidecar(
+        { ...options, executable },
+        {
+          directory: runnerDirectory,
+          token: runnerToken,
+        },
+      );
     });
   }
   throw new Error(
     "Windows compiled-executable tests must run through scripts/run-with-windows-native-runner.ps1.",
   );
+}
+
+async function runWindowsExecutableCopy(
+  options: NativeExecutableOptions,
+  run: (executable: string) => Promise<NativeExecutableResult>,
+): Promise<NativeExecutableResult> {
+  const directory = await mkdtemp(
+    join(tmpdir(), "jenkins-cli-windows-executable-"),
+  );
+  const executable = join(directory, basename(options.executable));
+  try {
+    // A Bun-compiled executable can exit without running when launched from the
+    // original output file on Windows. The same bytes execute correctly after
+    // a normal filesystem copy, which also matches downloaded release assets.
+    await copyFile(options.executable, executable);
+    return await run(executable);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
 }
 
 async function runWithBunPipes(

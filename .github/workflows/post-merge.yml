@@ -113,11 +113,6 @@ jobs:
             throw "Installed CLI does not report a Windows build target"
           }
 
-      - name: Diagnose Windows native execution
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: ./scripts/diagnose-windows-native-execution.ps1
-
       - name: Run tests (capture failures)
         if: runner.os == 'Linux'
         shell: bash
