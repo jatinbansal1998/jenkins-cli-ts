@@ -65,56 +65,59 @@ function Invoke-NativeRequest {
     throw "Native executable does not exist: $($Request.executable)"
   }
 
-  $startInfo = [Diagnostics.ProcessStartInfo]::new()
-  $startInfo.FileName = [string]$Request.executable
-  $startInfo.UseShellExecute = $false
-  $startInfo.CreateNoWindow = $false
-  $startInfo.RedirectStandardOutput = $true
-  $startInfo.RedirectStandardError = $true
-  if (-not [string]::IsNullOrWhiteSpace([string]$Request.cwd)) {
-    $startInfo.WorkingDirectory = [string]$Request.cwd
+  $environmentBeforeRequest = @{}
+  foreach ($entry in Get-ChildItem Env:) {
+    $environmentBeforeRequest[$entry.Name] = $entry.Value
   }
-
-  foreach ($argument in @($Request.args)) {
-    $startInfo.ArgumentList.Add([string]$argument)
-  }
-
-  $startInfo.Environment.Clear()
+  $requestEnvironment = @{}
   foreach ($property in $Request.env.PSObject.Properties) {
-    $startInfo.Environment[$property.Name] = [string]$property.Value
+    $requestEnvironment[$property.Name] = [string]$property.Value
+  }
+  foreach ($entry in Get-ChildItem Env:) {
+    if (-not $requestEnvironment.ContainsKey($entry.Name)) {
+      [Environment]::SetEnvironmentVariable($entry.Name, $null, "Process")
+    }
+  }
+  foreach ($entry in $requestEnvironment.GetEnumerator()) {
+    [Environment]::SetEnvironmentVariable(
+      $entry.Key,
+      [string]$entry.Value,
+      "Process"
+    )
   }
 
-  $timeoutMs = [Math]::Max(1, [int]$Request.timeoutMs)
-  $process = [Diagnostics.Process]::new()
-  $process.StartInfo = $startInfo
+  $locationBeforeRequest = (Get-Location).Path
   try {
-    if (-not $process.Start()) {
-      throw "The native process did not start."
+    if (-not [string]::IsNullOrWhiteSpace([string]$Request.cwd)) {
+      Set-Location -LiteralPath ([string]$Request.cwd)
     }
-    $stdoutTask = $process.StandardOutput.ReadToEndAsync()
-    $stderrTask = $process.StandardError.ReadToEndAsync()
-    $timedOut = -not $process.WaitForExit($timeoutMs)
-    if ($timedOut) {
-      try {
-        $process.Kill($true)
-      } catch {
-        # The process may have exited between the timeout and the kill call.
-      }
-    }
-    $process.WaitForExit()
-    $stdout = $stdoutTask.GetAwaiter().GetResult()
-    $stderr = $stderrTask.GetAwaiter().GetResult()
-    if ($timedOut) {
-      $stderr += "Windows native runner timed out after $timeoutMs ms.`n"
-    }
+    $executable = [string]$Request.executable
+    $arguments = @($Request.args | ForEach-Object { [string]$_ })
+    # Bun-compiled Windows executables can exit silently through a redirected
+    # ProcessStartInfo. PowerShell's native call path runs the same copied bytes
+    # correctly while still letting this console-attached sidecar capture output.
+    $output = (& $executable @arguments 2>&1 | Out-String)
+    $exitCode = $LASTEXITCODE
     return @{
-      exitCode = if ($timedOut) { 124 } else { $process.ExitCode }
-      stdout = $stdout
-      stderr = $stderr
-      timedOut = $timedOut
+      exitCode = $exitCode
+      stdout = $output
+      stderr = ""
+      timedOut = $false
     }
   } finally {
-    $process.Dispose()
+    Set-Location -LiteralPath $locationBeforeRequest
+    foreach ($entry in Get-ChildItem Env:) {
+      if (-not $environmentBeforeRequest.ContainsKey($entry.Name)) {
+        [Environment]::SetEnvironmentVariable($entry.Name, $null, "Process")
+      }
+    }
+    foreach ($entry in $environmentBeforeRequest.GetEnumerator()) {
+      [Environment]::SetEnvironmentVariable(
+        $entry.Key,
+        [string]$entry.Value,
+        "Process"
+      )
+    }
   }
 }
 
