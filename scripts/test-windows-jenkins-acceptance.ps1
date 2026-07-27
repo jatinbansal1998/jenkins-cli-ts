@@ -22,10 +22,7 @@ if ($HadNativeErrorPreference) {
 
 $CliSourcePath = (Resolve-Path -LiteralPath $CliPath).Path
 $RunId = [guid]::NewGuid().ToString("N")
-$CliCommandDirectory = Join-Path `
-  $env:RUNNER_TEMP `
-  "jenkins-cli-windows-command-$RunId"
-$CliExecutable = Join-Path $CliCommandDirectory "jenkins-cli.exe"
+$CliExecutable = $CliSourcePath
 $ManifestPath = Join-Path $env:RUNNER_TEMP "jenkins-cli-windows-$RunId.json"
 $CliHome = Join-Path $env:RUNNER_TEMP "jenkins-cli-windows-home-$RunId"
 $DownloadDirectory = Join-Path $env:RUNNER_TEMP "jenkins-cli-windows-artifacts-$RunId"
@@ -45,8 +42,7 @@ $EnvironmentNames = @(
   "JENKINS_USER",
   "JENKINS_API_TOKEN",
   "TS_KEYRING_BACKEND",
-  "JENKINS_INTEGRATION_TOOL_CACHE",
-  "PATH"
+  "JENKINS_INTEGRATION_TOOL_CACHE"
 )
 $PreviousEnvironment = @{}
 
@@ -154,16 +150,6 @@ foreach ($name in $EnvironmentNames) {
 try {
   New-Item -ItemType Directory -Force -Path $CliHome | Out-Null
   New-Item -ItemType Directory -Force -Path $DownloadDirectory | Out-Null
-  New-Item -ItemType Directory -Force -Path $CliCommandDirectory | Out-Null
-  Copy-Item -LiteralPath $CliSourcePath -Destination $CliExecutable
-  $sourceCliHash = (Get-FileHash -LiteralPath $CliSourcePath -Algorithm SHA256).Hash
-  $installedCliHash = (
-    Get-FileHash -LiteralPath $CliExecutable -Algorithm SHA256
-  ).Hash
-  if ($sourceCliHash -cne $installedCliHash) {
-    throw "The installed Windows CLI does not match the input executable."
-  }
-  $env:PATH = "$CliCommandDirectory$([IO.Path]::PathSeparator)$env:PATH"
   $resolvedCommand = Get-Command jenkins-cli -ErrorAction Stop
   if (
     $resolvedCommand.CommandType -ne
@@ -507,12 +493,6 @@ try {
     -Recurse `
     -Force `
     -ErrorAction SilentlyContinue
-  Remove-Item `
-    -LiteralPath $CliCommandDirectory `
-    -Recurse `
-    -Force `
-    -ErrorAction SilentlyContinue
-
   foreach ($name in $EnvironmentNames) {
     [Environment]::SetEnvironmentVariable(
       $name,

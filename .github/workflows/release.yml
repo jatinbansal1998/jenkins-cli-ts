@@ -293,14 +293,54 @@ jobs:
             throw "SHA-256 mismatch for $env:ASSET_NAME. Expected $expectedChecksum, got $actualChecksum."
           }
 
-          if ($env:RUNNER_OS -ne "Windows") {
+          if ($env:RUNNER_OS -eq "Windows") {
+            $installDirectory = Join-Path $env:RUNNER_TEMP "jenkins-cli-release-install"
+            New-Item -ItemType Directory -Force -Path $installDirectory | Out-Null
+            $installedCliPath = Join-Path $installDirectory "jenkins-cli.exe"
+            Copy-Item -LiteralPath $cliPath -Destination $installedCliPath
+            $installedChecksum = (
+              Get-FileHash -Algorithm SHA256 -Path $installedCliPath
+            ).Hash.ToLowerInvariant()
+            if ($installedChecksum -cne $actualChecksum) {
+              throw "The installed Windows CLI does not match the downloaded asset."
+            }
+            $installDirectory |
+              Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+            $validationCliPath = $installedCliPath
+          } else {
             chmod +x $cliPath
             if ($LASTEXITCODE -ne 0) {
               throw "Failed to make $env:ASSET_NAME executable."
             }
+            $validationCliPath = $cliPath
+
+            $versionOutput = (& $cliPath --version 2>&1 | Out-String).Trim()
+            if ($LASTEXITCODE -ne 0) {
+              throw "$env:ASSET_NAME --version failed with exit code $LASTEXITCODE.`n$versionOutput"
+            }
+            Write-Host $versionOutput
+
+            $expectedVersion = (Get-Content package.json -Raw | ConvertFrom-Json).version
+            if (-not $versionOutput.Contains($expectedVersion)) {
+              throw "Version output did not contain package version $expectedVersion."
+            }
+            if (-not $versionOutput.Contains($env:EXPECTED_TARGET)) {
+              throw "Version output did not contain build target $env:EXPECTED_TARGET."
+            }
+
+            & $cliPath --help | Out-Null
+            if ($LASTEXITCODE -ne 0) {
+              throw "$env:ASSET_NAME --help failed with exit code $LASTEXITCODE."
+            }
           }
 
-          $versionOutput = (& $cliPath --version 2>&1 | Out-String).Trim()
+          "JENKINS_INTEGRATION_CLI_PATH=$([IO.Path]::GetFullPath($validationCliPath))" >> $env:GITHUB_ENV
+
+      - name: Validate installed Windows release asset
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $versionOutput = jenkins-cli --version
           if ($LASTEXITCODE -ne 0) {
             throw "$env:ASSET_NAME --version failed with exit code $LASTEXITCODE.`n$versionOutput"
           }
@@ -314,12 +354,10 @@ jobs:
             throw "Version output did not contain build target $env:EXPECTED_TARGET."
           }
 
-          & $cliPath --help | Out-Null
+          jenkins-cli --help | Out-Null
           if ($LASTEXITCODE -ne 0) {
             throw "$env:ASSET_NAME --help failed with exit code $LASTEXITCODE."
           }
-
-          "JENKINS_INTEGRATION_CLI_PATH=$([IO.Path]::GetFullPath($cliPath))" >> $env:GITHUB_ENV
 
       - name: Run downloaded asset against native Jenkins
         if: runner.os != 'Windows'

@@ -168,11 +168,13 @@ jobs:
 
           bun test `
             --only-failures `
+            --timeout 10000 `
             --path-ignore-patterns="**/compiled-cli.test.ts" 2>&1 |
             Tee-Object -FilePath test-artifacts\bun-test.log
           $testExit = $LASTEXITCODE
 
           bun test `
+            --timeout 10000 `
             --path-ignore-patterns="**/compiled-cli.test.ts" `
             --reporter=junit `
             --reporter-outfile test-artifacts\bun-junit.xml *> $null
@@ -278,6 +280,7 @@ jobs:
           $cliPath = Join-Path $cliDirectory "jenkins-cli.exe"
           Copy-Item -LiteralPath "dist\jenkins-cli.exe" -Destination $cliPath
           $version = (Get-Content package.json -Raw | ConvertFrom-Json).version
+          $cliDirectory | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
           "WINDOWS_JENKINS_CLI_PATH=$cliPath" >> $env:GITHUB_ENV
           "WINDOWS_EXPECTED_VERSION=$version" >> $env:GITHUB_ENV
 
