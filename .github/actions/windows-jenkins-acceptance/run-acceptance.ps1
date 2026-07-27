@@ -120,10 +120,16 @@ $secureStoreAccount = ($secureStoreAccount | Out-String).Trim()
 $env:JENKINS_CLI_ACCEPTANCE_ACCOUNT = $secureStoreAccount
 $env:JENKINS_CLI_ACCEPTANCE_TOKEN = $adminToken
 $credentialRoundTripScript = @'
-import { getPassword, listBackends } from "cross-keychain";
+import { diagnose, getPassword, listBackends } from "cross-keychain";
 const backends = await listBackends();
 if (!backends.some(({ id }) => id === "native-windows" || id === "windows")) {
   throw new Error("Windows Credential Manager backend is unavailable");
+}
+const diagnosis = await diagnose();
+if (diagnosis.id !== "native-windows" && diagnosis.id !== "windows") {
+  throw new Error(
+    `Active credential backend is ${String(diagnosis.id)}, not Windows Credential Manager`,
+  );
 }
 const token = await getPassword(
   "jenkins-cli",
@@ -132,6 +138,7 @@ const token = await getPassword(
 if (token !== process.env.JENKINS_CLI_ACCEPTANCE_TOKEN) {
   throw new Error("Credential Manager did not return the stored Jenkins token");
 }
+console.log(`Verified active secure-store backend: ${String(diagnosis.id)}`);
 '@
 bun -e $credentialRoundTripScript
 if ($LASTEXITCODE -ne 0) {
@@ -275,7 +282,6 @@ Invoke-AcceptanceCli "Credential logout" @(
   $ProfileName,
   "--non-interactive"
 )
-Remove-Item -LiteralPath $LoginMarkerPath -Force
 
 $credentialDeletionScript = @'
 import { getPassword } from "cross-keychain";
@@ -291,6 +297,7 @@ bun -e $credentialDeletionScript
 if ($LASTEXITCODE -ne 0) {
   throw "Credential Manager deletion exited with $LASTEXITCODE."
 }
+Remove-Item -LiteralPath $LoginMarkerPath -Force
 [Environment]::SetEnvironmentVariable(
   "JENKINS_CLI_ACCEPTANCE_ACCOUNT",
   $null,
