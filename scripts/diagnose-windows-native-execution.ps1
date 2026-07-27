@@ -3,53 +3,81 @@ param()
 $ErrorActionPreference = "Stop"
 $CliPath = (Resolve-Path "dist\jenkins-cli.exe").Path
 $DiagnosticHome = Join-Path $env:RUNNER_TEMP "jenkins-cli-native-diagnostic-home"
+$EnvironmentNames = @("NODE_ENV", "HOME", "USERPROFILE", "LOCALAPPDATA", "APPDATA")
+$OriginalEnvironment = @{}
 
 New-Item -ItemType Directory -Force -Path $DiagnosticHome | Out-Null
-$env:NODE_ENV = "test"
-$env:HOME = $DiagnosticHome
-$env:USERPROFILE = $DiagnosticHome
-$env:LOCALAPPDATA = Join-Path $DiagnosticHome "AppData\Local"
-$env:APPDATA = Join-Path $DiagnosticHome "AppData\Roaming"
+foreach ($name in $EnvironmentNames) {
+  $OriginalEnvironment[$name] = [Environment]::GetEnvironmentVariable($name, "Process")
+}
 
 function Invoke-NativeCliProbe {
   param(
-    [Parameter(Mandatory = $true)]
-    [string]$Label
+    [Parameter(Mandatory = $true)][string]$Label,
+    [hashtable]$Overrides = @{}
   )
 
-  $output = (& $CliPath --version 2>&1 | Out-String).Trim()
-  $exitCode = $LASTEXITCODE
-  Write-Host "[$Label] exit=$exitCode output=$output"
+  foreach ($name in $EnvironmentNames) {
+    [Environment]::SetEnvironmentVariable(
+      $name,
+      $OriginalEnvironment[$name],
+      "Process"
+    )
+  }
+  foreach ($entry in $Overrides.GetEnumerator()) {
+    [Environment]::SetEnvironmentVariable(
+      $entry.Key,
+      [string]$entry.Value,
+      "Process"
+    )
+  }
 
-  return @{
-    Label = $Label
-    Passed = $exitCode -eq 0 -and
-      -not [string]::IsNullOrWhiteSpace($output) -and
-      $output.Contains("bun-win32-")
+  try {
+    $output = (& $CliPath --version 2>&1 | Out-String).Trim()
+    $exitCode = $LASTEXITCODE
+    Write-Host "[$Label] exit=$exitCode output=$output"
+
+    return @{
+      Label = $Label
+      Passed = $exitCode -eq 0 -and
+        -not [string]::IsNullOrWhiteSpace($output) -and
+        $output.Contains("bun-win32-")
+    }
+  } finally {
+    foreach ($name in $EnvironmentNames) {
+      [Environment]::SetEnvironmentVariable(
+        $name,
+        $OriginalEnvironment[$name],
+        "Process"
+      )
+    }
   }
 }
 
-$withoutBun = Invoke-NativeCliProbe -Label "test environment, no concurrent Bun"
-$BunPath = (Get-Command bun).Source
-$BackgroundBun = Start-Process `
-  -FilePath $BunPath `
-  -ArgumentList @("-e", "setInterval(()=>{},1000)") `
-  -WindowStyle Hidden `
-  -PassThru
-
-try {
-  Start-Sleep -Milliseconds 500
-  if ($BackgroundBun.HasExited) {
-    throw "Background Bun exited before the concurrent-execution probe."
+$results = @(
+  Invoke-NativeCliProbe -Label "baseline"
+  Invoke-NativeCliProbe -Label "NODE_ENV=test" -Overrides @{
+    NODE_ENV = "test"
   }
-  $withBun = Invoke-NativeCliProbe -Label "test environment, concurrent Bun alive"
-} finally {
-  if (-not $BackgroundBun.HasExited) {
-    Stop-Process -Id $BackgroundBun.Id -Force
-    Wait-Process -Id $BackgroundBun.Id -ErrorAction SilentlyContinue
+  Invoke-NativeCliProbe -Label "HOME override" -Overrides @{
+    HOME = $DiagnosticHome
   }
-}
+  Invoke-NativeCliProbe -Label "USERPROFILE override" -Overrides @{
+    USERPROFILE = $DiagnosticHome
+  }
+  Invoke-NativeCliProbe -Label "app data overrides" -Overrides @{
+    LOCALAPPDATA = Join-Path $DiagnosticHome "AppData\Local"
+    APPDATA = Join-Path $DiagnosticHome "AppData\Roaming"
+  }
+  Invoke-NativeCliProbe -Label "complete test environment" -Overrides @{
+    NODE_ENV = "test"
+    HOME = $DiagnosticHome
+    USERPROFILE = $DiagnosticHome
+    LOCALAPPDATA = Join-Path $DiagnosticHome "AppData\Local"
+    APPDATA = Join-Path $DiagnosticHome "AppData\Roaming"
+  }
+)
 
-if (-not $withoutBun.Passed -or -not $withBun.Passed) {
+if ($results.Where({ -not $_.Passed }).Count -gt 0) {
   throw "One or more Windows native-execution probes failed."
 }
