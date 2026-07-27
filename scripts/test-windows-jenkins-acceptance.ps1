@@ -45,7 +45,10 @@ function Invoke-AcceptanceCli {
     [int[]]$ExpectedExitCodes = @(0)
   )
 
-  $lines = @(& $script:CliExecutable @Arguments 2>&1)
+  # Do not merge native stderr here. Bun-compiled Windows executables can exit
+  # silently when PowerShell applies 2>&1, while stdout capture alone preserves
+  # the direct invocation path used by the workflow's successful version probe.
+  $lines = @(& $script:CliExecutable @Arguments)
   $exitCode = $LASTEXITCODE
   $output = ($lines | Out-String).Trim()
   if ($exitCode -notin $ExpectedExitCodes) {
