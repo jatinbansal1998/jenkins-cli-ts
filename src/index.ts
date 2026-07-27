@@ -72,6 +72,8 @@ const VERSION = packageJson.version;
 const scriptName = getScriptName();
 let pendingPromptIntroVersion: string | undefined;
 
+declare const __COMPILED_ENTRYPOINT__: boolean | undefined;
+
 async function main(): Promise<void> {
   const rawArgs = hideBin(process.argv);
   // yargs' built-in `help` command shadows a registered handler, so the
@@ -390,7 +392,15 @@ function hasCredentialOverrides(argv: ContextArgv | undefined): boolean {
   );
 }
 
-if (import.meta.main) {
+// Bun currently reports import.meta.main as false in compiled Windows
+// executables (oven-sh/bun#30084). Build scripts replace this marker with true
+// so the compiled CLI still runs, while source imports retain normal
+// import.meta.main behavior.
+const shouldRunCli =
+  import.meta.main ||
+  (typeof __COMPILED_ENTRYPOINT__ !== "undefined" && __COMPILED_ENTRYPOINT__);
+
+if (shouldRunCli) {
   await initializeDefaultErrorReporting();
   process.stdout.on("error", (error) => {
     if ((error as NodeJS.ErrnoException).code === "EPIPE") {

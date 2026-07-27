@@ -69,6 +69,7 @@ beforeAll(async () => {
       __BUILD_TARGET__: JSON.stringify(
         `bun-${process.platform}-${process.arch}`,
       ),
+      __COMPILED_ENTRYPOINT__: "true",
     },
   });
 

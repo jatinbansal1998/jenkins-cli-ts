@@ -89,7 +89,10 @@ const results = await Promise.allSettled(
       // @ts-expect-error -- Bun compile targets are valid at runtime
       compile: { target: compileTarget, outfile: outpath },
       sourcemap: "linked",
-      define: { __BUILD_TARGET__: JSON.stringify(compileTarget) },
+      define: {
+        __BUILD_TARGET__: JSON.stringify(compileTarget),
+        __COMPILED_ENTRYPOINT__: "true",
+      },
     });
 
     if (!result.success) {

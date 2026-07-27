@@ -25,7 +25,10 @@ const result = await Bun.build({
   // unused internal modules when compiling the executable.
   compile: { outfile: `${DIST}/jenkins-cli` },
   sourcemap: "linked",
-  define: { __BUILD_TARGET__: JSON.stringify(target) },
+  define: {
+    __BUILD_TARGET__: JSON.stringify(target),
+    __COMPILED_ENTRYPOINT__: "true",
+  },
 });
 
 if (!result.success) {
