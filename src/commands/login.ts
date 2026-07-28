@@ -144,27 +144,21 @@ export async function runLogin(
   }
   for (const line of getLoginInstructions({
     profileName,
-    normalizedUrl,
-    user,
-    branchParam,
-    plan,
+    tokenStorage: plan.tokenStorage,
     secureStoreName,
   })) {
     console.log(line);
   }
 }
 
-/** Builds post-login guidance without exposing a securely persisted token. */
+/** Builds post-login guidance without exposing the persisted token. */
 export function getLoginInstructions(input: {
   profileName: string;
-  normalizedUrl: string;
-  user: string;
-  branchParam: string;
-  plan: TokenPersistencePlan;
+  tokenStorage?: TokenStorage;
   secureStoreName?: string;
 }): string[] {
   const profileArg = shellEscape(input.profileName);
-  if (input.plan.tokenStorage === "keychain") {
+  if (input.tokenStorage === "keychain") {
     return [
       "",
       `Credentials are ready. Use --profile ${profileArg} to target this profile.`,
@@ -172,25 +166,11 @@ export function getLoginInstructions(input: {
     ];
   }
 
-  const lines = [
+  return [
     "",
-    "To set env vars in your current shell, run:",
-    `  export ${ENV_KEYS.JENKINS_URL}=${shellEscape(input.normalizedUrl)}`,
-    `  export ${ENV_KEYS.JENKINS_USER}=${shellEscape(input.user)}`,
-    `  export ${ENV_KEYS.JENKINS_API_TOKEN}=${shellEscape(input.plan.tokenForConfig)}`,
+    `Credentials are ready. Use --profile ${profileArg} to target this profile.`,
+    `The CLI reads ${CONFIG_FILE} directly; no environment variables need to be set.`,
   ];
-  if (input.branchParam !== DEFAULT_BRANCH_PARAM) {
-    lines.push(
-      `  export ${ENV_KEYS.JENKINS_BRANCH_PARAM}=${shellEscape(input.branchParam)}`,
-    );
-  }
-  lines.push(
-    "",
-    "To persist them, add the exports to your shell profile manually.",
-    `The CLI also reads ${CONFIG_FILE} directly.`,
-    `Use --profile ${profileArg} to target this profile.`,
-  );
-  return lines;
 }
 
 /**

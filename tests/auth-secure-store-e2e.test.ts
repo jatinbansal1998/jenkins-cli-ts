@@ -289,6 +289,8 @@ describe("secure-store CLI lifecycle (real OS keychain)", () => {
         home,
       );
       expect(login.exitCode).toBe(0);
+      expect(login.output).not.toContain(identity.token);
+      expect(login.output).not.toContain("export");
 
       const use = runCli(
         ["list", "--non-interactive", "--profile", identity.profileName],
@@ -332,7 +334,8 @@ describe("secure-store CLI fallback", () => {
     const profile = readStoredConfig(home).profiles[identity.profileName];
     expect(profile?.jenkinsApiToken).toBe(identity.token);
     expect(profile?.tokenStorage).toBeUndefined();
-    expect(result.output).toContain("export JENKINS_API_TOKEN");
+    expect(result.output).not.toContain(identity.token);
+    expect(result.output).not.toContain("export");
   });
 
   test("an unusable backend leaves an existing plaintext profile active", () => {

@@ -891,38 +891,52 @@ describe.skipIf(!integrationEnabled)(
           JENKINS_URL: undefined,
           JENKINS_USER: undefined,
           JENKINS_API_TOKEN: undefined,
+          JENKINS_BRANCH_PARAM: undefined,
         };
         const adminToken = process.env.JENKINS_INTEGRATION_TOKEN ?? "";
         const readerUser =
           process.env.JENKINS_INTEGRATION_READER_USER ?? "integration-reader";
         const readerToken = process.env.JENKINS_INTEGRATION_READER_TOKEN ?? "";
 
-        await runCli(home, [
-          "auth",
-          "login",
-          "--profile",
-          "admin",
-          "--url",
-          jenkinsUrl!,
-          "--user",
-          "integration-test",
-          "--token",
-          adminToken,
-          "--no-keychain",
-        ]);
-        await runCli(home, [
-          "auth",
-          "login",
-          "--profile",
-          "reader",
-          "--url",
-          jenkinsUrl!,
-          "--user",
-          readerUser,
-          "--token",
-          readerToken,
-          "--no-keychain",
-        ]);
+        const adminLogin = await runCli(
+          home,
+          [
+            "auth",
+            "login",
+            "--profile",
+            "admin",
+            "--url",
+            jenkinsUrl!,
+            "--user",
+            "integration-test",
+            "--token",
+            adminToken,
+            "--no-keychain",
+          ],
+          withoutCredentialEnv,
+        );
+        expect(adminLogin.output).not.toContain(adminToken);
+        expect(adminLogin.output).not.toContain("export");
+
+        const readerLogin = await runCli(
+          home,
+          [
+            "auth",
+            "login",
+            "--profile",
+            "reader",
+            "--url",
+            jenkinsUrl!,
+            "--user",
+            readerUser,
+            "--token",
+            readerToken,
+            "--no-keychain",
+          ],
+          withoutCredentialEnv,
+        );
+        expect(readerLogin.output).not.toContain(readerToken);
+        expect(readerLogin.output).not.toContain("export");
 
         const profiles = await runCli(
           home,

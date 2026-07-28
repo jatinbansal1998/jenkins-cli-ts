@@ -224,13 +224,7 @@ describe("post-login guidance", () => {
   test("secure profiles do not show exports or echo the token", () => {
     const output = getLoginInstructions({
       profileName: PROFILE,
-      normalizedUrl: URL,
-      user: "ci-user",
-      branchParam: "BRANCH",
-      plan: {
-        tokenStorage: "keychain",
-        tokenForConfig: KEYCHAIN_TOKEN_SENTINEL,
-      },
+      tokenStorage: "keychain",
       secureStoreName: "Freedesktop Secret Service",
     }).join("\n");
 
@@ -240,15 +234,14 @@ describe("post-login guidance", () => {
     expect(output).not.toContain(TOKEN);
   });
 
-  test("plaintext fallback retains shell export guidance", () => {
+  test("plaintext profiles require no exports and do not echo the token", () => {
     const output = getLoginInstructions({
       profileName: PROFILE,
-      normalizedUrl: URL,
-      user: "ci-user",
-      branchParam: "BRANCH",
-      plan: { tokenForConfig: TOKEN },
     }).join("\n");
 
-    expect(output).toContain("export JENKINS_API_TOKEN='jenkins-secret'");
+    expect(output).toContain("--profile 'work'");
+    expect(output).toContain("no environment variables need to be set");
+    expect(output).not.toContain("export");
+    expect(output).not.toContain(TOKEN);
   });
 });
