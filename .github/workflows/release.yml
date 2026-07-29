@@ -376,4 +376,5 @@ jobs:
           cli-path: ${{ steps.windows_release_asset.outputs.cli_path }}
           expected-version: ${{ steps.windows_release_asset.outputs.expected_version }}
           expected-target: bun-windows-x64
+          expected-credential-backend: windows
           tool-cache: ${{ runner.temp }}/jenkins-cli-integration-tools

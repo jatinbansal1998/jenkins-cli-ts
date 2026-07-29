@@ -11,6 +11,9 @@ inputs:
   expected-target:
     description: Bun target expected in the CLI version output
     required: true
+  expected-credential-backend:
+    description: cross-keychain backend expected for this Windows CLI build
+    required: true
   tool-cache:
     description: Directory used to cache the native Jenkins WAR and plugin manager
     required: true
@@ -24,6 +27,7 @@ runs:
         WINDOWS_ACCEPTANCE_CLI_PATH: ${{ inputs.cli-path }}
         WINDOWS_ACCEPTANCE_EXPECTED_VERSION: ${{ inputs.expected-version }}
         WINDOWS_ACCEPTANCE_EXPECTED_TARGET: ${{ inputs.expected-target }}
+        WINDOWS_ACCEPTANCE_EXPECTED_CREDENTIAL_BACKEND: ${{ inputs.expected-credential-backend }}
         WINDOWS_ACCEPTANCE_TOOL_CACHE: ${{ inputs.tool-cache }}
         NO_COLOR: "1"
         JENKINS_ANALYTICS_DISABLED: "true"
@@ -38,6 +42,7 @@ runs:
             "cli-path" = $env:WINDOWS_ACCEPTANCE_CLI_PATH
             "expected-version" = $env:WINDOWS_ACCEPTANCE_EXPECTED_VERSION
             "expected-target" = $env:WINDOWS_ACCEPTANCE_EXPECTED_TARGET
+            "expected-credential-backend" = $env:WINDOWS_ACCEPTANCE_EXPECTED_CREDENTIAL_BACKEND
             "tool-cache" = $env:WINDOWS_ACCEPTANCE_TOOL_CACHE
           }.GetEnumerator()) {
           if ([string]::IsNullOrWhiteSpace([string]$requiredInput.Value)) {
@@ -184,6 +189,7 @@ runs:
             -CliExecutable $CliPath `
             -ExpectedVersion $env:WINDOWS_ACCEPTANCE_EXPECTED_VERSION `
             -ExpectedTarget $env:WINDOWS_ACCEPTANCE_EXPECTED_TARGET `
+            -ExpectedCredentialBackend $env:WINDOWS_ACCEPTANCE_EXPECTED_CREDENTIAL_BACKEND `
             -ManifestPath $ManifestPath `
             -DownloadDirectory $DownloadDirectory `
             -ProfileName $ProfileName `

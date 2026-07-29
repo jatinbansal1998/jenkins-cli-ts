@@ -6,6 +6,9 @@ param(
   [Parameter(Mandatory = $true)]
   [string]$ExpectedTarget,
   [Parameter(Mandatory = $true)]
+  [ValidateSet("native-windows", "windows")]
+  [string]$ExpectedCredentialBackend,
+  [Parameter(Mandatory = $true)]
   [string]$ManifestPath,
   [Parameter(Mandatory = $true)]
   [string]$DownloadDirectory,
@@ -119,19 +122,19 @@ if ($LASTEXITCODE -ne 0) {
 $secureStoreAccount = ($secureStoreAccount | Out-String).Trim()
 $env:JENKINS_CLI_ACCEPTANCE_ACCOUNT = $secureStoreAccount
 $env:JENKINS_CLI_ACCEPTANCE_TOKEN = $adminToken
+$env:JENKINS_CLI_ACCEPTANCE_BACKEND = $ExpectedCredentialBackend
 $credentialRoundTripScript = @'
 import { diagnose, getPassword, listBackends, useBackend } from "cross-keychain";
+const expectedBackend = process.env.JENKINS_CLI_ACCEPTANCE_BACKEND;
 const backends = await listBackends();
-if (!backends.some(({ id }) => id === "windows")) {
-  throw new Error("Windows PowerShell Credential Manager backend is unavailable");
+if (!backends.some(({ id }) => id === expectedBackend)) {
+  throw new Error(`Expected Credential Manager backend ${expectedBackend} is unavailable`);
 }
-// Match the backend used by the standalone executable, where native Node
-// modules are intentionally unavailable inside Bun's compiled binary.
-await useBackend("windows");
+await useBackend(expectedBackend);
 const diagnosis = await diagnose();
-if (diagnosis.id !== "windows") {
+if (diagnosis.id !== expectedBackend) {
   throw new Error(
-    `Active credential backend is ${String(diagnosis.id)}, not the Windows PowerShell backend`,
+    `Active credential backend is ${String(diagnosis.id)}, not ${expectedBackend}`,
   );
 }
 const token = await getPassword(
@@ -288,7 +291,7 @@ Invoke-AcceptanceCli "Credential logout" @(
 
 $credentialDeletionScript = @'
 import { getPassword, useBackend } from "cross-keychain";
-await useBackend("windows");
+await useBackend(process.env.JENKINS_CLI_ACCEPTANCE_BACKEND);
 const token = await getPassword(
   "jenkins-cli",
   process.env.JENKINS_CLI_ACCEPTANCE_ACCOUNT,
@@ -304,6 +307,11 @@ if ($LASTEXITCODE -ne 0) {
 Remove-Item -LiteralPath $LoginMarkerPath -Force
 [Environment]::SetEnvironmentVariable(
   "JENKINS_CLI_ACCEPTANCE_ACCOUNT",
+  $null,
+  "Process"
+)
+[Environment]::SetEnvironmentVariable(
+  "JENKINS_CLI_ACCEPTANCE_BACKEND",
   $null,
   "Process"
 )
