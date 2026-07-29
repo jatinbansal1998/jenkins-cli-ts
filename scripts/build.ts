@@ -23,6 +23,7 @@ import {
   LEGACY_BUNDLE_BUILD_TARGET,
   NATIVE_RELEASE_TARGETS,
 } from "../src/release-targets";
+import { embedCrossKeychainAssets } from "./build-plugins";
 
 const ENTRY = "./src/index.ts";
 const DIST = "./dist";
@@ -67,6 +68,7 @@ const bundleResult = await Bun.build({
   outdir: DIST,
   naming: "jenkins-cli-bundle",
   target: "bun",
+  plugins: [embedCrossKeychainAssets],
   sourcemap: "inline",
   define: { __BUILD_TARGET__: JSON.stringify(LEGACY_BUNDLE_BUILD_TARGET) },
 });
@@ -88,6 +90,7 @@ const results = await Promise.allSettled(
       // Bun always enables tree-shaking for builds, including compiled outputs.
       // @ts-expect-error -- Bun compile targets are valid at runtime
       compile: { target: compileTarget, outfile: outpath },
+      plugins: [embedCrossKeychainAssets],
       sourcemap: "linked",
       define: {
         __BUILD_TARGET__: JSON.stringify(compileTarget),

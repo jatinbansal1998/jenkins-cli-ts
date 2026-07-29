@@ -3,6 +3,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { runNativeExecutable } from "./helpers.native-executable";
+import { embedCrossKeychainAssets } from "../scripts/build-plugins";
 
 type CliRun = {
   exitCode: number;
@@ -65,6 +66,7 @@ beforeAll(async () => {
     entrypoints: ["./src/index.ts"],
     target: "bun",
     compile: { outfile: executable },
+    plugins: [embedCrossKeychainAssets],
     define: {
       __BUILD_TARGET__: JSON.stringify(
         `bun-${process.platform}-${process.arch}`,
@@ -85,6 +87,15 @@ afterAll(() => {
 });
 
 describe("compiled CLI", () => {
+  test("embeds the Windows Credential Manager helper", async () => {
+    const binaryText = Buffer.from(
+      await Bun.file(executable).arrayBuffer(),
+    ).toString("latin1");
+
+    expect(binaryText).toContain("CredMan.CredentialManager");
+    expect(binaryText).not.toContain('"scripts", "credman.ps1"');
+  });
+
   test("starts and reports its version through both aliases", async () => {
     for (const flag of ["-v", "--version"]) {
       const result = await runCompiled([flag]);

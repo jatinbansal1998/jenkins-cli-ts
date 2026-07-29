@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { join } from "node:path";
 import {
   integrationEnabled,
+  integrationCliExecutable,
   invokeCli,
   jenkinsUrl,
   parseJson,
@@ -19,6 +20,15 @@ const keychainIntegrationRequired =
 describe.skipIf(!integrationEnabled)(
   "compiled CLI against real Jenkins",
   () => {
+    test("uses a compiled CLI with the Credential Manager helper embedded", async () => {
+      const binaryText = Buffer.from(
+        await Bun.file(integrationCliExecutable).arrayBuffer(),
+      ).toString("latin1");
+
+      expect(binaryText).toContain("CredMan.CredentialManager");
+      expect(binaryText).not.toContain('"scripts", "credman.ps1"');
+    });
+
     test("covers discovery, authentication, nodes, and empty operational state", async () => {
       await withCliHome(async (home) => {
         const auth = await runCli(home, ["auth", "status"]);

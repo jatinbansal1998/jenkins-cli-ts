@@ -10,6 +10,7 @@
  */
 
 import { mkdir } from "node:fs/promises";
+import { embedCrossKeychainAssets } from "./build-plugins";
 
 const ENTRY = "./src/index.ts";
 const DIST = "./dist";
@@ -24,6 +25,7 @@ const result = await Bun.build({
   // Bun always tree-shakes; package.json sideEffects metadata helps it drop
   // unused internal modules when compiling the executable.
   compile: { outfile: `${DIST}/jenkins-cli` },
+  plugins: [embedCrossKeychainAssets],
   sourcemap: "linked",
   define: {
     __BUILD_TARGET__: JSON.stringify(target),
