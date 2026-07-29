@@ -120,15 +120,18 @@ $secureStoreAccount = ($secureStoreAccount | Out-String).Trim()
 $env:JENKINS_CLI_ACCEPTANCE_ACCOUNT = $secureStoreAccount
 $env:JENKINS_CLI_ACCEPTANCE_TOKEN = $adminToken
 $credentialRoundTripScript = @'
-import { diagnose, getPassword, listBackends } from "cross-keychain";
+import { diagnose, getPassword, listBackends, useBackend } from "cross-keychain";
 const backends = await listBackends();
-if (!backends.some(({ id }) => id === "native-windows" || id === "windows")) {
-  throw new Error("Windows Credential Manager backend is unavailable");
+if (!backends.some(({ id }) => id === "windows")) {
+  throw new Error("Windows PowerShell Credential Manager backend is unavailable");
 }
+// Match the backend used by the standalone executable, where native Node
+// modules are intentionally unavailable inside Bun's compiled binary.
+await useBackend("windows");
 const diagnosis = await diagnose();
-if (diagnosis.id !== "native-windows" && diagnosis.id !== "windows") {
+if (diagnosis.id !== "windows") {
   throw new Error(
-    `Active credential backend is ${String(diagnosis.id)}, not Windows Credential Manager`,
+    `Active credential backend is ${String(diagnosis.id)}, not the Windows PowerShell backend`,
   );
 }
 const token = await getPassword(
@@ -284,7 +287,8 @@ Invoke-AcceptanceCli "Credential logout" @(
 )
 
 $credentialDeletionScript = @'
-import { getPassword } from "cross-keychain";
+import { getPassword, useBackend } from "cross-keychain";
+await useBackend("windows");
 const token = await getPassword(
   "jenkins-cli",
   process.env.JENKINS_CLI_ACCEPTANCE_ACCOUNT,
