@@ -64,9 +64,9 @@ Installs the latest supported native `jenkins-cli` binary to your PATH
 (defaults to `$HOME/.local/bin`). Bun is not required on the target machine.
 
 ```bash
-curl -fsSL https://jatinbansal.com/jenkins-cli/install/ | bash
+curl -fsSL https://raw.githubusercontent.com/jatinbansal1998/jenkins-cli-ts/main/install | bash
 # or
-wget -qO- https://jatinbansal.com/jenkins-cli/install/ | bash
+wget -qO- https://raw.githubusercontent.com/jatinbansal1998/jenkins-cli-ts/main/install | bash
 ```
 
 ### Homebrew
@@ -79,21 +79,11 @@ brew install jatinbansal1998/tap/jenkins-cli
 ### Alternative install methods
 
 <details>
-<summary>GitHub raw mirror</summary>
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/jatinbansal1998/jenkins-cli-ts/main/install | bash
-wget -qO- https://raw.githubusercontent.com/jatinbansal1998/jenkins-cli-ts/main/install | bash
-```
-
-</details>
-
-<details>
 <summary>Custom install directory</summary>
 
 ```bash
-JENKINS_CLI_INSTALL_DIR="$HOME/.local/bin" curl -fsSL https://jatinbansal.com/jenkins-cli/install/ | bash
-JENKINS_CLI_INSTALL_DIR="$HOME/.local/bin" wget -qO- https://jatinbansal.com/jenkins-cli/install/ | bash
+JENKINS_CLI_INSTALL_DIR="$HOME/.local/bin" curl -fsSL https://raw.githubusercontent.com/jatinbansal1998/jenkins-cli-ts/main/install | bash
+JENKINS_CLI_INSTALL_DIR="$HOME/.local/bin" wget -qO- https://raw.githubusercontent.com/jatinbansal1998/jenkins-cli-ts/main/install | bash
 ```
 
 </details>
