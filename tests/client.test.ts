@@ -584,6 +584,51 @@ describe("JenkinsClient build transport", () => {
     });
   });
 
+  test("follows the raw Pipeline node console URL with byte offsets", async () => {
+    const fetchMock = mock(async (_input: FetchInput) =>
+      Promise.resolve(new Response("🚀\n", { headers: {} })),
+    );
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+    const client = new JenkinsClient({
+      baseUrl: "https://jenkins.example.com",
+      user: "user",
+      apiToken: "token",
+    });
+
+    const chunk = await client.getPipelineNodeConsoleChunk(
+      "/job/my-job/9/execution/node/12/log",
+      4,
+    );
+
+    expect(String(fetchMock.mock.calls[0]?.[0])).toBe(
+      "https://jenkins.example.com/job/my-job/9/execution/node/12/log/logText/progressiveText?start=4",
+    );
+    expect(chunk.nextStart).toBe(4 + Buffer.byteLength("🚀\n"));
+  });
+
+  test("requests bounded timestamped raw log lines from Timestamper", async () => {
+    const fetchMock = mock(async (_input: FetchInput) =>
+      Promise.resolve(
+        new Response("2026-08-01T12:00:00.000Z  output\n", { status: 200 }),
+      ),
+    );
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+    const client = new JenkinsClient({
+      baseUrl: "https://jenkins.example.com",
+      user: "user",
+      apiToken: "token",
+    });
+
+    await client.getConsoleTimestamps(
+      "https://jenkins.example.com/job/my-job/9/",
+      { endLine: 17, appendLog: true },
+    );
+
+    expect(String(fetchMock.mock.calls[0]?.[0])).toBe(
+      "https://jenkins.example.com/job/my-job/9/timestamps/?time=yyyy-MM-dd%27T%27HH%3Amm%3Ass.SSSXXX&timeZone=UTC&endLine=17&appendLog=true",
+    );
+  });
+
   test("authenticates artifact downloads", async () => {
     const home = mkdtempSync(join(tmpdir(), "jenkins-client-artifact-"));
     const destination = join(home, "artifact.txt");

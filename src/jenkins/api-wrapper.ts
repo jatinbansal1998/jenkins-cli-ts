@@ -32,6 +32,7 @@ import type {
   JenkinsBuildArtifactsResponse,
   JenkinsLastCompletedBuildResponse,
   JenkinsPipelineNodeResponse,
+  JenkinsPipelineNodeLogResponse,
   JenkinsApiQueueItem,
   JenkinsBuildFailure,
   JenkinsBuildParameter,
@@ -642,24 +643,122 @@ export class JenkinsClient {
   }
 
   async getConsoleChunk(buildUrl: string, start = 0): Promise<ConsoleChunk> {
+    return await this.getProgressiveLogChunk(
+      this.withJob(buildUrl, "logText/progressiveText"),
+      start,
+      "fetch build logs",
+    );
+  }
+
+  async getPipelineDescription(buildUrl: string): Promise<PipelineInfo | null> {
+    return await this.getPipelineInfo(buildUrl);
+  }
+
+  async getPipelineNodeDescription(
+    nodeUrl: string,
+  ): Promise<JenkinsPipelineNodeResponse | null> {
+    return await this.getPipelineNode(this.resolveUrl(nodeUrl));
+  }
+
+  async getPipelineNodeLog(
+    logUrl: string,
+  ): Promise<JenkinsPipelineNodeLogResponse | null> {
+    const url = this.resolveUrl(logUrl);
+    const response = await this.fetchWithTimeout(
+      url,
+      { method: "GET", headers: this.authHeaders() },
+      0,
+      "fetch pipeline node logs",
+    );
+    if (response.status === 404) {
+      return null;
+    }
+    if (!response.ok) {
+      await this.raiseHttpError(response, "fetch pipeline node logs");
+    }
+    try {
+      return (await response.json()) as JenkinsPipelineNodeLogResponse;
+    } catch {
+      throw new CliError(
+        "Invalid JSON response while trying to fetch pipeline node logs.",
+        ["Try the whole-build log instead."],
+        "PIPELINE_STAGE_LOG_UNAVAILABLE",
+      );
+    }
+  }
+
+  async getPipelineNodeConsoleChunk(
+    consoleUrl: string,
+    start = 0,
+  ): Promise<ConsoleChunk> {
+    return await this.getProgressiveLogChunk(
+      this.withJob(this.resolveUrl(consoleUrl), "logText/progressiveText"),
+      start,
+      "fetch pipeline node logs",
+    );
+  }
+
+  async getConsoleTimestamps(
+    buildUrl: string,
+    options: {
+      endLine?: number;
+      currentTime?: boolean;
+      appendLog?: boolean;
+    } = {},
+  ): Promise<string | null> {
+    const url = new URL(this.withJob(buildUrl, "timestamps/"));
+    url.searchParams.set("time", "yyyy-MM-dd'T'HH:mm:ss.SSSXXX");
+    url.searchParams.set("timeZone", "UTC");
+    if (typeof options.endLine === "number") {
+      url.searchParams.set("endLine", String(Math.max(0, options.endLine)));
+    }
+    if (options.currentTime) {
+      url.searchParams.set("currentTime", "true");
+    }
+    if (options.appendLog) {
+      url.searchParams.set("appendLog", "true");
+    }
+    const response = await this.fetchWithTimeout(
+      url.toString(),
+      {
+        method: "GET",
+        headers: { ...this.authHeaders(), Accept: "text/plain" },
+      },
+      0,
+      "fetch build timestamps",
+    );
+    if (response.status === 404) {
+      return null;
+    }
+    if (!response.ok) {
+      await this.raiseHttpError(response, "fetch build timestamps");
+    }
+    return await response.text();
+  }
+
+  private async getProgressiveLogChunk(
+    progressiveUrl: string,
+    start: number,
+    context: string,
+  ): Promise<ConsoleChunk> {
     const normalizedStart =
       Number.isFinite(start) && start > 0 ? Math.floor(start) : 0;
-    const url = new URL(this.withJob(buildUrl, "logText/progressiveText"));
+    const url = new URL(progressiveUrl);
     url.searchParams.set("start", String(normalizedStart));
 
     const response = await this.fetchWithTimeout(
       url.toString(),
       { method: "GET", headers: this.authHeaders() },
       1,
-      "fetch build logs",
+      context,
     );
     if (!response.ok) {
       recordJenkinsApiFailure({
-        operation: "fetch_build_logs",
+        operation: toAnalyticsOperation(context),
         errorType: "http_error",
         httpStatus: response.status,
       });
-      await this.raiseHttpError(response, "fetch build logs");
+      await this.raiseHttpError(response, context);
     }
 
     const text = await response.text();
@@ -669,7 +768,7 @@ export class JenkinsClient {
       : Number.NaN;
     const nextStart = Number.isFinite(parsedNextStart)
       ? parsedNextStart
-      : normalizedStart + text.length;
+      : normalizedStart + Buffer.byteLength(text);
     const hasMore = (response.headers.get("x-more-data") || "")
       .toLowerCase()
       .trim();

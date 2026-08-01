@@ -144,6 +144,54 @@ export async function invokeCli(
   );
 }
 
+export async function invokeCliAndInterrupt(
+  home: string,
+  args: string[],
+  waitForOutput: string,
+  envOverrides: Record<string, string | undefined> = {},
+): Promise<CliResult> {
+  const subprocess = Bun.spawn({
+    cmd: [
+      integrationCliExecutable,
+      ...args,
+      "--non-interactive",
+      "--no-banner",
+    ],
+    env: cliEnv(home, envOverrides),
+    stdin: "ignore",
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+  let stdout = "";
+  let stderr = "";
+  const stdoutPump = collectStream(subprocess.stdout, (chunk) => {
+    stdout += chunk;
+  });
+  const stderrPump = collectStream(subprocess.stderr, (chunk) => {
+    stderr += chunk;
+  });
+  const deadline = Date.now() + 20_000;
+  while (!(stdout + stderr).includes(waitForOutput)) {
+    if (subprocess.exitCode !== null) {
+      throw new Error(
+        `CLI exited before interruption marker "${waitForOutput}".\n${stdout}${stderr}`,
+      );
+    }
+    if (Date.now() >= deadline) {
+      subprocess.kill();
+      throw new Error(
+        `Timed out waiting for interruption marker "${waitForOutput}".\n${stdout}${stderr}`,
+      );
+    }
+    await Bun.sleep(20);
+  }
+  await Bun.sleep(250);
+  subprocess.kill("SIGINT");
+  const exitCode = await subprocess.exited;
+  await Promise.all([stdoutPump, stderrPump]);
+  return { exitCode, stdout, stderr, output: stdout + stderr };
+}
+
 export async function invokeCliExecutable(
   home: string,
   executable: string,

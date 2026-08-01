@@ -206,7 +206,6 @@ export async function runStatus(options: StatusOptions): Promise<void> {
                 client: options.client,
                 env: options.env,
                 jobUrl: primaryTarget.jobUrl,
-                follow: true,
                 nonInteractive: false,
               });
               return "action_ok";

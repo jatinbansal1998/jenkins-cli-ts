@@ -21,6 +21,10 @@ export function getRootHelpEpilog(): string {
       Wait for the latest build to finish.
   $0 logs --job api --jsonl
       Stream one compact JSON log event per line.
+  $0 logs --job api --tail 50 --follow
+      Print the last 50 existing lines, then follow new output.
+  $0 logs --build-url https://jenkins.example.com/job/api/128/ --stage Test
+      Stream the uniquely named Pipeline stage.
   $0 artifacts --job api --download --dest ./out --non-interactive
       Download the last build's artifacts.
   $0 auth logout --all --non-interactive
@@ -109,6 +113,11 @@ Command-specific options:
     --queue-url <url> Full Jenkins queue item URL
     --follow          Keep streaming logs until build completes [default: true]
     --poll <dur>      Polling interval when following [default: ${DEFAULT_LOG_POLL_MS / 1000}s]
+    --tail <n>        Show only the last N existing lines
+    --since <value>   Show logs after a duration or ISO-8601 timestamp
+    --stage <name>    Show one uniquely named Pipeline stage
+    --stage-id <id>   Show one Pipeline stage or node by stable id
+    --failed          Show the failed stage and relevant error log
     --jsonl           Stream one compact JSON event per line
 
   artifacts:

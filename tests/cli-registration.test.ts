@@ -127,6 +127,27 @@ describe("structured output registration", () => {
     const logs = runCli(["logs", "--help"]);
     expect(logs.exitCode).toBe(0);
     expect(logs.output).toContain("--jsonl");
+    for (const option of [
+      "--tail",
+      "--since",
+      "--stage",
+      "--stage-id",
+      "--failed",
+    ]) {
+      expect(logs.output).toContain(option);
+    }
+  });
+
+  test("rejects conflicting Pipeline log selectors at registration", () => {
+    for (const args of [
+      ["--stage", "Test", "--failed"],
+      ["--stage", "Test", "--stage-id", "42"],
+      ["--stage-id", "42", "--failed"],
+    ]) {
+      const result = runCli(["logs", ...args, "--non-interactive"]);
+      expect(result.exitCode).toBe(1);
+      expect(result.output).toContain("mutually exclusive");
+    }
   });
 
   test("unsupported commands recognize --json and fail informatively", () => {

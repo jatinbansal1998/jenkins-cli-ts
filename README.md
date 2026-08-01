@@ -577,6 +577,9 @@ jenkins-cli logs --build-url https://jenkins.example.com/job/api/42/ --jsonl
 ```
 
 A mid-stream failure ends with an `error` event and a non-zero exit code.
+For Pipeline stage or node logs, `start`, `chunk`, and `complete` events also
+include an additive `stage` object containing the stable stage/node IDs, names,
+and display path.
 
 ### Authentication Troubleshooting
 
@@ -818,7 +821,36 @@ jenkins-cli logs --job "api-prod" --follow
 jenkins-cli logs --job "api-prod" --build 184 --no-follow
 jenkins-cli logs --job "api-prod" --follow --poll 1s
 jenkins-cli logs --build-url "https://jenkins.example.com/job/api-prod/184/" --no-follow
+jenkins-cli logs --job "api-prod" --tail 100 --no-follow
+jenkins-cli logs --job "api-prod" --tail 50 --follow
+jenkins-cli logs --job "api-prod" --since 30m --no-follow
+jenkins-cli logs --build-url "https://jenkins.example.com/job/api-prod/184/" --stage Test
+jenkins-cli logs --build-url "https://jenkins.example.com/job/api-prod/184/" --stage-id 42
+jenkins-cli logs --job "api-prod" --failed
 ```
+
+`--tail` prints only the last N existing lines. Combined with `--follow`, it
+then streams new output from the exact Jenkins byte offset without repeating
+the tail. `--since` accepts a duration (`30m`, `2h`, `1d`) or an ISO-8601
+timestamp and requires timestamp metadata from the Jenkins Timestamper plugin.
+If timestamp metadata is unavailable, the command reports that capability
+instead of guessing from the visible text.
+
+Pipeline stage names must resolve uniquely. For repeated stage names or
+parallel branches, the error lists stable candidate IDs; pass `--stage-id` to
+select one deterministically. `--failed` selects the failed stage, prints its
+log-bearing nodes on stdout, and writes the stage/node reason to stderr.
+`--stage`, `--stage-id`, and `--failed` are mutually exclusive.
+
+Human log text is the only content written to stdout, so it can be redirected
+or piped safely. Selection hints, capability messages, and errors use stderr.
+Ctrl+C stops only the local follower (exit status 130 in non-interactive use);
+it never sends a cancel or stop request to Jenkins.
+
+With a TTY and no exact build, the Logs action lets you select the latest,
+running, or a recent build, then choose full logs, last N lines, a failed
+section, or a Pipeline stage. Running builds ask whether new output should be
+followed.
 
 ### Artifacts
 

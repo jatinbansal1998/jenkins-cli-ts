@@ -4,6 +4,7 @@ import {
   integrationEnabled,
   integrationCliExecutable,
   invokeCli,
+  invokeCliAndInterrupt,
   jenkinsUrl,
   parseJson,
   pollCli,
@@ -1269,6 +1270,220 @@ describe.skipIf(!integrationEnabled)(
         expect(history.output).toContain("pipeline-deploy-failure");
       });
     }, 120_000);
+
+    test("filters and selects real whole-build and Pipeline logs", async () => {
+      await withCliHome(async (home) => {
+        const pipelineJobUrl = `${jenkinsUrl}/job/cli-pipeline-logs/`;
+        await runCli(home, [
+          "build",
+          "--job-url",
+          pipelineJobUrl,
+          "--without-params",
+          "--watch",
+        ]);
+        const pipelineStatus = parseJson<{
+          data: { build: { url: string } };
+        }>(
+          await runCli(home, ["status", "--job-url", pipelineJobUrl, "--json"]),
+        );
+        const pipelineBuildUrl = pipelineStatus.data.build.url;
+
+        const tail = await runCli(home, [
+          "logs",
+          "--build-url",
+          pipelineBuildUrl,
+          "--tail",
+          "2",
+          "--no-follow",
+        ]);
+        expect(tail.stdout.split("\n").filter(Boolean)).toHaveLength(2);
+        expect(tail.stdout).not.toContain("HINT:");
+        expect(tail.stderr).toContain("HINT: Reading logs");
+
+        const prepare = await runCli(home, [
+          "logs",
+          "--build-url",
+          pipelineBuildUrl,
+          "--stage",
+          "Prepare",
+          "--no-follow",
+        ]);
+        expect(prepare.stdout).toContain("pipeline-logs-prepare");
+        expect(prepare.stdout).not.toContain("pipeline-logs-test-first");
+
+        const parallel = await runCli(home, [
+          "logs",
+          "--build-url",
+          pipelineBuildUrl,
+          "--stage",
+          "Parallel",
+          "--no-follow",
+        ]);
+        expect(parallel.stdout).toContain("pipeline-logs-linux");
+        expect(parallel.stdout).toContain("pipeline-logs-windows");
+
+        const stageEvents = await runCli(home, [
+          "logs",
+          "--build-url",
+          pipelineBuildUrl,
+          "--stage",
+          "Prepare",
+          "--no-follow",
+          "--jsonl",
+        ]);
+        expect(
+          stageEvents.stdout
+            .split("\n")
+            .filter(Boolean)
+            .map(
+              (line) => JSON.parse(line) as { stage?: { stageName: string } },
+            )
+            .filter((event) => event.stage)
+            .every((event) => event.stage?.stageName === "Prepare"),
+        ).toBeTrue();
+
+        const ambiguous = await runCliExpectFailure(home, [
+          "logs",
+          "--build-url",
+          pipelineBuildUrl,
+          "--stage",
+          "Test",
+          "--no-follow",
+        ]);
+        expect(ambiguous.stderr).toContain("is ambiguous");
+        const firstTestStageId =
+          ambiguous.stderr.match(/Test \(id (\d+)\)/)?.[1];
+        expect(firstTestStageId).toBeDefined();
+        const exactStage = await runCli(home, [
+          "logs",
+          "--build-url",
+          pipelineBuildUrl,
+          "--stage-id",
+          firstTestStageId!,
+          "--no-follow",
+        ]);
+        expect(exactStage.stdout).toContain("pipeline-logs-test-");
+
+        const failureJobUrl = `${jenkinsUrl}/job/cli-pipeline-failure/`;
+        await runCliExpectFailure(home, [
+          "build",
+          "--job-url",
+          failureJobUrl,
+          "--without-params",
+          "--watch",
+        ]);
+        const failed = await runCli(home, [
+          "logs",
+          "--job-url",
+          failureJobUrl,
+          "--failed",
+          "--no-follow",
+        ]);
+        expect(failed.stdout).toContain("pipeline-deploy-context");
+        expect(failed.stderr).toContain("pipeline-deploy-failure");
+        const unsupportedSince = await runCliExpectFailure(home, [
+          "logs",
+          "--job-url",
+          failureJobUrl,
+          "--since",
+          "1h",
+          "--no-follow",
+        ]);
+        expect(unsupportedSince.stderr).toContain("did not expose timestamps");
+
+        const timestampedJobUrl = `${jenkinsUrl}/job/cli-timestamped-logs/`;
+        await runCli(home, [
+          "build",
+          "--job-url",
+          timestampedJobUrl,
+          "--without-params",
+          "--watch",
+        ]);
+        const timestamped = await runCli(home, [
+          "logs",
+          "--job-url",
+          timestampedJobUrl,
+          "--since",
+          "1h",
+          "--no-follow",
+        ]);
+        expect(timestamped.stdout).toContain("timestamped-log-old");
+        expect(timestamped.stdout).toContain("timestamped-log-new");
+
+        const future = await runCli(home, [
+          "logs",
+          "--job-url",
+          timestampedJobUrl,
+          "--since",
+          new Date(Date.now() + 60_000).toISOString(),
+          "--no-follow",
+        ]);
+        expect(future.stdout).toBe("");
+      });
+    }, 180_000);
+
+    test.skipIf(process.platform === "win32")(
+      "stops tail following locally on Ctrl+C without cancelling Jenkins",
+      async () => {
+        await withCliHome(async (home) => {
+          const jobUrl = `${jenkinsUrl}/job/cli-log-follow/`;
+          await runCli(home, [
+            "build",
+            "--job-url",
+            jobUrl,
+            "--without-params",
+          ]);
+          const running = await pollCli(
+            home,
+            ["status", "--job-url", jobUrl, "--json"],
+            (result) => {
+              const payload = JSON.parse(result.stdout) as {
+                data?: { build?: { building?: boolean; url?: string } };
+              };
+              return payload.data?.build?.building === true;
+            },
+          );
+          const runningBuildUrl = (
+            JSON.parse(running.stdout) as {
+              data: { build: { url: string } };
+            }
+          ).data.build.url;
+          const interrupted = await invokeCliAndInterrupt(
+            home,
+            [
+              "logs",
+              "--build-url",
+              runningBuildUrl,
+              "--tail",
+              "1",
+              "--follow",
+              "--poll",
+              "100ms",
+            ],
+            "HINT: Reading logs",
+          );
+          expect(interrupted.exitCode).toBe(130);
+          expect(interrupted.stderr).toContain(
+            "the Jenkins build was not cancelled",
+          );
+
+          const completed = await runCli(home, [
+            "wait",
+            "--build-url",
+            runningBuildUrl,
+            "--timeout",
+            "30s",
+            "--interval",
+            "250ms",
+            "--json",
+          ]);
+          expect(JSON.parse(completed.stdout)).toMatchObject({
+            data: { result: "SUCCESS" },
+          });
+        });
+      },
+      90_000,
+    );
 
     test("follows logs while a queued item becomes a build", async () => {
       await withCliHome(async (home) => {

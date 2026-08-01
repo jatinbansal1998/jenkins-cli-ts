@@ -400,7 +400,6 @@ export async function runBuild(options: BuildOptions): Promise<BuildRunResult> {
                   !activeBuild.buildUrl && !activeBuild.queueUrl
                     ? resolvedJobUrl
                     : undefined,
-                follow: true,
                 nonInteractive: false,
               });
               return "action_ok";

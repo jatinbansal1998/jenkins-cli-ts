@@ -79,6 +79,15 @@ printf 'root-artifact\n' > artifact.txt
 job.getPublishersList().add(new ArtifactArchiver("artifact.txt,reports/values.txt"))
 job.save()
 
+def followLogsJob = jenkins.createProject(FreeStyleProject.class, "cli-log-follow")
+followLogsJob.getBuildersList().add(new Shell('''set +x
+printf 'tail-follow-bootstrap-1\n'
+printf 'tail-follow-bootstrap-2\n'
+sleep 15
+printf 'tail-follow-finished\n'
+'''))
+followLogsJob.save()
+
 def exactJob = jenkins.createProject(FreeStyleProject.class, "cli-exact")
 exactJob.addProperty(new ParametersDefinitionProperty([
   new StringParameterDefinition("MESSAGE", "exact-default", "Immutable build selector fixture")
@@ -232,11 +241,48 @@ node {
     echo 'pipeline-failure-prepare'
   }
   stage('Deploy') {
+    echo 'pipeline-deploy-context'
     error 'pipeline-deploy-failure'
   }
 }
 ''', true))
 failingPipelineJob.save()
+
+def logInspectionPipeline = jenkins.createProject(WorkflowJob.class, "cli-pipeline-logs")
+logInspectionPipeline.setDefinition(new CpsFlowDefinition('''
+timestamps {
+  node {
+    stage('Prepare') {
+      echo 'pipeline-logs-prepare'
+    }
+    stage('Test') {
+      echo 'pipeline-logs-test-first'
+    }
+    stage('Parallel') {
+      parallel(
+        linux: { echo 'pipeline-logs-linux' },
+        windows: { echo 'pipeline-logs-windows' }
+      )
+    }
+    stage('Test') {
+      echo 'pipeline-logs-test-second'
+    }
+  }
+}
+''', true))
+logInspectionPipeline.save()
+
+def timestampedLogJob = jenkins.createProject(WorkflowJob.class, "cli-timestamped-logs")
+timestampedLogJob.setDefinition(new CpsFlowDefinition('''
+timestamps {
+  node {
+    echo 'timestamped-log-old'
+    sleep time: 2, unit: 'SECONDS'
+    echo 'timestamped-log-new'
+  }
+}
+''', true))
+timestampedLogJob.save()
 
 def offlineAgent = new DumbSlave(
   "offline-agent",

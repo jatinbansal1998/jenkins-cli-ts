@@ -196,7 +196,6 @@ async function runBuildHistoryAction(options: {
         client: options.client,
         env: options.env,
         buildUrl: options.build.buildUrl,
-        follow: true,
         nonInteractive: false,
       });
       continue;
@@ -326,7 +325,6 @@ async function runHistoryRebuildPostFlow(options: {
               !activeBuild.buildUrl && !activeBuild.queueUrl
                 ? options.jobUrl
                 : undefined,
-            follow: true,
             nonInteractive: false,
           });
           return "action_ok";

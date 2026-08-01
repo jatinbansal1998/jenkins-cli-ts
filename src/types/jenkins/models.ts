@@ -36,6 +36,7 @@ export type JenkinsPipelineStage = {
   startTimeMillis?: number;
   durationMillis?: number;
   pauseDurationMillis?: number;
+  parentNodes?: Array<string | number>;
 };
 
 export type JenkinsBuildFailure = {

@@ -284,7 +284,6 @@ async function runLogsAction(context: ListActionContext): Promise<"action_ok"> {
     client: context.client,
     env: context.env,
     jobUrl: context.selectedJob.url,
-    follow: true,
     nonInteractive: false,
   });
   return "action_ok";

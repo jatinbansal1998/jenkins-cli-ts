@@ -168,8 +168,14 @@ export function registerBuildCommands(
               build: typeof argv.build === "number" ? argv.build : undefined,
               buildUrl: optionalString(argv.buildUrl),
               queueUrl: optionalString(argv.queueUrl),
-              follow: Boolean(argv.follow),
+              follow:
+                typeof argv.follow === "boolean" ? argv.follow : undefined,
               poll: optionalString(argv.poll),
+              tail: typeof argv.tail === "number" ? argv.tail : undefined,
+              since: optionalString(argv.since),
+              stage: optionalString(argv.stage),
+              stageId: optionalString(argv.stageId),
+              failed: Boolean(argv.failed),
               nonInteractive: Boolean(argv.nonInteractive || argv.jsonl),
               jsonl: Boolean(argv.jsonl),
             });
@@ -264,13 +270,35 @@ function configureLogsOptions(yargsInstance: Argv): Argv {
   )
     .option("follow", {
       type: "boolean",
-      default: true,
       describe: "Keep streaming logs until build completes",
     })
+    .default("follow", undefined, "true")
     .option("poll", {
       type: "string",
       describe: `Polling interval when following (e.g. ${DEFAULT_LOG_POLL_MS / 1000}s)`,
-    });
+    })
+    .option("tail", {
+      type: "number",
+      describe: "Show only the last N existing lines",
+    })
+    .option("since", {
+      type: "string",
+      describe: "Show logs after a duration or ISO-8601 timestamp",
+    })
+    .option("stage", {
+      type: "string",
+      describe: "Show logs for a uniquely named Pipeline stage",
+    })
+    .option("stage-id", {
+      type: "string",
+      describe: "Show logs for a Pipeline stage or node id",
+    })
+    .option("failed", {
+      type: "boolean",
+      describe: "Show the failed Pipeline stage and relevant error log",
+    })
+    .conflicts("stage", ["stage-id", "failed"])
+    .conflicts("stage-id", ["failed"]);
 }
 
 function configureArtifactsOptions(yargsInstance: Argv): Argv {

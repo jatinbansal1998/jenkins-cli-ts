@@ -163,6 +163,7 @@ export type JsonLogEvent =
       buildUrl: string;
       buildNumber?: number;
       offset: number;
+      stage?: JsonLogIdentity;
     }
   | {
       type: "chunk";
@@ -170,17 +171,27 @@ export type JsonLogEvent =
       nextOffset: number;
       text: string;
       more: boolean;
+      stage?: JsonLogIdentity;
     }
   | {
       type: "complete";
       buildUrl: string;
       offset: number;
       result?: string | null;
+      stage?: JsonLogIdentity;
     }
   | {
       type: "error";
       error: JsonErrorBody;
     };
+
+export type JsonLogIdentity = {
+  stageId: string;
+  stageName: string;
+  nodeId?: string;
+  nodeName?: string;
+  path: string;
+};
 
 /** Emit a success envelope: `{ ok: true, command, data }`. */
 export function emitJsonSuccess<T>(

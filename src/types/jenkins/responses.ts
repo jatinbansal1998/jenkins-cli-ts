@@ -171,9 +171,12 @@ export type JenkinsPipelineNodeErrorResponse = {
 };
 
 export type JenkinsPipelineNodeLogResponse = {
+  nodeId?: string;
+  nodeStatus?: string;
   text?: string;
   length?: number;
   hasMore?: boolean;
+  consoleUrl?: string;
 };
 
 export type JenkinsPipelineNodeResponse = {
@@ -181,6 +184,10 @@ export type JenkinsPipelineNodeResponse = {
   name?: string;
   status?: string;
   error?: JenkinsPipelineNodeErrorResponse;
+  startTimeMillis?: number;
+  durationMillis?: number;
+  pauseDurationMillis?: number;
+  parentNodes?: Array<string | number>;
   _links?: {
     self?: JenkinsPipelineLinkResponse;
     log?: JenkinsPipelineLinkResponse;
@@ -196,6 +203,7 @@ export type JenkinsPipelineStageResponse = {
   startTimeMillis?: number;
   durationMillis?: number;
   pauseDurationMillis?: number;
+  parentNodes?: Array<string | number>;
   _links?: {
     self?: JenkinsPipelineLinkResponse;
     log?: JenkinsPipelineLinkResponse;
