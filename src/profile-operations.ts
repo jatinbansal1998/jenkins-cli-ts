@@ -60,6 +60,12 @@ export type SelectProfileResult = {
   changed: boolean;
 };
 
+export type SetProfileProtectionResult = {
+  profileName: string;
+  protected: boolean;
+  changed: boolean;
+};
+
 export type DeleteProfilesResult = {
   deleted: string[];
   nextDefault?: string;
@@ -143,6 +149,46 @@ export async function selectProfile(
     deps,
   );
   return { profileName, changed: true };
+}
+
+/** Changes only a profile's read-only flag. Credentials and token storage stay untouched. */
+export async function setProfileProtection(
+  name: string,
+  isProtected: boolean,
+  deps: ProfileOperationsDeps = {},
+): Promise<SetProfileProtectionResult> {
+  const profileName = normalizeProfileName(name);
+  if (!profileName) {
+    throw new CliError("Profile name is required.");
+  }
+
+  const config = (await readCurrentConfig(deps))?.config;
+  const profiles = config?.profiles ?? {};
+  const profile = profiles[profileName];
+  if (!config || !profile) {
+    throw unknownProfileError(profileName, Object.keys(profiles));
+  }
+
+  const changed = (profile.protected === true) !== isProtected;
+  if (!changed) {
+    return { profileName, protected: isProtected, changed: false };
+  }
+
+  const nextProfile = { ...profile };
+  if (isProtected) {
+    nextProfile.protected = true;
+  } else {
+    delete nextProfile.protected;
+  }
+  await writeUpdatedConfig(
+    buildConfigPayload(
+      config,
+      { ...profiles, [profileName]: nextProfile },
+      config.defaultProfile,
+    ),
+    deps,
+  );
+  return { profileName, protected: isProtected, changed: true };
 }
 
 /**

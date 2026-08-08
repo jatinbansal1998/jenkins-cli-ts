@@ -94,7 +94,7 @@ describe("list command registration", () => {
     expect(help.exitCode).toBe(0);
     expect(help.output).toContain("--active-only");
     expect(help.output).toContain(
-      "Show only enabled jobs with at least one build",
+      "Show built jobs not marked disabled by Jenkins",
     );
   });
 });

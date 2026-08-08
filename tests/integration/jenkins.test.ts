@@ -1067,6 +1067,11 @@ describe.skipIf(!integrationEnabled)(
                 prompt: "Branch parameter name (default: BRANCH)",
                 input: "\r",
               },
+              {
+                prompt:
+                  "Make this profile read-only? (blocks builds, cancels, reruns)",
+                input: "\r",
+              },
             ],
             withoutCredentialEnv,
           );
@@ -1807,8 +1812,9 @@ describe.skipIf(!integrationEnabled)(
               // Build is the first action: Enter triggers the blocked mutation.
               { prompt: "Action for cli-no-params", input: "\r" },
               // The same menu is awaited again, proving the flow stayed on the
-              // selected job; Up wraps to Exit so the session ends cleanly.
-              { prompt: "Action for cli-no-params", input: "\u001b[A\r" },
+              // selected job. Escape returns to search; another exits cleanly.
+              { prompt: "Action for cli-no-params", input: "\u001b" },
+              { prompt: "Job name or description", input: "\u001b" },
             ],
           );
 

@@ -230,8 +230,18 @@ describe("list --json", () => {
     expect(sink.output()).not.toContain("[disabled]");
   });
 
-  test("--active-only keeps only enabled jobs with a known build", async () => {
-    trackRestore(spyOn(listDeps, "loadJobs")).mockResolvedValue(activityJobs);
+  test("--active-only keeps built jobs not marked disabled", async () => {
+    trackRestore(spyOn(listDeps, "loadJobs")).mockResolvedValue([
+      ...activityJobs,
+      {
+        name: "unknown-disabled-state",
+        url: "https://jenkins.example.com/job/unknown-disabled-state",
+        lastBuild: {
+          number: 1,
+          url: "https://jenkins.example.com/job/unknown-disabled-state/1/",
+        },
+      },
+    ]);
     const sink = capture();
 
     await runList({
@@ -246,7 +256,11 @@ describe("list --json", () => {
     const parsed = JSON.parse(sink.output()) as {
       data: Array<{ name: string }>;
     };
-    expect(parsed.data.map((job) => job.name)).toEqual(["partial", "built"]);
+    expect(parsed.data.map((job) => job.name)).toEqual([
+      "partial",
+      "built",
+      "unknown-disabled-state",
+    ]);
   });
 
   test("emits a JSON error envelope and non-zero exit code on failure", async () => {

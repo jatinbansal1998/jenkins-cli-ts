@@ -25,6 +25,7 @@ import {
   setToken,
   type SecureStoreDeps,
 } from "../secure-store";
+import { setProfileProtection } from "../profile-operations";
 
 export type LoginOptions = {
   url?: string;
@@ -69,46 +70,48 @@ export async function runLogin(
   const existingProfile = existingConfig?.profiles[profileName];
   const profileAlreadyExists = Boolean(existingProfile);
 
-  // An explicit --protected/--no-protected on a profile that already exists is
-  // a targeted toggle, not a re-login: reuse the stored values instead of
-  // replaying the credential prompts.
-  const effectiveOptions: LoginOptions =
-    typeof options.protected === "boolean" && profileAlreadyExists
-      ? { ...options, nonInteractive: true }
-      : options;
+  // Existing-profile protection changes are config-only. Do not enter the
+  // credential persistence path or touch the OS secure store.
+  if (typeof options.protected === "boolean" && existingProfile) {
+    const result = await setProfileProtection(profileName, options.protected);
+    const message = result.changed
+      ? result.protected
+        ? `Profile "${profileName}" is now read-only.`
+        : `Profile "${profileName}" is no longer read-only.`
+      : `Profile "${profileName}" is already ${result.protected ? "read-only" : "writable"}.`;
+    printOk(message);
+    return;
+  }
 
-  const url = await resolveUrl(effectiveOptions, existingProfile?.jenkinsUrl);
+  const url = await resolveUrl(options, existingProfile?.jenkinsUrl);
   // Validate the URL right after entry so an invalid value is reported before
   // the remaining prompts.
   const normalizedUrl = normalizeUrl(url);
   await offerToOpenHostInBrowser(
-    { url: normalizedUrl, nonInteractive: effectiveOptions.nonInteractive },
+    { url: normalizedUrl, nonInteractive: options.nonInteractive },
     deps,
   );
-  const user = await resolveUser(
-    effectiveOptions,
-    existingProfile?.jenkinsUser,
-  );
+  const user = await resolveUser(options, existingProfile?.jenkinsUser);
   await offerToOpenUserSecurityPageInBrowser(
     {
       url: normalizedUrl,
       user,
-      nonInteractive: effectiveOptions.nonInteractive,
+      nonInteractive: options.nonInteractive,
     },
     deps,
   );
   const apiToken = await resolveApiToken(
-    effectiveOptions,
+    options,
     existingProfile?.jenkinsApiToken,
   );
   const branchParam = await resolveBranchParam(
-    effectiveOptions,
+    options,
     profileName,
     existingProfile?.branchParam,
     existingConfig,
   );
   const makeDefault = await resolveDefaultDecision({
-    options: effectiveOptions,
+    options,
     profileName,
     profileAlreadyExists,
     existingDefault: existingConfig?.defaultProfile,
@@ -116,14 +119,14 @@ export async function runLogin(
   });
   const wasProtected = existingProfile?.protected === true;
   const isProtected = await resolveProtectedDecision(
-    effectiveOptions,
+    options,
     wasProtected,
     deps,
   );
 
   const plan = await planTokenPersistence(
     {
-      options: effectiveOptions,
+      options,
       profileName,
       normalizedUrl,
       apiToken,

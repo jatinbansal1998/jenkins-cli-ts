@@ -61,7 +61,7 @@ export function configureListOptions(yargsInstance: Argv): Argv {
     .option("active-only", {
       type: "boolean",
       default: false,
-      describe: "Show only enabled jobs with at least one build",
+      describe: "Show built jobs not marked disabled by Jenkins",
     })
     .option("json", {
       type: "boolean",

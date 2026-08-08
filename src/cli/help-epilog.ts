@@ -58,7 +58,7 @@ Command-specific options:
   list:
     --search <text>  Search jobs by name or description
     --refresh        Refresh the job cache from Jenkins [default: false]
-    --active-only    Show only enabled jobs with at least one build
+    --active-only    Show built jobs not marked disabled by Jenkins
     --json           Output a single JSON document (implies non-interactive)
 
   params:

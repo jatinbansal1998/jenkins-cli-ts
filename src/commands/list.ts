@@ -117,9 +117,8 @@ async function runListJson(options: ListOptions): Promise<void> {
 }
 
 /**
- * A job counts as active only when Jenkins proved it is enabled and has at
- * least one build. Jobs cached before activity metadata existed are unknown,
- * not active, so they are excluded.
+ * A job counts as active when it has at least one build and Jenkins did not
+ * mark it disabled. An unknown disabled state is not assumed to mean disabled.
  */
 function filterActiveJobs(
   jobs: JenkinsJob[],

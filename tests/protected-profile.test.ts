@@ -351,16 +351,15 @@ describe("protected profile CLI output", () => {
     // No --non-interactive: an explicit --protected/--no-protected on an
     // existing profile must not replay the credential prompts.
     const login = (extraArgs: string[]): { exitCode: number; output: string } =>
-      spawnCli(home, [
-        "auth",
-        "login",
-        "--profile",
-        "release",
-        "--no-keychain",
-        ...extraArgs,
-      ]);
-    const storedProfile = (): { protected?: boolean; jenkinsUser?: string } =>
-      JSON.parse(readFileSync(configPath, "utf8")).profiles.release;
+      spawnCli(home, ["auth", "login", "--profile", "release", ...extraArgs]);
+    const storedProfile = (): {
+      protected?: boolean;
+      jenkinsUrl: string;
+      jenkinsUser: string;
+      jenkinsApiToken: string;
+      secureStorageOptOut?: boolean;
+      tokenStorage?: string;
+    } => JSON.parse(readFileSync(configPath, "utf8")).profiles.release;
 
     try {
       const created = login([
@@ -371,6 +370,7 @@ describe("protected profile CLI output", () => {
         "ci-bot",
         "--token",
         "test-token",
+        "--no-keychain",
         "--protected",
       ]);
       expect(created.exitCode, created.output).toBe(0);
@@ -385,11 +385,13 @@ describe("protected profile CLI output", () => {
 
       // Re-login without credentials keeps them, preserves the setting, and
       // stays quiet because nothing changed.
-      const unchanged = login(["--non-interactive"]);
+      const unchanged = login(["--non-interactive", "--no-keychain"]);
       expect(unchanged.exitCode).toBe(0);
       expect(unchanged.output).not.toContain("read-only");
       expect(storedProfile().protected).toBeTrue();
       expect(storedProfile().jenkinsUser).toBe("ci-bot");
+      const { protected: _protected, ...credentialsBeforeToggle } =
+        storedProfile();
 
       const cleared = login(["--no-protected"]);
       expect(cleared.exitCode, cleared.output).toBe(0);
@@ -397,13 +399,16 @@ describe("protected profile CLI output", () => {
         'Profile "release" is no longer read-only.',
       );
       expect(storedProfile().protected).toBeUndefined();
+      expect(storedProfile()).toEqual(credentialsBeforeToggle);
 
-      const reset = login(["--protected"]);
+      const reset = login(["--protected", "--non-interactive"]);
       expect(reset.exitCode, reset.output).toBe(0);
       expect(reset.output).toContain('Profile "release" is now read-only.');
       expect(storedProfile().protected).toBeTrue();
-      // The toggle never touched the stored credentials.
-      expect(storedProfile().jenkinsUser).toBe("ci-bot");
+      expect(storedProfile()).toEqual({
+        ...credentialsBeforeToggle,
+        protected: true,
+      });
     } finally {
       rmSync(home, { recursive: true, force: true });
     }

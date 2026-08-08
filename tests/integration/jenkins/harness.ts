@@ -350,7 +350,13 @@ for {set index 0} {$index < $env(JENKINS_CLI_EXPECT_STEP_COUNT)} {incr index} {
   }
   send -- $env($inputKey)
 }
-expect eof
+expect {
+  eof {}
+  timeout {
+    puts stderr "Timed out waiting for the interactive CLI to exit."
+    exit 99
+  }
+}
 set status [wait]
 exit [lindex $status 3]
 `.trim();

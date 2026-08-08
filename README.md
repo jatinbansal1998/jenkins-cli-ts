@@ -299,8 +299,9 @@ jenkins-cli auth login --profile release --protected     # set
 jenkins-cli auth login --profile release --no-protected  # clear
 ```
 
-On a profile that already exists this is a targeted toggle: no credential
-prompts, and the stored URL, user, and token are left untouched.
+On a profile that already exists this is a config-only toggle, including with
+`--non-interactive`: it does not prompt for, resolve, migrate, or rewrite the
+stored URL, user, token, or token-storage preference.
 
 A normal `auth login` (no `--protected`/`--no-protected`) asks "Make this
 profile read-only? (blocks builds, cancels, reruns)" and defaults to **no**.
@@ -760,7 +761,7 @@ Search with natural language:
 jenkins-cli list --search "api prod deploy"
 ```
 
-Show only enabled jobs with at least one build:
+Show jobs with at least one build unless Jenkins marks them disabled:
 
 ```bash
 jenkins-cli list --active-only

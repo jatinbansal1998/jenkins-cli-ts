@@ -214,7 +214,7 @@ describe("runList", () => {
     ]);
   });
 
-  test("non-interactive --active-only keeps only enabled jobs with builds", async () => {
+  test("non-interactive --active-only keeps built jobs not marked disabled", async () => {
     loadJobsMock.mockImplementationOnce(async () => activityJobs);
     const logSpy = trackRestore(spyOn(console, "log"));
 
@@ -229,6 +229,31 @@ describe("runList", () => {
     expect(logSpy.mock.calls.map((call) => call[0])).toEqual([
       "active  https://jenkins.example.com/job/active",
     ]);
+  });
+
+  test("--active-only keeps a built job with unknown disabled state", async () => {
+    loadJobsMock.mockImplementationOnce(async () => [
+      {
+        name: "unknown-state",
+        url: "https://jenkins.example.com/job/unknown-state",
+        lastBuild: {
+          number: 1,
+          url: "https://jenkins.example.com/job/unknown-state/1/",
+        },
+      },
+    ]);
+    const logSpy = trackRestore(spyOn(console, "log"));
+
+    await runList({
+      client: {} as JenkinsClient,
+      env: {} as EnvConfig,
+      activeOnly: true,
+      nonInteractive: true,
+    });
+
+    expect(logSpy).toHaveBeenCalledWith(
+      "unknown-state  https://jenkins.example.com/job/unknown-state",
+    );
   });
 
   test("--active-only filters jobs before interactive selection and search", async () => {

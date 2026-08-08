@@ -8,6 +8,7 @@ import {
   listProfiles,
   renameProfile,
   selectProfile,
+  setProfileProtection,
   type ProfileOperationsDeps,
 } from "../src/profile-operations";
 
@@ -161,6 +162,57 @@ describe("selectProfile", () => {
     expect(written?.analyticsDisabled).toBe(true);
     expect(Object.keys(written?.profiles ?? {})).toEqual(["work", "home"]);
     expect(written?.profiles.home?.protected).toBeTrue();
+  });
+});
+
+describe("setProfileProtection", () => {
+  test("sets and clears only the protection flag", async () => {
+    const harness = makeHarness(
+      twoProfileConfig(),
+      {},
+      {
+        getToken: async () => {
+          throw new Error("secure store must not be read");
+        },
+        setToken: async () => {
+          throw new Error("secure store must not be written");
+        },
+        deleteToken: async () => {
+          throw new Error("secure store must not be changed");
+        },
+      },
+    );
+    const originalWork = structuredClone(harness.config()!.profiles.work!);
+
+    expect(await setProfileProtection("work", true, harness.deps)).toEqual({
+      profileName: "work",
+      protected: true,
+      changed: true,
+    });
+    expect(harness.config()?.profiles.work).toEqual({
+      ...originalWork,
+      protected: true,
+    });
+
+    expect(await setProfileProtection("work", false, harness.deps)).toEqual({
+      profileName: "work",
+      protected: false,
+      changed: true,
+    });
+    expect(harness.config()?.profiles.work).toEqual(originalWork);
+    expect(harness.config()?.debug).toBeTrue();
+    expect(harness.config()?.analyticsDisabled).toBeTrue();
+  });
+
+  test("does not rewrite an unchanged profile", async () => {
+    const harness = makeHarness(twoProfileConfig());
+
+    expect(await setProfileProtection("home", true, harness.deps)).toEqual({
+      profileName: "home",
+      protected: true,
+      changed: false,
+    });
+    expect(harness.writes).toHaveLength(0);
   });
 });
 
