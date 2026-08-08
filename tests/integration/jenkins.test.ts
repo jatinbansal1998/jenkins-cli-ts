@@ -1046,30 +1046,29 @@ describe.skipIf(!integrationEnabled)(
             ["auth", "login", "--no-banner"],
             [
               {
-                prompt: "Profile name",
+                text: "Profile name",
                 input: "\r",
               },
-              { prompt: "Jenkins URL", input: `${jenkinsUrl}\r` },
+              { text: "Jenkins URL", input: `${jenkinsUrl}\r` },
               {
-                prompt: `Open ${jenkinsUrl} in your browser?`,
+                text: `Open ${jenkinsUrl} in your browser?`,
                 input: "\r",
               },
               {
-                prompt: "Jenkins username",
+                text: "Jenkins username",
                 input: "integration-test\r",
               },
               {
-                prompt: `Open ${jenkinsUrl}/user/integration-test/security/ in your browser?`,
+                text: `Open ${jenkinsUrl}/user/integration-test/security/ in your browser?`,
                 input: "\r",
               },
-              { prompt: "Jenkins API token", input: `${token}\r` },
+              { text: "Jenkins API token", input: `${token}\r` },
               {
-                prompt: "Branch parameter name (default: BRANCH)",
+                text: "Branch parameter name (default: BRANCH)",
                 input: "\r",
               },
               {
-                prompt:
-                  "Make this profile read-only? (blocks builds, cancels, reruns)",
+                text: "Make this profile read-only? (blocks builds, cancels, reruns)",
                 input: "\r",
               },
             ],
@@ -1806,15 +1805,19 @@ describe.skipIf(!integrationEnabled)(
             ["list", "--no-banner"],
             [
               {
-                prompt: "Job name or description",
+                text: "Job name or description",
                 input: "cli-no-params\r",
               },
               // Build is the first action: Enter triggers the blocked mutation.
-              { prompt: "Action for cli-no-params", input: "\r" },
-              // The same menu is awaited again, proving the flow stayed on the
-              // selected job. Escape returns to search; another exits cleanly.
-              { prompt: "Action for cli-no-params", input: "\u001b" },
-              { prompt: "Job name or description", input: "\u001b" },
+              { text: "Action for cli-no-params", input: "\r" },
+              // Synchronize after the completed action prompt, then await the
+              // repeated menu text to prove the flow stayed on the selected job.
+              {
+                text: 'ERROR: Profile "release" is read-only.',
+                input: "",
+              },
+              { text: "Action for cli-no-params", input: "\u001b" },
+              { text: "Job name or description", input: "\u001b" },
             ],
           );
 

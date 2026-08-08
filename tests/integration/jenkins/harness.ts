@@ -44,7 +44,7 @@ export async function withCliHome(
 }
 
 export type InteractiveStep = {
-  prompt: string;
+  text: string;
   input: string;
 };
 
@@ -89,13 +89,13 @@ export async function runInteractiveCli(
   });
 
   if (!useMacOsExpect) {
-    // Only scan output produced after the previous step so a prompt the flow
-    // re-renders (same message shown again) is awaited, not matched instantly.
+    // Only scan output produced after the previous step. Callers synchronize
+    // repeated text on an intervening semantic event, such as an error.
     let scannedUpTo = 0;
     for (const step of steps) {
-      scannedUpTo = await waitForInteractivePrompt(
+      scannedUpTo = await waitForInteractiveText(
         () => stripTerminalCodes(stdout + stderr),
-        step.prompt,
+        step.text,
         subprocess,
         scannedUpTo,
       );
@@ -272,41 +272,35 @@ async function collectStream(
 }
 
 /**
- * Waits for the prompt to appear after `scannedUpTo` and returns the offset to
+ * Waits for text to appear after `scannedUpTo` and returns the offset to
  * resume scanning from.
  */
-async function waitForInteractivePrompt(
+async function waitForInteractiveText(
   output: () => string,
-  prompt: string,
+  text: string,
   subprocess: ReturnType<typeof Bun.spawn>,
   scannedUpTo: number,
 ): Promise<number> {
   const deadline = Date.now() + 20_000;
   while (Date.now() < deadline) {
     const pending = output().slice(scannedUpTo);
-    const offset = promptLineEnd(pending, prompt);
+    const offset = textEnd(pending, text);
     if (offset !== null) {
       return scannedUpTo + offset;
     }
     if (subprocess.exitCode !== null) {
       throw new Error(
-        `Interactive CLI exited before prompt "${prompt}".\n${output()}`,
+        `Interactive CLI exited before text "${text}".\n${output()}`,
       );
     }
     await Bun.sleep(20);
   }
-  throw new Error(`Timed out waiting for prompt "${prompt}".\n${output()}`);
+  throw new Error(`Timed out waiting for text "${text}".\n${output()}`);
 }
 
-function promptLineEnd(pending: string, prompt: string): number | null {
-  let lineStart = 0;
-  for (const line of pending.split("\n")) {
-    if (line.startsWith(`◆  ${prompt}`) || line.startsWith(`*  ${prompt}`)) {
-      return lineStart + line.length;
-    }
-    lineStart += line.length + 1;
-  }
-  return null;
+function textEnd(pending: string, text: string): number | null {
+  const offset = pending.indexOf(text);
+  return offset === -1 ? null : offset + text.length;
 }
 
 function stripTerminalCodes(value: string): string {
@@ -328,24 +322,23 @@ export function macOsExpectScript(
   env.JENKINS_CLI_EXPECT_COMMAND = interactiveCommand;
   env.JENKINS_CLI_EXPECT_STEP_COUNT = String(steps.length);
   for (const [index, step] of steps.entries()) {
-    env[`JENKINS_CLI_EXPECT_PROMPT_${index}`] = step.prompt;
+    env[`JENKINS_CLI_EXPECT_TEXT_${index}`] = step.text;
     env[`JENKINS_CLI_EXPECT_INPUT_${index}`] = step.input;
   }
   return `
 set timeout 20
 spawn -noecho /bin/sh -c $env(JENKINS_CLI_EXPECT_COMMAND)
 for {set index 0} {$index < $env(JENKINS_CLI_EXPECT_STEP_COUNT)} {incr index} {
-  set promptKey [format "JENKINS_CLI_EXPECT_PROMPT_%d" $index]
+  set textKey [format "JENKINS_CLI_EXPECT_TEXT_%d" $index]
   set inputKey [format "JENKINS_CLI_EXPECT_INPUT_%d" $index]
   expect {
-    -exact "◆  $env($promptKey)" {}
-    -exact "*  $env($promptKey)" {}
+    -exact "$env($textKey)" {}
     eof {
-      puts stderr "Interactive CLI exited before prompt \\"$env($promptKey)\\"."
+      puts stderr "Interactive CLI exited before text \\"$env($textKey)\\"."
       exit 97
     }
     timeout {
-      puts stderr "Timed out waiting for prompt \\"$env($promptKey)\\"."
+      puts stderr "Timed out waiting for text \\"$env($textKey)\\"."
       exit 98
     }
   }
