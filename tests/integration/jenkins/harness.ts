@@ -30,6 +30,8 @@ const CSI_TERMINAL_SEQUENCE = new RegExp(
   String.raw`\u001B\[[0-?]*[ -/]*[@-~]`,
   "g",
 );
+const EXPECT_STEP_TIMEOUT_MS = 20_000;
+const EXPECT_WRAPPER_BUFFER_MS = 5_000;
 
 export async function withCliHome(
   action: (home: string) => Promise<void>,
@@ -115,8 +117,10 @@ export async function observeInteractiveCli(
       }
     }
     if (useMacOsExpect) {
-      const exitCode = await waitForExpectExit(subprocess, () =>
-        stripTerminalCodes(transcript),
+      const exitCode = await waitForExpectExit(
+        subprocess,
+        () => stripTerminalCodes(transcript),
+        steps.length * EXPECT_STEP_TIMEOUT_MS + EXPECT_WRAPPER_BUFFER_MS,
       );
       if (exitCode !== 0) {
         throw new Error(
@@ -345,8 +349,9 @@ export function completedLineEnd(pending: string, text: string): number | null {
 async function waitForExpectExit(
   subprocess: ReturnType<typeof Bun.spawn>,
   output: () => string,
+  timeoutMs: number,
 ): Promise<number> {
-  const deadline = Date.now() + 25_000;
+  const deadline = Date.now() + timeoutMs;
   while (subprocess.exitCode === null && Date.now() < deadline) {
     await Bun.sleep(20);
   }
@@ -381,7 +386,7 @@ export function macOsExpectScript(
     env[`JENKINS_CLI_EXPECT_INPUT_${index}`] = step.input;
   }
   return `
-set timeout 20
+set timeout ${EXPECT_STEP_TIMEOUT_MS / 1_000}
 spawn -noecho /bin/sh -c $env(JENKINS_CLI_EXPECT_COMMAND)
 for {set index 0} {$index < $env(JENKINS_CLI_EXPECT_STEP_COUNT)} {incr index} {
   set textKey [format "JENKINS_CLI_EXPECT_TEXT_%d" $index]

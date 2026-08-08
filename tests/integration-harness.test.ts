@@ -51,7 +51,7 @@ describe("macOS interactive integration harness", () => {
       [
         { text: "Action for cli-no-params", input: "\r" },
         { text: 'ERROR: Profile "release" is read-only.', input: "" },
-        { text: "Action for cli-no-params", input: "\u001b" },
+        { text: "Action for cli-no-params", input: "" },
       ],
       env,
     );
@@ -69,6 +69,7 @@ describe("macOS interactive integration harness", () => {
       'ERROR: Profile "release" is read-only.',
     );
     expect(env.JENKINS_CLI_EXPECT_TEXT_2).toBe("Action for cli-no-params");
+    expect(env.JENKINS_CLI_EXPECT_INPUT_2).toBe("");
     expect(env.JENKINS_CLI_EXPECT_STEP_COUNT).toBe("3");
   });
 });
