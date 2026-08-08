@@ -28,6 +28,7 @@ OS-keychain token storage and multi-profile support.
   - [Add Credentials](#add-credentials)
   - [Secure Token Storage](#secure-token-storage)
   - [Manage Profiles](#manage-profiles)
+  - [Read-Only Profiles](#read-only-profiles)
   - [Credential Selection Order](#credential-selection-order)
   - [Environment Variable Fallback](#environment-variable-fallback)
   - [Analytics](#analytics)
@@ -127,6 +128,7 @@ For standalone installs, use the built-in updater (see [Update](#update)).
 | Logs, cancel, and rerun     | Yes       | Inspect recent logs and manage existing builds                      |
 | Artifacts                   | Yes       | List build artifacts and stream them to disk, preserving paths      |
 | One-off credentials         | Yes       | Override profile config with `--url`, `--user`, and `--token`       |
+| Read-only profiles          | Yes       | Block builds, cancels, and reruns unless `--confirm-protected`      |
 | Script-friendly output      | Yes       | Parseable `OK:` and `HINT:` output for automation                   |
 
 ## Quick Start
@@ -285,6 +287,94 @@ operations:
 jenkins-cli profile list
 jenkins-cli profile use prod
 jenkins-cli profile delete work
+```
+
+### Read-Only Profiles
+
+Mark a profile read-only so builds, cancels, and reruns against that controller
+need an explicit acknowledgement first:
+
+```bash
+jenkins-cli auth login --profile release --protected     # set
+jenkins-cli auth login --profile release --no-protected  # clear
+```
+
+On a profile that already exists this is a targeted toggle: no credential
+prompts, and the stored URL, user, and token are left untouched.
+
+A normal `auth login` (no `--protected`/`--no-protected`) asks "Make this
+profile read-only? (blocks builds, cancels, reruns)" and defaults to **no**.
+Already read-only profiles default to yes, so a re-login never silently drops
+protection.
+
+The flag is stored as `protected` on the profile, and can also be edited
+directly:
+
+```json
+{
+  "version": 2,
+  "defaultProfile": "release",
+  "profiles": {
+    "release": {
+      "jenkinsUrl": "https://jenkins-release.example.com",
+      "jenkinsUser": "ci-bot",
+      "jenkinsApiToken": "@keychain",
+      "tokenStorage": "keychain",
+      "protected": true
+    }
+  }
+}
+```
+
+Only literal `true` makes the profile read-only; a missing or `false` value
+behaves exactly as before. Credential updates, renames, and keychain migration
+preserve the flag; only an explicit `--no-protected` clears it.
+
+Pass `--confirm-protected` on any command to allow writes for that run only. It
+is never persisted and never prompted for, so interactive and non-interactive
+callers share the same rule:
+
+```bash
+jenkins-cli build api --branch main --confirm-protected
+jenkins-cli --confirm-protected            # interactive session allowed to write
+```
+
+| Action                                                               | Read-only profile without `--confirm-protected` |
+| -------------------------------------------------------------------- | ----------------------------------------------- |
+| `build` / `deploy`                                                   | Blocked                                         |
+| `cancel` (queued item or running build, including the watch `c` key) | Blocked                                         |
+| `rerun`, rerun last build, rerun with the same inputs                | Blocked                                         |
+| The same actions in `list`, `build`, `status`, `history` menus       | Blocked                                         |
+| `list`, `params`, `status`, `wait`, `logs`, `history`                | Allowed                                         |
+| `queue`, `nodes`, `run`, `artifacts` (including download)            | Allowed                                         |
+| `auth` / profile management and browser navigation                   | Allowed                                         |
+
+One-off credentials do not bypass this: if `--url` resolves to the same
+controller as a read-only profile, the target stays read-only. Matching is by
+normalized controller URL only. Environment-variable credentials are not tied
+to a configured profile and remain unrestricted.
+
+Interactive sessions stay usable: a blocked action prints the error and returns
+to the same action menu, so you can pick a read action or restart with
+`--confirm-protected`.
+
+A blocked run exits non-zero:
+
+```text
+ERROR: Profile "release" is read-only.
+HINT: Re-run with --confirm-protected to allow builds, cancels, and reruns.
+```
+
+With `--json` it emits exactly one document:
+
+```json
+{
+  "ok": false,
+  "error": {
+    "message": "Profile \"release\" is read-only.",
+    "code": "PROFILE_PROTECTED"
+  }
+}
 ```
 
 ### Credential Selection Order

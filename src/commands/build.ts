@@ -22,6 +22,7 @@ import {
   printHint,
   printOk,
 } from "../cli";
+import { runMenuAction } from "./menu-action";
 import { CLI_FLAGS } from "../cli-constants";
 import {
   loadCachedBranchHistory,
@@ -31,7 +32,7 @@ import {
 } from "../branches.ts";
 import { recordRecentJob } from "../recent-jobs.ts";
 import { pickJob } from "../job-picker";
-import type { EnvConfig } from "../env";
+import { assertProtectedMutationAllowed, type EnvConfig } from "../env";
 import type { JenkinsClient } from "../jenkins/api-wrapper";
 import { areSameJobUrls, normalizeOptionalJobUrl } from "../job-url";
 import { getJobDisplayName, loadJobs, resolveJobMatch } from "../jobs";
@@ -177,6 +178,7 @@ export function setBuildDepsForTesting(overrides?: Partial<BuildDeps>): void {
 }
 
 export async function runBuild(options: BuildOptions): Promise<BuildRunResult> {
+  assertProtectedMutationAllowed(options.env);
   const deps = activeBuildDeps;
   if (options.json) {
     await runJsonCommand(
@@ -355,20 +357,22 @@ export async function runBuild(options: BuildOptions): Promise<BuildRunResult> {
       performAction: async (action): Promise<ActionEffectResult> => {
         if (action === "watch") {
           const finalStatus = await runTrackedBuildAction("wait", () =>
-            runMenuAction(async () =>
-              watchBuildStatus({
-                client: options.client,
-                env: options.env,
-                jobUrl: resolvedJobUrl,
-                jobLabel: displayJob,
-                buildUrl: activeBuild.buildUrl,
-                buildNumber: activeBuild.buildNumber,
-                queueUrl: activeBuild.queueUrl,
-              }),
+            runMenuAction(
+              async () =>
+                watchBuildStatus({
+                  client: options.client,
+                  env: options.env,
+                  jobUrl: resolvedJobUrl,
+                  jobLabel: displayJob,
+                  buildUrl: activeBuild.buildUrl,
+                  buildNumber: activeBuild.buildNumber,
+                  queueUrl: activeBuild.queueUrl,
+                }),
+              "action_error",
             ),
           );
-          if (!finalStatus) {
-            return "action_error";
+          if (typeof finalStatus === "string") {
+            return finalStatus;
           }
           if (finalStatus.cancelled) {
             return "watch_cancelled";
@@ -389,8 +393,8 @@ export async function runBuild(options: BuildOptions): Promise<BuildRunResult> {
         }
 
         if (action === "logs") {
-          const result = await runTrackedBuildAction("logs", () =>
-            runMenuAction(async () => {
+          return await runTrackedBuildAction("logs", () =>
+            runMenuAction(async (): Promise<ActionEffectResult> => {
               await deps.runLogs({
                 client: options.client,
                 env: options.env,
@@ -403,14 +407,13 @@ export async function runBuild(options: BuildOptions): Promise<BuildRunResult> {
                 nonInteractive: false,
               });
               return "action_ok";
-            }),
+            }, "action_error"),
           );
-          return (result ?? "action_error") as ActionEffectResult;
         }
 
         if (action === "history") {
-          const result = await runTrackedBuildAction("history", () =>
-            runMenuAction(async () => {
+          return await runTrackedBuildAction("history", () =>
+            runMenuAction(async (): Promise<ActionEffectResult> => {
               const historyResult = await deps.runHistory({
                 client: options.client,
                 env: options.env,
@@ -425,14 +428,13 @@ export async function runBuild(options: BuildOptions): Promise<BuildRunResult> {
                 };
               }
               return "action_ok";
-            }),
+            }, "action_error"),
           );
-          return (result ?? "action_error") as ActionEffectResult;
         }
 
         if (action === "cancel") {
-          const result = await runTrackedBuildAction("cancel", () =>
-            runMenuAction(async () => {
+          return await runTrackedBuildAction("cancel", () =>
+            runMenuAction(async (): Promise<ActionEffectResult> => {
               const cancelTarget = resolveCancelTarget(activeBuild);
               await deps.runCancel({
                 client: options.client,
@@ -446,9 +448,8 @@ export async function runBuild(options: BuildOptions): Promise<BuildRunResult> {
                 nonInteractive: false,
               });
               return "action_ok";
-            }),
+            }, "action_error"),
           );
-          return (result ?? "action_error") as ActionEffectResult;
         }
 
         if (action === "rerun") {
@@ -581,23 +582,6 @@ export async function runBuild(options: BuildOptions): Promise<BuildRunResult> {
     }
 
     return {};
-  }
-}
-
-async function runMenuAction<T>(
-  action: () => Promise<T>,
-): Promise<T | undefined> {
-  try {
-    return await action();
-  } catch (error) {
-    if (error instanceof CliError) {
-      printError(error.message);
-      for (const hint of error.hints) {
-        printHint(hint);
-      }
-      return undefined;
-    }
-    throw error;
   }
 }
 
@@ -1151,6 +1135,7 @@ async function watchBuildStatus(options: {
         try {
           const cancelResult = await requestCancellationForWatchTarget({
             client: options.client,
+            env: options.env,
             jobUrl: options.jobUrl,
             buildUrl,
             queueUrl,

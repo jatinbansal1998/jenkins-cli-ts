@@ -88,6 +88,7 @@ function createListHandler(
     token?: unknown;
     apiToken?: unknown;
     folderDepth?: unknown;
+    confirmProtected?: unknown;
   }): Promise<void> => {
     await runTrackedCommandWithContext(
       "list",

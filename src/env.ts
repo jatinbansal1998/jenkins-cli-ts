@@ -5,6 +5,7 @@
 import { CliError } from "./cli";
 import {
   CONFIG_FILE,
+  type JenkinsConfig,
   migrateLegacyConfigSyncIfNeeded,
   readConfigSync,
   resolveDefaultProfileName,
@@ -24,7 +25,11 @@ export type LoadEnvOptions = {
   url?: string;
   user?: string;
   apiToken?: string;
+  confirmProtected?: boolean;
 };
+
+/** Stable error code for a write blocked by a read-only profile. */
+export const PROFILE_PROTECTED_CODE = "PROFILE_PROTECTED";
 
 /** Jenkins connection configuration. */
 export type EnvConfig = {
@@ -46,15 +51,38 @@ export type EnvConfig = {
    * sentinel and the real token must be resolved via `resolveApiToken`.
    */
   tokenStorage?: TokenStorage;
+  /**
+   * Name of the configured protected profile governing this controller, when
+   * the effective target is read-only. Absent means writes are unrestricted.
+   */
+  protectedProfileName?: string;
+  /** `--confirm-protected` was passed for this invocation only. */
+  confirmProtected?: boolean;
 };
 
 export { normalizeUrl } from "./jenkins-url";
+
+/**
+ * Rejects Jenkins writes (builds, cancels, reruns) against a read-only profile
+ * unless the invocation acknowledged them with `--confirm-protected`.
+ */
+export function assertProtectedMutationAllowed(env: EnvConfig): void {
+  if (!env.protectedProfileName || env.confirmProtected === true) {
+    return;
+  }
+  throw new CliError(
+    `Profile "${env.protectedProfileName}" is read-only.`,
+    ["Re-run with --confirm-protected to allow builds, cancels, and reruns."],
+    PROFILE_PROTECTED_CODE,
+  );
+}
 
 export function loadEnv(options: LoadEnvOptions = {}): EnvConfig {
   const cliUrl = normalizeOptionalString(options.url);
   const cliUser = normalizeOptionalString(options.user);
   const cliToken = normalizeOptionalString(options.apiToken);
   const profileName = normalizeOptionalString(options.profile);
+  const confirmProtected = options.confirmProtected === true;
 
   const providedCliCredentialCount = [cliUrl, cliUser, cliToken].filter(
     Boolean,
@@ -77,13 +105,22 @@ export function loadEnv(options: LoadEnvOptions = {}): EnvConfig {
     cliUser &&
     cliToken
   ) {
+    // One-off credentials do not bypass protection: the effective controller
+    // URL decides, so `--url` against a protected controller stays protected.
+    const directUrl = normalizeUrl(cliUrl);
+    const protectedProfileName = findProtectedProfileNameForUrl(
+      config,
+      directUrl,
+    );
     return {
-      jenkinsUrl: normalizeUrl(cliUrl),
+      jenkinsUrl: directUrl,
       jenkinsUser: cliUser,
       jenkinsApiToken: cliToken,
       branchParamDefault: resolveBranchParamDefault(),
       useCrumb: parseUseCrumbValue(process.env[ENV_KEYS.JENKINS_USE_CRUMB]),
       folderDepth: DEFAULT_FOLDER_DEPTH,
+      ...(protectedProfileName ? { protectedProfileName } : {}),
+      confirmProtected,
     };
   }
 
@@ -106,6 +143,10 @@ export function loadEnv(options: LoadEnvOptions = {}): EnvConfig {
       ...(activeProfile.tokenStorage
         ? { tokenStorage: activeProfile.tokenStorage }
         : {}),
+      ...(activeProfile.protected === true && activeProfileName
+        ? { protectedProfileName: activeProfileName }
+        : {}),
+      confirmProtected,
     };
   }
 
@@ -133,6 +174,8 @@ export function loadEnv(options: LoadEnvOptions = {}): EnvConfig {
     ]);
   }
 
+  // Environment-only credentials are not associated with a configured profile
+  // and stay unrestricted.
   return {
     jenkinsUrl: normalizeUrl(rawUrl),
     jenkinsUser: rawUser.trim(),
@@ -140,6 +183,7 @@ export function loadEnv(options: LoadEnvOptions = {}): EnvConfig {
     branchParamDefault: resolveBranchParamDefault(),
     useCrumb: parseUseCrumbValue(process.env[ENV_KEYS.JENKINS_USE_CRUMB]),
     folderDepth: DEFAULT_FOLDER_DEPTH,
+    confirmProtected,
   };
 }
 
@@ -242,6 +286,35 @@ function resolveActiveProfileName(
   }
 
   return resolveDefaultProfileName(config);
+}
+
+/**
+ * Finds the configured protected profile whose controller matches a normalized
+ * URL. Object key order makes the first matching config entry deterministic
+ * when several protected profiles share a controller.
+ */
+function findProtectedProfileNameForUrl(
+  config: JenkinsConfig | undefined,
+  normalizedUrl: string,
+): string | undefined {
+  if (!config) {
+    return undefined;
+  }
+  for (const [name, profile] of Object.entries(config.profiles)) {
+    if (profile.protected !== true) {
+      continue;
+    }
+    let profileUrl: string;
+    try {
+      profileUrl = normalizeUrl(profile.jenkinsUrl);
+    } catch {
+      continue;
+    }
+    if (profileUrl === normalizedUrl) {
+      return name;
+    }
+  }
+  return undefined;
 }
 
 function parseUseCrumbValue(value: string | boolean | undefined): boolean {

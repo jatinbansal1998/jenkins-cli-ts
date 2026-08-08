@@ -249,6 +249,7 @@ describe("command help and global options", () => {
         "--token",
         "--api-token",
         "--folder-depth",
+        "--confirm-protected",
       ]) {
         expect(result.output).toContain(option);
       }

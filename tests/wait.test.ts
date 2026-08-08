@@ -67,6 +67,7 @@ describe("wait command", () => {
     });
 
     const result = await waitForBuild({
+      env,
       client: createClient({
         getJobStatus,
         getBuildStatus,
@@ -108,6 +109,7 @@ describe("wait command", () => {
     }));
 
     const result = await waitForBuild({
+      env,
       client: createClient({
         getQueueBuild,
         getJobStatus,
@@ -237,6 +239,7 @@ describe("wait command", () => {
 
     try {
       const result = await waitForBuild({
+        env,
         client: createClient({
           stopBuild,
           getBuildStatus,
@@ -311,6 +314,7 @@ describe("wait command", () => {
 
     try {
       const result = await waitForBuild({
+        env,
         client: createClient({
           stopBuild,
           getBuildStatus,
@@ -390,6 +394,7 @@ describe("wait command", () => {
 
     try {
       const result = await waitForBuild({
+        env,
         client: createClient({
           stopBuild,
           getBuildStatus,

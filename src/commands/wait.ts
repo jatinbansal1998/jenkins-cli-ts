@@ -251,7 +251,7 @@ async function resolveWaitTarget(options: WaitOptions): Promise<{
 
 export async function waitForBuild(options: {
   client: JenkinsClient;
-  env?: EnvConfig;
+  env: EnvConfig;
   jobUrl?: string;
   jobLabel: string;
   buildUrl?: string;
@@ -370,6 +370,7 @@ export async function waitForBuild(options: {
         try {
           const cancelResult = await requestCancellationForWatchTarget({
             client: options.client,
+            env: options.env,
             jobUrl: options.jobUrl,
             buildUrl,
             queueUrl,

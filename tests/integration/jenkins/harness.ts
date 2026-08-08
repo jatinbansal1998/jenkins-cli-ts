@@ -89,11 +89,15 @@ export async function runInteractiveCli(
   });
 
   if (!useMacOsExpect) {
+    // Only scan output produced after the previous step so a prompt the flow
+    // re-renders (same message shown again) is awaited, not matched instantly.
+    let scannedUpTo = 0;
     for (const step of steps) {
-      await waitForInteractivePrompt(
+      scannedUpTo = await waitForInteractivePrompt(
         () => stripTerminalCodes(stdout + stderr),
         step.prompt,
         subprocess,
+        scannedUpTo,
       );
       subprocess.stdin.write(step.input);
       subprocess.stdin.flush();
@@ -267,22 +271,22 @@ async function collectStream(
   append(decoder.decode());
 }
 
+/**
+ * Waits for the prompt to appear after `scannedUpTo` and returns the offset to
+ * resume scanning from.
+ */
 async function waitForInteractivePrompt(
   output: () => string,
   prompt: string,
   subprocess: ReturnType<typeof Bun.spawn>,
-): Promise<void> {
+  scannedUpTo: number,
+): Promise<number> {
   const deadline = Date.now() + 20_000;
   while (Date.now() < deadline) {
-    if (
-      output()
-        .split("\n")
-        .some(
-          (line) =>
-            line.startsWith(`◆  ${prompt}`) || line.startsWith(`*  ${prompt}`),
-        )
-    ) {
-      return;
+    const pending = output().slice(scannedUpTo);
+    const offset = promptLineEnd(pending, prompt);
+    if (offset !== null) {
+      return scannedUpTo + offset;
     }
     if (subprocess.exitCode !== null) {
       throw new Error(
@@ -292,6 +296,17 @@ async function waitForInteractivePrompt(
     await Bun.sleep(20);
   }
   throw new Error(`Timed out waiting for prompt "${prompt}".\n${output()}`);
+}
+
+function promptLineEnd(pending: string, prompt: string): number | null {
+  let lineStart = 0;
+  for (const line of pending.split("\n")) {
+    if (line.startsWith(`◆  ${prompt}`) || line.startsWith(`*  ${prompt}`)) {
+      return lineStart + line.length;
+    }
+    lineStart += line.length + 1;
+  }
+  return null;
 }
 
 function stripTerminalCodes(value: string): string {

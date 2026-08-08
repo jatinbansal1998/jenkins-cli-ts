@@ -68,6 +68,7 @@ function twoProfileConfig(): JenkinsConfig {
         jenkinsUser: "ci-home",
         jenkinsApiToken: "plain-token",
         branchParam: "GIT_BRANCH",
+        protected: true,
       },
     },
   };
@@ -159,6 +160,7 @@ describe("selectProfile", () => {
     expect(written?.debug).toBe(true);
     expect(written?.analyticsDisabled).toBe(true);
     expect(Object.keys(written?.profiles ?? {})).toEqual(["work", "home"]);
+    expect(written?.profiles.home?.protected).toBeTrue();
   });
 });
 
@@ -453,6 +455,7 @@ describe("renameProfile", () => {
     expect(Object.keys(written?.profiles ?? {})).toEqual(["work", "personal"]);
     expect(written?.profiles.personal?.jenkinsApiToken).toBe("plain-token");
     expect(written?.profiles.personal?.branchParam).toBe("GIT_BRANCH");
+    expect(written?.profiles.personal?.protected).toBeTrue();
     expect(written?.defaultProfile).toBe("work");
     expect(written?.debug).toBe(true);
     expect(written?.analyticsDisabled).toBe(true);

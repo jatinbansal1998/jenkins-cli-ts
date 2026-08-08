@@ -17,6 +17,7 @@ export type ContextArgv = {
   token?: unknown;
   apiToken?: unknown;
   folderDepth?: unknown;
+  confirmProtected?: unknown;
 };
 
 export type ContextualCommandArgv = ContextArgv & TrackedArgv;

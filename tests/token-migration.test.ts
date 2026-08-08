@@ -168,6 +168,21 @@ describe("maybeMigrateToken", () => {
     expect(h.hints).toHaveLength(0);
   });
 
+  test("keeps protected when migrating the token", async () => {
+    const h = harness({
+      config: configWith(plaintextProfile({ protected: true })),
+      secureStore: linuxSecureStore(TOKEN),
+    });
+
+    await maybeMigrateToken({
+      env: env({ protectedProfileName: "work" }),
+      report: false,
+      deps: h.deps,
+    });
+
+    expect(h.saved[0]?.profiles.work?.protected).toBeTrue();
+  });
+
   test("an explicit --no-keychain preference skips migration", async () => {
     const h = harness({
       config: configWith(plaintextProfile({ secureStorageOptOut: true })),

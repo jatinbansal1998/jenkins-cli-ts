@@ -1,6 +1,6 @@
 import { CliError, printError, printHint, printOk } from "../cli";
 import { resolveBuildSelector } from "../build-selector";
-import type { EnvConfig } from "../env";
+import { assertProtectedMutationAllowed, type EnvConfig } from "../env";
 import { areSameJobUrls } from "../job-url";
 import type { JenkinsClient } from "../jenkins/api-wrapper";
 import type { QueueItemSummary, RunningBuildSummary } from "../types/jenkins";
@@ -45,6 +45,7 @@ export function setCancelDepsForTesting(overrides?: typeof cancelDeps): void {
 }
 
 export async function runCancel(options: CancelOptions): Promise<void> {
+  assertProtectedMutationAllowed(options.env);
   if (options.json) {
     await runJsonCommand(
       "cancel",
@@ -107,6 +108,7 @@ export async function runCancel(options: CancelOptions): Promise<void> {
     printOk(`Cancellation requested for build: ${target.buildUrl}`);
     await activeCancelDeps.waitForBuild({
       client: options.client,
+      env: options.env,
       jobLabel: target.label,
       buildUrl: target.buildUrl,
       intervalMs: DEFAULT_WATCH_INTERVAL_MS,
@@ -246,6 +248,7 @@ async function cancelBuildBatch(
     try {
       await activeCancelDeps.waitForBuild({
         client: options.client,
+        env: options.env,
         jobLabel: build.label,
         buildUrl: build.buildUrl,
         intervalMs: DEFAULT_WATCH_INTERVAL_MS,

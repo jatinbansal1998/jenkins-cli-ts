@@ -28,6 +28,29 @@ describe("flow definitions", () => {
     ).toThrow();
   });
 
+  test("mutation_blocked returns every action flow to its action menu", () => {
+    for (const flow of [
+      flows.listInteractive,
+      flows.buildPost,
+      flows.statusPost,
+    ]) {
+      const runAction = flow.states.run_action;
+      expect(runAction?.transitions.mutation_blocked).toBe("action_menu");
+      // Genuine failures keep their existing, distinct destinations.
+      expect(runAction?.transitions.action_error).not.toBe("action_menu");
+    }
+
+    expect(
+      flows.listInteractive.states.run_action?.transitions.action_error,
+    ).toBe("select_job");
+    expect(flows.buildPost.states.run_action?.transitions.action_error).toBe(
+      "after_root",
+    );
+    expect(flows.statusPost.states.run_action?.transitions.action_error).toBe(
+      "again_confirm",
+    );
+  });
+
   test("interactive action menus expose rerun last build options", () => {
     const listActionMenu = flows.listInteractive.states.action_menu;
     const buildActionMenu = flows.buildPost.states.action_menu;

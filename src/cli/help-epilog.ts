@@ -169,6 +169,9 @@ Command-specific options:
     --branch-param <name>  Branch parameter name [default: BRANCH]
     --keychain             Store the token in the OS keychain when available
                            [default: true; use --no-keychain for plaintext]
+    --protected            Make the profile read-only; use --no-protected to
+                           clear it. On an existing profile this only toggles
+                           the flag; login otherwise asks, defaulting to no.
 
   auth status:
     --profile <name>  Check a named profile
@@ -201,6 +204,18 @@ Command-specific options:
     --user <name>     One-off Jenkins username override
     --token <token>   One-off Jenkins API token override
     (--url, --user, and --token must be passed together)
+
+  read-only profiles (any command):
+    --confirm-protected  Allow builds, cancels, and reruns on a read-only
+                         profile for this run only (never persisted)
+    Make a profile read-only with "auth login --protected" (interactive login
+    asks and defaults to no) or by setting "protected": true in the config file.
+    Blocked without the flag: build/deploy, cancel, rerun, rerun last build,
+    and the same actions reached from list/build/status/history menus.
+    Everything that only reads (list, params, status, wait, logs, history,
+    queue, nodes, artifacts, auth) still works. A direct --url pointing at a
+    read-only profile's controller is read-only too. Blocked runs exit
+    non-zero; with --json they emit one document with code PROFILE_PROTECTED.
 
   config/env:
     ${ENV_KEYS.JENKINS_USE_CRUMB} / useCrumb  Enable Jenkins CSRF crumb usage [default: disabled]

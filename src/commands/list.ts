@@ -3,7 +3,8 @@
  * Displays all cached Jenkins jobs with optional search filtering.
  */
 import { runInteractiveSubcommandWithAnalytics } from "../analytics";
-import { CliError, printError, printHint, printOk } from "../cli";
+import { printOk } from "../cli";
+import { runMenuAction } from "./menu-action";
 import type { EnvConfig } from "../env";
 import type { JenkinsClient } from "../jenkins/api-wrapper";
 import type { JenkinsJob, JenkinsJobLastBuild } from "../types/jenkins";
@@ -195,39 +196,39 @@ async function performListAction(
   switch (action) {
     case "build":
       return await runTrackedListAction("build", () =>
-        runMenuAction(runBuildAction, context),
+        runMenuAction(() => runBuildAction(context), "action_error"),
       );
     case "view_params":
       return await runTrackedListAction("params", () =>
-        runMenuAction(runViewParamsAction, context),
+        runMenuAction(() => runViewParamsAction(context), "action_error"),
       );
     case "status":
       return await runTrackedListAction("status", () =>
-        runMenuAction(runStatusAction, context),
+        runMenuAction(() => runStatusAction(context), "action_error"),
       );
     case "history":
       return await runTrackedListAction("history", () =>
-        runMenuAction(runHistoryAction, context),
+        runMenuAction(() => runHistoryAction(context), "action_error"),
       );
     case "watch":
       return await runTrackedListAction("wait", () =>
-        runMenuAction(runWatchAction, context),
+        runMenuAction(() => runWatchAction(context), "action_error"),
       );
     case "logs":
       return await runTrackedListAction("logs", () =>
-        runMenuAction(runLogsAction, context),
+        runMenuAction(() => runLogsAction(context), "action_error"),
       );
     case "cancel":
       return await runTrackedListAction("cancel", () =>
-        runMenuAction(runCancelAction, context),
+        runMenuAction(() => runCancelAction(context), "action_error"),
       );
     case "rerun":
       return await runTrackedListAction("rerun", () =>
-        runMenuAction(runRerunAction, context),
+        runMenuAction(() => runRerunAction(context), "action_error"),
       );
     case "rerun_last":
       return await runTrackedListAction("rerun-last", () =>
-        runMenuAction(runRerunLastBuildAction, context),
+        runMenuAction(() => runRerunLastBuildAction(context), "action_error"),
       );
     default:
       return "action_error";
@@ -351,25 +352,4 @@ async function runRerunLastBuildAction(
     nonInteractive: false,
   });
   return "action_ok";
-}
-
-async function runMenuAction<
-  T extends ActionEffectResult,
-  TArgs extends unknown[],
->(
-  action: (...args: TArgs) => Promise<T>,
-  ...args: TArgs
-): Promise<T | "action_error"> {
-  try {
-    return await action(...args);
-  } catch (error) {
-    if (error instanceof CliError) {
-      printError(error.message);
-      for (const hint of error.hints) {
-        printHint(hint);
-      }
-      return "action_error";
-    }
-    throw error;
-  }
 }

@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import {
   integrationEnabled,
@@ -1721,5 +1722,131 @@ describe.skipIf(!integrationEnabled)(
         );
       });
     }, 120_000);
+
+    test("blocks mutations for a protected profile until confirmed", async () => {
+      await withCliHome(async (home) => {
+        await writeProtectedProfile(home);
+        const jobUrl = `${jenkinsUrl}/job/cli-no-params/`;
+
+        const list = parseJson(
+          await runCli(home, ["list", "--refresh", "--json"]),
+        );
+        expect(list).toMatchObject({ ok: true, command: "list" });
+
+        const buildNumber = async (): Promise<number | null> => {
+          const status = parseJson<{
+            data: { build: { number: number } | null };
+          }>(await runCli(home, ["status", "--job-url", jobUrl, "--json"]));
+          return status.data.build?.number ?? null;
+        };
+        const before = await buildNumber();
+
+        for (const args of [
+          ["build", "--job-url", jobUrl, "--json"],
+          ["cancel", "--job-url", jobUrl, "--json"],
+          ["rerun", "--job-url", jobUrl, "--json"],
+          [
+            "build",
+            "--job-url",
+            jobUrl,
+            "--url",
+            `${jenkinsUrl}/`,
+            "--user",
+            process.env.JENKINS_INTEGRATION_USER ?? "",
+            "--token",
+            process.env.JENKINS_INTEGRATION_TOKEN ?? "",
+            "--json",
+          ],
+        ]) {
+          const blocked = await runCliExpectFailure(home, args);
+          expect(blocked.stdout.split("\n").filter(Boolean)).toHaveLength(1);
+          expect(JSON.parse(blocked.stdout)).toEqual({
+            ok: false,
+            error: {
+              message: 'Profile "release" is read-only.',
+              code: "PROFILE_PROTECTED",
+            },
+          });
+        }
+        expect(await buildNumber()).toBe(before);
+
+        const confirmed = parseJson<{ data: { result: string } }>(
+          await runCli(home, [
+            "build",
+            "--job-url",
+            jobUrl,
+            "--watch",
+            "--json",
+            "--confirm-protected",
+          ]),
+        );
+        expect(confirmed).toMatchObject({
+          ok: true,
+          command: "build",
+          data: { result: "SUCCESS" },
+        });
+        expect(await buildNumber()).toBe((before ?? 0) + 1);
+      });
+    }, 120_000);
+
+    test.skipIf(process.platform === "win32")(
+      "keeps the interactive list action menu open after a protected block",
+      async () => {
+        await withCliHome(async (home) => {
+          await writeProtectedProfile(home);
+          await runCli(home, ["list", "--refresh", "--json"]);
+
+          const session = await runInteractiveCli(
+            home,
+            ["list", "--no-banner"],
+            [
+              {
+                prompt: "Job name or description",
+                input: "cli-no-params\r",
+              },
+              // Build is the first action: Enter triggers the blocked mutation.
+              { prompt: "Action for cli-no-params", input: "\r" },
+              // The same menu is awaited again, proving the flow stayed on the
+              // selected job; Up wraps to Exit so the session ends cleanly.
+              { prompt: "Action for cli-no-params", input: "\u001b[A\r" },
+            ],
+          );
+
+          expect(session.exitCode, session.output).toBe(0);
+          expect(session.output).toContain(
+            'ERROR: Profile "release" is read-only.',
+          );
+          expect(session.output).toContain(
+            "HINT: Re-run with --confirm-protected to allow builds, cancels, and reruns.",
+          );
+        });
+      },
+      120_000,
+    );
   },
 );
+
+async function writeProtectedProfile(home: string): Promise<void> {
+  const configDir = join(home, ".config", "jenkins-cli");
+  mkdirSync(configDir, { recursive: true });
+  await Bun.write(
+    join(configDir, "jenkins-cli-config.json"),
+    `${JSON.stringify(
+      {
+        version: 2,
+        defaultProfile: "release",
+        profiles: {
+          release: {
+            jenkinsUrl: jenkinsUrl,
+            jenkinsUser: process.env.JENKINS_INTEGRATION_USER,
+            jenkinsApiToken: process.env.JENKINS_INTEGRATION_TOKEN,
+            protected: true,
+          },
+        },
+        analyticsDisabled: true,
+      },
+      null,
+      2,
+    )}\n`,
+  );
+}

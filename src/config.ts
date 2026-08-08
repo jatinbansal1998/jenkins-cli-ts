@@ -42,6 +42,8 @@ export type ConfigFileInput = {
   makeDefault?: boolean;
   tokenStorage?: TokenStorage;
   secureStorageOptOut?: boolean;
+  /** Explicit value wins; omit to keep the existing profile's setting. */
+  protected?: boolean;
 };
 
 export type JenkinsProfileConfig = {
@@ -54,6 +56,11 @@ export type JenkinsProfileConfig = {
   tokenStorage?: TokenStorage;
   /** The user explicitly chose plaintext storage or declined migration. */
   secureStorageOptOut?: boolean;
+  /**
+   * Only literal `true` makes the profile read-only: builds, cancels, and
+   * reruns against this controller then require `--confirm-protected`.
+   */
+  protected?: boolean;
 };
 
 export type JenkinsConfig = {
@@ -183,6 +190,10 @@ export async function writeConfigFile(input: ConfigFileInput): Promise<string> {
     ...(typeof folderDepth === "number" ? { folderDepth } : {}),
     ...(input.tokenStorage ? { tokenStorage: input.tokenStorage } : {}),
     ...(input.secureStorageOptOut ? { secureStorageOptOut: true } : {}),
+    // Only an explicit input clears protection; credential updates preserve it.
+    ...((input.protected ?? existingProfile?.protected) === true
+      ? { protected: true }
+      : {}),
   };
 
   const profiles = {
@@ -384,6 +395,7 @@ function parseProfileRecord(
   const folderDepth = firstPositiveInt(record, ["folderDepth"]);
   const tokenStorage = parseTokenStorage(record.tokenStorage);
   const secureStorageOptOut = firstBoolean(record, ["secureStorageOptOut"]);
+  const isProtected = firstBoolean(record, ["protected"]);
 
   return {
     jenkinsUrl,
@@ -394,6 +406,7 @@ function parseProfileRecord(
     ...(typeof folderDepth === "number" ? { folderDepth } : {}),
     ...(tokenStorage ? { tokenStorage } : {}),
     ...(secureStorageOptOut === true ? { secureStorageOptOut: true } : {}),
+    ...(isProtected === true ? { protected: true } : {}),
   };
 }
 
@@ -452,6 +465,7 @@ function normalizeConfigForWrite(config: JenkinsConfig): JenkinsConfig {
         : {}),
       ...(profile.tokenStorage ? { tokenStorage: profile.tokenStorage } : {}),
       ...(profile.secureStorageOptOut ? { secureStorageOptOut: true } : {}),
+      ...(profile.protected === true ? { protected: true } : {}),
     };
   }
   const defaultProfile = resolveDefaultProfileName({

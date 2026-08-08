@@ -145,6 +145,11 @@ async function main(): Promise<void> {
       describe:
         "Folder traversal depth for job discovery (default: 3, from config)",
     })
+    .option("confirm-protected", {
+      type: "boolean",
+      describe:
+        "Allow builds, cancels, and reruns on a read-only profile for this run",
+    })
     .middleware((argv) => {
       // Check if --debug or --no-debug was explicitly passed.
       const debugExplicitlyPassed = rawArgs.some(
@@ -238,6 +243,7 @@ function loadContextEnv(argv?: ContextArgv): ReturnType<typeof loadEnv> {
     url: optionalString(argv?.url),
     user: optionalString(argv?.user),
     apiToken: optionalString(argv?.token) ?? optionalString(argv?.apiToken),
+    confirmProtected: argv?.confirmProtected === true,
   });
   const folderDepth =
     typeof argv?.folderDepth === "number" && Number.isFinite(argv.folderDepth)

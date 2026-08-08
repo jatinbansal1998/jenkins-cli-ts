@@ -14,6 +14,8 @@ type LoadEnvResult = {
     branchParamDefault: string;
     useCrumb: boolean;
     folderDepth: number;
+    protectedProfileName?: string;
+    confirmProtected?: boolean;
   };
   message?: string;
 };
@@ -44,6 +46,7 @@ function runLoadEnv(params: {
     url?: string;
     user?: string;
     apiToken?: string;
+    confirmProtected?: boolean;
   };
 }): { exitCode: number; payload: LoadEnvResult } {
   const result = Bun.spawnSync({
@@ -465,6 +468,151 @@ describe("loadEnv branchParam and folderDepth resolution", () => {
     withTempHome((homeDir) => {
       const envResult = runLoadEnv({ homeDir });
       expect(envResult.payload.env?.folderDepth).toBe(3);
+    });
+  });
+});
+
+describe("loadEnv protected profile resolution", () => {
+  const protectedConfig = {
+    defaultProfile: "release",
+    profiles: {
+      release: {
+        jenkinsUrl: "https://jenkins-release.example.com",
+        jenkinsUser: "ci-bot",
+        jenkinsApiToken: "release-token",
+        protected: true,
+      },
+      sandbox: {
+        jenkinsUrl: "https://jenkins-sandbox.example.com",
+        jenkinsUser: "ci-bot",
+        jenkinsApiToken: "sandbox-token",
+      },
+    },
+  };
+
+  test("default protected profile resolves as protected", () => {
+    withTempHome((homeDir) => {
+      writeConfig(homeDir, protectedConfig);
+      const result = runLoadEnv({ homeDir });
+      expect(result.exitCode).toBe(0);
+      expect(result.payload.env?.protectedProfileName).toBe("release");
+      expect(result.payload.env?.confirmProtected).toBeFalse();
+    });
+  });
+
+  test("named protected profile resolves as protected and carries confirmation", () => {
+    withTempHome((homeDir) => {
+      writeConfig(homeDir, protectedConfig);
+      const result = runLoadEnv({
+        homeDir,
+        options: { profile: "release", confirmProtected: true },
+      });
+      expect(result.payload.env?.protectedProfileName).toBe("release");
+      expect(result.payload.env?.confirmProtected).toBeTrue();
+    });
+  });
+
+  test("unprotected profile stays unrestricted", () => {
+    withTempHome((homeDir) => {
+      writeConfig(homeDir, protectedConfig);
+      const result = runLoadEnv({
+        homeDir,
+        options: { profile: "sandbox" },
+      });
+      expect(result.payload.env?.protectedProfileName).toBeUndefined();
+    });
+  });
+
+  test("absent protection preserves legacy behavior", () => {
+    withTempHome((homeDir) => {
+      writeConfig(homeDir, {
+        defaultProfile: "work",
+        profiles: {
+          work: {
+            jenkinsUrl: "https://jenkins-work.example.com",
+            jenkinsUser: "work-user",
+            jenkinsApiToken: "work-token",
+          },
+        },
+      });
+      const result = runLoadEnv({ homeDir });
+      expect(result.payload.env?.protectedProfileName).toBeUndefined();
+    });
+  });
+
+  test("direct --url matching a protected controller is protected, trailing slash included", () => {
+    withTempHome((homeDir) => {
+      writeConfig(homeDir, protectedConfig);
+      const result = runLoadEnv({
+        homeDir,
+        options: {
+          url: "https://jenkins-release.example.com/",
+          user: "someone-else",
+          apiToken: "one-off-token",
+        },
+      });
+      expect(result.payload.env?.protectedProfileName).toBe("release");
+      expect(result.payload.env?.jenkinsUser).toBe("someone-else");
+    });
+  });
+
+  test("direct --url for another controller is not protected", () => {
+    withTempHome((homeDir) => {
+      writeConfig(homeDir, protectedConfig);
+      const result = runLoadEnv({
+        homeDir,
+        options: {
+          profile: "release",
+          url: "https://jenkins-other.example.com",
+          user: "ci-bot",
+          apiToken: "one-off-token",
+        },
+      });
+      expect(result.payload.env?.protectedProfileName).toBeUndefined();
+    });
+  });
+
+  test("duplicate protected controllers pick the first configured profile", () => {
+    withTempHome((homeDir) => {
+      writeConfig(homeDir, {
+        defaultProfile: "sandbox",
+        profiles: {
+          "release-a": {
+            jenkinsUrl: "https://jenkins-release.example.com",
+            jenkinsUser: "ci-bot",
+            jenkinsApiToken: "token-a",
+            protected: true,
+          },
+          "release-b": {
+            jenkinsUrl: "https://jenkins-release.example.com/",
+            jenkinsUser: "ci-bot",
+            jenkinsApiToken: "token-b",
+            protected: true,
+          },
+          sandbox: {
+            jenkinsUrl: "https://jenkins-sandbox.example.com",
+            jenkinsUser: "ci-bot",
+            jenkinsApiToken: "sandbox-token",
+          },
+        },
+      });
+      const result = runLoadEnv({
+        homeDir,
+        options: {
+          url: "https://jenkins-release.example.com",
+          user: "ci-bot",
+          apiToken: "one-off-token",
+        },
+      });
+      expect(result.payload.env?.protectedProfileName).toBe("release-a");
+    });
+  });
+
+  test("environment-only credentials stay unassociated", () => {
+    withTempHome((homeDir) => {
+      const result = runLoadEnv({ homeDir });
+      expect(result.payload.env?.profileName).toBeUndefined();
+      expect(result.payload.env?.protectedProfileName).toBeUndefined();
     });
   });
 });

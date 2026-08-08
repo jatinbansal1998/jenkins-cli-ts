@@ -1,4 +1,5 @@
 import { CliError } from "../cli";
+import { assertProtectedMutationAllowed, type EnvConfig } from "../env";
 import { areSameJobUrls, normalizeOptionalJobUrl } from "../job-url";
 import type { JenkinsClient } from "../jenkins/api-wrapper";
 import type { QueueItemSummary } from "../types/jenkins";
@@ -104,6 +105,7 @@ export function createWatchControlSignal(): WatchControlSignal | null {
 
 export async function requestCancellationForWatchTarget(options: {
   client: JenkinsClient;
+  env: EnvConfig;
   jobUrl?: string;
   buildUrl?: string;
   queueUrl?: string;
@@ -120,6 +122,8 @@ export async function requestCancellationForWatchTarget(options: {
       message: string;
     }
 > {
+  // Watching itself reads only, but the in-watch cancel key writes to Jenkins.
+  assertProtectedMutationAllowed(options.env);
   const buildUrl = options.buildUrl?.trim() ?? "";
   if (buildUrl) {
     await options.client.stopBuild(buildUrl);

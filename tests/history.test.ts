@@ -17,6 +17,7 @@ const CANCEL = Symbol("cancel");
 const NEXT_PAGE_VALUE = "__jenkins_cli_history_next__";
 const REBUILD_VALUE = "__jenkins_cli_history_rebuild__";
 const RERUN_LAST_VALUE = "__jenkins_cli_history_rerun_last__";
+const URL_VALUE = "__jenkins_cli_history_url__";
 
 const autocompleteMock = mock(
   async (): Promise<AutocompletePromptResult> => CANCEL,
@@ -459,5 +460,65 @@ describe("runHistory", () => {
         suppressExitCode: true,
       }),
     );
+  });
+
+  test("protected profile blocks history rebuild and keeps the build menu open", async () => {
+    const errorSpy = spyOn(console, "error").mockImplementation(
+      () => undefined,
+    );
+    const listBuildHistory = mock(async () => ({
+      builds: [
+        {
+          buildNumber: 57,
+          buildUrl: "https://jenkins.example.com/job/api/57/",
+          result: "FAILURE",
+          parameters: [{ name: "BRANCH", value: "release/42" }],
+        },
+      ],
+      total: 1,
+      offset: 0,
+      limit: 5,
+      hasNext: false,
+      hasPrevious: false,
+    }));
+    const triggerBuild = mock(async () => ({
+      queueUrl: "https://jenkins.example.com/queue/item/123/",
+    }));
+    const getJobStatus = mock(async () => ({ lastBuildNumber: 99 }));
+    const client = {
+      listBuildHistory,
+      triggerBuild,
+      getJobStatus,
+    } as unknown as JenkinsClient;
+
+    selectMock
+      .mockImplementationOnce(
+        async (): Promise<AutocompletePromptResult> =>
+          "https://jenkins.example.com/job/api/57/",
+      )
+      .mockImplementationOnce(async (): Promise<unknown> => REBUILD_VALUE)
+      .mockImplementationOnce(async (): Promise<unknown> => RERUN_LAST_VALUE)
+      .mockImplementationOnce(async (): Promise<unknown> => URL_VALUE)
+      .mockImplementationOnce(async (): Promise<unknown> => CANCEL);
+
+    await runHistory({
+      client,
+      env: { ...TEST_ENV, protectedProfileName: "release" },
+      jobUrl: "https://jenkins.example.com/job/api/",
+      nonInteractive: false,
+    });
+
+    expect(triggerBuild).not.toHaveBeenCalled();
+    expect(getJobStatus).not.toHaveBeenCalled();
+    expect(errorSpy).toHaveBeenCalledWith(
+      'ERROR: Profile "release" is read-only.',
+    );
+    expect(errorSpy).toHaveBeenCalledWith(
+      "HINT: Re-run with --confirm-protected to allow builds, cancels, and reruns.",
+    );
+    // Both blocks kept the build action menu open: two blocked selections, the
+    // read action, the back-out, then the history page prompt again.
+    expect(selectMock).toHaveBeenCalledTimes(6);
+    errorSpy.mockRestore();
   });
 });

@@ -1,5 +1,6 @@
-import { CliError, printError, printHint, printOk } from "../cli";
-import type { EnvConfig } from "../env";
+import { CliError, printOk } from "../cli";
+import { assertProtectedMutationAllowed, type EnvConfig } from "../env";
+import { printMenuActionError, runMenuAction } from "./menu-action";
 import type { JenkinsClient } from "../jenkins/api-wrapper";
 import type { BuildHistoryEntry, BuildHistoryPage } from "../types/jenkins";
 import {
@@ -200,6 +201,15 @@ async function runBuildHistoryAction(options: {
       });
       continue;
     }
+    if (selection === REBUILD_VALUE || selection === RERUN_LAST_VALUE) {
+      try {
+        assertProtectedMutationAllowed(options.env);
+      } catch (error) {
+        // Stay on this build's action menu so read actions remain available.
+        printMenuActionError(error);
+        continue;
+      }
+    }
     if (selection === REBUILD_VALUE) {
       const params = toParamRecord(options.build.parameters);
       const result = await options.client.triggerBuild(options.jobUrl, params);
@@ -289,20 +299,25 @@ async function runHistoryRebuildPostFlow(options: {
     returnToCaller: true,
     performAction: async (action): Promise<ActionEffectResult> => {
       if (action === "watch") {
-        const result = await runHistoryMenuAction(async () =>
-          deps.runWait({
-            client: options.client,
-            env: options.env,
-            buildUrl: activeBuild.buildUrl,
-            queueUrl: activeBuild.queueUrl,
-            jobUrl:
-              !activeBuild.buildUrl && !activeBuild.queueUrl
-                ? options.jobUrl
-                : undefined,
-            nonInteractive: false,
-            suppressExitCode: true,
-          }),
+        const result = await runMenuAction(
+          async () =>
+            deps.runWait({
+              client: options.client,
+              env: options.env,
+              buildUrl: activeBuild.buildUrl,
+              queueUrl: activeBuild.queueUrl,
+              jobUrl:
+                !activeBuild.buildUrl && !activeBuild.queueUrl
+                  ? options.jobUrl
+                  : undefined,
+              nonInteractive: false,
+              suppressExitCode: true,
+            }),
+          "action_error",
         );
+        if (typeof result === "string") {
+          return result;
+        }
         if (!result) {
           return "action_error";
         }
@@ -315,7 +330,7 @@ async function runHistoryRebuildPostFlow(options: {
       }
 
       if (action === "logs") {
-        const result = await runHistoryMenuAction(async () => {
+        return await runMenuAction(async (): Promise<ActionEffectResult> => {
           await deps.runLogs({
             client: options.client,
             env: options.env,
@@ -328,12 +343,11 @@ async function runHistoryRebuildPostFlow(options: {
             nonInteractive: false,
           });
           return "action_ok";
-        });
-        return (result ?? "action_error") as ActionEffectResult;
+        }, "action_error");
       }
 
       if (action === "history") {
-        const result = await runHistoryMenuAction(async () => {
+        return await runMenuAction(async (): Promise<ActionEffectResult> => {
           const historyResult = await runHistory({
             client: options.client,
             env: options.env,
@@ -344,12 +358,11 @@ async function runHistoryRebuildPostFlow(options: {
             activeBuild = { ...historyResult.activeBuild };
           }
           return "action_ok";
-        });
-        return (result ?? "action_error") as ActionEffectResult;
+        }, "action_error");
       }
 
       if (action === "cancel") {
-        const result = await runHistoryMenuAction(async () => {
+        return await runMenuAction(async (): Promise<ActionEffectResult> => {
           await deps.runCancel({
             client: options.client,
             env: options.env,
@@ -362,12 +375,11 @@ async function runHistoryRebuildPostFlow(options: {
             nonInteractive: false,
           });
           return "action_ok";
-        });
-        return (result ?? "action_error") as ActionEffectResult;
+        }, "action_error");
       }
 
       if (action === "rerun") {
-        const result = await runHistoryMenuAction(async () => {
+        return await runMenuAction(async (): Promise<ActionEffectResult> => {
           const rerunResult = await options.client.triggerBuild(
             options.jobUrl,
             options.params,
@@ -390,12 +402,11 @@ async function runHistoryRebuildPostFlow(options: {
             printOk(`Build triggered for ${options.jobLabel}.`);
           }
           return "action_ok";
-        });
-        return (result ?? "action_error") as ActionEffectResult;
+        }, "action_error");
       }
 
       if (action === "rerun_last") {
-        const result = await runHistoryMenuAction(async () => {
+        return await runMenuAction(async (): Promise<ActionEffectResult> => {
           const rerun = await rerunLastBuildForJob({
             client: options.client,
             env: options.env,
@@ -414,8 +425,7 @@ async function runHistoryRebuildPostFlow(options: {
             rerun,
           });
           return "action_ok";
-        });
-        return (result ?? "action_error") as ActionEffectResult;
+        }, "action_error");
       }
 
       return "action_error";
@@ -435,23 +445,6 @@ async function runHistoryRebuildPostFlow(options: {
     context,
   });
   return activeBuild;
-}
-
-async function runHistoryMenuAction<T>(
-  action: () => Promise<T>,
-): Promise<T | undefined> {
-  try {
-    return await action();
-  } catch (error) {
-    if (error instanceof CliError) {
-      printError(error.message);
-      for (const hint of error.hints) {
-        printHint(hint);
-      }
-      return undefined;
-    }
-    throw error;
-  }
 }
 
 async function recordHistoryRebuildSuccess(options: {

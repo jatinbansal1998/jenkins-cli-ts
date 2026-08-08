@@ -5,7 +5,8 @@
 import { autocomplete, confirm, isCancel, select, text } from "../clack";
 import { runInteractiveSubcommandWithAnalytics } from "../analytics";
 import { resolveBuildSelector } from "../build-selector";
-import { CliError, printError, printHint, printOk } from "../cli";
+import { CliError, printOk } from "../cli";
+import { runMenuAction } from "./menu-action";
 import {
   jsonBuildFromJobStatus,
   jsonBuildFromBuildStatus,
@@ -184,24 +185,29 @@ export async function runStatus(options: StatusOptions): Promise<void> {
         }
         if (action === "watch") {
           const result = await runTrackedStatusAction("wait", () =>
-            runMenuAction(async () =>
-              runWait({
-                client: options.client,
-                env: options.env,
-                jobUrl: primaryTarget.jobUrl,
-                nonInteractive: false,
-                suppressExitCode: true,
-              }),
+            runMenuAction(
+              async () =>
+                runWait({
+                  client: options.client,
+                  env: options.env,
+                  jobUrl: primaryTarget.jobUrl,
+                  nonInteractive: false,
+                  suppressExitCode: true,
+                }),
+              "action_error",
             ),
           );
+          if (typeof result === "string") {
+            return result;
+          }
           if (!result) {
             return "action_error";
           }
           return result.cancelled ? "watch_cancelled" : "action_ok";
         }
         if (action === "logs") {
-          const result = await runTrackedStatusAction("logs", () =>
-            runMenuAction(async () => {
+          return await runTrackedStatusAction("logs", () =>
+            runMenuAction(async (): Promise<ActionEffectResult> => {
               await runLogs({
                 client: options.client,
                 env: options.env,
@@ -209,13 +215,12 @@ export async function runStatus(options: StatusOptions): Promise<void> {
                 nonInteractive: false,
               });
               return "action_ok";
-            }),
+            }, "action_error"),
           );
-          return (result ?? "action_error") as ActionEffectResult;
         }
         if (action === "history") {
-          const result = await runTrackedStatusAction("history", () =>
-            runMenuAction(async () => {
+          return await runTrackedStatusAction("history", () =>
+            runMenuAction(async (): Promise<ActionEffectResult> => {
               await runHistory({
                 client: options.client,
                 env: options.env,
@@ -223,13 +228,12 @@ export async function runStatus(options: StatusOptions): Promise<void> {
                 nonInteractive: false,
               });
               return "action_ok";
-            }),
+            }, "action_error"),
           );
-          return (result ?? "action_error") as ActionEffectResult;
         }
         if (action === "cancel") {
-          const result = await runTrackedStatusAction("cancel", () =>
-            runMenuAction(async () => {
+          return await runTrackedStatusAction("cancel", () =>
+            runMenuAction(async (): Promise<ActionEffectResult> => {
               await runCancel({
                 client: options.client,
                 env: options.env,
@@ -237,13 +241,12 @@ export async function runStatus(options: StatusOptions): Promise<void> {
                 nonInteractive: false,
               });
               return "action_ok";
-            }),
+            }, "action_error"),
           );
-          return (result ?? "action_error") as ActionEffectResult;
         }
         if (action === "rerun") {
-          const result = await runTrackedStatusAction("rerun", () =>
-            runMenuAction(async () => {
+          return await runTrackedStatusAction("rerun", () =>
+            runMenuAction(async (): Promise<ActionEffectResult> => {
               await runRerun({
                 client: options.client,
                 env: options.env,
@@ -251,13 +254,12 @@ export async function runStatus(options: StatusOptions): Promise<void> {
                 nonInteractive: false,
               });
               return "action_ok";
-            }),
+            }, "action_error"),
           );
-          return (result ?? "action_error") as ActionEffectResult;
         }
         if (action === "rerun_last") {
-          const result = await runTrackedStatusAction("rerun-last", () =>
-            runMenuAction(async () => {
+          return await runTrackedStatusAction("rerun-last", () =>
+            runMenuAction(async (): Promise<ActionEffectResult> => {
               await runRerunLastBuild({
                 client: options.client,
                 env: options.env,
@@ -265,13 +267,12 @@ export async function runStatus(options: StatusOptions): Promise<void> {
                 nonInteractive: false,
               });
               return "action_ok";
-            }),
+            }, "action_error"),
           );
-          return (result ?? "action_error") as ActionEffectResult;
         }
         if (action === "build") {
-          const result = await runTrackedStatusAction("build", () =>
-            runMenuAction(async () => {
+          return await runTrackedStatusAction("build", () =>
+            runMenuAction(async (): Promise<ActionEffectResult> => {
               const buildResult = await runBuild({
                 client: options.client,
                 env: options.env,
@@ -282,9 +283,8 @@ export async function runStatus(options: StatusOptions): Promise<void> {
                 returnToCaller: true,
               });
               return buildResult.rootRequested ? "root" : "action_ok";
-            }),
+            }, "action_error"),
           );
-          return (result ?? "action_error") as ActionEffectResult;
         }
         return "action_error";
       },
@@ -492,21 +492,4 @@ async function runTrackedStatusAction<T>(
   action: () => Promise<T>,
 ): Promise<T> {
   return await runInteractiveSubcommandWithAnalytics(command, action);
-}
-
-async function runMenuAction<T>(
-  action: () => Promise<T>,
-): Promise<T | undefined> {
-  try {
-    return await action();
-  } catch (error) {
-    if (error instanceof CliError) {
-      printError(error.message);
-      for (const hint of error.hints) {
-        printHint(hint);
-      }
-      return undefined;
-    }
-    throw error;
-  }
 }

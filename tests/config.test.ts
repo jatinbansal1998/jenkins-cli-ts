@@ -50,8 +50,14 @@ mock.module("node:fs/promises", () => ({
   rm: rmMock,
 }));
 
-const { CONFIG_FILE, KEYCHAIN_TOKEN_SENTINEL, readConfig, writeConfigFile } =
-  await import("../src/config");
+const {
+  CONFIG_FILE,
+  KEYCHAIN_TOKEN_SENTINEL,
+  readConfig,
+  writeConfig,
+  writeConfigFile,
+} = await import("../src/config");
+type JenkinsConfig = import("../src/config").JenkinsConfig;
 const realBunFile = Bun.file;
 const bunFileSpy = spyOn(Bun, "file");
 
@@ -238,6 +244,127 @@ describe("tokenStorage persistence", () => {
 
     const payload = JSON.parse(fileContents.get(CONFIG_FILE) ?? "");
     expect(payload.profiles.work.secureStorageOptOut).toBeTrue();
+  });
+
+  test("parses protected only for literal true", async () => {
+    fileContents.set(
+      CONFIG_FILE,
+      JSON.stringify({
+        version: 2,
+        defaultProfile: "release",
+        profiles: {
+          release: {
+            jenkinsUrl: "https://jenkins-release.example.com",
+            jenkinsUser: "ci-bot",
+            jenkinsApiToken: "token",
+            protected: true,
+          },
+          staging: {
+            jenkinsUrl: "https://jenkins-staging.example.com",
+            jenkinsUser: "ci-bot",
+            jenkinsApiToken: "token",
+            protected: false,
+          },
+          sandbox: {
+            jenkinsUrl: "https://jenkins-sandbox.example.com",
+            jenkinsUser: "ci-bot",
+            jenkinsApiToken: "token",
+            protected: "true",
+          },
+          plain: {
+            jenkinsUrl: "https://jenkins-plain.example.com",
+            jenkinsUser: "ci-bot",
+            jenkinsApiToken: "token",
+          },
+        },
+      }),
+    );
+
+    const loaded = await readConfig();
+    expect(loaded?.config.profiles.release?.protected).toBeTrue();
+    expect(loaded?.config.profiles.staging?.protected).toBeUndefined();
+    expect(loaded?.config.profiles.sandbox?.protected).toBeUndefined();
+    expect(loaded?.config.profiles.plain?.protected).toBeUndefined();
+  });
+
+  test("keeps protected through a normalized write", async () => {
+    fileContents.set(
+      CONFIG_FILE,
+      JSON.stringify({
+        version: 2,
+        defaultProfile: "release",
+        profiles: {
+          release: {
+            jenkinsUrl: "https://jenkins-release.example.com",
+            jenkinsUser: "ci-bot",
+            jenkinsApiToken: "token",
+            protected: true,
+          },
+        },
+      }),
+    );
+
+    const loaded = await readConfig();
+    await writeConfig(loaded?.config as JenkinsConfig);
+
+    const payload = JSON.parse(fileContents.get(CONFIG_FILE) ?? "");
+    expect(payload.profiles.release.protected).toBeTrue();
+  });
+
+  test("credential updates do not drop protected", async () => {
+    fileContents.set(
+      CONFIG_FILE,
+      JSON.stringify({
+        version: 2,
+        defaultProfile: "release",
+        profiles: {
+          release: {
+            jenkinsUrl: "https://jenkins-release.example.com",
+            jenkinsUser: "ci-bot",
+            jenkinsApiToken: "old-token",
+            protected: true,
+          },
+        },
+      }),
+    );
+
+    await writeConfigFile({
+      profile: "release",
+      jenkinsUrl: "https://jenkins-release.example.com",
+      jenkinsUser: "ci-bot",
+      jenkinsApiToken: "new-token",
+      tokenStorage: "keychain",
+    });
+
+    const payload = JSON.parse(fileContents.get(CONFIG_FILE) ?? "");
+    expect(payload.profiles.release.protected).toBeTrue();
+    expect(payload.profiles.release.jenkinsApiToken).toBe("new-token");
+  });
+
+  test("an explicit protected input sets and clears the flag", async () => {
+    await writeConfigFile({
+      profile: "release",
+      jenkinsUrl: "https://jenkins-release.example.com",
+      jenkinsUser: "ci-bot",
+      jenkinsApiToken: "token",
+      protected: true,
+    });
+    expect(
+      JSON.parse(fileContents.get(CONFIG_FILE) ?? "").profiles.release
+        .protected,
+    ).toBeTrue();
+
+    await writeConfigFile({
+      profile: "release",
+      jenkinsUrl: "https://jenkins-release.example.com",
+      jenkinsUser: "ci-bot",
+      jenkinsApiToken: "token",
+      protected: false,
+    });
+    expect(
+      JSON.parse(fileContents.get(CONFIG_FILE) ?? "").profiles.release
+        .protected,
+    ).toBeUndefined();
   });
 
   test("does not treat the legacy ambiguous prompt marker as an opt-out", async () => {

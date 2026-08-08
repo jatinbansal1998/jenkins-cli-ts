@@ -4,6 +4,7 @@ import {
   buildFlowHandlers,
   buildPreFlowHandlers,
   listFlowHandlers,
+  statusFlowHandlers,
 } from "../src/flows/handlers";
 import { resetValidatedFlowsForTesting, runFlow } from "../src/flows/runner";
 import type {
@@ -14,6 +15,7 @@ import type {
   FlowPromptValue,
   ListInteractiveContext,
   PromptAdapter,
+  StatusPostContext,
 } from "../src/flows/types";
 import type { EnvConfig } from "../src/env";
 
@@ -132,6 +134,82 @@ describe("flow runner", () => {
     });
 
     expect(result.terminal).toBe("exit_command");
+  });
+
+  test("mutation_blocked keeps every action flow on its action menu", async () => {
+    let pickCount = 0;
+    const listActions: string[] = [];
+    const listContext: ListInteractiveContext = {
+      env: TEST_ENV,
+      jobs: [{ name: "api", url: "https://jenkins.example.com/job/api/" }],
+      pickJob: async () =>
+        pickCount++ === 0
+          ? {
+              kind: "selected",
+              job: {
+                name: "api",
+                url: "https://jenkins.example.com/job/api/",
+              },
+            }
+          : { kind: "cancelled", userInput: "" },
+      performAction: async (action, selectedJob) => {
+        listActions.push(`${action}:${selectedJob.name}`);
+        return action === "build" ? "mutation_blocked" : "action_ok";
+      },
+    };
+
+    const listResult = await runFlow({
+      definition: flows.listInteractive,
+      handlers: listFlowHandlers,
+      prompts: createPromptAdapter(["build", "logs", "exit"]),
+      context: listContext,
+    });
+
+    // The blocked action returned to the same job's menu, not the job picker.
+    expect(listActions).toEqual(["build:api", "logs:api"]);
+    expect(pickCount).toBe(1);
+    expect(listResult.terminal).toBe("exit_command");
+
+    const buildActions: string[] = [];
+    const buildContext: BuildPostContext = {
+      env: TEST_ENV,
+      jobLabel: "api-staging",
+      returnToCaller: true,
+      performAction: async (action) => {
+        buildActions.push(action);
+        return action === "cancel" ? "mutation_blocked" : "action_ok";
+      },
+    };
+
+    const buildResult = await runFlow({
+      definition: flows.buildPost,
+      handlers: buildFlowHandlers,
+      prompts: createPromptAdapter(["cancel", "logs", "done"]),
+      context: buildContext,
+    });
+
+    expect(buildActions).toEqual(["cancel", "logs"]);
+    expect(buildResult.terminal).toBe("return_to_caller");
+
+    const statusActions: string[] = [];
+    const statusContext: StatusPostContext = {
+      env: TEST_ENV,
+      targetLabel: "api",
+      performAction: async (action) => {
+        statusActions.push(action);
+        return action === "rerun" ? "mutation_blocked" : "action_ok";
+      },
+    };
+
+    const statusResult = await runFlow({
+      definition: flows.statusPost,
+      handlers: statusFlowHandlers,
+      prompts: createPromptAdapter(["rerun", "logs", "done", false]),
+      context: statusContext,
+    });
+
+    expect(statusActions).toEqual(["rerun", "logs"]);
+    expect(statusResult.terminal).toBe("exit_command");
   });
 
   test("explicit done and confirm yes returns repeat", async () => {

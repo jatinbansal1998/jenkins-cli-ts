@@ -177,6 +177,11 @@ function configureLoginOptions(yargsInstance: Argv): Argv {
       default: true,
       describe:
         "Store the token in the OS keychain when available (use --no-keychain to force plaintext)",
+    })
+    .option("protected", {
+      type: "boolean",
+      describe:
+        "Make the profile read-only: builds, cancels, and reruns then need --confirm-protected (use --no-protected to clear)",
     });
 }
 
@@ -195,6 +200,7 @@ function createLoginHandler(
     profile?: unknown;
     nonInteractive?: unknown;
     keychain?: unknown;
+    protected?: unknown;
     banner?: unknown;
   }): Promise<void> => {
     await runTrackedCommand(command, argv, async ({ showIntro }) => {
@@ -207,6 +213,9 @@ function createLoginHandler(
         profile: optionalString(argv.profile),
         nonInteractive: Boolean(argv.nonInteractive),
         noKeychain: argv.keychain === false,
+        ...(typeof argv.protected === "boolean"
+          ? { protected: argv.protected }
+          : {}),
       });
     });
   };

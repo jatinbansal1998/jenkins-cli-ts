@@ -34,6 +34,8 @@ export type LoginOptions = {
   profile?: string;
   nonInteractive: boolean;
   noKeychain?: boolean;
+  /** Explicit `--protected` / `--no-protected`; omit to prompt or keep. */
+  protected?: boolean;
 };
 
 export type TokenPersistencePlan = {
@@ -67,44 +69,61 @@ export async function runLogin(
   const existingProfile = existingConfig?.profiles[profileName];
   const profileAlreadyExists = Boolean(existingProfile);
 
-  const url = await resolveUrl(options, existingProfile?.jenkinsUrl);
+  // An explicit --protected/--no-protected on a profile that already exists is
+  // a targeted toggle, not a re-login: reuse the stored values instead of
+  // replaying the credential prompts.
+  const effectiveOptions: LoginOptions =
+    typeof options.protected === "boolean" && profileAlreadyExists
+      ? { ...options, nonInteractive: true }
+      : options;
+
+  const url = await resolveUrl(effectiveOptions, existingProfile?.jenkinsUrl);
   // Validate the URL right after entry so an invalid value is reported before
   // the remaining prompts.
   const normalizedUrl = normalizeUrl(url);
   await offerToOpenHostInBrowser(
-    { url: normalizedUrl, nonInteractive: options.nonInteractive },
+    { url: normalizedUrl, nonInteractive: effectiveOptions.nonInteractive },
     deps,
   );
-  const user = await resolveUser(options, existingProfile?.jenkinsUser);
+  const user = await resolveUser(
+    effectiveOptions,
+    existingProfile?.jenkinsUser,
+  );
   await offerToOpenUserSecurityPageInBrowser(
     {
       url: normalizedUrl,
       user,
-      nonInteractive: options.nonInteractive,
+      nonInteractive: effectiveOptions.nonInteractive,
     },
     deps,
   );
   const apiToken = await resolveApiToken(
-    options,
+    effectiveOptions,
     existingProfile?.jenkinsApiToken,
   );
   const branchParam = await resolveBranchParam(
-    options,
+    effectiveOptions,
     profileName,
     existingProfile?.branchParam,
     existingConfig,
   );
   const makeDefault = await resolveDefaultDecision({
-    options,
+    options: effectiveOptions,
     profileName,
     profileAlreadyExists,
     existingDefault: existingConfig?.defaultProfile,
     profileCount: Object.keys(existingConfig?.profiles ?? {}).length,
   });
+  const wasProtected = existingProfile?.protected === true;
+  const isProtected = await resolveProtectedDecision(
+    effectiveOptions,
+    wasProtected,
+    deps,
+  );
 
   const plan = await planTokenPersistence(
     {
-      options,
+      options: effectiveOptions,
       profileName,
       normalizedUrl,
       apiToken,
@@ -124,6 +143,7 @@ export async function runLogin(
       ...(makeDefault !== undefined ? { makeDefault } : {}),
       ...(plan.tokenStorage ? { tokenStorage: plan.tokenStorage } : {}),
       ...(plan.secureStorageOptOut ? { secureStorageOptOut: true } : {}),
+      ...(isProtected !== undefined ? { protected: isProtected } : {}),
     });
   } catch (error) {
     await plan.rollback?.();
@@ -141,6 +161,14 @@ export async function runLogin(
   }
   if (makeDefault === true) {
     printOk(`Default profile set to "${profileName}".`);
+  }
+  // Report only a change, so a plain re-login stays quiet either way.
+  if ((isProtected ?? wasProtected) !== wasProtected) {
+    printOk(
+      isProtected
+        ? `Profile "${profileName}" is now read-only.`
+        : `Profile "${profileName}" is no longer read-only.`,
+    );
   }
   for (const line of getLoginInstructions({
     profileName,
@@ -593,6 +621,33 @@ async function resolveDefaultDecision(options: {
     return true;
   }
   return !options.existingDefault;
+}
+
+/**
+ * Resolves whether the profile is read-only. Returns `undefined` when nothing
+ * was decided, so the existing setting is preserved. The prompt defaults to
+ * "no" unless the profile is already read-only, so a re-login never silently
+ * drops protection.
+ */
+async function resolveProtectedDecision(
+  options: LoginOptions,
+  alreadyProtected: boolean,
+  deps: LoginDeps,
+): Promise<boolean | undefined> {
+  if (typeof options.protected === "boolean") {
+    return options.protected;
+  }
+  if (options.nonInteractive) {
+    return undefined;
+  }
+  const response = await (deps.confirm ?? confirm)({
+    message: "Make this profile read-only? (blocks builds, cancels, reruns)",
+    initialValue: alreadyProtected,
+  });
+  if (isCancel(response) || typeof response !== "boolean") {
+    throw new CliError("Operation cancelled.");
+  }
+  return response;
 }
 
 function shellEscape(value: string): string {

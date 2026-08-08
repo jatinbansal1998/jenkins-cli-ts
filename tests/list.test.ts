@@ -450,4 +450,80 @@ describe("runList", () => {
       "HINT: Trigger a build first, then try cancelling again.",
     );
   });
+
+  test("protected mutation keeps the selected job's action menu open", async () => {
+    const errorSpy = trackRestore(spyOn(console, "error"));
+
+    autocompleteMock.mockImplementationOnce(
+      async () => "https://jenkins.example.com/job/alpha",
+    );
+    selectMock
+      .mockImplementationOnce(async () => "build")
+      .mockImplementationOnce(async () => "status")
+      .mockImplementationOnce(async () => "exit");
+
+    runBuildMock.mockImplementationOnce(async () => {
+      throw new CliError(
+        'Profile "release" is read-only.',
+        [
+          "Re-run with --confirm-protected to allow builds, cancels, and reruns.",
+        ],
+        "PROFILE_PROTECTED",
+      );
+    });
+
+    await runList({
+      client: {} as JenkinsClient,
+      env: {
+        branchParamDefault: "BRANCH",
+        protectedProfileName: "release",
+      } as EnvConfig,
+      refresh: false,
+      nonInteractive: false,
+    });
+
+    expect(runBuildMock).toHaveBeenCalledTimes(1);
+    expect(errorSpy).toHaveBeenCalledWith(
+      'ERROR: Profile "release" is read-only.',
+    );
+    expect(errorSpy).toHaveBeenCalledWith(
+      "HINT: Re-run with --confirm-protected to allow builds, cancels, and reruns.",
+    );
+    // Same job stays selected: the read action runs without reopening the picker.
+    expect(runStatusMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        jobUrl: "https://jenkins.example.com/job/alpha",
+      }),
+    );
+    expect(selectMock).toHaveBeenCalledTimes(3);
+    expect(autocompleteMock).toHaveBeenCalledTimes(1);
+  });
+
+  test("confirmed sessions run nested mutations normally", async () => {
+    autocompleteMock.mockImplementationOnce(
+      async () => "https://jenkins.example.com/job/alpha",
+    );
+    selectMock
+      .mockImplementationOnce(async () => "build")
+      .mockImplementationOnce(async () => "cancel")
+      .mockImplementationOnce(async () => "rerun")
+      .mockImplementationOnce(async () => "rerun_last")
+      .mockImplementationOnce(async () => "exit");
+
+    await runList({
+      client: {} as JenkinsClient,
+      env: {
+        branchParamDefault: "BRANCH",
+        protectedProfileName: "release",
+        confirmProtected: true,
+      } as EnvConfig,
+      refresh: false,
+      nonInteractive: false,
+    });
+
+    expect(runBuildMock).toHaveBeenCalledTimes(1);
+    expect(runCancelMock).toHaveBeenCalledTimes(1);
+    expect(runRerunMock).toHaveBeenCalledTimes(1);
+    expect(runRerunLastBuildMock).toHaveBeenCalledTimes(1);
+  });
 });

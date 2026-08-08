@@ -186,9 +186,18 @@ export type FlowRunResult<Ctx> = {
   context: Ctx;
 };
 
-/** Standardized outcomes for command action handlers used in menus. */
+/**
+ * Standardized outcomes for command action handlers used in menus.
+ * `mutation_blocked` is a policy refusal (protected profile), kept distinct
+ * from `action_error` so menus stay on the current target instead of unwinding.
+ */
 export type ActionEffectResult =
-  "action_ok" | "watch_cancelled" | "action_error" | "root" | "exit";
+  | "action_ok"
+  | "watch_cancelled"
+  | "action_error"
+  | "mutation_blocked"
+  | "root"
+  | "exit";
 
 /** Runtime context for `listInteractive` flow. */
 export type ListInteractiveContext = {

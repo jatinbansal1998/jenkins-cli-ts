@@ -1,6 +1,6 @@
 import { CliError } from "../cli";
 import { resolveBuildSelector } from "../build-selector";
-import type { EnvConfig } from "../env";
+import { assertProtectedMutationAllowed, type EnvConfig } from "../env";
 import type { JenkinsClient } from "../jenkins/api-wrapper";
 import { resolveJobTarget } from "./ops-helpers";
 import {
@@ -29,6 +29,7 @@ type RerunOptions = {
 };
 
 export async function runRerun(options: RerunOptions): Promise<void> {
+  assertProtectedMutationAllowed(options.env);
   if (options.json) {
     await runJsonCommand(
       "rerun",
@@ -115,6 +116,7 @@ async function runRerunInteractive(options: RerunOptions): Promise<void> {
 }
 
 export async function runRerunLastBuild(options: RerunOptions): Promise<void> {
+  assertProtectedMutationAllowed(options.env);
   if (options.job && options.jobUrl) {
     throw new CliError("Provide either --job or --job-url, not both.", [
       "Remove one of the flags and try again.",
