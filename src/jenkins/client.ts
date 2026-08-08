@@ -453,7 +453,7 @@ export class JenkinsClient {
   /**
    * Stream a single build artifact to disk. The response body is piped to the
    * destination file rather than buffered in memory, so large artifacts do not
-   * inflate the process heap. The destination directory must already exist.
+   * inflate the process heap. The destination directory is created if needed.
    * Returns the number of bytes written.
    */
   async downloadArtifact(

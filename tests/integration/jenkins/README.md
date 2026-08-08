@@ -21,7 +21,7 @@ removed when the run finishes.
 Docker must be available:
 
 ```sh
-bun run test:integration:jenkins-build-errors
+bun scripts/run-with-linux-keyring.ts -- bun scripts/test-jenkins-integration.ts --build-errors
 ```
 
 The standard `bun run test:integration:jenkins` command also runs this suite,
@@ -36,7 +36,7 @@ To include before/after output from another executable:
 
 ```sh
 JENKINS_INTEGRATION_BEFORE_CLI=/path/to/baseline/jenkins-cli \
-  bun run test:integration:jenkins-build-errors
+  bun scripts/run-with-linux-keyring.ts -- bun scripts/test-jenkins-integration.ts --build-errors
 ```
 
 ## Findings
