@@ -1,6 +1,6 @@
 import { CliError } from "./cli";
 
-export type BrowserLauncher = (command: string[]) => Promise<number>;
+type BrowserLauncher = (command: string[]) => Promise<number>;
 
 const launchProcess: BrowserLauncher = async (command) => {
   const process = Bun.spawn({

@@ -7,7 +7,7 @@ import {
 import { CliError } from "../cli";
 import { type JsonAuthStatus, runJsonCommand } from "../json-output";
 
-export type AuthStatusCommandDeps = AuthDiagnosticsDeps & {
+type AuthStatusCommandDeps = AuthDiagnosticsDeps & {
   diagnose?: (
     options: AuthStatusOptions,
     deps: AuthDiagnosticsDeps,

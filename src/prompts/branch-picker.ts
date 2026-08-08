@@ -11,7 +11,7 @@ import type { Readable, Writable } from "node:stream";
 import { styleText } from "node:util";
 import type { PromptOption } from "../flows/types";
 
-export type BranchPickerOptions = {
+type BranchPickerOptions = {
   message: string;
   /** Cached branches first, utility rows (e.g. remove) last. */
   options: PromptOption[];

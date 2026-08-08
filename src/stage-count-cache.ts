@@ -1,6 +1,12 @@
 import type { EnvConfig } from "./env";
 import { normalizeOptionalJobUrl, resolveJobUrlFromBuildUrl } from "./job-url";
-import { readJobCache, writeJobCache, type JobCache } from "./jobs";
+import {
+  jobCacheMatchesEnv,
+  readJobCache,
+  readUsableJobCache,
+  writeJobCache,
+  type JobCache,
+} from "./jobs";
 
 export async function getKnownStageTotal(options: {
   env?: EnvConfig;
@@ -14,8 +20,8 @@ export async function getKnownStageTotal(options: {
   if (!jobUrl) {
     return undefined;
   }
-  const cache = await readJobCache(options.env);
-  if (!cache || !cacheMatchesEnv(cache, options.env)) {
+  const cache = await readUsableJobCache(options.env);
+  if (!cache) {
     return undefined;
   }
   return cache.knownStageTotals?.[jobUrl]?.totalStages;
@@ -42,7 +48,7 @@ export async function recordKnownStageTotal(options: {
     return;
   }
   const cache = await readJobCache(options.env);
-  if (cache && !cacheMatchesEnv(cache, options.env)) {
+  if (cache && !jobCacheMatchesEnv(cache, options.env)) {
     return;
   }
   const baseCache: JobCache =
@@ -95,11 +101,4 @@ export function resolveStageCacheJobUrl(options: {
     return explicitJobUrl;
   }
   return resolveJobUrlFromBuildUrl(options.buildUrl);
-}
-
-function cacheMatchesEnv(
-  cache: { jenkinsUrl: string; user: string },
-  env: EnvConfig,
-): boolean {
-  return cache.jenkinsUrl === env.jenkinsUrl && cache.user === env.jenkinsUser;
 }

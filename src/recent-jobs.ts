@@ -3,16 +3,19 @@
  */
 import type { JenkinsJob } from "./types/jenkins";
 import type { EnvConfig } from "./env";
-import type { JobCache } from "./jobs";
 import { getJobUrlKey } from "./job-url";
-import { readJobCache, sortJobsByDisplayName, writeJobCache } from "./jobs";
+import {
+  readUsableJobCache,
+  sortJobsByDisplayName,
+  writeJobCache,
+} from "./jobs";
 import {
   MAX_RECENT_JOBS,
   normalizeRecentJobs,
   normalizeRecentJobUrl,
 } from "./recent-job-data";
 
-export type RecentJob = {
+type RecentJob = {
   url: string;
   label: string;
 };
@@ -20,7 +23,7 @@ export type RecentJob = {
 export async function loadRecentJobs(options: {
   env: EnvConfig;
 }): Promise<RecentJob[]> {
-  const cache = await readUsableCache(options.env);
+  const cache = await readUsableJobCache(options.env);
   if (!cache) {
     return [];
   }
@@ -35,7 +38,7 @@ export async function loadPreferredJobs(options: {
   env: EnvConfig;
   jobs: JenkinsJob[];
 }): Promise<JenkinsJob[]> {
-  const cache = await readUsableCache(options.env);
+  const cache = await readUsableJobCache(options.env);
   if (!cache) {
     return sortJobsByDisplayName(options.jobs);
   }
@@ -65,7 +68,7 @@ export async function recordRecentJob(options: {
       return;
     }
 
-    const cache = await readUsableCache(options.env);
+    const cache = await readUsableJobCache(options.env);
     if (!cache) {
       return;
     }
@@ -85,18 +88,6 @@ export async function recordRecentJob(options: {
   } catch {
     // Ignore recent job cache write failures.
   }
-}
-
-function cacheMatchesEnv(
-  cache: { jenkinsUrl: string; user: string },
-  env: EnvConfig,
-): boolean {
-  return cache.jenkinsUrl === env.jenkinsUrl && cache.user === env.jenkinsUser;
-}
-
-async function readUsableCache(env: EnvConfig): Promise<JobCache | null> {
-  const cache = await readJobCache(env);
-  return cache && cacheMatchesEnv(cache, env) ? cache : null;
 }
 
 function buildJobsByUrl<T extends { url: string }>(jobs: T[]): Map<string, T> {

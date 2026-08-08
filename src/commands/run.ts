@@ -1,18 +1,15 @@
 import { CliError, printHint, printOk } from "../cli";
-import type { EnvConfig } from "../env";
-import type { JenkinsClient } from "../jenkins/api-wrapper";
+import type { JenkinsClient } from "../jenkins/client";
 import type { RunningBuildSummary } from "../types/jenkins";
 import {
   jsonRunningBuild,
   runJsonCommand,
   type JsonWrite,
 } from "../json-output";
-import { withPromptTarget } from "../tui-target";
 import { runDeps } from "./run-deps";
 
 type RunOptions = {
   client: JenkinsClient;
-  env: EnvConfig;
   nonInteractive: boolean;
   json?: boolean;
   write?: JsonWrite;
@@ -49,7 +46,7 @@ export async function runRunningBuilds(options: RunOptions): Promise<void> {
 
   const deps = activeRunDeps;
   const selection = await deps.select({
-    message: withPromptTarget("Select a running build", options.env),
+    message: "Select a running build",
     options: builds.map((build) => ({
       value: build.buildUrl,
       label: formatRunningBuildLabel(build),

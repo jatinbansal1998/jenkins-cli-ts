@@ -1,3 +1,4 @@
+import { normalizeOptionalString } from "./strings";
 import { randomUUID } from "node:crypto";
 import fs from "node:fs";
 import { chmod, mkdir, rename, rm } from "node:fs/promises";
@@ -30,7 +31,7 @@ export type TokenStorage = "keychain";
  */
 export const KEYCHAIN_TOKEN_SENTINEL = "@keychain";
 
-export type ConfigFileInput = {
+type ConfigFileInput = {
   profile?: string;
   jenkinsUrl: string;
   jenkinsUser: string;
@@ -76,7 +77,7 @@ export type LoadedConfig = {
   legacyDetected: boolean;
 };
 
-export function createEmptyConfig(): JenkinsConfig {
+function createEmptyConfig(): JenkinsConfig {
   return {
     version: CONFIG_VERSION,
     profiles: {},
@@ -142,7 +143,7 @@ export async function writeConfig(config: JenkinsConfig): Promise<string> {
   return CONFIG_FILE;
 }
 
-export function writeConfigSync(config: JenkinsConfig): string {
+function writeConfigSync(config: JenkinsConfig): string {
   const normalized = normalizeConfigForWrite(config);
   writeNormalizedConfigSync(normalized);
   return CONFIG_FILE;
@@ -569,12 +570,4 @@ function firstPositiveInt(
     }
   }
   return undefined;
-}
-
-function normalizeOptionalString(value: unknown): string | undefined {
-  if (typeof value !== "string") {
-    return undefined;
-  }
-  const trimmed = value.trim();
-  return trimmed ? trimmed : undefined;
 }

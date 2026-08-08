@@ -1,3 +1,4 @@
+import { shellEscape } from "../shell-escape";
 /**
  * Login command implementation.
  * Prompts for Jenkins credentials and saves them to a named profile.
@@ -39,7 +40,7 @@ export type LoginOptions = {
   protected?: boolean;
 };
 
-export type TokenPersistencePlan = {
+type TokenPersistencePlan = {
   tokenStorage?: TokenStorage;
   tokenForConfig: string;
   /**
@@ -54,7 +55,7 @@ export type TokenPersistencePlan = {
   rollback?: () => Promise<void>;
 };
 
-export type LoginDeps = {
+type LoginDeps = {
   confirm?: typeof confirm;
   openInBrowser?: (url: string) => Promise<void>;
   secureStore?: SecureStoreDeps;
@@ -651,13 +652,6 @@ async function resolveProtectedDecision(
     throw new CliError("Operation cancelled.");
   }
   return response;
-}
-
-function shellEscape(value: string): string {
-  if (value === "") {
-    return "''";
-  }
-  return `'${value.replace(/'/g, `'\\''`)}'`;
 }
 
 async function resolveBranchParam(

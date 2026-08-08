@@ -4,7 +4,7 @@
  */
 import type { EnvConfig } from "./env";
 import { findJobByUrl } from "./job-url";
-import { readJobCache, writeJobCache } from "./jobs";
+import { readUsableJobCache, writeJobCache } from "./jobs";
 
 const MAX_BRANCHES_PER_JOB = 10;
 const DEFAULT_BRANCHES = ["development", "staging", "master"];
@@ -17,15 +17,15 @@ export async function loadCachedBranches(options: {
   jobUrl: string;
 }): Promise<string[]> {
   const cached = await loadCachedBranchHistory(options);
-  return dedupePreserveOrder([...cached, ...DEFAULT_BRANCHES]);
+  return dedupeCaseInsensitive([...cached, ...DEFAULT_BRANCHES]);
 }
 
 export async function loadCachedBranchHistory(options: {
   env: EnvConfig;
   jobUrl: string;
 }): Promise<string[]> {
-  const cache = await readJobCache(options.env);
-  if (!cache || !cacheMatchesEnv(cache, options.env)) {
+  const cache = await readUsableJobCache(options.env);
+  if (!cache) {
     return [];
   }
   const job = findJobByUrl(cache.jobs, options.jobUrl);
@@ -38,7 +38,7 @@ export async function loadCachedBranchHistory(options: {
     .map((entry) => entry.trim())
     .filter((entry) => entry.length > 0)
     .filter((entry) => !isDefaultBranch(entry));
-  return dedupePreserveOrder(normalized);
+  return dedupeCaseInsensitive(normalized);
 }
 
 export async function removeCachedBranch(options: {
@@ -50,8 +50,8 @@ export async function removeCachedBranch(options: {
   if (!target || isDefaultBranch(target)) {
     return false;
   }
-  const cache = await readJobCache(options.env);
-  if (!cache || !cacheMatchesEnv(cache, options.env)) {
+  const cache = await readUsableJobCache(options.env);
+  if (!cache) {
     return false;
   }
   const job = findJobByUrl(cache.jobs, options.jobUrl);
@@ -78,8 +78,8 @@ export async function recordBranchSelection(options: {
   if (!normalizedBranch) {
     return;
   }
-  const cache = await readJobCache(options.env);
-  if (!cache || !cacheMatchesEnv(cache, options.env)) {
+  const cache = await readUsableJobCache(options.env);
+  if (!cache) {
     return;
   }
   const job = findJobByUrl(cache.jobs, options.jobUrl);
@@ -99,18 +99,11 @@ export async function recordBranchSelection(options: {
   await writeJobCache(cache);
 }
 
-function cacheMatchesEnv(
-  cache: { jenkinsUrl: string; user: string },
-  env: EnvConfig,
-): boolean {
-  return cache.jenkinsUrl === env.jenkinsUrl && cache.user === env.jenkinsUser;
-}
-
 function isDefaultBranch(branch: string): boolean {
   return DEFAULT_BRANCH_SET.has(branch.toLowerCase());
 }
 
-function dedupePreserveOrder(entries: string[]): string[] {
+export function dedupeCaseInsensitive(entries: string[]): string[] {
   const seen = new Set<string>();
   const result: string[] = [];
   for (const entry of entries) {
@@ -122,4 +115,9 @@ function dedupePreserveOrder(entries: string[]): string[] {
     result.push(entry);
   }
   return result;
+}
+
+export function removeBranch(entries: string[], target: string): string[] {
+  const key = target.toLowerCase();
+  return entries.filter((entry) => entry.toLowerCase() !== key);
 }

@@ -1,11 +1,10 @@
 import { CliError, printError, printHint, printOk } from "../cli";
 import { resolveBuildSelector } from "../build-selector";
 import { assertProtectedMutationAllowed, type EnvConfig } from "../env";
-import { areSameJobUrls } from "../job-url";
-import type { JenkinsClient } from "../jenkins/api-wrapper";
-import type { QueueItemSummary, RunningBuildSummary } from "../types/jenkins";
+import type { JenkinsClient } from "../jenkins/client";
+import type { RunningBuildSummary } from "../types/jenkins";
 import { cancelDeps } from "./cancel-deps";
-import { DEFAULT_WATCH_INTERVAL_MS } from "./watch-utils";
+import { DEFAULT_WATCH_INTERVAL_MS, findQueueItemForJob } from "./watch-utils";
 import {
   type JsonCancelReceipt,
   runJsonCommand,
@@ -353,22 +352,4 @@ async function resolveCancelTarget(
     `No running or queued build found for ${target.jobLabel}.`,
     ["Trigger a build first, then try cancelling again."],
   );
-}
-
-function findQueueItemForJob(
-  queueItems: QueueItemSummary[],
-  jobUrl: string,
-): QueueItemSummary | undefined {
-  const matches = queueItems.filter((item) =>
-    areSameJobUrls(item.jobUrl, jobUrl),
-  );
-  if (matches.length === 0) {
-    return undefined;
-  }
-  matches.sort((a, b) => {
-    const aTs = a.inQueueSince ?? 0;
-    const bTs = b.inQueueSince ?? 0;
-    return bTs - aTs;
-  });
-  return matches[0];
 }

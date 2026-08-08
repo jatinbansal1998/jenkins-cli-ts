@@ -1,6 +1,6 @@
 import { CliError, printOk } from "../cli";
 import type { EnvConfig } from "../env";
-import type { JenkinsClient } from "../jenkins/api-wrapper";
+import type { JenkinsClient } from "../jenkins/client";
 import { type JsonWrite, runJsonCommand } from "../json-output";
 import { formatTable } from "../table";
 import type { JobParameterDefinition } from "../types/jenkins";

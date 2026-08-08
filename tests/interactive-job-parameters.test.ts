@@ -1,9 +1,7 @@
 import { describe, expect, mock, test } from "bun:test";
-import type { EnvConfig } from "../src/env";
 import { promptForDiscoveredParameters } from "../src/interactive-job-parameters";
 import type { JobParameterDefinition } from "../src/types/jenkins";
 
-const env = { jenkinsUrl: "https://jenkins.example.com" } as EnvConfig;
 const CANCEL = Symbol("cancel");
 
 const definitions: JobParameterDefinition[] = [
@@ -53,7 +51,6 @@ describe("interactive discovered parameter prompts", () => {
 
     const result = await promptForDiscoveredParameters({
       definitions,
-      env,
       branchParam: "BRANCH",
       branch: "main",
       deps: {
@@ -96,7 +93,6 @@ describe("interactive discovered parameter prompts", () => {
     const text = mock(async () => "value");
     const result = await promptForDiscoveredParameters({
       definitions: [definitions[0] as JobParameterDefinition],
-      env,
       branchParam: "BRANCH",
       deps: {
         text,
@@ -123,7 +119,6 @@ describe("interactive discovered parameter prompts", () => {
     const confirm = mock(async () => true);
     const result = await promptForDiscoveredParameters({
       definitions: [{ name: "TOKEN", type: "password", sensitive: true }],
-      env,
       branchParam: "BRANCH",
       deps: {
         text: mock(async () => ""),

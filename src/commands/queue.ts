@@ -6,9 +6,8 @@
 import { isCancel, select } from "../clack";
 import { printOk } from "../cli";
 import type { EnvConfig } from "../env";
-import type { JenkinsClient } from "../jenkins/api-wrapper";
+import type { JenkinsClient } from "../jenkins/client";
 import { formatTable, truncateCell } from "../table";
-import { withPromptTarget } from "../tui-target";
 import type { QueueItemSummary } from "../types/jenkins";
 import { jsonQueueItem, runJsonCommand, type JsonWrite } from "../json-output";
 import { runCancel } from "./cancel-core";
@@ -54,7 +53,7 @@ export async function runQueue(options: QueueOptions): Promise<void> {
     }
 
     const selection = await select({
-      message: withPromptTarget("Select a queued item", options.env),
+      message: "Select a queued item",
       options: [
         ...items.map((item) => ({
           value: String(item.id),
@@ -89,10 +88,7 @@ async function runQueueItemAction(options: {
   printQueueItemDetails(item);
 
   const action = await select({
-    message: withPromptTarget(
-      `Queue item #${item.id} (${item.jobName ?? "unknown job"})`,
-      options.env,
-    ),
+    message: `Queue item #${item.id} (${item.jobName ?? "unknown job"})`,
     options: [
       { value: CANCEL_VALUE, label: "Cancel" },
       { value: URL_VALUE, label: "Open URL" },
@@ -190,7 +186,7 @@ function printQueueItemDetails(item: QueueItemSummary): void {
   }
 }
 
-export function resolveQueueState(item: QueueItemSummary): string {
+function resolveQueueState(item: QueueItemSummary): string {
   if (item.stuck) {
     return "stuck";
   }
@@ -203,7 +199,7 @@ export function resolveQueueState(item: QueueItemSummary): string {
   return "waiting";
 }
 
-export function formatQueuedFor(
+function formatQueuedFor(
   inQueueSince: number | undefined,
   now: number,
 ): string {

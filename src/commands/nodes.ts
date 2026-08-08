@@ -5,7 +5,7 @@
  */
 import { printOk } from "../cli";
 import type { EnvConfig } from "../env";
-import type { JenkinsClient } from "../jenkins/api-wrapper";
+import type { JenkinsClient } from "../jenkins/client";
 import { formatTable, truncateCell } from "../table";
 import type { NodeSummary, NodesSummary } from "../types/jenkins";
 import { jsonNodes, runJsonCommand, type JsonWrite } from "../json-output";
@@ -67,7 +67,7 @@ function formatNodesTable(nodes: NodeSummary[]): string {
   return formatTable(rows);
 }
 
-export function resolveNodeStatus(node: NodeSummary): string {
+function resolveNodeStatus(node: NodeSummary): string {
   if (node.temporarilyOffline) {
     return node.offlineCauseReason
       ? `temp-offline (${node.offlineCauseReason})`

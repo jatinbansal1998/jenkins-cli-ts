@@ -8,11 +8,6 @@ export function formatPromptTarget(env: EnvConfig): string {
   return `host: ${host} | profile: ${profile}`;
 }
 
-export function withPromptTarget(message: string, env: EnvConfig): string {
-  void env;
-  return message;
-}
-
 function resolveHost(url: string | undefined): string {
   if (typeof url !== "string") {
     return "unknown";

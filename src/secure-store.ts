@@ -15,9 +15,9 @@ import {
 import { normalizeUrl } from "./jenkins-url";
 
 /** Keychain / keyring service name used for all entries. */
-export const SECURE_STORE_SERVICE = "jenkins-cli";
+const SECURE_STORE_SERVICE = "jenkins-cli";
 
-export type SecureStoreKeychain = {
+type SecureStoreKeychain = {
   getPassword: typeof getPassword;
   setPassword: typeof setPassword;
   deletePassword: typeof deletePassword;

@@ -1,3 +1,4 @@
+import { shellEscape } from "../../../src/shell-escape";
 import { expect } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -368,10 +369,6 @@ function stripTerminalCodes(value: string): string {
     .replace(OSC_TERMINAL_SEQUENCE, "")
     .replace(CSI_TERMINAL_SEQUENCE, "")
     .replace(/\r/g, "");
-}
-
-function shellEscape(value: string): string {
-  return `'${value.replace(/'/g, `'\\''`)}'`;
 }
 
 export function macOsExpectScript(

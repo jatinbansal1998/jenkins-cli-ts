@@ -138,7 +138,7 @@ export async function runAuthCurrent(
   }
 }
 
-export type AuthLogoutOptions = {
+type AuthLogoutOptions = {
   profile?: string;
   all?: boolean;
   nonInteractive: boolean;

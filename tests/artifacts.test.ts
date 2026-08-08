@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { runArtifacts } from "../src/commands/artifacts";
 import type { EnvConfig } from "../src/env";
-import { JenkinsClient } from "../src/jenkins/api-wrapper";
+import { JenkinsClient } from "../src/jenkins/client";
 import type { BuildArtifacts } from "../src/types/jenkins";
 
 const TEST_ENV: EnvConfig = {

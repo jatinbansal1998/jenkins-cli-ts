@@ -1,3 +1,4 @@
+import { normalizeOptionalString, parseBooleanFlag } from "./strings";
 import os from "node:os";
 import type * as Sentry from "@sentry/bun";
 import { BUILD_TARGET } from "./build-target";
@@ -16,7 +17,7 @@ const DEFAULT_SENTRY_DSN =
   "https://cbbcbb6d130e1d3e2ffa5baf69c6ed6c@o4511785491824640.ingest.de.sentry.io/4511785621586000";
 const FLUSH_TIMEOUT_MS = 1_500;
 
-export type ErrorReportingConfig = {
+type ErrorReportingConfig = {
   disabled: boolean;
   dsn?: string;
 };
@@ -198,25 +199,4 @@ function scrubText(value: string): string {
     }
   }
   return scrubbed.replace(/https?:\/\/[^\s)\]}>,]+/gi, "<redacted-url>");
-}
-
-function normalizeOptionalString(
-  value: string | undefined,
-): string | undefined {
-  if (typeof value !== "string") {
-    return undefined;
-  }
-  const trimmed = value.trim();
-  return trimmed ? trimmed : undefined;
-}
-
-function parseBooleanFlag(value: string | undefined): boolean | undefined {
-  const normalized = normalizeOptionalString(value)?.toLowerCase();
-  if (normalized === "true" || normalized === "1") {
-    return true;
-  }
-  if (normalized === "false" || normalized === "0") {
-    return false;
-  }
-  return undefined;
 }

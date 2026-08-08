@@ -2,7 +2,7 @@ import { describe, expect, mock, test } from "bun:test";
 import { resolveBuildSelector } from "../src/build-selector";
 import { CliError } from "../src/cli";
 import type { EnvConfig } from "../src/env";
-import type { JenkinsClient } from "../src/jenkins/api-wrapper";
+import type { JenkinsClient } from "../src/jenkins/client";
 import type { resolveJobTarget } from "../src/commands/ops-helpers";
 
 const env: EnvConfig = {

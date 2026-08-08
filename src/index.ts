@@ -36,7 +36,7 @@ import {
   captureUnexpectedError,
   initializeDefaultErrorReporting,
 } from "./error-reporting";
-import { JenkinsClient } from "./jenkins/api-wrapper";
+import { JenkinsClient } from "./jenkins/client";
 import { pruneOldApiLogs, setDebugMode } from "./logger";
 import {
   enforceMinimumVersionFromCache,

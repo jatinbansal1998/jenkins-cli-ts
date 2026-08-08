@@ -1,3 +1,4 @@
+import { withTimeout } from "../with-timeout";
 import { CliError } from "../cli";
 import {
   GITHUB_API_ROOT,
@@ -10,7 +11,7 @@ const RELEASES_ENDPOINT = "releases";
 const RELEASES_TAGS_ENDPOINT = "releases/tags";
 const MAX_RELEASES_TO_SCAN = 20;
 
-export type GitHubReleaseAsset = {
+type GitHubReleaseAsset = {
   name: string;
   browser_download_url: string;
 };
@@ -167,26 +168,4 @@ function validateReleaseInfo(payload: unknown): GitHubReleaseInfo {
     throw new CliError("Unexpected release payload from GitHub.");
   }
   return release;
-}
-
-function withTimeout(timeoutMs?: number): {
-  controller: AbortController;
-  cleanup: () => void;
-} {
-  const controller = new AbortController();
-  let timeout: ReturnType<typeof setTimeout> | undefined;
-  if (timeoutMs && timeoutMs > 0) {
-    timeout = setTimeout(() => controller.abort(), timeoutMs);
-    if (typeof timeout.unref === "function") {
-      timeout.unref();
-    }
-  }
-  return {
-    controller,
-    cleanup: () => {
-      if (timeout) {
-        clearTimeout(timeout);
-      }
-    },
-  };
 }

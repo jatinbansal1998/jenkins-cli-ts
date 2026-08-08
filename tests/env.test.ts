@@ -155,8 +155,8 @@ describe("loadEnv useCrumb parsing", () => {
 
   test("parses env string variants", () => {
     withTempHome((homeDir) => {
-      const truthy = ["true", "TRUE"];
-      const falsy = ["false", "FALSE", "1", "0", "random-value", ""];
+      const truthy = ["true", "TRUE", "1"];
+      const falsy = ["false", "FALSE", "0", "random-value", ""];
 
       for (const value of truthy) {
         const result = runLoadEnv({

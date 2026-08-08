@@ -1,4 +1,4 @@
-export type CliIntroOptions = {
+type CliIntroOptions = {
   showAsciiBanner: boolean;
   version?: string;
   target?: string;

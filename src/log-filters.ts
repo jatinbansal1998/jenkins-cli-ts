@@ -1,6 +1,6 @@
 import { CliError } from "./cli";
 
-export type FilteredLog = {
+type FilteredLog = {
   text: string;
   skippedBytes: number;
 };

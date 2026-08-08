@@ -2,7 +2,6 @@ import { afterEach, describe, expect, mock, spyOn, test } from "bun:test";
 import { browserCommand, openInBrowser } from "../src/browser";
 import { runDeps } from "../src/commands/run-deps";
 import { runRunningBuilds, setRunDepsForTesting } from "../src/commands/run";
-import type { EnvConfig } from "../src/env";
 import type { JenkinsClient } from "../src/jenkins/client";
 
 const builds = [
@@ -36,7 +35,6 @@ describe("runRunningBuilds", () => {
 
     await runRunningBuilds({
       client: clientWithRunningBuilds(async () => builds),
-      env: {} as EnvConfig,
       nonInteractive: false,
     });
 
@@ -50,7 +48,6 @@ describe("runRunningBuilds", () => {
     try {
       await runRunningBuilds({
         client: clientWithRunningBuilds(async () => builds),
-        env: {} as EnvConfig,
         nonInteractive: true,
       });
       expect(logSpy).toHaveBeenCalledWith(
@@ -67,7 +64,6 @@ describe("runRunningBuilds", () => {
     try {
       await runRunningBuilds({
         client: clientWithRunningBuilds(async () => []),
-        env: {} as EnvConfig,
         nonInteractive: false,
       });
       expect(logSpy).toHaveBeenCalledWith("OK: no running builds");
@@ -87,7 +83,6 @@ describe("runRunningBuilds", () => {
     });
     await runRunningBuilds({
       client: clientWithRunningBuilds(async () => builds),
-      env: {} as EnvConfig,
       nonInteractive: false,
     });
     expect(open).not.toHaveBeenCalled();
@@ -106,7 +101,6 @@ describe("runRunningBuilds", () => {
     try {
       await runRunningBuilds({
         client: clientWithRunningBuilds(async () => builds),
-        env: {} as EnvConfig,
         nonInteractive: false,
       });
       expect(logSpy).toHaveBeenCalledWith(builds[0]!.buildUrl);

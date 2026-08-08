@@ -9,8 +9,10 @@ import type {
 } from "./types";
 import { printError, printHint } from "../cli";
 import {
+  dedupeCaseInsensitive,
   loadCachedBranchHistory,
   loadCachedBranches,
+  removeBranch,
   removeCachedBranch,
 } from "../branches";
 import { getJobDisplayName } from "../jobs";
@@ -563,22 +565,3 @@ export const statusFlowHandlers = {
   "status.runAction": runStatusActionHandler,
   "status.repeatConfirm": repeatConfirmHandler,
 } satisfies FlowHandlerRegistry<StatusPostContext>;
-
-function dedupeCaseInsensitive(entries: string[]): string[] {
-  const seen = new Set<string>();
-  const result: string[] = [];
-  for (const entry of entries) {
-    const key = entry.toLowerCase();
-    if (seen.has(key)) {
-      continue;
-    }
-    seen.add(key);
-    result.push(entry);
-  }
-  return result;
-}
-
-function removeBranch(entries: string[], target: string): string[] {
-  const key = target.toLowerCase();
-  return entries.filter((entry) => entry.toLowerCase() !== key);
-}

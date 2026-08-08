@@ -51,7 +51,7 @@ export function pruneRecentJobs(options: {
   return recentJobs.length > 0 ? recentJobs : undefined;
 }
 
-export function buildCanonicalUrlMap(
+function buildCanonicalUrlMap(
   jobs: Pick<JenkinsJob, "url">[],
 ): Map<string, string> {
   const activeUrls = new Map<string, string>();

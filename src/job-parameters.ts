@@ -9,7 +9,7 @@ import type {
 const TRUE_VALUES = new Set(["true", "1", "yes", "y", "on"]);
 const FALSE_VALUES = new Set(["false", "0", "no", "n", "off"]);
 
-export type ValidatedBuildParameters = {
+type ValidatedBuildParameters = {
   params: Record<string, string>;
   unknownNames: string[];
   sensitiveNames: Set<string>;
@@ -181,4 +181,66 @@ export function defaultsForDefinitions(
     }
   }
   return params;
+}
+
+const BRANCH_PARAM_CANDIDATES = [
+  "BRANCH",
+  "BRANCH_TAG",
+  "GIT_BRANCH",
+  "BRANCH_NAME",
+  "REF",
+  "TAG",
+];
+
+export function toParamRecord(
+  params: { name: string; value: string }[] | undefined,
+): Record<string, string> {
+  if (!params || params.length === 0) {
+    return {};
+  }
+  const result: Record<string, string> = {};
+  for (const param of params) {
+    const key = param.name.trim();
+    if (!key) {
+      continue;
+    }
+    result[key] = param.value;
+  }
+  return result;
+}
+
+export function extractBranchFromParams(
+  params: Record<string, string>,
+): string | undefined {
+  for (const key of BRANCH_PARAM_CANDIDATES) {
+    const value = params[key];
+    if (value) {
+      return value;
+    }
+  }
+  const fallback = Object.entries(params).find(
+    ([name, value]) => name.toLowerCase().includes("branch") && value,
+  );
+  return fallback?.[1];
+}
+
+export function extractBranchParam(
+  params: { name: string; value: string }[] | undefined,
+): string | undefined {
+  const normalizedParams = params ?? [];
+  if (normalizedParams.length === 0) {
+    return undefined;
+  }
+  for (const key of BRANCH_PARAM_CANDIDATES) {
+    const match = normalizedParams.find(
+      (param) => param.name === key && param.value,
+    );
+    if (match) {
+      return match.value;
+    }
+  }
+  const fallback = normalizedParams.find(
+    (param) => param.name.toLowerCase().includes("branch") && param.value,
+  );
+  return fallback?.value;
 }

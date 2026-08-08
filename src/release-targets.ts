@@ -1,8 +1,8 @@
-export type SupportedRuntimePlatform = "darwin" | "linux" | "win32";
-export type SupportedRuntimeArch = "x64" | "arm64";
-export type LinuxLibc = "gnu" | "musl";
+type SupportedRuntimePlatform = "darwin" | "linux" | "win32";
+type SupportedRuntimeArch = "x64" | "arm64";
+type LinuxLibc = "gnu" | "musl";
 
-export type NativeReleaseTarget = {
+type NativeReleaseTarget = {
   compileTarget: string;
   assetName: string;
   platform: SupportedRuntimePlatform;

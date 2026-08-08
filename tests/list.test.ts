@@ -9,7 +9,7 @@ import {
 } from "bun:test";
 import { CliError } from "../src/cli";
 import type { EnvConfig } from "../src/env";
-import { EXIT_VALUE } from "../src/flows/constants";
+const EXIT_VALUE = "exit";
 import type { JenkinsClient } from "../src/jenkins/client";
 import type { JenkinsJob } from "../src/types/jenkins";
 

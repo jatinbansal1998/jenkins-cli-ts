@@ -1,16 +1,16 @@
+import { extractBranchFromParams, toParamRecord } from "../job-parameters";
 import { recordBranchSelection } from "../branches";
 import { CliError, printOk } from "../cli";
 import type { EnvConfig } from "../env";
-import type { JenkinsClient } from "../jenkins/api-wrapper";
+import type { JenkinsClient } from "../jenkins/client";
 import { recordRecentJob } from "../recent-jobs";
 import type {
   BuildStatus,
-  JenkinsBuildParameter,
   JobStatus,
   TriggerBuildResult,
 } from "../types/jenkins";
 
-export type RerunBuildResult = {
+type RerunBuildResult = {
   params: Record<string, string>;
   result: TriggerBuildResult;
   sourceBuildUrl?: string;
@@ -141,7 +141,7 @@ async function triggerBuildWithRecordedParams(options: {
     jobUrl: options.jobUrl,
   });
 
-  const branch = extractBranchParam(params);
+  const branch = extractBranchFromParams(params);
   if (branch) {
     try {
       await recordBranchSelection({
@@ -160,46 +160,4 @@ async function triggerBuildWithRecordedParams(options: {
     sourceBuildUrl: options.sourceBuildUrl,
     sourceBuildNumber: options.sourceBuildNumber,
   };
-}
-
-function toParamRecord(
-  params: JenkinsBuildParameter[] | undefined,
-): Record<string, string> {
-  if (!params || params.length === 0) {
-    return {};
-  }
-  const result: Record<string, string> = {};
-  for (const param of params) {
-    const key = param.name.trim();
-    if (!key) {
-      continue;
-    }
-    result[key] = param.value;
-  }
-  return result;
-}
-
-function extractBranchParam(
-  params: Record<string, string>,
-): string | undefined {
-  const candidates = [
-    "BRANCH",
-    "BRANCH_TAG",
-    "GIT_BRANCH",
-    "BRANCH_NAME",
-    "REF",
-    "TAG",
-  ];
-
-  for (const key of candidates) {
-    const value = params[key];
-    if (value) {
-      return value;
-    }
-  }
-
-  const fallback = Object.entries(params).find(
-    ([name, value]) => name.toLowerCase().includes("branch") && value,
-  );
-  return fallback?.[1];
 }

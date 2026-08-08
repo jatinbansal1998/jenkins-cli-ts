@@ -1,7 +1,7 @@
 import { CliError } from "../cli";
 import { assertProtectedMutationAllowed, type EnvConfig } from "../env";
 import { areSameJobUrls, normalizeOptionalJobUrl } from "../job-url";
-import type { JenkinsClient } from "../jenkins/api-wrapper";
+import type { JenkinsClient } from "../jenkins/client";
 import type { QueueItemSummary } from "../types/jenkins";
 
 export const DEFAULT_WATCH_INTERVAL_MS = 5_000;
@@ -29,9 +29,9 @@ export async function waitForPollIntervalOrCancel(
   }
 }
 
-export type WatchControlAction = "stop" | "cancel";
+type WatchControlAction = "stop" | "cancel";
 
-export type WatchControlSignal = {
+type WatchControlSignal = {
   getAction: () => WatchControlAction | null;
   clearAction: () => void;
   readonly wait: Promise<void>;
@@ -181,7 +181,7 @@ export async function requestCancellationForWatchTarget(options: {
   );
 }
 
-function findQueueItemForJob(
+export function findQueueItemForJob(
   queueItems: QueueItemSummary[],
   jobUrl: string,
 ): QueueItemSummary | undefined {

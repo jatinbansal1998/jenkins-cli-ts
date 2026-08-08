@@ -31,7 +31,7 @@ export type InstalledApiMocks = {
   restore: () => void;
 };
 
-export async function loadDummyJobCacheFixture(): Promise<JobCache> {
+async function loadDummyJobCacheFixture(): Promise<JobCache> {
   return (await Bun.file(DUMMY_JOB_CACHE_PATH).json()) as JobCache;
 }
 

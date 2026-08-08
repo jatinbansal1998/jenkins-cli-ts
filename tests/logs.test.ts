@@ -6,7 +6,7 @@ import {
   type LogCancellationSignal,
 } from "../src/commands/logs";
 import type { EnvConfig } from "../src/env";
-import type { JenkinsClient } from "../src/jenkins/api-wrapper";
+import type { JenkinsClient } from "../src/jenkins/client";
 
 const env: EnvConfig = {
   jenkinsUrl: "https://jenkins.example.com",

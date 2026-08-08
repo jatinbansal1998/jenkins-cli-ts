@@ -1,5 +1,5 @@
 import { CliError } from "./cli";
-import type { JenkinsClient } from "./jenkins/api-wrapper";
+import type { JenkinsClient } from "./jenkins/client";
 import type {
   JenkinsPipelineNodeResponse,
   JenkinsPipelineStage,

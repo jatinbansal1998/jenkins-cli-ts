@@ -3,7 +3,7 @@ import { markAnalyticsPollingCommand } from "../analytics";
 import { resolveBuildSelector } from "../build-selector";
 import { CliError, printHint } from "../cli";
 import type { EnvConfig } from "../env";
-import type { JenkinsClient } from "../jenkins/api-wrapper";
+import type { JenkinsClient } from "../jenkins/client";
 import {
   filterTimestampedLog,
   parseSinceCutoff,
@@ -39,7 +39,7 @@ export type LogCancellationSignal = {
   readonly wait: Promise<void>;
 };
 
-export type LogsRunResult = {
+type LogsRunResult = {
   cancelled: boolean;
   buildUrl?: string;
 };

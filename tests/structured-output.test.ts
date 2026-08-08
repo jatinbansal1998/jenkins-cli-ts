@@ -121,7 +121,6 @@ describe("expanded JSON normalization", () => {
       async (write: (text: string) => void) =>
         runRunningBuilds({
           client: client({ listRunningBuilds: mock(async () => []) }),
-          env,
           nonInteractive: true,
           json: true,
           write,
