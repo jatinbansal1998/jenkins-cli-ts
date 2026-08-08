@@ -395,6 +395,224 @@ describe("JenkinsClient folder discovery", () => {
     await expect(makeClient().listJobs()).rejects.toThrow();
   });
 
+  test("requests activity metadata and keeps it for embedded jobs in one request", async () => {
+    const requestedUrls: string[] = [];
+    const fetchMock = mock(async (input: FetchInput, _init?: FetchInit) => {
+      const url = String(input);
+      requestedUrls.push(url);
+      if (
+        url.startsWith("https://jenkins.example.com/api/json") &&
+        url.includes("tree=jobs[")
+      ) {
+        return new Response(
+          JSON.stringify({
+            jobs: [
+              {
+                _class: FREESTYLE_CLASS,
+                name: "built",
+                fullName: "built",
+                url: "https://jenkins.example.com/job/built/",
+                disabled: false,
+                lastBuild: {
+                  number: 42,
+                  url: "https://jenkins.example.com/job/built/42/",
+                  result: "SUCCESS",
+                  building: false,
+                  timestamp: 1767225600000,
+                  duration: 12000,
+                  estimatedDuration: 11000,
+                },
+              },
+              {
+                _class: FREESTYLE_CLASS,
+                name: "never-built",
+                fullName: "never-built",
+                url: "https://jenkins.example.com/job/never-built/",
+                disabled: false,
+                lastBuild: null,
+              },
+              {
+                _class: FREESTYLE_CLASS,
+                name: "off",
+                fullName: "off",
+                url: "https://jenkins.example.com/job/off/",
+                disabled: true,
+                lastBuild: null,
+              },
+            ],
+          }),
+          { status: 200 },
+        );
+      }
+      return new Response("", { status: 404 });
+    });
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+    const jobs = await makeClient().listJobs();
+
+    expect(requestedUrls).toHaveLength(1);
+    const treeQuery = decodeURIComponent(requestedUrls[0] ?? "");
+    expect(treeQuery).toContain("disabled");
+    expect(treeQuery).toContain(
+      "lastBuild[number,url,result,building,timestamp,duration,estimatedDuration]",
+    );
+    expect(jobs).toEqual([
+      {
+        name: "built",
+        fullName: "built",
+        url: "https://jenkins.example.com/job/built/",
+        disabled: false,
+        lastBuild: {
+          number: 42,
+          url: "https://jenkins.example.com/job/built/42/",
+          result: "SUCCESS",
+          building: false,
+          timestampMs: 1767225600000,
+          durationMs: 12000,
+          estimatedDurationMs: 11000,
+        },
+      },
+      {
+        name: "never-built",
+        fullName: "never-built",
+        url: "https://jenkins.example.com/job/never-built/",
+        disabled: false,
+        lastBuild: null,
+      },
+      {
+        name: "off",
+        fullName: "off",
+        url: "https://jenkins.example.com/job/off/",
+        disabled: true,
+        lastBuild: null,
+      },
+    ]);
+  });
+
+  test("normalizes partial and malformed last-build payloads", async () => {
+    const fetchMock = mock(async (input: FetchInput, _init?: FetchInit) => {
+      const url = String(input);
+      if (
+        url.startsWith("https://jenkins.example.com/api/json") &&
+        url.includes("tree=jobs[")
+      ) {
+        return new Response(
+          JSON.stringify({
+            jobs: [
+              {
+                _class: FREESTYLE_CLASS,
+                name: "partial",
+                url: "https://jenkins.example.com/job/partial/",
+                lastBuild: {
+                  number: 7,
+                  url: "https://jenkins.example.com/job/partial/7/",
+                  result: null,
+                  building: true,
+                },
+              },
+              {
+                _class: FREESTYLE_CLASS,
+                name: "malformed",
+                url: "https://jenkins.example.com/job/malformed/",
+                disabled: "yes",
+                lastBuild: { result: "SUCCESS" },
+              },
+              {
+                _class: FREESTYLE_CLASS,
+                name: "unknown-activity",
+                url: "https://jenkins.example.com/job/unknown-activity/",
+              },
+            ],
+          }),
+          { status: 200 },
+        );
+      }
+      return new Response("", { status: 404 });
+    });
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+    const jobs = await makeClient().listJobs();
+
+    expect(jobs[0]?.lastBuild).toEqual({
+      number: 7,
+      url: "https://jenkins.example.com/job/partial/7/",
+      result: null,
+      building: true,
+    });
+    expect(jobs[0]?.disabled).toBeUndefined();
+    expect(jobs[1]?.disabled).toBeUndefined();
+    expect(jobs[1]?.lastBuild).toBeNull();
+    expect(jobs[2]).not.toHaveProperty("lastBuild");
+  });
+
+  test("preserves activity metadata through the folder fallback request", async () => {
+    const fetchMock = mock(async (input: FetchInput, _init?: FetchInit) => {
+      const url = String(input);
+      if (
+        url.startsWith("https://jenkins.example.com/api/json") &&
+        url.includes("tree=jobs[")
+      ) {
+        return new Response(
+          JSON.stringify({
+            jobs: [
+              {
+                _class: FOLDER_CLASS,
+                name: "ProdFolder",
+                fullName: "ProdFolder",
+                url: "https://jenkins.example.com/job/ProdFolder/",
+              },
+            ],
+          }),
+          { status: 200 },
+        );
+      }
+      if (
+        url.startsWith("https://jenkins.example.com/job/ProdFolder/api/json") &&
+        decodeURIComponent(url).includes(
+          "lastBuild[number,url,result,building,timestamp,duration,estimatedDuration]",
+        )
+      ) {
+        return new Response(
+          JSON.stringify({
+            jobs: [
+              {
+                _class: FREESTYLE_CLASS,
+                name: "prod-deploy",
+                fullName: "ProdFolder/prod-deploy",
+                url: "https://jenkins.example.com/job/ProdFolder/job/prod-deploy/",
+                disabled: true,
+                lastBuild: {
+                  number: 3,
+                  url: "https://jenkins.example.com/job/ProdFolder/job/prod-deploy/3/",
+                  result: "FAILURE",
+                  building: false,
+                },
+              },
+            ],
+          }),
+          { status: 200 },
+        );
+      }
+      return new Response("", { status: 404 });
+    });
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+    const jobs = await makeClient().listJobs();
+    expect(jobs).toHaveLength(1);
+    expect(jobs[0]).toEqual({
+      name: "prod-deploy",
+      fullName: "ProdFolder/prod-deploy",
+      url: "https://jenkins.example.com/job/ProdFolder/job/prod-deploy/",
+      disabled: true,
+      lastBuild: {
+        number: 3,
+        url: "https://jenkins.example.com/job/ProdFolder/job/prod-deploy/3/",
+        result: "FAILURE",
+        building: false,
+      },
+    });
+  });
+
   test("mixed root jobs, folder jobs, and nested folders all discovered", async () => {
     const fetchMock = mock(async (input: FetchInput, _init?: FetchInit) => {
       const url = String(input);

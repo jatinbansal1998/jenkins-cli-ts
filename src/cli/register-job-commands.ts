@@ -58,6 +58,11 @@ export function configureListOptions(yargsInstance: Argv): Argv {
       default: false,
       describe: "Refresh the job cache from Jenkins",
     })
+    .option("active-only", {
+      type: "boolean",
+      default: false,
+      describe: "Show only enabled jobs with at least one build",
+    })
     .option("json", {
       type: "boolean",
       default: false,
@@ -73,6 +78,7 @@ function createListHandler(
     $0?: unknown;
     search?: unknown;
     refresh?: unknown;
+    activeOnly?: unknown;
     nonInteractive?: unknown;
     json?: unknown;
     banner?: unknown;
@@ -92,6 +98,7 @@ function createListHandler(
           env,
           search: optionalString(argv.search),
           refresh: Boolean(argv.refresh),
+          activeOnly: Boolean(argv.activeOnly),
           nonInteractive: Boolean(argv.nonInteractive),
           json: Boolean(argv.json),
         });

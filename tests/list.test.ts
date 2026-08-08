@@ -18,6 +18,32 @@ const jobs: JenkinsJob[] = [
   { name: "alpha", url: "https://jenkins.example.com/job/alpha" },
 ];
 
+const activityJobs: JenkinsJob[] = [
+  {
+    name: "active",
+    url: "https://jenkins.example.com/job/active",
+    disabled: false,
+    lastBuild: {
+      number: 4,
+      url: "https://jenkins.example.com/job/active/4/",
+      result: "SUCCESS",
+    },
+  },
+  {
+    name: "blocked",
+    url: "https://jenkins.example.com/job/blocked",
+    disabled: true,
+    lastBuild: null,
+  },
+  {
+    name: "cold",
+    url: "https://jenkins.example.com/job/cold",
+    disabled: false,
+    lastBuild: null,
+  },
+  { name: "dusty", url: "https://jenkins.example.com/job/dusty" },
+];
+
 const loadJobsMock = mock(async () => jobs);
 const loadPreferredJobsMock = mock(async (..._args: unknown[]) => jobs);
 const autocompleteMock = mock(async (..._args: unknown[]) => EXIT_VALUE);
@@ -81,8 +107,6 @@ mock.module("../src/commands/list-deps", () => ({
     loadJobs: loadJobsMock,
     loadPreferredJobs: loadPreferredJobsMock,
     pickJob: pickJobMock,
-    getJobDisplayName: (job: { name: string; fullName?: string }) =>
-      job.fullName || job.name,
     rankJobs: (query: string, entries: { name: string; url: string }[]) =>
       entries
         .filter((job) => job.name.includes(query))
@@ -168,6 +192,60 @@ describe("runList", () => {
     expect(logSpy).toHaveBeenCalledTimes(1);
     expect(logSpy.mock.calls[0]?.[0]).toBe(
       "alpha  https://jenkins.example.com/job/alpha",
+    );
+  });
+
+  test("non-interactive marks disabled jobs only", async () => {
+    loadJobsMock.mockImplementationOnce(async () => activityJobs);
+    const logSpy = trackRestore(spyOn(console, "log"));
+
+    await runList({
+      client: {} as JenkinsClient,
+      env: {} as EnvConfig,
+      refresh: false,
+      nonInteractive: true,
+    });
+
+    expect(logSpy.mock.calls.map((call) => call[0])).toEqual([
+      "active  https://jenkins.example.com/job/active",
+      "blocked [disabled]  https://jenkins.example.com/job/blocked",
+      "cold  https://jenkins.example.com/job/cold",
+      "dusty  https://jenkins.example.com/job/dusty",
+    ]);
+  });
+
+  test("non-interactive --active-only keeps only enabled jobs with builds", async () => {
+    loadJobsMock.mockImplementationOnce(async () => activityJobs);
+    const logSpy = trackRestore(spyOn(console, "log"));
+
+    await runList({
+      client: {} as JenkinsClient,
+      env: {} as EnvConfig,
+      refresh: false,
+      activeOnly: true,
+      nonInteractive: true,
+    });
+
+    expect(logSpy.mock.calls.map((call) => call[0])).toEqual([
+      "active  https://jenkins.example.com/job/active",
+    ]);
+  });
+
+  test("--active-only filters jobs before interactive selection and search", async () => {
+    loadJobsMock.mockImplementationOnce(async () => activityJobs);
+
+    await runList({
+      client: {} as JenkinsClient,
+      env: {} as EnvConfig,
+      search: "c",
+      refresh: false,
+      activeOnly: true,
+      nonInteractive: false,
+    });
+
+    expect(pickJobMock).toHaveBeenCalledTimes(1);
+    expect(pickJobMock.mock.calls[0]?.[0]?.jobs).toEqual(
+      activityJobs.slice(0, 1),
     );
   });
 

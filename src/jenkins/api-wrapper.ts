@@ -40,6 +40,7 @@ import type {
   JenkinsComputerResponse,
   JenkinsCrumbResponse,
   JenkinsJob,
+  JenkinsJobLastBuild,
   JenkinsJobParametersResponse,
   JobParameterDefinition,
   JenkinsJobsResponse,
@@ -69,6 +70,7 @@ export type {
   ConsoleChunk,
   JenkinsClientOptions,
   JenkinsJob,
+  JenkinsJobLastBuild,
   JobParameterDefinition,
   JobStatus,
   NodeSummary,
@@ -1350,7 +1352,8 @@ function isBuildResourceContext(context: string): boolean {
 
 const CLOUDBEES_FOLDER_CLASS = "com.cloudbees.hudson.plugins.folder.Folder";
 
-const FOLDER_LEAF_FIELDS = "_class,name,fullName,url";
+const FOLDER_LEAF_FIELDS =
+  "_class,name,fullName,url,disabled,lastBuild[number,url,result,building,timestamp,duration,estimatedDuration]";
 const RUNNING_BUILD_LEAF_FIELDS =
   "_class,name,fullName,url,lastBuild[number,url,building]";
 const DEFAULT_FOLDER_DEPTH = 3;
@@ -1634,6 +1637,44 @@ function normalizeJob(job: JenkinsApiJob): JenkinsJob | null {
     name: job.name,
     fullName: typeof job.fullName === "string" ? job.fullName : undefined,
     url: job.url,
+    ...(typeof job.disabled === "boolean" ? { disabled: job.disabled } : {}),
+    // An absent `lastBuild` key means Jenkins did not report activity at all;
+    // keep it absent so the state stays "unknown" rather than "never built".
+    ...(job.lastBuild === undefined
+      ? {}
+      : { lastBuild: normalizeJobLastBuild(job.lastBuild) }),
+  };
+}
+
+function normalizeJobLastBuild(
+  build: JenkinsApiBuild | null,
+): JenkinsJobLastBuild | null {
+  if (
+    !build ||
+    typeof build.number !== "number" ||
+    !Number.isInteger(build.number) ||
+    build.number < 0 ||
+    typeof build.url !== "string" ||
+    !build.url.trim()
+  ) {
+    return null;
+  }
+  return {
+    number: build.number,
+    url: build.url,
+    ...(build.result === undefined ? {} : { result: build.result }),
+    ...(typeof build.building === "boolean"
+      ? { building: build.building }
+      : {}),
+    ...(typeof build.timestamp === "number"
+      ? { timestampMs: build.timestamp }
+      : {}),
+    ...(typeof build.duration === "number"
+      ? { durationMs: build.duration }
+      : {}),
+    ...(typeof build.estimatedDuration === "number"
+      ? { estimatedDurationMs: build.estimatedDuration }
+      : {}),
   };
 }
 

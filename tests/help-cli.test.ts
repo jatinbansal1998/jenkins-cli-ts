@@ -68,6 +68,14 @@ describe("root help for agents", () => {
     expect(result.output).toContain("[default: 0]");
   });
 
+  test("epilog documents the list activity filter", () => {
+    const result = runCli(["--help"]);
+
+    expect(result.output).toContain(
+      "--active-only    Show only enabled jobs with at least one build",
+    );
+  });
+
   test("explains unsupported structured combinations", () => {
     const result = runCli(["--help"]);
 

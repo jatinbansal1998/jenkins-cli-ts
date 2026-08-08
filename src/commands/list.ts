@@ -6,7 +6,7 @@ import { runInteractiveSubcommandWithAnalytics } from "../analytics";
 import { CliError, printError, printHint, printOk } from "../cli";
 import type { EnvConfig } from "../env";
 import type { JenkinsClient } from "../jenkins/api-wrapper";
-import type { JenkinsJob } from "../types/jenkins";
+import type { JenkinsJob, JenkinsJobLastBuild } from "../types/jenkins";
 import { MIN_SCORE } from "../config/fuzzy";
 import { type JsonWrite, runJsonCommand } from "../json-output";
 import { listDeps } from "./list-deps";
@@ -24,6 +24,7 @@ type ListOptions = {
   env: EnvConfig;
   search?: string;
   refresh?: boolean;
+  activeOnly?: boolean;
   nonInteractive: boolean;
   json?: boolean;
   write?: JsonWrite;
@@ -34,6 +35,8 @@ type ListJsonJob = {
   name: string;
   fullName?: string;
   url: string;
+  disabled?: boolean;
+  lastBuild?: JenkinsJobLastBuild | null;
 };
 
 type ListActionMenuOptions = {
@@ -54,12 +57,15 @@ export async function runList(options: ListOptions): Promise<void> {
     return;
   }
 
-  const jobs = await listDeps.loadJobs({
-    client: options.client,
-    env: options.env,
-    refresh: options.refresh,
-    nonInteractive: options.nonInteractive,
-  });
+  const jobs = filterActiveJobs(
+    await listDeps.loadJobs({
+      client: options.client,
+      env: options.env,
+      refresh: options.refresh,
+      nonInteractive: options.nonInteractive,
+    }),
+    options.activeOnly,
+  );
 
   if (options.nonInteractive) {
     const search = options.search?.trim() ?? "";
@@ -84,22 +90,44 @@ async function runListJson(options: ListOptions): Promise<void> {
   await runJsonCommand(
     "list",
     async (): Promise<ListJsonJob[]> => {
-      const jobs = await listDeps.loadJobs({
-        client: options.client,
-        env: options.env,
-        refresh: options.refresh,
-        nonInteractive: true,
-      });
+      const jobs = filterActiveJobs(
+        await listDeps.loadJobs({
+          client: options.client,
+          env: options.env,
+          refresh: options.refresh,
+          nonInteractive: true,
+        }),
+        options.activeOnly,
+      );
       const search = options.search?.trim() ?? "";
       const filteredJobs = getFilteredJobs(jobs, search);
       return filteredJobs.map((job) => ({
         name: job.name,
         ...(job.fullName ? { fullName: job.fullName } : {}),
         url: job.url,
+        ...(typeof job.disabled === "boolean"
+          ? { disabled: job.disabled }
+          : {}),
+        ...(job.lastBuild === undefined ? {} : { lastBuild: job.lastBuild }),
       }));
     },
     { write: options.write },
   );
+}
+
+/**
+ * A job counts as active only when Jenkins proved it is enabled and has at
+ * least one build. Jobs cached before activity metadata existed are unknown,
+ * not active, so they are excluded.
+ */
+function filterActiveJobs(
+  jobs: JenkinsJob[],
+  activeOnly: boolean | undefined,
+): JenkinsJob[] {
+  if (!activeOnly) {
+    return jobs;
+  }
+  return jobs.filter((job) => job.disabled !== true && Boolean(job.lastBuild));
 }
 
 function getFilteredJobs(jobs: JenkinsJob[], search: string): JenkinsJob[] {
@@ -149,7 +177,7 @@ function printJobs(entries: JenkinsJob[], search: string): void {
   }
 
   for (const job of entries) {
-    console.log(`${listDeps.getJobDisplayName(job)}  ${job.url}`);
+    console.log(`${listDeps.getJobDisplayLabel(job)}  ${job.url}`);
   }
 }
 

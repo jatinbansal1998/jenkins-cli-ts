@@ -63,8 +63,15 @@ describe("list command registration", () => {
         .parseAsync();
     };
 
-    await parse(["list", "--search", "api", "--refresh", "--json"]);
-    await parse(["--search", "api", "--refresh", "--json"]);
+    await parse([
+      "list",
+      "--search",
+      "api",
+      "--refresh",
+      "--active-only",
+      "--json",
+    ]);
+    await parse(["--search", "api", "--refresh", "--active-only", "--json"]);
 
     expect(calls).toHaveLength(2);
     for (const call of calls) {
@@ -73,11 +80,22 @@ describe("list command registration", () => {
         expect.objectContaining({
           search: "api",
           refresh: true,
+          activeOnly: true,
           json: true,
           nonInteractive: false,
         }),
       );
     }
+  });
+
+  test("list help documents --active-only", () => {
+    const help = runCli(["list", "--help"]);
+
+    expect(help.exitCode).toBe(0);
+    expect(help.output).toContain("--active-only");
+    expect(help.output).toContain(
+      "Show only enabled jobs with at least one build",
+    );
   });
 });
 

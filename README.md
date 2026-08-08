@@ -429,7 +429,10 @@ jenkins-cli params --job-url "https://jenkins.example.com/job/api-prod/" --json
 }
 ```
 
-**`list`** — `data` is an array of cached jobs:
+**`list`** — `data` is an array of cached jobs. `disabled` and `lastBuild` carry
+the job's activity state: `lastBuild` is `null` when the job has never been
+built, and both fields are omitted for jobs cached before activity metadata was
+collected (run `list --refresh` to fill them in):
 
 ```bash
 jenkins-cli list --json
@@ -443,7 +446,17 @@ jenkins-cli list --json
     {
       "name": "api",
       "fullName": "team/api",
-      "url": "https://jenkins.example.com/job/api"
+      "url": "https://jenkins.example.com/job/api",
+      "disabled": false,
+      "lastBuild": {
+        "number": 42,
+        "url": "https://jenkins.example.com/job/api/42/",
+        "result": "SUCCESS",
+        "building": false,
+        "timestampMs": 1767225600000,
+        "durationMs": 12000,
+        "estimatedDurationMs": 11000
+      }
     }
   ]
 }
@@ -656,6 +669,16 @@ Search with natural language:
 ```bash
 jenkins-cli list --search "api prod deploy"
 ```
+
+Show only enabled jobs with at least one build:
+
+```bash
+jenkins-cli list --active-only
+```
+
+Disabled jobs are marked `<name> [disabled]` in terminal listings and job
+pickers. `--active-only` filters the cached snapshot; combine it with
+`--refresh` when the cache predates activity metadata.
 
 Run any command against a specific profile:
 

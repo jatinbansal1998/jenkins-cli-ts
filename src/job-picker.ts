@@ -2,7 +2,7 @@ import { autocomplete, autocompleteMultiselect, isCancel } from "./clack";
 import type { EnvConfig } from "./env";
 import type { PromptAdapter, PromptOption } from "./flows/types";
 import { findJobByUrl } from "./job-url";
-import { getJobDisplayName, getSuggestedJobs } from "./jobs";
+import { getJobDisplayLabel, getSuggestedJobs } from "./jobs";
 import { loadPreferredJobs } from "./recent-jobs";
 import { withPromptTarget } from "./tui-target";
 import type { JenkinsJob } from "./types/jenkins";
@@ -62,7 +62,7 @@ export function createJobPicker(deps: JobPickerDeps) {
             : preferredJobs;
         return suggestedJobs.map((job) => ({
           value: job.url,
-          label: getJobDisplayName(job),
+          label: getJobDisplayLabel(job),
         }));
       };
       const validate = (value: string | string[] | undefined) => {

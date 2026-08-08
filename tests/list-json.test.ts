@@ -33,6 +33,60 @@ const jobs: JenkinsJob[] = [
   { name: "beta", url: "https://jenkins.example.com/job/beta" },
 ];
 
+const activityJobs: JenkinsJob[] = [
+  {
+    name: "built",
+    fullName: "team/built",
+    url: "https://jenkins.example.com/job/built",
+    disabled: false,
+    lastBuild: {
+      number: 42,
+      url: "https://jenkins.example.com/job/built/42/",
+      result: "SUCCESS",
+      building: false,
+      timestampMs: 1767225600000,
+      durationMs: 12000,
+      estimatedDurationMs: 11000,
+    },
+  },
+  {
+    name: "disabled-job",
+    url: "https://jenkins.example.com/job/disabled-job",
+    disabled: true,
+    lastBuild: null,
+  },
+  {
+    name: "never-built",
+    url: "https://jenkins.example.com/job/never-built",
+    disabled: false,
+    lastBuild: null,
+  },
+  {
+    name: "partial",
+    url: "https://jenkins.example.com/job/partial",
+    disabled: false,
+    lastBuild: {
+      number: 3,
+      url: "https://jenkins.example.com/job/partial/3/",
+    },
+  },
+  {
+    name: "shuttered",
+    url: "https://jenkins.example.com/job/shuttered",
+    disabled: true,
+    lastBuild: {
+      number: 9,
+      url: "https://jenkins.example.com/job/shuttered/9/",
+      result: "FAILURE",
+      building: false,
+    },
+  },
+  {
+    name: "unknown",
+    url: "https://jenkins.example.com/job/unknown",
+  },
+];
+
 function capture(): { write: (text: string) => void; output: () => string } {
   const chunks: string[] = [];
   return {
@@ -105,6 +159,94 @@ describe("list --json", () => {
     const lines = sink.output().split("\n").filter(Boolean);
     expect(lines).toHaveLength(1);
     expect(() => JSON.parse(lines[0] as string)).not.toThrow();
+  });
+
+  test("emits activity metadata and omits it when Jenkins never reported it", async () => {
+    trackRestore(spyOn(listDeps, "loadJobs")).mockResolvedValue(activityJobs);
+    const sink = capture();
+
+    await runList({
+      client: {} as JenkinsClient,
+      env,
+      nonInteractive: true,
+      json: true,
+      write: sink.write,
+    });
+
+    const parsed = JSON.parse(sink.output()) as { data: unknown[] };
+    expect(parsed.data).toEqual([
+      {
+        name: "disabled-job",
+        url: "https://jenkins.example.com/job/disabled-job",
+        disabled: true,
+        lastBuild: null,
+      },
+      {
+        name: "never-built",
+        url: "https://jenkins.example.com/job/never-built",
+        disabled: false,
+        lastBuild: null,
+      },
+      {
+        name: "partial",
+        url: "https://jenkins.example.com/job/partial",
+        disabled: false,
+        lastBuild: {
+          number: 3,
+          url: "https://jenkins.example.com/job/partial/3/",
+        },
+      },
+      {
+        name: "shuttered",
+        url: "https://jenkins.example.com/job/shuttered",
+        disabled: true,
+        lastBuild: {
+          number: 9,
+          url: "https://jenkins.example.com/job/shuttered/9/",
+          result: "FAILURE",
+          building: false,
+        },
+      },
+      {
+        name: "built",
+        fullName: "team/built",
+        url: "https://jenkins.example.com/job/built",
+        disabled: false,
+        lastBuild: {
+          number: 42,
+          url: "https://jenkins.example.com/job/built/42/",
+          result: "SUCCESS",
+          building: false,
+          timestampMs: 1767225600000,
+          durationMs: 12000,
+          estimatedDurationMs: 11000,
+        },
+      },
+      {
+        name: "unknown",
+        url: "https://jenkins.example.com/job/unknown",
+      },
+    ]);
+    expect(sink.output()).not.toContain("[disabled]");
+  });
+
+  test("--active-only keeps only enabled jobs with a known build", async () => {
+    trackRestore(spyOn(listDeps, "loadJobs")).mockResolvedValue(activityJobs);
+    const sink = capture();
+
+    await runList({
+      client: {} as JenkinsClient,
+      env,
+      activeOnly: true,
+      nonInteractive: true,
+      json: true,
+      write: sink.write,
+    });
+
+    const parsed = JSON.parse(sink.output()) as {
+      data: Array<{ name: string }>;
+    };
+    expect(parsed.data.map((job) => job.name)).toEqual(["partial", "built"]);
   });
 
   test("emits a JSON error envelope and non-zero exit code on failure", async () => {

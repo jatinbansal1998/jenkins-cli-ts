@@ -120,6 +120,36 @@ describe("shared job picker", () => {
     expect(result).toEqual({ kind: "selected", jobs: [apiJob] });
   });
 
+  test("marks disabled jobs in option labels only", async () => {
+    const disabledJob: JenkinsJob = {
+      name: "worker",
+      url: "https://jenkins.example.com/job/worker",
+      disabled: true,
+    };
+    const pickerJobs = [apiJob, disabledJob];
+    let labels: string[] = [];
+    const autocompleteMock = mock(
+      async (options: Parameters<JobPickerDeps["autocomplete"]>[0]) => {
+        const dynamicOptions = options.options as (this: {
+          userInput: string;
+        }) => { value: string; label: string }[];
+        labels = dynamicOptions
+          .call({ userInput: "" })
+          .map((entry) => entry.label);
+        return apiJob.url;
+      },
+    ) as JobPickerDeps["autocomplete"];
+
+    await createJobPicker(
+      createDeps({
+        autocomplete: autocompleteMock,
+        loadPreferredJobs: async () => pickerJobs,
+      }),
+    )({ env, jobs: pickerJobs, mode: "single" });
+
+    expect(labels).toEqual(["prod/api-deploy", "worker [disabled]"]);
+  });
+
   test("preserves typed input when cancelled", async () => {
     const autocompleteMock = mock(
       async (options: Parameters<JobPickerDeps["autocomplete"]>[0]) => {

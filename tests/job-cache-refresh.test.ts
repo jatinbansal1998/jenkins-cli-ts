@@ -298,6 +298,131 @@ describe("job cache refresh", () => {
     });
   });
 
+  test("refresh persists activity metadata alongside carried-forward branches", async () => {
+    const cachePath = jobsModule.getJobCachePath(env.jenkinsUrl);
+    files.set(
+      cachePath,
+      JSON.stringify({
+        jenkinsUrl: env.jenkinsUrl,
+        user: env.jenkinsUser,
+        folderDepth: loadEnv.folderDepth,
+        fetchedAt: "2026-02-12T00:00:00.000Z",
+        jobs: [
+          {
+            name: "keep",
+            url: "https://jenkins.example.com/job/keep",
+            branches: ["release"],
+          },
+        ],
+      }),
+    );
+
+    const refreshedJobs: JenkinsJob[] = [
+      {
+        name: "keep",
+        url: "https://jenkins.example.com/job/keep",
+        disabled: false,
+        lastBuild: {
+          number: 12,
+          url: "https://jenkins.example.com/job/keep/12/",
+          result: "SUCCESS",
+          building: false,
+          timestampMs: 1767225600000,
+        },
+      },
+      {
+        name: "off",
+        url: "https://jenkins.example.com/job/off",
+        disabled: true,
+        lastBuild: null,
+      },
+    ];
+
+    await jobsModule.loadJobs({
+      client: {
+        listJobs: mock(async () => refreshedJobs),
+      } as unknown as JenkinsClient,
+      env: loadEnv,
+      refresh: true,
+      nonInteractive: true,
+    });
+
+    const cache = await jobsModule.readJobCache(env);
+    expect(cache?.jobs).toEqual([
+      {
+        name: "keep",
+        url: "https://jenkins.example.com/job/keep",
+        branches: ["release"],
+        disabled: false,
+        lastBuild: {
+          number: 12,
+          url: "https://jenkins.example.com/job/keep/12/",
+          result: "SUCCESS",
+          building: false,
+          timestampMs: 1767225600000,
+        },
+      },
+      {
+        name: "off",
+        url: "https://jenkins.example.com/job/off",
+        disabled: true,
+        lastBuild: null,
+      },
+    ]);
+  });
+
+  test("legacy caches without activity metadata stay readable and malformed metadata is discarded", async () => {
+    const cachePath = jobsModule.getJobCachePath(env.jenkinsUrl);
+    files.set(
+      cachePath,
+      JSON.stringify({
+        jenkinsUrl: env.jenkinsUrl,
+        user: env.jenkinsUser,
+        folderDepth: loadEnv.folderDepth,
+        fetchedAt: new Date().toISOString(),
+        jobs: [
+          { name: "legacy", url: "https://jenkins.example.com/job/legacy" },
+          {
+            name: "broken",
+            url: "https://jenkins.example.com/job/broken",
+            disabled: "yes",
+            lastBuild: { result: "SUCCESS" },
+          },
+          {
+            name: "never-built",
+            url: "https://jenkins.example.com/job/never-built",
+            disabled: false,
+            lastBuild: null,
+          },
+        ],
+      }),
+    );
+
+    const jobs = await jobsModule.loadJobs({
+      client: {
+        listJobs: mock(async () => {
+          throw new Error("cache should be used without a Jenkins call");
+        }),
+      } as unknown as JenkinsClient,
+      env: loadEnv,
+      nonInteractive: true,
+    });
+
+    expect(jobs).toEqual([
+      { name: "legacy", url: "https://jenkins.example.com/job/legacy" },
+      { name: "broken", url: "https://jenkins.example.com/job/broken" },
+      {
+        name: "never-built",
+        url: "https://jenkins.example.com/job/never-built",
+        disabled: false,
+        lastBuild: null,
+      },
+    ]);
+    expect(jobs[0]).not.toHaveProperty("lastBuild");
+    expect(jobs[1]?.lastBuild).toBeUndefined();
+    expect(jobs[1]?.disabled).toBeUndefined();
+  });
+
   test("failed cache write preserves the existing cache", async () => {
     const cachePath = jobsModule.getJobCachePath(env.jenkinsUrl);
     const previousCache = JSON.stringify({

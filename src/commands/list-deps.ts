@@ -1,6 +1,6 @@
 import { autocomplete, confirm, isCancel, select, text } from "../clack";
 import {
-  getJobDisplayName,
+  getJobDisplayLabel,
   loadJobs,
   rankJobs,
   sortJobsByDisplayName,
@@ -21,7 +21,7 @@ export const listDeps = {
   isCancel,
   select,
   text,
-  getJobDisplayName,
+  getJobDisplayLabel,
   loadJobs,
   pickJob,
   rankJobs,

@@ -12,7 +12,7 @@ import type { EnvConfig } from "./env";
 import type { JenkinsClient } from "./jenkins/api-wrapper";
 import { normalizeRecentJobs, pruneRecentJobs } from "./recent-job-data";
 import { findJobByUrl, getJobUrlKey, normalizeOptionalJobUrl } from "./job-url";
-import type { JenkinsJob } from "./types/jenkins";
+import type { JenkinsJob, JenkinsJobLastBuild } from "./types/jenkins";
 import { resolveUserHome } from "./user-home";
 
 /** Cached job data with metadata. */
@@ -71,6 +71,15 @@ function resolveCacheDir(): string {
 
 export function getJobDisplayName(job: JenkinsJob): string {
   return job.fullName || job.name;
+}
+
+/**
+ * Terminal-only presentation of a job name. Never use it for ranking, matching,
+ * JSON, cache identity, URLs, or recent-job keys.
+ */
+export function getJobDisplayLabel(job: JenkinsJob): string {
+  const displayName = getJobDisplayName(job);
+  return job.disabled === true ? `${displayName} [disabled]` : displayName;
 }
 
 export function sortJobsByDisplayName(jobs: JenkinsJob[]): JenkinsJob[] {
@@ -308,7 +317,61 @@ function normalizeCachedJobs(jobs: CachedJob[]): void {
     } else if (job.branches) {
       job.branches = undefined;
     }
+    if (job.disabled !== undefined && typeof job.disabled !== "boolean") {
+      job.disabled = undefined;
+    }
+    if (job.lastBuild !== undefined) {
+      job.lastBuild = normalizeCachedLastBuild(job.lastBuild);
+    }
   }
+}
+
+/**
+ * Malformed activity metadata is dropped back to "unknown" so one bad entry
+ * cannot invalidate an otherwise usable cache.
+ */
+function normalizeCachedLastBuild(
+  value: unknown,
+): JenkinsJobLastBuild | null | undefined {
+  if (value === null) {
+    return null;
+  }
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return undefined;
+  }
+  const record = value as Record<string, unknown>;
+  const number = record.number;
+  const url = record.url;
+  if (
+    typeof number !== "number" ||
+    !Number.isInteger(number) ||
+    number < 0 ||
+    typeof url !== "string" ||
+    !url.trim()
+  ) {
+    return undefined;
+  }
+  const result = record.result;
+  const building = record.building;
+  return {
+    number,
+    url,
+    ...(result === null || typeof result === "string" ? { result } : {}),
+    ...(typeof building === "boolean" ? { building } : {}),
+    ...pickFiniteNumber(record, "timestampMs"),
+    ...pickFiniteNumber(record, "durationMs"),
+    ...pickFiniteNumber(record, "estimatedDurationMs"),
+  };
+}
+
+function pickFiniteNumber(
+  record: Record<string, unknown>,
+  key: "timestampMs" | "durationMs" | "estimatedDurationMs",
+): Partial<Record<typeof key, number>> {
+  const value = record[key];
+  return typeof value === "number" && Number.isFinite(value)
+    ? { [key]: value }
+    : {};
 }
 
 function mergeCachedBranches(

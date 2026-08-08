@@ -45,11 +45,28 @@ export type JenkinsBuildFailure = {
   reason?: string;
 };
 
-/** Jenkins job metadata. */
+/** Last build of a job as returned by bulk job discovery. */
+export type JenkinsJobLastBuild = {
+  number: number;
+  url: string;
+  result?: string | null;
+  building?: boolean;
+  timestampMs?: number;
+  durationMs?: number;
+  estimatedDurationMs?: number;
+};
+
+/**
+ * Jenkins job metadata. `disabled` and `lastBuild` are absent when the activity
+ * state is unknown (for example a cache written before they were collected);
+ * `lastBuild: null` means Jenkins reported the job has never been built.
+ */
 export type JenkinsJob = {
   name: string;
   fullName?: string;
   url: string;
+  disabled?: boolean;
+  lastBuild?: JenkinsJobLastBuild | null;
 };
 
 export type RunningBuildSummary = {

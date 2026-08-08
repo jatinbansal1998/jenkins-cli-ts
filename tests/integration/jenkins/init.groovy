@@ -113,6 +113,17 @@ def noParamsJob = jenkins.createProject(FreeStyleProject.class, "cli-no-params")
 noParamsJob.getBuildersList().add(new Shell("printf 'no-params-success\\n'"))
 noParamsJob.save()
 
+// Activity-metadata fixtures: `cli-activity` is built by the listing scenario,
+// `cli-never-built` is never built by any scenario so listings can assert the
+// "enabled but never built" state.
+def activityJob = jenkins.createProject(FreeStyleProject.class, "cli-activity")
+activityJob.getBuildersList().add(new Shell("printf 'activity-success\\n'"))
+activityJob.save()
+
+def neverBuiltJob = jenkins.createProject(FreeStyleProject.class, "cli-never-built")
+neverBuiltJob.getBuildersList().add(new Shell("printf 'never-built-should-not-run\\n'"))
+neverBuiltJob.save()
+
 def historyJob = jenkins.createProject(FreeStyleProject.class, "cli-history")
 historyJob.getBuildersList().add(new Shell("printf 'history-success\\n'"))
 historyJob.save()

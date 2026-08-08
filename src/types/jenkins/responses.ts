@@ -7,6 +7,7 @@ export type JenkinsApiJob = {
   name?: string;
   fullName?: string;
   url?: string;
+  disabled?: boolean;
   jobs?: JenkinsApiJob[];
   lastBuild?: JenkinsApiBuild | null;
 };

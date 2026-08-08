@@ -1,5 +1,10 @@
 import { describe, expect, test } from "bun:test";
-import { rankJobs } from "../src/jobs";
+import {
+  getJobDisplayLabel,
+  getJobDisplayName,
+  rankJobs,
+  sortJobsByDisplayName,
+} from "../src/jobs";
 import { MIN_SCORE } from "../src/config/fuzzy";
 import type { JenkinsJob } from "../src/types/jenkins";
 
@@ -527,5 +532,38 @@ describe("job fuzzy matching", () => {
       expect(goodMatches.length).toBe(1);
       expect(goodMatches[0]?.job.name).toBe("data-analytics-ml-pipeline-prod");
     });
+  });
+});
+
+describe("job display labels", () => {
+  const disabledJob: JenkinsJob = {
+    name: "deploy",
+    fullName: "team/deploy",
+    url: "https://jenkins.example.com/job/team/job/deploy",
+    disabled: true,
+  };
+  const enabledJob: JenkinsJob = {
+    name: "deploy",
+    fullName: "team/deploy",
+    url: "https://jenkins.example.com/job/team/job/deploy",
+    disabled: false,
+    lastBuild: null,
+  };
+
+  test("appends the disabled marker only for disabled jobs", () => {
+    expect(getJobDisplayLabel(disabledJob)).toBe("team/deploy [disabled]");
+    expect(getJobDisplayLabel(enabledJob)).toBe("team/deploy");
+    expect(getJobDisplayLabel(createJob("plain"))).toBe("plain");
+  });
+
+  test("leaves raw display names, ranking, and sorting unmarked", () => {
+    expect(getJobDisplayName(disabledJob)).toBe("team/deploy");
+    expect(
+      sortJobsByDisplayName([disabledJob, createJob("alpha")]).map(
+        getJobDisplayName,
+      ),
+    ).toEqual(["alpha", "team/deploy"]);
+    expect(rankJobs("disabled", [disabledJob])).toEqual([]);
+    expect(rankJobs("team deploy", [disabledJob])[0]?.job).toBe(disabledJob);
   });
 });

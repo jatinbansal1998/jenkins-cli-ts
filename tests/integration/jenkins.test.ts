@@ -1212,6 +1212,96 @@ describe.skipIf(!integrationEnabled)(
       });
     }, 120_000);
 
+    test("reports job activity metadata in listings and filters with --active-only", async () => {
+      type ListedJob = {
+        name: string;
+        fullName?: string;
+        url: string;
+        disabled?: boolean;
+        lastBuild?: {
+          number: number;
+          url: string;
+          result?: string | null;
+          building?: boolean;
+          timestampMs?: number;
+          durationMs?: number;
+          estimatedDurationMs?: number;
+        } | null;
+      };
+
+      await withCliHome(async (home) => {
+        const listJobs = async (
+          args: string[],
+        ): Promise<Map<string, ListedJob>> => {
+          const listed = parseJson<{ data: ListedJob[] }>(
+            await runCli(home, ["list", ...args, "--json"]),
+          );
+          return new Map(
+            listed.data.map((job) => [job.fullName ?? job.name, job]),
+          );
+        };
+
+        const discovered = await listJobs(["--refresh"]);
+        const nestedJobUrl = discovered.get("team/nested smoke")?.url;
+        expect(nestedJobUrl).toBeString();
+
+        for (const jobUrl of [
+          `${jenkinsUrl}/job/cli-activity/`,
+          String(nestedJobUrl),
+        ]) {
+          await runCli(home, [
+            "build",
+            "--job-url",
+            jobUrl,
+            "--without-params",
+            "--watch",
+          ]);
+        }
+
+        const jobs = await listJobs(["--refresh"]);
+
+        const built = jobs.get("cli-activity");
+        expect(built?.disabled).toBe(false);
+        expect(built?.lastBuild).toMatchObject({
+          result: "SUCCESS",
+          building: false,
+        });
+        expect(built?.lastBuild?.number).toBeGreaterThan(0);
+        expect(built?.lastBuild?.url).toContain("/job/cli-activity/");
+        expect(built?.lastBuild?.timestampMs).toBeNumber();
+        expect(built?.lastBuild?.durationMs).toBeNumber();
+
+        const nested = jobs.get("team/nested smoke");
+        expect(nested?.name).toBe("nested smoke");
+        expect(nested?.disabled).toBe(false);
+        expect(nested?.lastBuild?.number).toBeGreaterThan(0);
+
+        expect(jobs.get("cli-pipeline-disabled")).toMatchObject({
+          name: "cli-pipeline-disabled",
+          disabled: true,
+          lastBuild: null,
+        });
+        expect(jobs.get("cli-never-built")).toMatchObject({
+          name: "cli-never-built",
+          disabled: false,
+          lastBuild: null,
+        });
+
+        const active = await listJobs(["--active-only"]);
+        expect(active.has("cli-activity")).toBe(true);
+        expect(active.has("team/nested smoke")).toBe(true);
+        expect(active.has("cli-pipeline-disabled")).toBe(false);
+        expect(active.has("cli-never-built")).toBe(false);
+
+        const plain = await runCli(home, ["list"]);
+        expect(plain.output).toContain("cli-pipeline-disabled [disabled]");
+        expect(plain.output).toContain(
+          `cli-activity  ${jenkinsUrl}/job/cli-activity`,
+        );
+        expect(plain.output).not.toContain("cli-never-built [disabled]");
+      });
+    }, 180_000);
+
     test("reports real Pipeline stages and failure details", async () => {
       await withCliHome(async (home) => {
         const pipelineUrl = `${jenkinsUrl}/job/cli-pipeline/`;

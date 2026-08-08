@@ -12,6 +12,7 @@ export type {
   JobParameterType,
   JenkinsClientOptions,
   JenkinsJob,
+  JenkinsJobLastBuild,
   JenkinsPipelineLinks,
   JenkinsPipelineStage,
   JobStatus,
