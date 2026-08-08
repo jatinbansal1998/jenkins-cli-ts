@@ -1051,7 +1051,7 @@ describe.skipIf(!integrationEnabled)(
               },
               { text: "Jenkins URL", input: `${jenkinsUrl}\r` },
               {
-                text: `Open ${jenkinsUrl} in your browser?`,
+                text: `Open ${jenkinsUrl} in your browser? (useful for finding your Jenkins username)`,
                 input: "\r",
               },
               {
@@ -1059,7 +1059,7 @@ describe.skipIf(!integrationEnabled)(
                 input: "integration-test\r",
               },
               {
-                text: `Open ${jenkinsUrl}/user/integration-test/security/ in your browser?`,
+                text: `Open ${jenkinsUrl}/user/integration-test/security/ in your browser? (useful for creating an API token)`,
                 input: "\r",
               },
               { text: "Jenkins API token", input: `${token}\r` },

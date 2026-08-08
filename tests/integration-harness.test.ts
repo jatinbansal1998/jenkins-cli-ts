@@ -1,5 +1,47 @@
 import { describe, expect, test } from "bun:test";
-import { macOsExpectScript } from "./integration/jenkins/harness";
+import {
+  completedLineEnd,
+  macOsExpectScript,
+} from "./integration/jenkins/harness";
+
+describe("interactive integration line matching", () => {
+  test("matches only newline-complete semantic lines", () => {
+    const text = "Jenkins username";
+
+    expect(
+      completedLineEnd(
+        "◆  Open Jenkins? (useful for finding your Jenkins username)\n",
+        text,
+      ),
+    ).toBeNull();
+    expect(completedLineEnd(`◆  ${text}`, text)).toBeNull();
+    expect(completedLineEnd(`◆  ${text}\n`, text)).toBe(`◆  ${text}\n`.length);
+  });
+
+  test("does not depend on a prompt glyph", () => {
+    const text = "Action for cli-no-params";
+
+    for (const prefix of ["◆", "*", "?", "◇"]) {
+      const line = `${prefix}  ${text}\n`;
+      expect(completedLineEnd(line, text)).toBe(line.length);
+    }
+    expect(completedLineEnd(`${text}\n`, text)).toBe(text.length + 1);
+  });
+
+  test("resumes after the matched line for repeated text", () => {
+    const text = "Action for cli-no-params";
+    const first = `◆  ${text}\n`;
+    const barrier = 'ERROR: Profile "release" is read-only.\n';
+    const second = `?  ${text}\n`;
+    const output = first + barrier + second;
+
+    const firstEnd = completedLineEnd(output, text);
+    expect(firstEnd).toBe(first.length);
+    expect(completedLineEnd(output.slice(firstEnd ?? 0), text)).toBe(
+      barrier.length + second.length,
+    );
+  });
+});
 
 describe("macOS interactive integration harness", () => {
   test("synchronizes repeated messages through meaningful output", () => {
@@ -14,7 +56,8 @@ describe("macOS interactive integration harness", () => {
       env,
     );
 
-    expect(script).toContain('-exact "$env($textKey)"');
+    expect(script).toContain('-exact "$env($textKey)\\r\\n"');
+    expect(script).toContain('-exact "$env($textKey)\\n"');
     expect(script).not.toContain("◆");
     expect(script).not.toContain("◇");
     expect(env.JENKINS_CLI_EXPECT_TEXT_0).toBe("Action for cli-no-params");

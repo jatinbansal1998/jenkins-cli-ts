@@ -81,38 +81,60 @@ export async function runInteractiveCli(
   });
   let stdout = "";
   let stderr = "";
+  let transcript = "";
   const stdoutPump = collectStream(subprocess.stdout, (chunk) => {
     stdout += chunk;
+    transcript += chunk;
   });
   const stderrPump = collectStream(subprocess.stderr, (chunk) => {
     stderr += chunk;
+    transcript += chunk;
   });
-
-  if (!useMacOsExpect) {
-    // Only scan output produced after the previous step. Callers synchronize
-    // repeated text on an intervening semantic event, such as an error.
-    let scannedUpTo = 0;
-    for (const step of steps) {
-      scannedUpTo = await waitForInteractiveText(
-        () => stripTerminalCodes(stdout + stderr),
-        step.text,
-        subprocess,
-        scannedUpTo,
-      );
-      subprocess.stdin.write(step.input);
-      subprocess.stdin.flush();
-    }
-  }
-  subprocess.stdin.end();
-
-  const exitCode = await subprocess.exited;
-  await Promise.all([stdoutPump, stderrPump]);
-  return {
-    exitCode,
-    stdout,
-    stderr,
-    output: stripTerminalCodes(stdout + stderr),
+  let stdinEnded = false;
+  const endStdin = () => {
+    if (stdinEnded) return;
+    stdinEnded = true;
+    subprocess.stdin.end();
   };
+
+  try {
+    if (!useMacOsExpect) {
+      // Consume complete semantic lines in arrival order. A step therefore
+      // cannot match a phrase inside an earlier line or a partially rendered
+      // prompt, and repeated text requires an intervening synchronization line.
+      let scannedUpTo = 0;
+      for (const step of steps) {
+        scannedUpTo = await waitForInteractiveLine(
+          () => stripTerminalCodes(transcript),
+          step.text,
+          subprocess,
+          scannedUpTo,
+        );
+        subprocess.stdin.write(step.input);
+        subprocess.stdin.flush();
+      }
+    }
+    endStdin();
+
+    const exitCode = await waitForInteractiveExit(subprocess, () =>
+      stripTerminalCodes(transcript),
+    );
+    await Promise.all([stdoutPump, stderrPump]);
+    return {
+      exitCode,
+      stdout,
+      stderr,
+      output: stripTerminalCodes(transcript),
+    };
+  } catch (error) {
+    endStdin();
+    if (subprocess.exitCode === null) {
+      subprocess.kill();
+    }
+    await subprocess.exited;
+    await Promise.all([stdoutPump, stderrPump]);
+    throw error;
+  }
 }
 
 export async function runCli(
@@ -272,10 +294,10 @@ async function collectStream(
 }
 
 /**
- * Waits for text to appear after `scannedUpTo` and returns the offset to
- * resume scanning from.
+ * Waits for a complete semantic line after `scannedUpTo` and returns the
+ * offset to resume scanning from.
  */
-async function waitForInteractiveText(
+async function waitForInteractiveLine(
   output: () => string,
   text: string,
   subprocess: ReturnType<typeof Bun.spawn>,
@@ -284,23 +306,48 @@ async function waitForInteractiveText(
   const deadline = Date.now() + 20_000;
   while (Date.now() < deadline) {
     const pending = output().slice(scannedUpTo);
-    const offset = textEnd(pending, text);
+    const offset = completedLineEnd(pending, text);
     if (offset !== null) {
       return scannedUpTo + offset;
     }
     if (subprocess.exitCode !== null) {
       throw new Error(
-        `Interactive CLI exited before text "${text}".\n${output()}`,
+        `Interactive CLI exited before line "${text}".\n${output()}`,
       );
     }
     await Bun.sleep(20);
   }
-  throw new Error(`Timed out waiting for text "${text}".\n${output()}`);
+  throw new Error(`Timed out waiting for line "${text}".\n${output()}`);
 }
 
-function textEnd(pending: string, text: string): number | null {
-  const offset = pending.indexOf(text);
-  return offset === -1 ? null : offset + text.length;
+export function completedLineEnd(pending: string, text: string): number | null {
+  let lineStart = 0;
+  while (lineStart < pending.length) {
+    const newline = pending.indexOf("\n", lineStart);
+    if (newline === -1) return null;
+    const line = pending.slice(lineStart, newline);
+    if (line === text || line.endsWith(`  ${text}`)) {
+      return newline + 1;
+    }
+    lineStart = newline + 1;
+  }
+  return null;
+}
+
+async function waitForInteractiveExit(
+  subprocess: ReturnType<typeof Bun.spawn>,
+  output: () => string,
+): Promise<number> {
+  const deadline = Date.now() + 20_000;
+  while (subprocess.exitCode === null && Date.now() < deadline) {
+    await Bun.sleep(20);
+  }
+  if (subprocess.exitCode === null) {
+    throw new Error(
+      `Timed out waiting for the interactive CLI to exit.\n${output()}`,
+    );
+  }
+  return subprocess.exited;
 }
 
 function stripTerminalCodes(value: string): string {
@@ -332,7 +379,8 @@ for {set index 0} {$index < $env(JENKINS_CLI_EXPECT_STEP_COUNT)} {incr index} {
   set textKey [format "JENKINS_CLI_EXPECT_TEXT_%d" $index]
   set inputKey [format "JENKINS_CLI_EXPECT_INPUT_%d" $index]
   expect {
-    -exact "$env($textKey)" {}
+    -exact "$env($textKey)\\r\\n" {}
+    -exact "$env($textKey)\\n" {}
     eof {
       puts stderr "Interactive CLI exited before text \\"$env($textKey)\\"."
       exit 97
