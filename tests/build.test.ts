@@ -13,6 +13,7 @@ import { BUILD_WITHOUT_PARAMS_VALUE } from "../src/flows/constants";
 import type { JenkinsClient } from "../src/jenkins/client";
 import type { JobParameterDefinition } from "../src/types/jenkins";
 import { runBuild, setBuildDepsForTesting } from "../src/commands/build";
+import type { WatchSpinner } from "../src/commands/watch-output";
 
 const confirmMock = mock(async () => false);
 const autocompleteMock = mock(async () => JOB_URL);
@@ -32,8 +33,7 @@ const selectPrompt = ((options: Parameters<typeof clack.select>[0]) =>
   selectMock(options)) as typeof clack.select;
 const isCancelPrompt = ((value: unknown): value is symbol =>
   Boolean(isCancelMock(value))) as typeof clack.isCancel;
-const spinnerPrompt = ((options?: Parameters<typeof clack.spinner>[0]) =>
-  spinnerMock(options)) as typeof clack.spinner;
+const spinnerPrompt = (() => spinnerMock()) as () => WatchSpinner;
 
 const runCancelMock = mock(async (..._args: unknown[]) => undefined);
 const runHistoryMock = mock(async () => ({}));

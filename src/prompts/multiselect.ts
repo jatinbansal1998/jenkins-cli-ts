@@ -17,14 +17,14 @@ import { formatFocusedOption } from "./focused-option";
 
 type Primitive = string | boolean | number;
 
-export type MultiselectOption<Value extends Primitive> = {
+type MultiselectOption<Value extends Primitive> = {
   value: Value;
   label?: string;
   hint?: string;
   disabled?: boolean;
 };
 
-export type MultiselectOptions<Value extends Primitive> = {
+type MultiselectOptions<Value extends Primitive> = {
   message: string;
   options: MultiselectOption<Value>[];
   initialValues?: Value[];

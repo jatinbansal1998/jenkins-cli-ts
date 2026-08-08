@@ -1,7 +1,10 @@
+import { shellEscape } from "../shell-escape";
 /**
  * Build command implementation.
  * Triggers a Jenkins build for a specified job with branch parameter support.
  */
+import { dedupeCaseInsensitive, removeBranch } from "../branches";
+import { ensureValidUrl } from "./ops-helpers";
 import {
   autocomplete,
   branchPicker,
@@ -33,7 +36,7 @@ import {
 import { recordRecentJob } from "../recent-jobs.ts";
 import { pickJob } from "../job-picker";
 import { assertProtectedMutationAllowed, type EnvConfig } from "../env";
-import type { JenkinsClient } from "../jenkins/api-wrapper";
+import type { JenkinsClient } from "../jenkins/client";
 import { areSameJobUrls, normalizeOptionalJobUrl } from "../job-url";
 import { getJobDisplayName, loadJobs, resolveJobMatch } from "../jobs";
 import { notifyBuildComplete } from "../notify";
@@ -52,6 +55,7 @@ import {
   type StatusDetails,
   toStatusDetailsFromBuild,
   toStatusDetailsFromJob,
+  formatDuration,
 } from "../status-format";
 import {
   createWatchControlSignal,
@@ -70,7 +74,6 @@ import type {
   BuildPreContext,
   PromptAdapter,
 } from "../flows/types";
-import { withPromptTarget } from "../tui-target";
 import {
   printParameterSummary,
   promptForDiscoveredParameters,
@@ -110,7 +113,7 @@ type ActiveBuild = {
   queueUrl: string | undefined;
 };
 
-export type BuildRunResult = {
+type BuildRunResult = {
   rootRequested?: boolean;
 };
 
@@ -720,6 +723,7 @@ async function runBuildOnce(options: {
           buildUrl: result.buildUrl,
           buildNumber: result.buildNumber,
           queueUrl: result.queueUrl,
+          nonInteractive: true,
           baselineBuildNumber,
         });
     if (finalStatus.cancelled) {
@@ -775,6 +779,7 @@ async function watchBuildStatusStructured(options: {
   buildNumber?: number;
   queueUrl?: string;
   baselineBuildNumber?: number;
+  nonInteractive?: boolean;
 }): Promise<{
   result: string;
   buildNumber?: number;
@@ -924,15 +929,6 @@ function formatNonInteractiveBuildCommand(options: {
   return parts.join(" ");
 }
 
-function shellEscape(value: string): string {
-  if (value === "") {
-    return "''";
-  }
-  const singleQuoteEscape = `'` + `"` + `'` + `"` + `'`;
-  const escaped = value.replaceAll("'", singleQuoteEscape);
-  return `'${escaped}'`;
-}
-
 function normalizeBranchParam(value?: string): string {
   const branchParam = (value || "BRANCH").trim();
   if (!branchParam) {
@@ -1055,10 +1051,7 @@ async function resolveWatchDecision(options: {
     return false;
   }
   const response = await deps.confirm({
-    message: withPromptTarget(
-      "Watch build status until completion?",
-      options.env,
-    ),
+    message: "Watch build status until completion?",
     initialValue: true,
   });
   if (deps.isCancel(response)) {
@@ -1076,6 +1069,7 @@ async function watchBuildStatus(options: {
   buildNumber?: number;
   queueUrl?: string;
   baselineBuildNumber?: number;
+  nonInteractive?: boolean;
 }): Promise<{
   result: string;
   buildNumber?: number;
@@ -1086,7 +1080,7 @@ async function watchBuildStatus(options: {
   const deps = activeBuildDeps;
   const pollIntervalMs = DEFAULT_WATCH_INTERVAL_MS;
   markAnalyticsPollingCommand();
-  const useSpinner = Boolean(process.stdout.isTTY);
+  const useSpinner = Boolean(process.stdout.isTTY) && !options.nonInteractive;
   const statusSpinner = useSpinner ? deps.spinner() : null;
   const cancelSignal = createWatchControlSignal();
   const watchStartMs = Date.now();
@@ -1429,23 +1423,6 @@ function formatNotificationMessage(options: {
   return options.jobLabel ? `${base} (${options.jobLabel})` : base;
 }
 
-function formatDuration(durationMs: number): string {
-  if (durationMs < 1000) {
-    return `${Math.max(0, Math.round(durationMs))}ms`;
-  }
-  const totalSeconds = Math.max(0, Math.floor(durationMs / 1000));
-  const hours = Math.floor(totalSeconds / 3600);
-  const minutes = Math.floor((totalSeconds % 3600) / 60);
-  const seconds = totalSeconds % 60;
-  if (hours > 0) {
-    return `${hours}h ${minutes}m ${seconds}s`;
-  }
-  if (minutes > 0) {
-    return `${minutes}m ${seconds}s`;
-  }
-  return `${seconds}s`;
-}
-
 async function resolveInteractiveBuildSelection(options: {
   client: JenkinsClient;
   env: EnvConfig;
@@ -1519,7 +1496,6 @@ async function resolveInteractiveBuildSelection(options: {
     configureDiscoveredParameters: async (definitions) =>
       await promptForDiscoveredParameters({
         definitions,
-        env: options.env,
         branchParam: options.branchParam,
         branch: context.branch,
         customParams: context.customParams,
@@ -1697,7 +1673,7 @@ async function resolveBranchValue(options: {
     });
   }
 
-  return await promptForBranchEntry(options.env);
+  return await promptForBranchEntry();
 }
 
 async function promptForBranchSelection(options: {
@@ -1721,7 +1697,7 @@ async function promptForBranchSelection(options: {
         : []),
     ];
     const response = await deps.branchPicker({
-      message: withPromptTarget("Branch name", options.env),
+      message: "Branch name",
       options: pickerOptions,
       placeholder: "e.g. main",
     });
@@ -1731,10 +1707,7 @@ async function promptForBranchSelection(options: {
     }
 
     if (response === BRANCH_REMOVE_VALUE) {
-      const toRemove = await promptForBranchRemoval(
-        removableBranches,
-        options.env,
-      );
+      const toRemove = await promptForBranchRemoval(removableBranches);
       const removed = await deps.removeCachedBranch({
         env: options.env,
         jobUrl: options.jobUrl,
@@ -1756,11 +1729,10 @@ async function promptForBranchSelection(options: {
 
 async function promptForBranchRemoval(
   removableBranches: string[],
-  env: EnvConfig,
 ): Promise<string> {
   const deps = activeBuildDeps;
   const response = await deps.select({
-    message: withPromptTarget("Remove cached branch", env),
+    message: "Remove cached branch",
     options: removableBranches.map((branch) => ({
       value: branch,
       label: branch,
@@ -1772,43 +1744,14 @@ async function promptForBranchRemoval(
   return String(response).trim();
 }
 
-function dedupeCaseInsensitive(entries: string[]): string[] {
-  const seen = new Set<string>();
-  const result: string[] = [];
-  for (const entry of entries) {
-    const key = entry.toLowerCase();
-    if (seen.has(key)) {
-      continue;
-    }
-    seen.add(key);
-    result.push(entry);
-  }
-  return result;
-}
-
-function removeBranch(entries: string[], target: string): string[] {
-  const key = target.toLowerCase();
-  return entries.filter((entry) => entry.toLowerCase() !== key);
-}
-
-async function promptForBranchEntry(env: EnvConfig): Promise<string> {
+async function promptForBranchEntry(): Promise<string> {
   const deps = activeBuildDeps;
   const response = await deps.text({
-    message: withPromptTarget("Branch name", env),
+    message: "Branch name",
     placeholder: "e.g. main",
   });
   if (deps.isCancel(response)) {
     throw new CliError("Operation cancelled.");
   }
   return String(response).trim();
-}
-
-function ensureValidUrl(value: string, label: string): void {
-  try {
-    new URL(value);
-  } catch {
-    throw new CliError(`Invalid --${label} value.`, [
-      `Provide a full URL like https://jenkins.example.com/job/example/.`,
-    ]);
-  }
 }

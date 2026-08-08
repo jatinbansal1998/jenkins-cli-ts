@@ -21,7 +21,7 @@ export type JobParameterDefinition = {
   jenkinsClass?: string;
 };
 
-export type JenkinsPipelineLinks = {
+type JenkinsPipelineLinks = {
   self?: { href?: string };
   log?: { href?: string };
   changesets?: { href?: string };

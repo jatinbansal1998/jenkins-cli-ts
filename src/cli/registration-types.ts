@@ -27,7 +27,7 @@ export type CommandContext = {
   client: JenkinsClient;
 };
 
-export type TrackedCommandHelpers = {
+type TrackedCommandHelpers = {
   showIntro: (target?: string) => void;
   interactive: boolean;
 };

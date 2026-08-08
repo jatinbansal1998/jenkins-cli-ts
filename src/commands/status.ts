@@ -32,7 +32,7 @@ import {
   toStatusDetailsFromBuild,
 } from "../status-format";
 import type { EnvConfig } from "../env";
-import type { JenkinsClient } from "../jenkins/api-wrapper";
+import type { JenkinsClient } from "../jenkins/client";
 import { normalizeControllerTargetUrl } from "../jenkins-target-url";
 import { normalizeOptionalJobUrl } from "../job-url";
 import { recordRecentJob } from "../recent-jobs";

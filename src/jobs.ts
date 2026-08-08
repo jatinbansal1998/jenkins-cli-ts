@@ -9,18 +9,18 @@ import path from "node:path";
 import { CliError } from "./cli";
 import { MIN_SCORE, AMBIGUITY_GAP, MAX_OPTIONS, SCORES } from "./config/fuzzy";
 import type { EnvConfig } from "./env";
-import type { JenkinsClient } from "./jenkins/api-wrapper";
+import type { JenkinsClient } from "./jenkins/client";
 import { normalizeRecentJobs, pruneRecentJobs } from "./recent-job-data";
 import { findJobByUrl, getJobUrlKey, normalizeOptionalJobUrl } from "./job-url";
 import type { JenkinsJob, JenkinsJobLastBuild } from "./types/jenkins";
 import { resolveUserHome } from "./user-home";
 
 /** Cached job data with metadata. */
-export type CachedJob = JenkinsJob & {
+type CachedJob = JenkinsJob & {
   branches?: string[];
 };
 
-export type CachedStageTotal = {
+type CachedStageTotal = {
   totalStages: number;
   updatedAt: string;
 };
@@ -215,11 +215,23 @@ async function writeCacheToPath(
   }
 }
 
+export function jobCacheMatchesEnv(
+  cache: { jenkinsUrl: string; user: string },
+  env: EnvConfig,
+): boolean {
+  return cache.jenkinsUrl === env.jenkinsUrl && cache.user === env.jenkinsUser;
+}
+
+export async function readUsableJobCache(
+  env: EnvConfig,
+): Promise<JobCache | null> {
+  const cache = await readJobCache(env);
+  return cache && jobCacheMatchesEnv(cache, env) ? cache : null;
+}
+
 function cacheMatchesEnv(cache: JobCache, env: EnvConfig): boolean {
   return (
-    cache.jenkinsUrl === env.jenkinsUrl &&
-    cache.user === env.jenkinsUser &&
-    cache.folderDepth === env.folderDepth
+    jobCacheMatchesEnv(cache, env) && cache.folderDepth === env.folderDepth
   );
 }
 
@@ -417,7 +429,7 @@ function normalizeBranches(entries: unknown[]): string[] {
   return normalized;
 }
 
-export type RankedJob = {
+type RankedJob = {
   job: JenkinsJob;
   score: number;
 };

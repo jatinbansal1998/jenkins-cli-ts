@@ -14,6 +14,7 @@ import type { AutocompletePromptResult } from "../src/flows/types";
 import type { JenkinsClient } from "../src/jenkins/client";
 import type { JenkinsJob, JobParameterDefinition } from "../src/types/jenkins";
 import { runBuild, setBuildDepsForTesting } from "../src/commands/build";
+import type { WatchSpinner } from "../src/commands/watch-output";
 import { setBuildPreFlowDepsForTesting } from "../src/flows/handlers";
 import { normalizeJobUrl } from "../src/job-url";
 
@@ -65,8 +66,7 @@ const passwordPrompt = ((options: Parameters<typeof clack.password>[0]) =>
   passwordMock(options)) as typeof clack.password;
 const isCancelPrompt = ((value: unknown): value is symbol =>
   Boolean(isCancelMock(value))) as typeof clack.isCancel;
-const spinnerPrompt = ((options?: Parameters<typeof clack.spinner>[0]) =>
-  spinnerMock(options)) as typeof clack.spinner;
+const spinnerPrompt = (() => spinnerMock()) as () => WatchSpinner;
 
 const runCancelMock = mock(async (..._args: unknown[]) => undefined);
 const runLogsMock = mock(async () => undefined);

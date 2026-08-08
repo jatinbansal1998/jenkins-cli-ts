@@ -1,9 +1,10 @@
+import { formatTable } from "../table";
 import { mkdir } from "node:fs/promises";
 import path from "node:path";
 import { isCancel, multiselect, text } from "../clack";
 import { CliError, printHint, printOk } from "../cli";
 import type { EnvConfig } from "../env";
-import type { JenkinsClient } from "../jenkins/api-wrapper";
+import type { JenkinsClient } from "../jenkins/client";
 import type { ArtifactEntry } from "../types/jenkins";
 import { jsonArtifact, runJsonCommand, type JsonWrite } from "../json-output";
 import { resolveBuildSelector } from "../build-selector";
@@ -297,22 +298,10 @@ function resolveArtifactDestPath(
 }
 
 function renderArtifactsTable(artifacts: ArtifactEntry[]): void {
-  const rows = [
-    ["File", "Relative Path"],
-    ...artifacts.map((entry) => [entry.fileName, entry.relativePath]),
-  ];
-  const widths = rows[0]?.map((_, index) =>
-    Math.max(...rows.map((row) => row[index]?.length ?? 0)),
-  ) ?? [1, 1];
-  const table = rows
-    .map((row) =>
-      row
-        .map((cell, cellIndex) => cell.padEnd(widths[cellIndex] ?? cell.length))
-        .join("  "),
-    )
-    .map((line, index) =>
-      index === 1 ? `${"-".repeat(line.length)}\n${line}` : line,
-    )
-    .join("\n");
-  console.log(table);
+  console.log(
+    formatTable([
+      ["File", "Relative Path"],
+      ...artifacts.map((entry) => [entry.fileName, entry.relativePath]),
+    ]),
+  );
 }

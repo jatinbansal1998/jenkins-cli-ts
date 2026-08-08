@@ -4,13 +4,12 @@ import type { PromptAdapter, PromptOption } from "./flows/types";
 import { findJobByUrl } from "./job-url";
 import { getJobDisplayLabel, getSuggestedJobs } from "./jobs";
 import { loadPreferredJobs } from "./recent-jobs";
-import { withPromptTarget } from "./tui-target";
 import type { JenkinsJob } from "./types/jenkins";
 
 const PICKER_MESSAGE = "Job name or description";
 const PICKER_PLACEHOLDER = "e.g. api prod deploy";
 
-export type JobPickerOptions = {
+type JobPickerOptions = {
   env: EnvConfig;
   jobs: JenkinsJob[];
   mode: "single" | "multiple";
@@ -77,7 +76,7 @@ export function createJobPicker(deps: JobPickerDeps) {
           : "Selected job is no longer available.";
       };
       const common = {
-        message: withPromptTarget(PICKER_MESSAGE, options.env),
+        message: PICKER_MESSAGE,
         placeholder: PICKER_PLACEHOLDER,
         options: promptOptions,
         filter: () => true,

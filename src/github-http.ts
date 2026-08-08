@@ -1,6 +1,6 @@
 import { GITHUB_REPO_URL } from "./github-constants";
 
-export function buildGitHubUserAgent(version: string): string {
+function buildGitHubUserAgent(version: string): string {
   const normalizedVersion = version.trim() || "unknown";
   return `jenkins-cli/${normalizedVersion} (+${GITHUB_REPO_URL}; platform=${process.platform}; arch=${process.arch})`;
 }

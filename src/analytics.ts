@@ -1,3 +1,5 @@
+import { withTimeout } from "./with-timeout";
+import { normalizeOptionalString, parseBooleanFlag } from "./strings";
 import { AsyncLocalStorage } from "node:async_hooks";
 import crypto from "node:crypto";
 import fs from "node:fs";
@@ -112,8 +114,7 @@ class PostHogClient {
     }
 
     const batch = this.queue.splice(0, this.queue.length);
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), FLUSH_TIMEOUT_MS);
+    const { controller, cleanup } = withTimeout(FLUSH_TIMEOUT_MS);
     try {
       await fetch(new URL("/batch/", this.host).toString(), {
         method: "POST",
@@ -130,7 +131,7 @@ class PostHogClient {
     } catch {
       // Telemetry is best-effort only.
     } finally {
-      clearTimeout(timeout);
+      cleanup();
     }
   }
 }
@@ -334,7 +335,7 @@ function resolveAnalyticsClientConfig(): AnalyticsClientConfig {
   const host =
     normalizeOptionalString(process.env[ENV_KEYS.JENKINS_POSTHOG_HOST]) ??
     DEFAULT_POSTHOG_HOST;
-  const analyticsDisabledByEnv = parseOptionalBooleanFlag(
+  const analyticsDisabledByEnv = parseBooleanFlag(
     process.env[ENV_KEYS.JENKINS_ANALYTICS_DISABLED],
   );
   const analyticsDisabledByConfig = config?.analyticsDisabled;
@@ -444,32 +445,6 @@ function sanitizeProps(properties: AnalyticsProps): AnalyticsProps {
 }
 
 // Treats empty strings as unset so env/config overrides behave consistently.
-function normalizeOptionalString(
-  value: string | undefined,
-): string | undefined {
-  if (typeof value !== "string") {
-    return undefined;
-  }
-  const trimmed = value.trim();
-  return trimmed ? trimmed : undefined;
-}
-
-// Parses the small set of boolean-like env values we support.
-function parseOptionalBooleanFlag(
-  value: string | undefined,
-): boolean | undefined {
-  if (typeof value !== "string") {
-    return undefined;
-  }
-  const normalized = value.trim().toLowerCase();
-  if (normalized === "true" || normalized === "1") {
-    return true;
-  }
-  if (normalized === "false" || normalized === "0") {
-    return false;
-  }
-  return undefined;
-}
 
 // Normalizes the analytics host to a valid absolute URL. If the override is
 // invalid, we fall back to the default reverse-proxy host instead of failing.

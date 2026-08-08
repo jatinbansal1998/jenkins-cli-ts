@@ -172,7 +172,7 @@ const HOMEBREW_CELLAR_SEGMENT = `${path.sep}Cellar${path.sep}jenkins-cli${path.s
 const AUTO_UPDATE_INTERVAL_MS = 60 * 60 * 1000;
 const UPDATE_STATE_FILE = path.join(CONFIG_DIR, "update-state.json");
 
-export type UpdateChannel = "stable" | "prerelease";
+type UpdateChannel = "stable" | "prerelease";
 
 export type UpdateState = {
   autoUpdate?: boolean;
@@ -447,12 +447,12 @@ export async function fetchReleaseByTag(
   return await fetchReleaseByTagFromGitHub(normalized, options);
 }
 
-export type ResolvedReleaseAsset = {
+type ResolvedReleaseAsset = {
   url: string;
   isLegacyBundle: boolean;
 };
 
-export type ReleaseInstallDecision = {
+type ReleaseInstallDecision = {
   shouldInstall: boolean;
   reason: "newer-version" | "native-binary-migration" | "up-to-date";
 };

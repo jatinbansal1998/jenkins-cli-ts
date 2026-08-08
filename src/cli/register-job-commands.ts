@@ -47,7 +47,7 @@ export function registerJobCommands(
     );
 }
 
-export function configureListOptions(yargsInstance: Argv): Argv {
+function configureListOptions(yargsInstance: Argv): Argv {
   return yargsInstance
     .option("search", {
       type: "string",

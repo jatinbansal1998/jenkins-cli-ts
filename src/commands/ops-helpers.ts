@@ -1,6 +1,6 @@
 import { CliError } from "../cli";
 import type { EnvConfig } from "../env";
-import type { JenkinsClient } from "../jenkins/api-wrapper";
+import type { JenkinsClient } from "../jenkins/client";
 import { normalizeControllerTargetUrl } from "../jenkins-target-url";
 import { normalizeOptionalJobUrl } from "../job-url";
 import { pickJobs, type JobPickerResult } from "../job-picker";
@@ -145,10 +145,7 @@ function toResolvedJobTarget(job: JenkinsJob): {
   };
 }
 
-export function parseDurationMs(
-  input: string | undefined,
-  label: string,
-): number {
+function parseDurationMs(input: string | undefined, label: string): number {
   const value = input?.trim() ?? "";
   if (!value) {
     throw new CliError(`Missing --${label}.`, [

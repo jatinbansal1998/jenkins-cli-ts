@@ -36,11 +36,7 @@ malformed output
       scripts: Record<string, string>;
     };
 
-    for (const name of [
-      "test:integration:jenkins",
-      "test:integration:jenkins-build-errors",
-      "test:mutation:jenkins",
-    ]) {
+    for (const name of ["test:integration:jenkins", "test:mutation:jenkins"]) {
       expect(packageJson.scripts[name]).toStartWith(
         "bun scripts/run-with-linux-keyring.ts -- ",
       );

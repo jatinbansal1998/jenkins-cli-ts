@@ -34,7 +34,7 @@ const defaultWrite: JsonWrite = (text) => {
 };
 
 /** Normalized pipeline stage in JSON output. */
-export type JsonStage = {
+type JsonStage = {
   name?: string;
   status?: string;
   durationMs?: number;
@@ -55,23 +55,23 @@ export type JsonBuild = {
   stages?: JsonStage[];
 };
 
-export type JsonSuccess<T> = {
+type JsonSuccess<T> = {
   ok: true;
   command: string;
   data: T;
 };
 
-export type JsonErrorBody = {
+type JsonErrorBody = {
   message: string;
   code: string;
 };
 
-export type JsonError = {
+type JsonError = {
   ok: false;
   error: JsonErrorBody;
 };
 
-export type JsonQueueItem = {
+type JsonQueueItem = {
   id: number;
   url: string;
   jobName?: string;
@@ -81,7 +81,7 @@ export type JsonQueueItem = {
   inQueueSinceMs?: number;
 };
 
-export type JsonNode = {
+type JsonNode = {
   name: string;
   status: "online" | "offline" | "temporarily-offline";
   offlineReason?: string;
@@ -89,7 +89,7 @@ export type JsonNode = {
   executors: { busy: number; total: number };
 };
 
-export type JsonNodes = {
+type JsonNodes = {
   nodes: JsonNode[];
   summary: {
     totalNodes: number;
@@ -99,19 +99,19 @@ export type JsonNodes = {
   };
 };
 
-export type JsonRunningBuild = {
+type JsonRunningBuild = {
   jobName: string;
   fullJobName?: string;
   number: number;
   url: string;
 };
 
-export type JsonArtifact = {
+type JsonArtifact = {
   fileName: string;
   relativePath: string;
 };
 
-export type JsonMutationTarget = {
+type JsonMutationTarget = {
   queueUrl?: string;
   queueId?: number;
   buildUrl?: string;
@@ -157,7 +157,7 @@ export type JsonUpdateCheck = {
   checkedAt: string;
 };
 
-export type JsonLogEvent =
+type JsonLogEvent =
   | {
       type: "start";
       buildUrl: string;

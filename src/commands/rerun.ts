@@ -1,7 +1,7 @@
 import { CliError } from "../cli";
 import { resolveBuildSelector } from "../build-selector";
 import { assertProtectedMutationAllowed, type EnvConfig } from "../env";
-import type { JenkinsClient } from "../jenkins/api-wrapper";
+import type { JenkinsClient } from "../jenkins/client";
 import { resolveJobTarget } from "./ops-helpers";
 import {
   printRerunResult,

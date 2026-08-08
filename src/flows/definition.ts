@@ -16,7 +16,6 @@ import {
   CUSTOM_MORE_BUILD_VALUE,
   CUSTOM_MORE_CANCEL_VALUE,
 } from "./constants";
-import { withPromptTarget } from "../tui-target";
 
 const ACTION_MENU_ORDER = [
   "build",
@@ -51,7 +50,7 @@ function orderActionOptions(options: PromptOption[]): PromptOption[] {
   return [...orderedOptions, ...optionsByValue.values()];
 }
 
-export const listInteractiveFlow: FlowDefinition<ListInteractiveContext> = {
+const listInteractiveFlow: FlowDefinition<ListInteractiveContext> = {
   id: "listInteractive",
   initialState: "select_job",
   states: {
@@ -69,10 +68,7 @@ export const listInteractiveFlow: FlowDefinition<ListInteractiveContext> = {
       prompt: {
         kind: "select",
         message: (context) =>
-          withPromptTarget(
-            `Action for ${context.selectedJob?.fullName || context.selectedJob?.name || "job"}`,
-            context.env,
-          ),
+          `Action for ${context.selectedJob?.fullName || context.selectedJob?.name || "job"}`,
         options: orderActionOptions([
           { value: "build", label: "Build" },
           { value: "rerun_last", label: "Rerun last build" },
@@ -118,7 +114,7 @@ export const listInteractiveFlow: FlowDefinition<ListInteractiveContext> = {
   },
 };
 
-export const buildPreFlow: FlowDefinition<BuildPreContext> = {
+const buildPreFlow: FlowDefinition<BuildPreContext> = {
   id: "buildPre",
   initialState: "entry",
   states: {
@@ -135,7 +131,7 @@ export const buildPreFlow: FlowDefinition<BuildPreContext> = {
     discovered_mode: {
       prompt: {
         kind: "select",
-        message: (context) => withPromptTarget("Build parameters", context.env),
+        message: () => "Build parameters",
         options: [
           {
             value: BUILD_CONFIGURE_DISCOVERED_VALUE,
@@ -166,7 +162,7 @@ export const buildPreFlow: FlowDefinition<BuildPreContext> = {
     branch_mode: {
       prompt: {
         kind: "select",
-        message: (context) => withPromptTarget("Build mode", context.env),
+        message: () => "Build mode",
         options: [
           {
             value: BUILD_WITH_PARAMS_VALUE,
@@ -216,11 +212,7 @@ export const buildPreFlow: FlowDefinition<BuildPreContext> = {
     branch_select: {
       prompt: {
         kind: "branchPicker",
-        message: (context) =>
-          withPromptTarget(
-            "Branch name (press Esc for build mode)",
-            context.env,
-          ),
+        message: () => "Branch name (press Esc for build mode)",
         options: (context) => [
           ...context.branchChoices.map((branch) => ({
             value: branch,
@@ -244,8 +236,7 @@ export const buildPreFlow: FlowDefinition<BuildPreContext> = {
     branch_remove: {
       prompt: {
         kind: "select",
-        message: (context) =>
-          withPromptTarget("Remove cached branch", context.env),
+        message: () => "Remove cached branch",
         options: (context) =>
           context.removableBranches.map((branch) => ({
             value: branch,
@@ -269,7 +260,7 @@ export const buildPreFlow: FlowDefinition<BuildPreContext> = {
     branch_entry: {
       prompt: {
         kind: "text",
-        message: (context) => withPromptTarget("Branch name", context.env),
+        message: () => "Branch name",
         placeholder: "e.g. main",
       },
       onSelect: "buildPre.submitBranch",
@@ -283,8 +274,7 @@ export const buildPreFlow: FlowDefinition<BuildPreContext> = {
     custom_confirm: {
       prompt: {
         kind: "confirm",
-        message: (context) =>
-          withPromptTarget("Add custom parameters?", context.env),
+        message: () => "Add custom parameters?",
         initialValue: false,
       },
       transitions: {
@@ -297,7 +287,7 @@ export const buildPreFlow: FlowDefinition<BuildPreContext> = {
     custom_key: {
       prompt: {
         kind: "text",
-        message: (context) => withPromptTarget("Parameter name", context.env),
+        message: () => "Parameter name",
         placeholder: "e.g. DEPLOY_ENV",
       },
       onSelect: "buildPre.submitCustomParamKey",
@@ -312,12 +302,9 @@ export const buildPreFlow: FlowDefinition<BuildPreContext> = {
       prompt: {
         kind: "text",
         message: (context) =>
-          withPromptTarget(
-            context.pendingCustomParamKey
-              ? `Value for ${context.pendingCustomParamKey}`
-              : "Parameter value",
-            context.env,
-          ),
+          context.pendingCustomParamKey
+            ? `Value for ${context.pendingCustomParamKey}`
+            : "Parameter value",
         initialValue: (context) => {
           const key = context.pendingCustomParamKey?.trim() ?? "";
           return key ? (context.customParams[key] ?? "") : "";
@@ -334,8 +321,7 @@ export const buildPreFlow: FlowDefinition<BuildPreContext> = {
     custom_more: {
       prompt: {
         kind: "select",
-        message: (context) =>
-          withPromptTarget("Custom parameter options", context.env),
+        message: () => "Custom parameter options",
         options: [
           {
             value: CUSTOM_MORE_ADD_VALUE,
@@ -378,7 +364,7 @@ export const buildPreFlow: FlowDefinition<BuildPreContext> = {
   },
 };
 
-export const buildPostFlow: FlowDefinition<BuildPostContext> = {
+const buildPostFlow: FlowDefinition<BuildPostContext> = {
   id: "buildPost",
   initialState: "action_menu",
   states: {
@@ -386,8 +372,7 @@ export const buildPostFlow: FlowDefinition<BuildPostContext> = {
     action_menu: {
       prompt: {
         kind: "select",
-        message: (context) =>
-          withPromptTarget(`Next action for ${context.jobLabel}`, context.env),
+        message: (context) => `Next action for ${context.jobLabel}`,
         options: orderActionOptions([
           { value: "rerun", label: "Rerun same inputs" },
           { value: "rerun_last", label: "Rerun last build" },
@@ -443,8 +428,7 @@ export const buildPostFlow: FlowDefinition<BuildPostContext> = {
       root: true,
       prompt: {
         kind: "confirm",
-        message: (context) =>
-          withPromptTarget("Trigger another build?", context.env),
+        message: () => "Trigger another build?",
         initialValue: false,
       },
       onSelect: "build.repeatConfirm",
@@ -457,7 +441,7 @@ export const buildPostFlow: FlowDefinition<BuildPostContext> = {
   },
 };
 
-export const statusPostFlow: FlowDefinition<StatusPostContext> = {
+const statusPostFlow: FlowDefinition<StatusPostContext> = {
   id: "statusPost",
   initialState: "action_menu",
   states: {
@@ -465,8 +449,7 @@ export const statusPostFlow: FlowDefinition<StatusPostContext> = {
     action_menu: {
       prompt: {
         kind: "select",
-        message: (context) =>
-          withPromptTarget(`Action for ${context.targetLabel}`, context.env),
+        message: (context) => `Action for ${context.targetLabel}`,
         options: orderActionOptions([
           { value: "build", label: "Build now" },
           { value: "rerun_last", label: "Rerun last build" },
@@ -508,8 +491,7 @@ export const statusPostFlow: FlowDefinition<StatusPostContext> = {
       root: true,
       prompt: {
         kind: "confirm",
-        message: (context) =>
-          withPromptTarget("Check another job?", context.env),
+        message: () => "Check another job?",
         initialValue: false,
       },
       onSelect: "status.repeatConfirm",

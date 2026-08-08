@@ -344,7 +344,7 @@ function chunkEntries(entries: string[], maxItems: number): string[][] {
   return chunks;
 }
 
-function formatDuration(durationMs: number): string {
+export function formatDuration(durationMs: number): string {
   if (durationMs < 1000) {
     return `${Math.max(0, Math.round(durationMs))}ms`;
   }

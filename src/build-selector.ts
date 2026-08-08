@@ -1,11 +1,11 @@
 import { CliError } from "./cli";
 import type { EnvConfig } from "./env";
-import type { JenkinsClient } from "./jenkins/api-wrapper";
+import type { JenkinsClient } from "./jenkins/client";
 import { normalizeControllerTargetUrl } from "./jenkins-target-url";
 import { normalizeJobUrl } from "./job-url";
 import { resolveJobTarget } from "./commands/ops-helpers";
 
-export type ResolvedBuildSelector =
+type ResolvedBuildSelector =
   | {
       kind: "build";
       jobUrl: string;
@@ -96,7 +96,7 @@ export async function resolveBuildSelector(options: {
   return { kind: "job", ...target };
 }
 
-export function parseBuildNumber(value: unknown): number {
+function parseBuildNumber(value: unknown): number {
   if (typeof value !== "number" || !Number.isSafeInteger(value) || value <= 0) {
     throw new CliError(
       "Invalid --build value.",

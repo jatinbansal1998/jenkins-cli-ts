@@ -1,10 +1,8 @@
-import type { EnvConfig } from "./env";
 import { CliError } from "./cli";
 import type { JobParameterDefinition } from "./types/jenkins";
-import { withPromptTarget } from "./tui-target";
 import { validateBuildParameters } from "./job-parameters";
 
-export type ParameterPromptDeps = {
+type ParameterPromptDeps = {
   text: (options: {
     message: string;
     placeholder?: string;
@@ -24,7 +22,7 @@ export type ParameterPromptDeps = {
   writeLine: (message: string) => void;
 };
 
-export type PromptDiscoveredParametersResult =
+type PromptDiscoveredParametersResult =
   | { cancelled: true }
   | {
       cancelled: false;
@@ -35,7 +33,6 @@ export type PromptDiscoveredParametersResult =
 
 export async function promptForDiscoveredParameters(options: {
   definitions: JobParameterDefinition[];
-  env: EnvConfig;
   branchParam: string;
   branch?: string;
   customParams?: Record<string, string>;
@@ -102,10 +99,7 @@ export async function promptForDiscoveredParameters(options: {
     writeLine: options.deps.writeLine,
   });
   const confirmed = await options.deps.confirm({
-    message: withPromptTarget(
-      "Start build with these parameters?",
-      options.env,
-    ),
+    message: "Start build with these parameters?",
     initialValue: true,
   });
   if (options.deps.isCancel(confirmed) || !confirmed) {
@@ -123,16 +117,12 @@ export async function promptForDiscoveredParameters(options: {
 async function promptForDefinition(
   definition: JobParameterDefinition,
   options: {
-    env: EnvConfig;
     deps: ParameterPromptDeps;
   },
 ): Promise<{ cancelled: true } | { cancelled: false; value: string }> {
-  const message = withPromptTarget(
-    definition.description
-      ? `${definition.name} — ${definition.description}`
-      : definition.name,
-    options.env,
-  );
+  const message = definition.description
+    ? `${definition.name} — ${definition.description}`
+    : definition.name;
 
   let response: unknown;
   if (definition.type === "boolean") {

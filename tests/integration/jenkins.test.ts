@@ -1640,7 +1640,7 @@ describe.skipIf(!integrationEnabled)(
               "--without-params",
               "--watch",
             ],
-            index === 0 ? { JENKINS_USE_CRUMB: "true" } : {},
+            index === 0 ? { JENKINS_USE_CRUMB: "1" } : {},
           );
         }
 

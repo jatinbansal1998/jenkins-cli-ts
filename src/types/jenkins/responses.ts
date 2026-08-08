@@ -16,7 +16,7 @@ export type JenkinsJobsResponse = {
   jobs?: JenkinsApiJob[];
 };
 
-export type JenkinsApiDefaultParameterValue = {
+type JenkinsApiDefaultParameterValue = {
   value?: unknown;
 };
 
@@ -30,7 +30,7 @@ export type JenkinsApiParameterDefinition = {
   choices?: unknown;
 };
 
-export type JenkinsApiJobProperty = {
+type JenkinsApiJobProperty = {
   _class?: string;
   parameterDefinitions?: JenkinsApiParameterDefinition[];
 };
@@ -39,7 +39,7 @@ export type JenkinsJobParametersResponse = {
   property?: JenkinsApiJobProperty[];
 };
 
-export type JenkinsApiBuildParameter = {
+type JenkinsApiBuildParameter = {
   name?: string;
   value?: unknown;
 };
@@ -88,12 +88,12 @@ export type JenkinsJobStatusResponse = {
   lastBuild?: JenkinsApiBuild;
 };
 
-export type JenkinsApiQueueTask = {
+type JenkinsApiQueueTask = {
   name?: string;
   url?: string;
 };
 
-export type JenkinsApiQueueExecutable = {
+type JenkinsApiQueueExecutable = {
   number?: number;
   url?: string;
 };
@@ -115,17 +115,17 @@ export type JenkinsQueueItemsResponse = {
   items?: JenkinsApiQueueItem[];
 };
 
-export type JenkinsApiComputerExecutable = {
+type JenkinsApiComputerExecutable = {
   url?: string;
   number?: number;
 };
 
-export type JenkinsApiComputerExecutor = {
+type JenkinsApiComputerExecutor = {
   idle?: boolean;
   currentExecutable?: JenkinsApiComputerExecutable | null;
 };
 
-export type JenkinsApiComputerLabel = {
+type JenkinsApiComputerLabel = {
   name?: string;
 };
 
@@ -162,11 +162,11 @@ export type JenkinsQueueWaitTimeResponse = {
   inQueueSince?: number;
 };
 
-export type JenkinsPipelineLinkResponse = {
+type JenkinsPipelineLinkResponse = {
   href?: string;
 };
 
-export type JenkinsPipelineNodeErrorResponse = {
+type JenkinsPipelineNodeErrorResponse = {
   type?: string;
   message?: string;
 };
@@ -196,7 +196,7 @@ export type JenkinsPipelineNodeResponse = {
   stageFlowNodes?: JenkinsPipelineNodeResponse[];
 };
 
-export type JenkinsPipelineStageResponse = {
+type JenkinsPipelineStageResponse = {
   name?: string;
   id?: string | number;
   execNode?: string;

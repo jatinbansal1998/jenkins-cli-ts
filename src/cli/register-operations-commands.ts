@@ -32,18 +32,13 @@ export function registerOperationsCommands(
       "List running builds and open one in the browser",
       addJsonOption,
       async (argv) => {
-        await runTrackedCommandWithContext(
-          "run",
-          argv,
-          async ({ env, client }) => {
-            await runRunningBuilds({
-              client,
-              env,
-              nonInteractive: Boolean(argv.nonInteractive || argv.json),
-              json: Boolean(argv.json),
-            });
-          },
-        );
+        await runTrackedCommandWithContext("run", argv, async ({ client }) => {
+          await runRunningBuilds({
+            client,
+            nonInteractive: Boolean(argv.nonInteractive || argv.json),
+            json: Boolean(argv.json),
+          });
+        });
       },
     )
     .command(

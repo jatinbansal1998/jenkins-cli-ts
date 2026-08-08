@@ -1,3 +1,4 @@
+import { normalizeOptionalString, parseBooleanFlag } from "./strings";
 /**
  * Environment configuration loader.
  * Validates and loads JENKINS_URL, JENKINS_USER, and JENKINS_API_TOKEN.
@@ -20,7 +21,7 @@ import {
   type SecureStoreDeps,
 } from "./secure-store";
 
-export type LoadEnvOptions = {
+type LoadEnvOptions = {
   profile?: string;
   url?: string;
   user?: string;
@@ -117,7 +118,7 @@ export function loadEnv(options: LoadEnvOptions = {}): EnvConfig {
       jenkinsUser: cliUser,
       jenkinsApiToken: cliToken,
       branchParamDefault: resolveBranchParamDefault(),
-      useCrumb: parseUseCrumbValue(process.env[ENV_KEYS.JENKINS_USE_CRUMB]),
+      useCrumb: parseUseCrumb(process.env[ENV_KEYS.JENKINS_USE_CRUMB]),
       folderDepth: DEFAULT_FOLDER_DEPTH,
       ...(protectedProfileName ? { protectedProfileName } : {}),
       confirmProtected,
@@ -136,7 +137,7 @@ export function loadEnv(options: LoadEnvOptions = {}): EnvConfig {
       jenkinsApiToken: activeProfile.jenkinsApiToken,
       profileName: activeProfileName,
       branchParamDefault: resolveBranchParamDefault(activeProfile.branchParam),
-      useCrumb: parseUseCrumbValue(
+      useCrumb: parseUseCrumb(
         process.env[ENV_KEYS.JENKINS_USE_CRUMB] ?? activeProfile.useCrumb,
       ),
       folderDepth: activeProfile.folderDepth ?? DEFAULT_FOLDER_DEPTH,
@@ -181,7 +182,7 @@ export function loadEnv(options: LoadEnvOptions = {}): EnvConfig {
     jenkinsUser: rawUser.trim(),
     jenkinsApiToken: rawToken.trim(),
     branchParamDefault: resolveBranchParamDefault(),
-    useCrumb: parseUseCrumbValue(process.env[ENV_KEYS.JENKINS_USE_CRUMB]),
+    useCrumb: parseUseCrumb(process.env[ENV_KEYS.JENKINS_USE_CRUMB]),
     folderDepth: DEFAULT_FOLDER_DEPTH,
     confirmProtected,
   };
@@ -241,7 +242,7 @@ export async function resolveApiToken(
 export function getDebugDefault(): boolean {
   const rawDebug = normalizeOptionalString(process.env[ENV_KEYS.JENKINS_DEBUG]);
   if (rawDebug) {
-    return parseBooleanFlag(rawDebug);
+    return parseBooleanFlag(rawDebug) ?? false;
   }
 
   const loadedConfig = readConfigSync();
@@ -317,15 +318,8 @@ function findProtectedProfileNameForUrl(
   return undefined;
 }
 
-function parseUseCrumbValue(value: string | boolean | undefined): boolean {
-  if (typeof value === "boolean") {
-    return value;
-  }
-  if (typeof value !== "string") {
-    return false;
-  }
-  const normalized = value.trim().toLowerCase();
-  return normalized === "true";
+function parseUseCrumb(value: string | boolean | undefined): boolean {
+  return parseBooleanFlag(value) ?? false;
 }
 
 function resolveBranchParamDefault(profileBranchParam?: string): string {
@@ -339,21 +333,6 @@ function resolveBranchParamDefault(profileBranchParam?: string): string {
     return profileBranchParam;
   }
   return DEFAULT_BRANCH_PARAM;
-}
-
-function parseBooleanFlag(value: string): boolean {
-  const normalized = value.trim().toLowerCase();
-  return normalized === "true" || normalized === "1";
-}
-
-function normalizeOptionalString(
-  value: string | undefined,
-): string | undefined {
-  if (typeof value !== "string") {
-    return undefined;
-  }
-  const trimmed = value.trim();
-  return trimmed ? trimmed : undefined;
 }
 
 function missingProfileError(

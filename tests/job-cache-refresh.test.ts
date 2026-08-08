@@ -9,7 +9,7 @@ import {
 } from "bun:test";
 import fs from "node:fs";
 import type { EnvConfig } from "../src/env";
-import type { JenkinsClient } from "../src/jenkins/api-wrapper";
+import type { JenkinsClient } from "../src/jenkins/client";
 import type { JenkinsJob } from "../src/types/jenkins";
 
 const realFsPromises = await import("node:fs/promises");

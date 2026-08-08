@@ -1,7 +1,10 @@
+import { extractBranchFromParams, toParamRecord } from "../job-parameters";
+import { formatDuration } from "../status-format";
+import { truncateCell } from "../table";
 import { CliError, printOk } from "../cli";
 import { assertProtectedMutationAllowed, type EnvConfig } from "../env";
 import { printMenuActionError, runMenuAction } from "./menu-action";
-import type { JenkinsClient } from "../jenkins/api-wrapper";
+import type { JenkinsClient } from "../jenkins/client";
 import type { BuildHistoryEntry, BuildHistoryPage } from "../types/jenkins";
 import {
   jsonBuildFromHistoryEntry,
@@ -15,7 +18,6 @@ import { buildFlowHandlers } from "../flows/handlers";
 import type { ActionEffectResult, BuildPostContext } from "../flows/types";
 import { historyDeps } from "./history-deps";
 import { printRerunResult, rerunLastBuildForJob } from "./rerun-core";
-import { withPromptTarget } from "../tui-target";
 
 const HISTORY_PAGE_SIZE = 5;
 const NEXT_PAGE_VALUE = "__jenkins_cli_history_next__";
@@ -26,7 +28,7 @@ const RERUN_LAST_VALUE = "__jenkins_cli_history_rerun_last__";
 const LOGS_VALUE = "__jenkins_cli_history_logs__";
 const URL_VALUE = "__jenkins_cli_history_url__";
 
-export type HistoryActiveBuild = {
+type HistoryActiveBuild = {
   buildUrl?: string;
   buildNumber?: number;
   queueUrl?: string;
@@ -43,7 +45,7 @@ type HistoryOptions = {
   write?: JsonWrite;
 };
 
-export type HistoryRunResult = {
+type HistoryRunResult = {
   activeBuild?: HistoryActiveBuild;
 };
 
@@ -101,7 +103,7 @@ export async function runHistory(
 
     renderBuildHistory(page, target.jobLabel);
     const selection = await deps.select({
-      message: withPromptTarget("Select a build or action", options.env),
+      message: "Select a build or action",
       options: buildHistoryOptions(page),
     });
     if (deps.isCancel(selection) || selection === BACK_VALUE) {
@@ -173,10 +175,7 @@ async function runBuildHistoryAction(options: {
   const deps = activeHistoryDeps;
   while (true) {
     const selection = await deps.select({
-      message: withPromptTarget(
-        `Build #${options.build.buildNumber ?? "?"} for ${options.jobLabel}`,
-        options.env,
-      ),
+      message: `Build #${options.build.buildNumber ?? "?"} for ${options.jobLabel}`,
       options: [
         { value: REBUILD_VALUE, label: "Rebuild selected build" },
         { value: RERUN_LAST_VALUE, label: "Rerun last build for job" },
@@ -612,35 +611,8 @@ function resolveHistoryDuration(build: BuildHistoryEntry): number {
   return typeof build.durationMs === "number" ? build.durationMs : 0;
 }
 
-function formatDuration(durationMs: number): string {
-  if (durationMs < 1000) {
-    return `${Math.max(0, Math.round(durationMs))}ms`;
-  }
-  const totalSeconds = Math.max(0, Math.floor(durationMs / 1000));
-  const hours = Math.floor(totalSeconds / 3600);
-  const minutes = Math.floor((totalSeconds % 3600) / 60);
-  const seconds = totalSeconds % 60;
-  if (hours > 0) {
-    return `${hours}h ${minutes}m ${seconds}s`;
-  }
-  if (minutes > 0) {
-    return `${minutes}m ${seconds}s`;
-  }
-  return `${seconds}s`;
-}
-
 function padCell(value: string, width: number): string {
   return value.padEnd(width, " ");
-}
-
-function truncateCell(value: string, maxWidth: number): string {
-  if (value.length <= maxWidth) {
-    return value;
-  }
-  if (maxWidth <= 3) {
-    return value.slice(0, maxWidth);
-  }
-  return `${value.slice(0, maxWidth - 3)}...`;
 }
 
 function normalizeOffset(value: number | undefined): number {
@@ -649,46 +621,4 @@ function normalizeOffset(value: number | undefined): number {
   }
   const normalized = Math.floor(value);
   return normalized >= 0 ? normalized : 0;
-}
-
-function toParamRecord(
-  params: { name: string; value: string }[] | undefined,
-): Record<string, string> {
-  if (!params || params.length === 0) {
-    return {};
-  }
-  const result: Record<string, string> = {};
-  for (const param of params) {
-    const key = param.name.trim();
-    if (!key) {
-      continue;
-    }
-    result[key] = param.value;
-  }
-  return result;
-}
-
-function extractBranchFromParams(
-  params: Record<string, string>,
-): string | undefined {
-  const candidates = [
-    "BRANCH",
-    "BRANCH_TAG",
-    "GIT_BRANCH",
-    "BRANCH_NAME",
-    "REF",
-    "TAG",
-  ];
-
-  for (const key of candidates) {
-    const value = params[key];
-    if (value) {
-      return value;
-    }
-  }
-
-  const fallback = Object.entries(params).find(
-    ([name, value]) => name.toLowerCase().includes("branch") && value,
-  );
-  return fallback?.[1];
 }

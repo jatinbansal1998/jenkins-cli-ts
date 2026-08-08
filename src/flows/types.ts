@@ -2,8 +2,7 @@ import type { JenkinsJob, JobParameterDefinition } from "../types/jenkins";
 import type { EnvConfig } from "../env";
 
 /** All supported interactive flow definitions in the CLI. */
-export type FlowId =
-  "listInteractive" | "buildPre" | "buildPost" | "statusPost";
+type FlowId = "listInteractive" | "buildPre" | "buildPost" | "statusPost";
 
 /** Unique identifier for a state within a flow definition. */
 export type StateId = string;
@@ -101,7 +100,7 @@ export type PromptSpec<Ctx> =
     };
 
 /** Single state in a flow state machine. */
-export type StateDefinition<Ctx> = {
+type StateDefinition<Ctx> = {
   /** Marks state as a root/return point for escape-driven navigation. */
   root?: boolean;
   /** Prompt shown in this state (if state is prompt-driven). */
@@ -122,7 +121,7 @@ export type FlowDefinition<Ctx> = {
 };
 
 /** Handler contract used by flow runner for `onEnter` and `onSelect`. */
-export type FlowHandler<Ctx> = (options: {
+type FlowHandler<Ctx> = (options: {
   context: Ctx;
   input?: FlowPromptValue;
 }) => Promise<EventId> | EventId;

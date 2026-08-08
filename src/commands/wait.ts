@@ -2,7 +2,7 @@ import { markAnalyticsPollingCommand } from "../analytics";
 import { resolveBuildSelector } from "../build-selector";
 import { CliError, printError, printHint, printOk } from "../cli";
 import type { EnvConfig } from "../env";
-import type { JenkinsClient } from "../jenkins/api-wrapper";
+import type { JenkinsClient } from "../jenkins/client";
 import {
   emitJsonError,
   emitJsonSuccess,
@@ -21,6 +21,7 @@ import {
   formatStatusDetails,
   toStatusDetailsFromBuild,
   toStatusDetailsFromJob,
+  formatDuration,
 } from "../status-format";
 import { parseOptionalDurationMs } from "./ops-helpers";
 import {
@@ -30,8 +31,6 @@ import {
   waitForPollIntervalOrCancel,
 } from "./watch-utils";
 import { createWatchSpinner } from "./watch-output";
-
-export const DEFAULT_WAIT_INTERVAL_MS = DEFAULT_WATCH_INTERVAL_MS;
 
 type WaitOptions = {
   client: JenkinsClient;
@@ -77,7 +76,7 @@ export async function runWait(options: WaitOptions): Promise<WaitResult> {
 
   const intervalMs = parseOptionalDurationMs(
     options.interval,
-    DEFAULT_WAIT_INTERVAL_MS,
+    DEFAULT_WATCH_INTERVAL_MS,
     "interval",
   );
   const timeoutMs = options.timeout
@@ -122,7 +121,7 @@ async function runWaitJson(options: WaitOptions): Promise<WaitResult> {
 
     const intervalMs = parseOptionalDurationMs(
       options.interval,
-      DEFAULT_WAIT_INTERVAL_MS,
+      DEFAULT_WATCH_INTERVAL_MS,
       "interval",
     );
     const timeoutMs = options.timeout
@@ -718,21 +717,4 @@ function printFinalJobStatus(
     buildUrl,
   );
   printOk(details ? `${summary}\n${details}` : summary);
-}
-
-function formatDuration(durationMs: number): string {
-  if (durationMs < 1000) {
-    return `${Math.max(0, Math.round(durationMs))}ms`;
-  }
-  const totalSeconds = Math.max(0, Math.floor(durationMs / 1000));
-  const hours = Math.floor(totalSeconds / 3600);
-  const minutes = Math.floor((totalSeconds % 3600) / 60);
-  const seconds = totalSeconds % 60;
-  if (hours > 0) {
-    return `${hours}h ${minutes}m ${seconds}s`;
-  }
-  if (minutes > 0) {
-    return `${minutes}m ${seconds}s`;
-  }
-  return `${seconds}s`;
 }

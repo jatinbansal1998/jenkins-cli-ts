@@ -6,7 +6,7 @@ import { runInteractiveSubcommandWithAnalytics } from "../analytics";
 import { printOk } from "../cli";
 import { runMenuAction } from "./menu-action";
 import type { EnvConfig } from "../env";
-import type { JenkinsClient } from "../jenkins/api-wrapper";
+import type { JenkinsClient } from "../jenkins/client";
 import type { JenkinsJob, JenkinsJobLastBuild } from "../types/jenkins";
 import { MIN_SCORE } from "../config/fuzzy";
 import { type JsonWrite, runJsonCommand } from "../json-output";

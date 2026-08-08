@@ -1,3 +1,5 @@
+import { withTimeout } from "./with-timeout";
+import { normalizeOptionalString } from "./strings";
 import { recordJenkinsApiCall, recordJenkinsApiFailure } from "./analytics";
 import {
   CONFIG_FILE,
@@ -20,7 +22,7 @@ import {
   secureStoreLabel,
 } from "./secure-store";
 
-export const AUTH_PROBE_TIMEOUT_MS = 10_000;
+const AUTH_PROBE_TIMEOUT_MS = 10_000;
 
 export type AuthStatusOptions = {
   profile?: string;
@@ -29,7 +31,7 @@ export type AuthStatusOptions = {
   apiToken?: string;
 };
 
-export type AuthCredentialProblem =
+type AuthCredentialProblem =
   | "incomplete-direct-credentials"
   | "unknown-profile"
   | "config-read-error"
@@ -50,7 +52,7 @@ export type AuthCredentialResolution = {
   keychainReadError?: boolean;
 };
 
-export type AuthProbeKind =
+type AuthProbeKind =
   | "authenticated"
   | "anonymous"
   | "unauthorized"
@@ -60,10 +62,10 @@ export type AuthProbeKind =
   | "timeout"
   | "network-error";
 
-export type UnexpectedAuthResponseReason =
+type UnexpectedAuthResponseReason =
   "html" | "malformed-json" | "identity-shape" | "http-status";
 
-export type AuthProbeResult = {
+type AuthProbeResult = {
   kind: AuthProbeKind;
   httpStatus?: number;
   contentType?: string;
@@ -192,9 +194,7 @@ export async function probeJenkinsIdentity(
 
   recordJenkinsApiCall();
   logApiRequest("GET", requestUrl, headers, null);
-  const controller = new AbortController();
-  const timeout = setTimeout(
-    () => controller.abort(),
+  const { controller, cleanup } = withTimeout(
     deps.timeoutMs ?? AUTH_PROBE_TIMEOUT_MS,
   );
 
@@ -299,7 +299,7 @@ export async function probeJenkinsIdentity(
     });
     return { kind: "network-error" };
   } finally {
-    clearTimeout(timeout);
+    cleanup();
   }
 }
 
@@ -385,7 +385,7 @@ async function readAuthConfig(): Promise<{ config: JenkinsConfig } | null> {
     }
   }
 
-  const requestedDefault = normalizeUnknownString(rawRecord.defaultProfile);
+  const requestedDefault = normalizeOptionalString(rawRecord.defaultProfile);
   const defaultProfile =
     requestedDefault && profiles[requestedDefault]
       ? requestedDefault
@@ -437,7 +437,7 @@ function pickUnknownString(
   record: Record<string, unknown>,
   keys: string[],
 ): string | undefined {
-  return normalizeUnknownString(firstUnknownString(record, keys));
+  return normalizeOptionalString(firstUnknownString(record, keys));
 }
 
 function firstUnknownString(
@@ -451,14 +451,6 @@ function firstUnknownString(
     }
   }
   return undefined;
-}
-
-function normalizeUnknownString(value: unknown): string | undefined {
-  if (typeof value !== "string") {
-    return undefined;
-  }
-  const trimmed = value.trim();
-  return trimmed ? trimmed : undefined;
 }
 
 function directCredentials(
@@ -723,14 +715,4 @@ function isHtml(contentType: string | undefined, body: string): boolean {
 
 function isAbortError(error: unknown): boolean {
   return error instanceof Error && error.name === "AbortError";
-}
-
-function normalizeOptionalString(
-  value: string | null | undefined,
-): string | undefined {
-  if (typeof value !== "string") {
-    return undefined;
-  }
-  const trimmed = value.trim();
-  return trimmed ? trimmed : undefined;
 }

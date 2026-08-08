@@ -13,44 +13,44 @@ type Mutation = {
 const mutations: Mutation[] = [
   {
     name: "uses an invalid Jenkins authorization scheme",
-    file: "src/jenkins/api-wrapper.ts",
+    file: "src/jenkins/client.ts",
     original: "this.authHeader = `Basic ${token}`;",
     replacement: "this.authHeader = `Bearer ${token}`;",
   },
   {
     name: "drops submitted build parameter values",
-    file: "src/jenkins/api-wrapper.ts",
+    file: "src/jenkins/client.ts",
     original: "filteredParams.set(normalizedKey, value);",
     replacement: 'filteredParams.set(normalizedKey, "");',
   },
   {
     name: "ignores the Jenkins queue Location header",
-    file: "src/jenkins/api-wrapper.ts",
+    file: "src/jenkins/client.ts",
     original: 'response.headers.get("location") ?? undefined',
     replacement: 'response.headers.get("x-location") ?? undefined',
   },
   {
     name: "hides the latest build result",
-    file: "src/jenkins/api-wrapper.ts",
+    file: "src/jenkins/client.ts",
     original: "result: lastBuild.result ?? null,",
     replacement: "result: null,",
   },
   {
     name: "requests JSON instead of progressive build logs",
-    file: "src/jenkins/api-wrapper.ts",
+    file: "src/jenkins/client.ts",
     original: 'this.withJob(buildUrl, "logText/progressiveText")',
     replacement: 'this.withJob(buildUrl, "api/json")',
   },
   {
     name: "downloads artifacts without authentication",
-    file: "src/jenkins/api-wrapper.ts",
+    file: "src/jenkins/client.ts",
     original:
       "const headers: Record<string, string> = { Authorization: this.authHeader };",
     replacement: "const headers: Record<string, string> = {};",
   },
   {
     name: "hides build results from history",
-    file: "src/jenkins/api-wrapper.ts",
+    file: "src/jenkins/client.ts",
     original: "result: build.result ?? null,",
     replacement: "result: null,",
   },

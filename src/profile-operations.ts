@@ -40,9 +40,9 @@ export type ProfileOperationsDeps = {
   deleteToken?: (account: string) => Promise<boolean>;
 };
 
-export type ProfileTokenStorage = "keychain" | "plaintext";
+type ProfileTokenStorage = "keychain" | "plaintext";
 
-export type ProfileSummary = {
+type ProfileSummary = {
   name: string;
   jenkinsUrl: string;
   jenkinsUser: string;
@@ -55,23 +55,23 @@ export type ProfileListResult = {
   defaultProfile?: string;
 };
 
-export type SelectProfileResult = {
+type SelectProfileResult = {
   profileName: string;
   changed: boolean;
 };
 
-export type SetProfileProtectionResult = {
+type SetProfileProtectionResult = {
   profileName: string;
   protected: boolean;
   changed: boolean;
 };
 
-export type DeleteProfilesResult = {
+type DeleteProfilesResult = {
   deleted: string[];
   nextDefault?: string;
 };
 
-export type RenameProfileResult = {
+type RenameProfileResult = {
   from: string;
   to: string;
   isDefault: boolean;
