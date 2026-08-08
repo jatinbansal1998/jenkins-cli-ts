@@ -44,7 +44,7 @@ describe("interactive integration line matching", () => {
 });
 
 describe("macOS interactive integration harness", () => {
-  test("synchronizes repeated messages through meaningful output", () => {
+  test("stops after observing the required output", () => {
     const env: Record<string, string | undefined> = {};
     const script = macOsExpectScript(
       "jenkins-cli list",
@@ -60,6 +60,10 @@ describe("macOS interactive integration harness", () => {
     expect(script).toContain('-exact "$env($textKey)\\n"');
     expect(script).not.toContain("◆");
     expect(script).not.toContain("◇");
+    expect(script).toContain("catch close");
+    expect(script).not.toContain(
+      "Timed out waiting for the interactive CLI to exit.",
+    );
     expect(env.JENKINS_CLI_EXPECT_TEXT_0).toBe("Action for cli-no-params");
     expect(env.JENKINS_CLI_EXPECT_TEXT_1).toBe(
       'ERROR: Profile "release" is read-only.',

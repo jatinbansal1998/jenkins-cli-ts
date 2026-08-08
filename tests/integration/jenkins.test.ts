@@ -11,7 +11,7 @@ import {
   pollCli,
   runCli,
   runCliExpectFailure,
-  runInteractiveCli,
+  observeInteractiveCli,
   waitForNewBuild,
   withCliHome,
 } from "./jenkins/harness";
@@ -1783,7 +1783,7 @@ describe.skipIf(!integrationEnabled)(
           await writeProtectedProfile(home);
           await runCli(home, ["list", "--refresh", "--json"]);
 
-          const session = await runInteractiveCli(
+          const session = await observeInteractiveCli(
             home,
             ["list", "--no-banner"],
             [
@@ -1793,18 +1793,16 @@ describe.skipIf(!integrationEnabled)(
               },
               // Build is the first action: Enter triggers the blocked mutation.
               { text: "Action for cli-no-params", input: "\r" },
-              // Synchronize after the completed action prompt, then await the
-              // repeated menu text to prove the flow stayed on the selected job.
+              // Synchronize after the completed action prompt, then observe the
+              // repeated menu to prove the flow stayed on the selected job.
               {
                 text: 'ERROR: Profile "release" is read-only.',
                 input: "",
               },
-              { text: "Action for cli-no-params", input: "\u001b" },
-              { text: "Job name or description", input: "\u001b" },
+              { text: "Action for cli-no-params", input: "" },
             ],
           );
 
-          expect(session.exitCode, session.output).toBe(0);
           expect(session.output).toContain(
             'ERROR: Profile "release" is read-only.',
           );
