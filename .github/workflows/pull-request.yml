@@ -134,21 +134,13 @@ jobs:
           set -o pipefail
           mkdir -p test-artifacts
 
-          # Run inside a D-Bus session with an unlocked gnome-keyring so the
-          # secure-store integration tests (secret-tool) actually execute on
-          # Linux instead of being skipped.
-          dbus-run-session -- bash -c '
-            set -o pipefail
-            echo -n "" | gnome-keyring-daemon --unlock >/dev/null 2>&1 || true
+          set +e
+          bun scripts/run-with-linux-keyring.ts -- bun test --only-failures 2>&1 | tee test-artifacts/bun-test.log
+          TEST_EXIT=${PIPESTATUS[0]}
+          set -e
 
-            set +e
-            bun test --only-failures 2>&1 | tee test-artifacts/bun-test.log
-            TEST_EXIT=${PIPESTATUS[0]}
-            set -e
-
-            bun test --reporter=junit --reporter-outfile test-artifacts/bun-junit.xml >/dev/null 2>&1 || true
-            exit "$TEST_EXIT"
-          '
+          bun scripts/run-with-linux-keyring.ts -- bun test --reporter=junit --reporter-outfile test-artifacts/bun-junit.xml >/dev/null 2>&1 || true
+          exit "$TEST_EXIT"
 
       - name: Run tests with macOS Keychain (capture failures)
         if: runner.os == 'macOS'
@@ -301,27 +293,7 @@ jobs:
       - name: Run Jenkins integration tests with Linux Secret Service
         if: runner.os == 'Linux'
         shell: bash
-        env:
-          REQUIRE_KEYCHAIN_INTEGRATION: "1"
-        run: |
-          dbus-run-session -- bash -c '
-            set -euo pipefail
-
-            # Create and unlock a real login collection before D-Bus activates
-            # the Secret Service component.
-            eval "$(printf %s "jenkins-cli-ci" | gnome-keyring-daemon --unlock --components=secrets)"
-            export GNOME_KEYRING_CONTROL
-
-            # Fail before Jenkins startup if Secret Service cannot round-trip
-            # a credential in this exact session.
-            printf %s "keyring-probe" |
-              secret-tool store --label="jenkins-cli integration probe" \
-                service jenkins-cli-ci account integration-probe
-            test "$(secret-tool lookup service jenkins-cli-ci account integration-probe)" = "keyring-probe"
-            secret-tool clear service jenkins-cli-ci account integration-probe
-
-            bun run "${{ matrix.test-script }}"
-          '
+        run: bun run "${{ matrix.test-script }}"
 
       - name: Run Jenkins integration tests with macOS Keychain
         if: runner.os == 'macOS'

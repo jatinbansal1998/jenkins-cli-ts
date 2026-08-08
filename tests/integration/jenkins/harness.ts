@@ -116,8 +116,10 @@ export async function runInteractiveCli(
     }
     endStdin();
 
-    const exitCode = await waitForInteractiveExit(subprocess, () =>
-      stripTerminalCodes(transcript),
+    const exitCode = await waitForInteractiveExit(
+      subprocess,
+      () => stripTerminalCodes(transcript),
+      useMacOsExpect ? 25_000 : 20_000,
     );
     await Promise.all([stdoutPump, stderrPump]);
     return {
@@ -337,8 +339,9 @@ export function completedLineEnd(pending: string, text: string): number | null {
 async function waitForInteractiveExit(
   subprocess: ReturnType<typeof Bun.spawn>,
   output: () => string,
+  timeoutMs: number,
 ): Promise<number> {
-  const deadline = Date.now() + 20_000;
+  const deadline = Date.now() + timeoutMs;
   while (subprocess.exitCode === null && Date.now() < deadline) {
     await Bun.sleep(20);
   }
