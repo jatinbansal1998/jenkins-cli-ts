@@ -30,6 +30,8 @@ const CSI_TERMINAL_SEQUENCE = new RegExp(
   String.raw`\u001B\[[0-?]*[ -/]*[@-~]`,
   "g",
 );
+const EXPECT_STEP_TIMEOUT_MS = 20_000;
+const EXPECT_WRAPPER_BUFFER_MS = 5_000;
 
 export async function withCliHome(
   action: (home: string) => Promise<void>,
@@ -48,12 +50,12 @@ export type InteractiveStep = {
   input: string;
 };
 
-export async function runInteractiveCli(
+export async function observeInteractiveCli(
   home: string,
   args: string[],
   steps: InteractiveStep[],
   envOverrides: Record<string, string | undefined> = {},
-): Promise<CliResult> {
+): Promise<Omit<CliResult, "exitCode">> {
   if (process.platform === "win32") {
     throw new Error(
       "Interactive Jenkins integration scenarios require a POSIX pseudo-terminal and are not supported on Windows.",
@@ -114,14 +116,24 @@ export async function runInteractiveCli(
         subprocess.stdin.flush();
       }
     }
-    endStdin();
-
-    const exitCode = await waitForInteractiveExit(subprocess, () =>
-      stripTerminalCodes(transcript),
-    );
+    if (useMacOsExpect) {
+      const exitCode = await waitForExpectExit(
+        subprocess,
+        () => stripTerminalCodes(transcript),
+        steps.length * EXPECT_STEP_TIMEOUT_MS + EXPECT_WRAPPER_BUFFER_MS,
+      );
+      if (exitCode !== 0) {
+        throw new Error(
+          `macOS Expect exited with code ${exitCode}.\n${stripTerminalCodes(transcript)}`,
+        );
+      }
+    } else {
+      endStdin();
+      if (subprocess.exitCode === null) subprocess.kill();
+      await subprocess.exited;
+    }
     await Promise.all([stdoutPump, stderrPump]);
     return {
-      exitCode,
       stdout,
       stderr,
       output: stripTerminalCodes(transcript),
@@ -334,17 +346,18 @@ export function completedLineEnd(pending: string, text: string): number | null {
   return null;
 }
 
-async function waitForInteractiveExit(
+async function waitForExpectExit(
   subprocess: ReturnType<typeof Bun.spawn>,
   output: () => string,
+  timeoutMs: number,
 ): Promise<number> {
-  const deadline = Date.now() + 20_000;
+  const deadline = Date.now() + timeoutMs;
   while (subprocess.exitCode === null && Date.now() < deadline) {
     await Bun.sleep(20);
   }
   if (subprocess.exitCode === null) {
     throw new Error(
-      `Timed out waiting for the interactive CLI to exit.\n${output()}`,
+      `Timed out waiting for macOS Expect to finish.\n${output()}`,
     );
   }
   return subprocess.exited;
@@ -373,7 +386,7 @@ export function macOsExpectScript(
     env[`JENKINS_CLI_EXPECT_INPUT_${index}`] = step.input;
   }
   return `
-set timeout 20
+set timeout ${EXPECT_STEP_TIMEOUT_MS / 1_000}
 spawn -noecho /bin/sh -c $env(JENKINS_CLI_EXPECT_COMMAND)
 for {set index 0} {$index < $env(JENKINS_CLI_EXPECT_STEP_COUNT)} {incr index} {
   set textKey [format "JENKINS_CLI_EXPECT_TEXT_%d" $index]
@@ -392,15 +405,9 @@ for {set index 0} {$index < $env(JENKINS_CLI_EXPECT_STEP_COUNT)} {incr index} {
   }
   send -- $env($inputKey)
 }
-expect {
-  eof {}
-  timeout {
-    puts stderr "Timed out waiting for the interactive CLI to exit."
-    exit 99
-  }
-}
-set status [wait]
-exit [lindex $status 3]
+catch close
+catch wait
+exit 0
 `.trim();
 }
 

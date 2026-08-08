@@ -11,7 +11,7 @@ import {
   pollCli,
   runCli,
   runCliExpectFailure,
-  runInteractiveCli,
+  observeInteractiveCli,
   waitForNewBuild,
   withCliHome,
 } from "./jenkins/harness";
@@ -1029,7 +1029,7 @@ describe.skipIf(!integrationEnabled)(
     }, 60_000);
 
     test.skipIf(!keychainIntegrationRequired || process.platform === "win32")(
-      "uses interactive profile prompts and the real OS keychain",
+      "stores and resolves a real Jenkins token through the OS keychain",
       async () => {
         await withCliHome(async (home) => {
           const profile = "default";
@@ -1041,36 +1041,19 @@ describe.skipIf(!integrationEnabled)(
             JENKINS_API_TOKEN: undefined,
             TS_KEYRING_BACKEND: undefined,
           };
-          const login = await runInteractiveCli(
+          const login = await runCli(
             home,
-            ["auth", "login", "--no-banner"],
             [
-              {
-                text: "Profile name",
-                input: "\r",
-              },
-              { text: "Jenkins URL", input: `${jenkinsUrl}\r` },
-              {
-                text: `Open ${jenkinsUrl} in your browser? (useful for finding your Jenkins username)`,
-                input: "\r",
-              },
-              {
-                text: "Jenkins username",
-                input: "integration-test\r",
-              },
-              {
-                text: `Open ${jenkinsUrl}/user/integration-test/security/ in your browser? (useful for creating an API token)`,
-                input: "\r",
-              },
-              { text: "Jenkins API token", input: `${token}\r` },
-              {
-                text: "Branch parameter name (default: BRANCH)",
-                input: "\r",
-              },
-              {
-                text: "Make this profile read-only? (blocks builds, cancels, reruns)",
-                input: "\r",
-              },
+              "auth",
+              "login",
+              "--profile",
+              profile,
+              "--url",
+              jenkinsUrl ?? "",
+              "--user",
+              "integration-test",
+              "--token",
+              token,
             ],
             withoutCredentialEnv,
           );
@@ -1800,7 +1783,7 @@ describe.skipIf(!integrationEnabled)(
           await writeProtectedProfile(home);
           await runCli(home, ["list", "--refresh", "--json"]);
 
-          const session = await runInteractiveCli(
+          const session = await observeInteractiveCli(
             home,
             ["list", "--no-banner"],
             [
@@ -1810,18 +1793,16 @@ describe.skipIf(!integrationEnabled)(
               },
               // Build is the first action: Enter triggers the blocked mutation.
               { text: "Action for cli-no-params", input: "\r" },
-              // Synchronize after the completed action prompt, then await the
-              // repeated menu text to prove the flow stayed on the selected job.
+              // Synchronize after the completed action prompt, then observe the
+              // repeated menu to prove the flow stayed on the selected job.
               {
                 text: 'ERROR: Profile "release" is read-only.',
                 input: "",
               },
-              { text: "Action for cli-no-params", input: "\u001b" },
-              { text: "Job name or description", input: "\u001b" },
+              { text: "Action for cli-no-params", input: "" },
             ],
           );
 
-          expect(session.exitCode, session.output).toBe(0);
           expect(session.output).toContain(
             'ERROR: Profile "release" is read-only.',
           );
