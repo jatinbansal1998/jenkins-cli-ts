@@ -1,3 +1,28 @@
+## Reporting style
+
+- When reporting information to me, be extremely concise. Sacrifice grammar for the sake of concision.
+
+## Simplify before you add
+
+- Before writing new code, read the code it will touch and ask whether the change
+  fits an existing path. Prefer modifying/extending an existing flow over adding a
+  parallel one. If the existing shape fights the change, refactor it first, then
+  implement: two small steps, not one complicated one.
+- Do not introduce an interface, adapter, wrapper, or config toggle for a single
+  implementation or a single call site. Add the seam when the second implementation
+  actually arrives.
+- When new code replaces old behavior, delete the old path in the SAME change,
+  including its config keys, dependencies, CI steps, dashboard panels, test
+  fixtures, and docs. If the old path must survive temporarily (migration,
+  dark launch), say so explicitly in the PR/summary and leave a dated removal note
+  in the code so it can't silently become permanent.
+- After your change, sweep what it orphaned: unused methods/constants/overloads,
+  imports, properties nobody reads, test helpers with no callers. Delete them now;
+  they are cheapest to remove while the context is loaded.
+- Keep UNRELATED cleanup out of the diff. If you notice pre-existing cruft outside
+  your change's blast radius, list it in your summary instead of fixing it inline.
+- If you need a paragraph to justify a workaround, the code is wrong. Fix the code.
+
 Default to using Bun instead of Node.js.
 
 - `bun <file>` not `node` or `ts-node`
