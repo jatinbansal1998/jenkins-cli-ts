@@ -412,8 +412,8 @@ Single-account fallback only:
 - Optional: `SENTRY_DSN` overrides the bundled public Sentry DSN. Setting it to an empty value also disables reporting.
 - Optional: `SENTRY_ENVIRONMENT` overrides the default `production` environment used by built releases.
 - Project GitHub Actions workflows set `SENTRY_ENVIRONMENT=github-actions` so CI events are identifiable separately.
-- Sentry's default integrations capture uncaught exceptions and unhandled promise rejections in addition to errors propagated through the CLI's main execution path.
-- Error reporting is best-effort and never changes CLI output, exit codes, or command behavior.
+- Sentry captures uncaught exceptions and unhandled promise rejections in addition to errors propagated through the CLI's main execution path. Unhandled rejections retain a nonzero exit status.
+- Error reporting is best-effort. Transport failures stay silent and do not replace the original error or turn a failed command into a successful exit.
 - Run `SENTRY_ENVIRONMENT=local-smoke bun run sentry:smoke` for an intentional live verification event. The command refuses to run against the `production` environment.
 - The manually dispatched `Sentry Smoke Test` workflow builds a standalone Bun smoke binary, sends manual and globally uncaught failures, then verifies both through Sentry CLI. It requires a `SENTRY_AUTH_TOKEN` GitHub secret with event read access.
 
