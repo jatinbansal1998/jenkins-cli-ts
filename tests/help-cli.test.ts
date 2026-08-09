@@ -76,6 +76,20 @@ describe("root help for agents", () => {
     );
   });
 
+  test("status and history help distinguish branch input from git revisions", () => {
+    for (const command of ["status", "history"]) {
+      const result = runCli([command, "--help"]);
+
+      expect(result.exitCode).toBe(0);
+      expect(result.output).toContain(
+        "Configured branch parameter value (build input, not checkout",
+      );
+      expect(result.output).toContain("revisions[]");
+      expect(result.output).toContain("deduped by remoteUrl + SHA");
+      expect(result.output).toContain("order best-effort");
+    }
+  });
+
   test("explains unsupported structured combinations", () => {
     const result = runCli(["--help"]);
 

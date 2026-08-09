@@ -7,6 +7,14 @@ export type JenkinsBuildParameter = {
   value: string;
 };
 
+export type JenkinsRevision = {
+  repo: string;
+  remoteUrl: string;
+  remoteUrls: string[];
+  branch: string;
+  sha: string;
+};
+
 export type JobParameterType =
   "string" | "text" | "boolean" | "choice" | "password" | "unknown";
 
@@ -89,6 +97,7 @@ export type JobStatus = {
   queueTimeMs?: number;
   parameters?: JenkinsBuildParameter[];
   branch?: string;
+  revisions?: JenkinsRevision[];
   stages?: JenkinsPipelineStage[];
 };
 
@@ -103,6 +112,7 @@ export type BuildStatus = {
   queueTimeMs?: number;
   parameters?: JenkinsBuildParameter[];
   branch?: string;
+  revisions?: JenkinsRevision[];
   stages?: JenkinsPipelineStage[];
 };
 
@@ -127,6 +137,7 @@ export type BuildHistoryEntry = {
   estimatedDurationMs?: number;
   parameters?: JenkinsBuildParameter[];
   branch?: string;
+  revisions?: JenkinsRevision[];
   stages?: JenkinsPipelineStage[];
   failure?: JenkinsBuildFailure;
 };

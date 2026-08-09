@@ -213,6 +213,26 @@ node {
 ''', true))
 pipelineJob.save()
 
+def revisionPipelineRepository = new File(runtimeDir, "pipeline-definitions.git").getAbsolutePath()
+def revisionApplicationRepository = new File(runtimeDir, "backend-api.git").getAbsolutePath()
+def revisionsJob = jenkins.createProject(WorkflowJob.class, "cli-git-revisions")
+revisionsJob.setDefinition(new CpsFlowDefinition("""
+node {
+  stage('Checkout repositories') {
+    dir('pipeline-definitions') {
+      git branch: 'main', url: '${revisionPipelineRepository}'
+    }
+    dir('backend-api') {
+      git branch: 'main', url: '${revisionApplicationRepository}'
+    }
+  }
+  stage('Verify') {
+    echo 'multi-scm-checkout-complete'
+  }
+}
+""", true))
+revisionsJob.save()
+
 def disabledPipelineJob = jenkins.createProject(WorkflowJob.class, "cli-pipeline-disabled")
 disabledPipelineJob.setDefinition(new CpsFlowDefinition('''
 node {

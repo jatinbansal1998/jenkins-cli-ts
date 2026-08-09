@@ -24,6 +24,11 @@ import {
 } from "./options";
 import type { CommandRegistrationDependencies } from "./registration-types";
 
+const BUILD_REVISION_HELP = `JSON build metadata:
+  branch        Configured branch parameter value (build input, not checkout evidence)
+  revisions[]  Git-plugin checkouts with repo, remote URL(s), raw branch, and SHA;
+               always an array, deduped by remoteUrl + SHA, order best-effort`;
+
 export function registerBuildCommands(
   parser: Argv,
   dependencies: CommandRegistrationDependencies,
@@ -74,7 +79,7 @@ export function registerBuildCommands(
             addBuildUrlOption(addBuildOption(addJobOptions(yargsInstance))),
             "Watch selected build status until completion",
           ),
-        ),
+        ).epilog(BUILD_REVISION_HELP),
       async (argv) => {
         await runTrackedCommandWithContext(
           "status",
@@ -106,7 +111,7 @@ export function registerBuildCommands(
             default: 0,
             describe: "Skip the first N builds before showing the next 5",
           }),
-        ),
+        ).epilog(BUILD_REVISION_HELP),
       async (argv) => {
         await runTrackedCommandWithContext(
           "history",

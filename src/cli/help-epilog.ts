@@ -44,6 +44,11 @@ Exact build selection (status, wait, logs, artifacts, cancel, rerun):
   Direct job/build/queue URLs must belong to the active Jenkins controller.
   Without an exact selector, each command keeps its documented latest behavior.
 
+JSON build metadata (status, history, wait):
+  branch        Configured branch parameter value (an input, not checkout evidence)
+  revisions[]  Git-plugin checkouts with repo, remote URL(s), raw branch, and SHA
+               Always an array; deduped by remoteUrl + SHA; order is best-effort.
+
 Scripting and AI agents:
   Pass --non-interactive to disable every prompt and fail fast; --json/--jsonl imply it.
   --json: list, params, build, status, history, wait, artifacts, run, cancel,

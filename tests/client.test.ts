@@ -420,7 +420,7 @@ describe("JenkinsClient pipeline stage cloning", () => {
       const url = String(input);
       if (
         url ===
-        "https://jenkins.example.com/job/my-job/api/json?tree=builds[number,url,result,building,timestamp,duration,estimatedDuration,actions[parameters[name,value]]]"
+        "https://jenkins.example.com/job/my-job/api/json?tree=builds[number,url,result,building,timestamp,duration,estimatedDuration,actions[parameters[name,value],_class,lastBuiltRevision[SHA1,branch[name,SHA1]],remoteUrls]]"
       ) {
         return new Response(
           JSON.stringify({
@@ -515,6 +515,7 @@ describe("JenkinsClient build transport", () => {
       lastBuildNumber: 9,
       result: "SUCCESS",
       building: false,
+      revisions: [],
     });
     expect(String(fetchMock.mock.calls[0]?.[0])).toContain(
       "tree=disabled,lastBuild",
@@ -553,6 +554,87 @@ describe("JenkinsClient build transport", () => {
     );
 
     expect(error.code).toBe("BUILD_NOT_FOUND");
+  });
+
+  test("extracts only deduped git-plugin revisions from the build response", async () => {
+    const fetchMock = mock(async (input: FetchInput) => {
+      const url = String(input);
+      if (url.includes("/api/json?tree=")) {
+        return Response.json({
+          number: 42,
+          url: "https://jenkins.example.com/job/my-job/42/",
+          result: "SUCCESS",
+          actions: [
+            {},
+            {
+              _class: "example.OtherScmAction",
+              lastBuiltRevision: { SHA1: "ignored" },
+              remoteUrls: ["https://example.com/ignored.git"],
+            },
+            {
+              _class: "hudson.plugins.git.util.BuildData",
+              lastBuiltRevision: {
+                SHA1: "a1b2c3d4",
+                branch: [{ name: "refs/remotes/origin/feature/test" }],
+              },
+              remoteUrls: [
+                "https://github.com/acme/backend-api.git",
+                "https://mirror.example.com/acme/backend-api.git",
+              ],
+            },
+            {
+              _class: "hudson.plugins.git.util.BuildData",
+              lastBuiltRevision: { SHA1: "a1b2c3d4" },
+              remoteUrls: ["https://github.com/acme/backend-api.git"],
+            },
+            {
+              _class: "hudson.plugins.git.util.BuildData",
+              lastBuiltRevision: {
+                SHA1: "d4c3b2a1",
+                branch: [{ name: "origin/main" }],
+              },
+              remoteUrls: ["https://github.com/acme/pipeline-definitions.git"],
+            },
+            {
+              _class: "hudson.plugins.git.util.BuildData",
+              lastBuiltRevision: { SHA1: "missing-remote" },
+              remoteUrls: [],
+            },
+          ],
+        });
+      }
+      return new Response("", { status: 404 });
+    });
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+    const client = createClient();
+
+    const status = await client.getBuildStatus(
+      "https://jenkins.example.com/job/my-job/42/",
+    );
+
+    expect(status.revisions).toEqual([
+      {
+        repo: "backend-api",
+        remoteUrl: "https://github.com/acme/backend-api.git",
+        remoteUrls: [
+          "https://github.com/acme/backend-api.git",
+          "https://mirror.example.com/acme/backend-api.git",
+        ],
+        branch: "refs/remotes/origin/feature/test",
+        sha: "a1b2c3d4",
+      },
+      {
+        repo: "pipeline-definitions",
+        remoteUrl: "https://github.com/acme/pipeline-definitions.git",
+        remoteUrls: ["https://github.com/acme/pipeline-definitions.git"],
+        branch: "origin/main",
+        sha: "d4c3b2a1",
+      },
+    ]);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(String(fetchMock.mock.calls[0]?.[0])).toContain(
+      "actions[parameters[name,value],_class,lastBuiltRevision[SHA1,branch[name,SHA1]],remoteUrls]",
+    );
   });
 
   test("requests and returns progressive console logs", async () => {
@@ -767,7 +849,7 @@ describe("JenkinsClient listBuildHistory", () => {
       const url = String(input);
       if (
         url ===
-        "https://jenkins.example.com/job/my-job/api/json?tree=builds[number,url,result,building,timestamp,duration,estimatedDuration,actions[parameters[name,value]]]"
+        "https://jenkins.example.com/job/my-job/api/json?tree=builds[number,url,result,building,timestamp,duration,estimatedDuration,actions[parameters[name,value],_class,lastBuiltRevision[SHA1,branch[name,SHA1]],remoteUrls]]"
       ) {
         return new Response(
           JSON.stringify({
@@ -791,6 +873,15 @@ describe("JenkinsClient listBuildHistory", () => {
                       { name: "BRANCH", value: "main" },
                       { name: "DEPLOY_ENV", value: "staging" },
                     ],
+                  },
+                  {},
+                  {
+                    _class: "hudson.plugins.git.util.BuildData",
+                    lastBuiltRevision: {
+                      SHA1: "a1b2c3d4",
+                      branch: [{ name: "origin/main" }],
+                    },
+                    remoteUrls: ["https://github.com/acme/backend-api.git"],
                   },
                 ],
               },
@@ -892,6 +983,15 @@ describe("JenkinsClient listBuildHistory", () => {
       buildNumber: 102,
       result: "FAILURE",
       branch: "main",
+      revisions: [
+        {
+          repo: "backend-api",
+          remoteUrl: "https://github.com/acme/backend-api.git",
+          remoteUrls: ["https://github.com/acme/backend-api.git"],
+          branch: "origin/main",
+          sha: "a1b2c3d4",
+        },
+      ],
       failure: {
         stageName: "Deploy",
         stepName: "Deploy to ECS",
@@ -911,6 +1011,7 @@ describe("JenkinsClient listBuildHistory", () => {
     expect(page.builds[1]).toMatchObject({
       buildNumber: 101,
       result: "SUCCESS",
+      revisions: [],
       stages: [
         {
           name: "Deploy",

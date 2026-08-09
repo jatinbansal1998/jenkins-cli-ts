@@ -43,6 +43,7 @@ import type {
   JenkinsCrumbResponse,
   JenkinsJob,
   JenkinsJobLastBuild,
+  JenkinsRevision,
   JenkinsJobParametersResponse,
   JobParameterDefinition,
   JenkinsJobsResponse,
@@ -289,6 +290,7 @@ export class JenkinsClient {
     }
     const parameters = extractBuildParameters(buildDetails?.actions);
     const branch = extractBranchParam(parameters);
+    const revisions = extractGitRevisions(buildDetails?.actions);
 
     return {
       disabled: data.disabled,
@@ -302,6 +304,7 @@ export class JenkinsClient {
       queueTimeMs,
       parameters,
       branch,
+      revisions,
       stages: pipeline?.stages,
     };
   }
@@ -321,10 +324,7 @@ export class JenkinsClient {
   }
 
   async getBuildStatus(buildUrl: string): Promise<BuildStatus> {
-    const url = this.withJob(
-      buildUrl,
-      "api/json?tree=number,url,result,building,timestamp,duration,estimatedDuration,queueId,actions[parameters[name,value]]",
-    );
+    const url = this.withJob(buildUrl, `api/json?tree=${BUILD_DETAILS_FIELDS}`);
     const buildDetails = await this.requestJson<JenkinsApiBuild>(
       url,
       "fetch build status",
@@ -348,6 +348,7 @@ export class JenkinsClient {
     }
     const parameters = extractBuildParameters(buildDetails.actions);
     const branch = extractBranchParam(parameters);
+    const revisions = extractGitRevisions(buildDetails.actions);
 
     return {
       buildNumber: buildDetails.number,
@@ -360,6 +361,7 @@ export class JenkinsClient {
       queueTimeMs,
       parameters,
       branch,
+      revisions,
       stages: pipeline?.stages,
     };
   }
@@ -375,7 +377,7 @@ export class JenkinsClient {
     const offset = normalizePageOffset(options.offset);
     const url = this.withJob(
       jobUrl,
-      "api/json?tree=builds[number,url,result,building,timestamp,duration,estimatedDuration,actions[parameters[name,value]]]",
+      `api/json?tree=builds[${BUILD_HISTORY_FIELDS}]`,
     );
     const payload = await this.requestJson<JenkinsApiBuildsResponse>(
       url,
@@ -1156,10 +1158,7 @@ export class JenkinsClient {
   private async getBuildDetails(
     buildUrl: string,
   ): Promise<JenkinsApiBuild | null> {
-    const url = this.withJob(
-      buildUrl,
-      "api/json?tree=number,url,result,building,timestamp,duration,estimatedDuration,queueId,actions[parameters[name,value]]",
-    );
+    const url = this.withJob(buildUrl, `api/json?tree=${BUILD_DETAILS_FIELDS}`);
     try {
       const response = await this.fetchWithTimeout(
         url,
@@ -1351,6 +1350,11 @@ function isBuildResourceContext(context: string): boolean {
 }
 
 const CLOUDBEES_FOLDER_CLASS = "com.cloudbees.hudson.plugins.folder.Folder";
+const GIT_BUILD_DATA_CLASS = "hudson.plugins.git.util.BuildData";
+const BUILD_ACTION_FIELDS =
+  "parameters[name,value],_class,lastBuiltRevision[SHA1,branch[name,SHA1]],remoteUrls";
+const BUILD_HISTORY_FIELDS = `number,url,result,building,timestamp,duration,estimatedDuration,actions[${BUILD_ACTION_FIELDS}]`;
+const BUILD_DETAILS_FIELDS = `${BUILD_HISTORY_FIELDS},queueId`;
 
 const FOLDER_LEAF_FIELDS =
   "_class,name,fullName,url,disabled,lastBuild[number,url,result,building,timestamp,duration,estimatedDuration]";
@@ -1401,6 +1405,53 @@ function extractBuildParameters(
   return params.length > 0 ? params : undefined;
 }
 
+function extractGitRevisions(
+  actions?: JenkinsApiBuildAction[],
+): JenkinsRevision[] {
+  if (!Array.isArray(actions)) {
+    return [];
+  }
+
+  const revisions = new Map<string, JenkinsRevision>();
+  for (const action of actions) {
+    if (action?._class !== GIT_BUILD_DATA_CLASS) {
+      continue;
+    }
+    const sha = action.lastBuiltRevision?.SHA1;
+    const remoteUrls = Array.isArray(action.remoteUrls)
+      ? action.remoteUrls.filter(
+          (remoteUrl): remoteUrl is string =>
+            typeof remoteUrl === "string" && remoteUrl.length > 0,
+        )
+      : [];
+    if (
+      typeof sha !== "string" ||
+      sha.length === 0 ||
+      remoteUrls.length === 0
+    ) {
+      continue;
+    }
+
+    const remoteUrl = remoteUrls[0]!;
+    const key = `${remoteUrl}@${sha}`;
+    if (revisions.has(key)) {
+      continue;
+    }
+    revisions.set(key, {
+      repo:
+        remoteUrl
+          .replace(/\.git$/, "")
+          .split("/")
+          .pop() ?? remoteUrl,
+      remoteUrl,
+      remoteUrls,
+      branch: action.lastBuiltRevision?.branch?.[0]?.name ?? "",
+      sha,
+    });
+  }
+  return [...revisions.values()];
+}
+
 function normalizeArtifact(artifact: JenkinsApiArtifact): ArtifactEntry | null {
   const relativePath =
     typeof artifact.relativePath === "string"
@@ -1439,6 +1490,7 @@ function normalizeBuildHistoryEntry(
     estimatedDurationMs: build.estimatedDuration,
     parameters,
     branch: extractBranchParam(parameters),
+    revisions: extractGitRevisions(build.actions),
   };
 }
 

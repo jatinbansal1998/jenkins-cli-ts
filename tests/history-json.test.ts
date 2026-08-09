@@ -86,6 +86,15 @@ describe("history --json", () => {
           timestampMs: 1_700_000_000_000,
           durationMs: 75_000,
           branch: "main",
+          revisions: [
+            {
+              repo: "api",
+              remoteUrl: "https://github.com/acme/api.git",
+              remoteUrls: ["https://github.com/acme/api.git"],
+              branch: "origin/main",
+              sha: "a1b2c3d4",
+            },
+          ],
         },
         {
           buildNumber: 41,
@@ -130,7 +139,9 @@ describe("history --json", () => {
       building: false,
       durationMs: 75_000,
       branch: "main",
+      revisions: [{ repo: "api", sha: "a1b2c3d4" }],
     });
+    expect(parsed.data[1]).toMatchObject({ revisions: [] });
     expect(logSpy).toHaveBeenCalledTimes(0);
   });
 

@@ -132,7 +132,7 @@ if (prepareNativeManifestPath) {
         "--tmpfs",
         "/var/jenkins_home:rw,uid=1000,gid=1000",
         "--env",
-        "JAVA_OPTS=-Djenkins.install.runSetupWizard=false",
+        "JAVA_OPTS=-Djenkins.install.runSetupWizard=false -Dhudson.plugins.git.GitSCM.ALLOW_LOCAL_CHECKOUT=true",
         "--env",
         "JENKINS_OPTS=--prefix=/jenkins",
         "--env",
@@ -240,6 +240,11 @@ async function prepareIntegrationFixture(): Promise<string> {
 async function createSyntheticGitRepository(): Promise<void> {
   const source = join(runtimeDir, "demo-app-source");
   const repository = join(runtimeDir, "demo-app.git");
+  const revisionPipelineRepository = join(
+    runtimeDir,
+    "pipeline-definitions.git",
+  );
+  const revisionApplicationRepository = join(runtimeDir, "backend-api.git");
   await mkdir(source, { recursive: true });
   await runChecked(["git", "init", "--initial-branch=main"], { cwd: source });
   await runChecked(["git", "config", "user.name", "Jenkins CLI Integration"], {
@@ -275,9 +280,15 @@ async function createSyntheticGitRepository(): Promise<void> {
     cwd: source,
   });
   await runChecked(["git", "switch", "main"], { cwd: source });
-  await runChecked(["git", "clone", "--bare", source, repository]);
-  if (process.platform !== "win32") {
-    await runChecked(["chmod", "-R", "a+rX", repository]);
+  for (const bareRepository of [
+    repository,
+    revisionPipelineRepository,
+    revisionApplicationRepository,
+  ]) {
+    await runChecked(["git", "clone", "--bare", source, bareRepository]);
+    if (process.platform !== "win32") {
+      await runChecked(["chmod", "-R", "a+rX", bareRepository]);
+    }
   }
 }
 
@@ -412,6 +423,7 @@ async function prepareNativeJenkins(
       executable: java,
       args: [
         "-Djenkins.install.runSetupWizard=false",
+        "-Dhudson.plugins.git.GitSCM.ALLOW_LOCAL_CHECKOUT=true",
         "-jar",
         war,
         `--httpPort=${port}`,

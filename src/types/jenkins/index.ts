@@ -13,6 +13,7 @@ export type {
   JenkinsClientOptions,
   JenkinsJob,
   JenkinsJobLastBuild,
+  JenkinsRevision,
   JenkinsPipelineStage,
   JobStatus,
   LastFailedBuildReference,
