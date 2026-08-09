@@ -144,6 +144,24 @@ describe("job fuzzy matching", () => {
       const results = rankJobs("webapp-staging", jobs);
       expect(results[0]?.job.name).toBe("frontend-webapp-staging");
     });
+
+    /**
+     * Query: "matching-engine" against long (6-token) job names.
+     * Expected: substring matches stay at or above MIN_SCORE regardless of
+     * how many extra tokens the job name has — a more specific query must
+     * never hide jobs that a shorter query still shows.
+     */
+    test("substring match in long job names never drops below MIN_SCORE", () => {
+      const longJobs = [
+        createJob("crypto-order-matching-engine-staging"),
+        createJob("crypto-order-matching-engine-v2-staging"),
+        createJob("crypto-order-matching-engine-v2-development"),
+        createJob("crypto-order-matching-engine-validator-development"),
+      ];
+      const results = rankJobs("matching-engine", longJobs);
+      const goodMatches = results.filter((r) => r.score >= MIN_SCORE);
+      expect(goodMatches.length).toBe(longJobs.length);
+    });
   });
 
   /**
