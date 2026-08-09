@@ -3,6 +3,13 @@ import { DEFAULT_WATCH_INTERVAL_MS } from "../commands/watch-utils";
 import { ENV_KEYS } from "../env-keys";
 import { getJobCacheDir } from "../jobs";
 
+export const BUILD_METADATA_HELP = `JSON build metadata (status, history, wait):
+  branch       Configured branch parameter value (an input, not
+               checkout evidence)
+  revisions[]  Git-plugin checkout evidence: repo, remote URL(s),
+               branch, SHA. Duplicate checkouts are merged; omitted
+               when the build's metadata could not be fetched.`;
+
 export function getRootHelpEpilog(): string {
   return `Examples:
   $0 auth login
@@ -43,6 +50,8 @@ Exact build selection (status, wait, logs, artifacts, cancel, rerun):
                     --build, --job, --job-url, or --queue-url
   Direct job/build/queue URLs must belong to the active Jenkins controller.
   Without an exact selector, each command keeps its documented latest behavior.
+
+${BUILD_METADATA_HELP}
 
 Scripting and AI agents:
   Pass --non-interactive to disable every prompt and fail fast; --json/--jsonl imply it.

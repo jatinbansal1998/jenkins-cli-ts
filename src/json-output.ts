@@ -16,6 +16,7 @@ import type {
   BuildStatus,
   JenkinsBuildParameter,
   JenkinsPipelineStage,
+  JenkinsRevision,
   JobStatus,
   NodeSummary,
   NodesSummary,
@@ -51,6 +52,9 @@ export type JsonBuild = {
   estimatedDurationMs?: number;
   queueTimeMs?: number;
   branch?: string;
+  /** Checkout evidence: `[]` means no git-plugin checkout; omitted means the
+   * build's metadata could not be fetched. */
+  revisions?: JenkinsRevision[];
   parameters?: JenkinsBuildParameter[];
   stages?: JsonStage[];
 };
@@ -267,6 +271,7 @@ type MapBuildInput = {
   estimatedDurationMs?: number;
   queueTimeMs?: number;
   branch?: string;
+  revisions?: JenkinsRevision[];
   parameters?: JenkinsBuildParameter[];
   stages?: JenkinsPipelineStage[];
 };
@@ -299,6 +304,7 @@ export function mapBuild(input: MapBuildInput): JsonBuild {
     estimatedDurationMs: input.estimatedDurationMs,
     queueTimeMs: input.queueTimeMs,
     branch: input.branch,
+    revisions: input.revisions,
     parameters: input.parameters,
     stages: mapStages(input.stages),
   };
@@ -315,6 +321,7 @@ export function jsonBuildFromJobStatus(status: JobStatus): JsonBuild {
     estimatedDurationMs: status.lastBuildEstimatedDurationMs,
     queueTimeMs: status.queueTimeMs,
     branch: status.branch,
+    revisions: status.revisions,
     parameters: status.parameters,
     stages: status.stages,
   });
@@ -331,6 +338,7 @@ export function jsonBuildFromBuildStatus(status: BuildStatus): JsonBuild {
     estimatedDurationMs: status.estimatedDurationMs,
     queueTimeMs: status.queueTimeMs,
     branch: status.branch,
+    revisions: status.revisions,
     parameters: status.parameters,
     stages: status.stages,
   });
@@ -346,6 +354,7 @@ export function jsonBuildFromHistoryEntry(entry: BuildHistoryEntry): JsonBuild {
     durationMs: entry.durationMs,
     estimatedDurationMs: entry.estimatedDurationMs,
     branch: entry.branch,
+    revisions: entry.revisions,
     parameters: entry.parameters,
     stages: entry.stages,
   });

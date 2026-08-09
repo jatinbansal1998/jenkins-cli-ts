@@ -488,12 +488,40 @@ and `wait`:
   "estimatedDurationMs": 11000,
   "queueTimeMs": 250,
   "branch": "main",
+  "revisions": [
+    {
+      "repo": "api",
+      "remoteUrl": "https://github.com/acme/api.git",
+      "remoteUrls": ["https://github.com/acme/api.git"],
+      "branch": "refs/remotes/origin/main",
+      "sha": "a1b2c3d4e5f67890a1b2c3d4e5f67890a1b2c3d4"
+    }
+  ],
   "parameters": [{ "name": "BRANCH", "value": "main" }],
   "stages": [{ "name": "Build", "status": "SUCCESS", "durationMs": 8000 }]
 }
 ```
 
-Fields that Jenkins does not return are omitted from the document.
+`branch` is the configured branch parameter's value: a build input echoed back
+by Jenkins, not evidence of what was checked out. `revisions[]` is checkout
+evidence from git-plugin `BuildData` actions. `[]` means the build has no
+git-plugin checkout (for example, a clone performed by a shell step). The
+field is omitted entirely when the build's metadata could not be fetched, so
+an unknown checkout state is never reported as "no checkout".
+
+Multi-SCM builds can contain several revisions. Duplicate `BuildData` actions
+for the same checkout — same commit SHA with overlapping remote URLs, or with
+no remote URLs reported — are merged: remote URLs are unioned and the first
+reported branch wins. Distinct remotes checked out at the same commit stay
+separate entries. `remoteUrl` is the first remote URL Jenkins
+returned (response order, not configuration order) and `repo` is its basename
+— a convenience label that can collide when two repositories share a name, so
+select a revision by `remoteUrl` when exactness matters. `repo` and
+`remoteUrl` are omitted when Jenkins reports a checkout without remote URLs;
+`branch` is omitted when the plugin reports none and is otherwise the raw
+plugin string without normalization. Array order is best-effort, not
+contractual. Other fields that Jenkins does not return are omitted from the
+document.
 
 **`params`** — `data` is the normalized parameter-definition array. Sensitive
 parameters set `sensitive: true` and omit `defaultValue`:
@@ -573,7 +601,8 @@ jenkins-cli status --json --job-url https://jenkins.example.com/job/api/
       "result": "SUCCESS",
       "building": false,
       "durationMs": 12000,
-      "timestampMs": 1700000000000
+      "timestampMs": 1700000000000,
+      "revisions": []
     }
   }
 }
@@ -600,7 +629,16 @@ jenkins-cli history --json --job-url https://jenkins.example.com/job/api/
       "result": "FAILURE",
       "building": false,
       "durationMs": 75000,
-      "branch": "main"
+      "branch": "main",
+      "revisions": [
+        {
+          "repo": "api",
+          "remoteUrl": "https://github.com/acme/api.git",
+          "remoteUrls": ["https://github.com/acme/api.git"],
+          "branch": "origin/main",
+          "sha": "a1b2c3d4e5f67890a1b2c3d4e5f67890a1b2c3d4"
+        }
+      ]
     }
   ]
 }
@@ -625,7 +663,18 @@ jenkins-cli wait --json --build-url https://jenkins.example.com/job/api/42/
       "url": "https://jenkins.example.com/job/api/42/",
       "result": "SUCCESS",
       "building": false,
-      "durationMs": 12000
+      "durationMs": 12000,
+      "branch": "main",
+      "revisions": [
+        {
+          "repo": "api",
+          "remoteUrl": "https://github.com/acme/api.git",
+          "remoteUrls": ["https://github.com/acme/api.git"],
+          "branch": "refs/remotes/origin/main",
+          "sha": "a1b2c3d4e5f67890a1b2c3d4e5f67890a1b2c3d4"
+        }
+      ],
+      "parameters": [{ "name": "BRANCH", "value": "main" }]
     },
     "waitedMs": 42000
   }
@@ -880,6 +929,11 @@ jenkins-cli status --job "api-prod" --build 184
 jenkins-cli status --build-url "https://jenkins.example.com/job/api-prod/184/"
 ```
 
+With `--json`, `build.branch` is the configured branch parameter input, while
+`build.revisions[]` reports git-plugin checkouts with repository identity and
+commit SHA. Use `remoteUrl` (exact) or `repo` (basename, can collide) to
+select the intended checkout in a multi-SCM build.
+
 Watch the latest build status from status command:
 
 ```bash
@@ -895,6 +949,9 @@ jenkins-cli history --job "api-prod"
 jenkins-cli builds --job "api-prod"
 jenkins-cli history --job "api-prod" --offset 5
 ```
+
+With `--json`, every history build has a `revisions[]` array using the same
+checkout-evidence contract as `status --json`.
 
 In interactive mode, build history lets you:
 

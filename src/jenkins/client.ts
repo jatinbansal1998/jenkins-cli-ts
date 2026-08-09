@@ -43,6 +43,7 @@ import type {
   JenkinsCrumbResponse,
   JenkinsJob,
   JenkinsJobLastBuild,
+  JenkinsRevision,
   JenkinsJobParametersResponse,
   JobParameterDefinition,
   JenkinsJobsResponse,
@@ -287,8 +288,8 @@ export class JenkinsClient {
         lastBuild.timestamp,
       );
     }
-    const parameters = extractBuildParameters(buildDetails?.actions);
-    const branch = extractBranchParam(parameters);
+    const { parameters, branch, revisions } =
+      extractBuildMetadata(buildDetails);
 
     return {
       disabled: data.disabled,
@@ -302,6 +303,7 @@ export class JenkinsClient {
       queueTimeMs,
       parameters,
       branch,
+      revisions,
       stages: pipeline?.stages,
     };
   }
@@ -321,10 +323,7 @@ export class JenkinsClient {
   }
 
   async getBuildStatus(buildUrl: string): Promise<BuildStatus> {
-    const url = this.withJob(
-      buildUrl,
-      "api/json?tree=number,url,result,building,timestamp,duration,estimatedDuration,queueId,actions[parameters[name,value]]",
-    );
+    const url = this.withJob(buildUrl, `api/json?tree=${BUILD_DETAILS_FIELDS}`);
     const buildDetails = await this.requestJson<JenkinsApiBuild>(
       url,
       "fetch build status",
@@ -346,8 +345,8 @@ export class JenkinsClient {
         buildDetails.timestamp,
       );
     }
-    const parameters = extractBuildParameters(buildDetails.actions);
-    const branch = extractBranchParam(parameters);
+    const { parameters, branch, revisions } =
+      extractBuildMetadata(buildDetails);
 
     return {
       buildNumber: buildDetails.number,
@@ -360,6 +359,7 @@ export class JenkinsClient {
       queueTimeMs,
       parameters,
       branch,
+      revisions,
       stages: pipeline?.stages,
     };
   }
@@ -375,7 +375,7 @@ export class JenkinsClient {
     const offset = normalizePageOffset(options.offset);
     const url = this.withJob(
       jobUrl,
-      "api/json?tree=builds[number,url,result,building,timestamp,duration,estimatedDuration,actions[parameters[name,value]]]",
+      `api/json?tree=builds[${BUILD_HISTORY_FIELDS}]`,
     );
     const payload = await this.requestJson<JenkinsApiBuildsResponse>(
       url,
@@ -1156,10 +1156,7 @@ export class JenkinsClient {
   private async getBuildDetails(
     buildUrl: string,
   ): Promise<JenkinsApiBuild | null> {
-    const url = this.withJob(
-      buildUrl,
-      "api/json?tree=number,url,result,building,timestamp,duration,estimatedDuration,queueId,actions[parameters[name,value]]",
-    );
+    const url = this.withJob(buildUrl, `api/json?tree=${BUILD_DETAILS_FIELDS}`);
     try {
       const response = await this.fetchWithTimeout(
         url,
@@ -1351,6 +1348,11 @@ function isBuildResourceContext(context: string): boolean {
 }
 
 const CLOUDBEES_FOLDER_CLASS = "com.cloudbees.hudson.plugins.folder.Folder";
+const GIT_BUILD_DATA_CLASS = "hudson.plugins.git.util.BuildData";
+const BUILD_ACTION_FIELDS =
+  "parameters[name,value],_class,lastBuiltRevision[SHA1,branch[name]],remoteUrls";
+const BUILD_HISTORY_FIELDS = `number,url,result,building,timestamp,duration,estimatedDuration,actions[${BUILD_ACTION_FIELDS}]`;
+const BUILD_DETAILS_FIELDS = `${BUILD_HISTORY_FIELDS},queueId`;
 
 const FOLDER_LEAF_FIELDS =
   "_class,name,fullName,url,disabled,lastBuild[number,url,result,building,timestamp,duration,estimatedDuration]";
@@ -1401,6 +1403,147 @@ function extractBuildParameters(
   return params.length > 0 ? params : undefined;
 }
 
+function repoNameFromRemoteUrl(remoteUrl: string): string {
+  // Split on ":" as well for SCP-style remotes (git@host:repo.git).
+  const basename = remoteUrl
+    .replace(/\/+$/, "")
+    .replace(/\.git$/i, "")
+    .split(/[/:]/)
+    .pop();
+  return basename || remoteUrl;
+}
+
+/** Strip userinfo from http(s) remote URLs so embedded credentials never
+ * reach JSON output. Other schemes (ssh's git@ is load-bearing) pass through. */
+function sanitizeRemoteUrl(remoteUrl: string): string {
+  if (!/^https?:\/\//i.test(remoteUrl)) {
+    return remoteUrl;
+  }
+  try {
+    const url = new URL(remoteUrl);
+    if (url.username || url.password) {
+      url.username = "";
+      url.password = "";
+      return url.toString();
+    }
+  } catch {
+    // Not parseable as a URL; report it as Jenkins returned it.
+  }
+  return remoteUrl;
+}
+
+function extractGitRevisions(
+  actions?: JenkinsApiBuildAction[],
+): JenkinsRevision[] {
+  if (!Array.isArray(actions)) {
+    return [];
+  }
+
+  // Jenkins may attach several BuildData actions for the same checkout (and
+  // their order is not contractual), so merge entries that share a commit
+  // SHA and an overlapping remote-URL set (or report no remotes at all):
+  // union the remote URLs and keep the first branch any entry reports.
+  // Distinct remotes checked out at the same SHA stay separate entries.
+  const merged: Array<{ remoteUrls: string[]; branch?: string; sha: string }> =
+    [];
+  for (const action of actions) {
+    if (action?._class !== GIT_BUILD_DATA_CLASS) {
+      continue;
+    }
+    const sha = action.lastBuiltRevision?.SHA1;
+    if (typeof sha !== "string" || sha.length === 0) {
+      continue;
+    }
+    const remoteUrls = Array.isArray(action.remoteUrls)
+      ? action.remoteUrls
+          .filter(
+            (remoteUrl): remoteUrl is string =>
+              typeof remoteUrl === "string" && remoteUrl.length > 0,
+          )
+          .map(sanitizeRemoteUrl)
+      : [];
+    const branch = action.lastBuiltRevision?.branch?.[0]?.name || undefined;
+
+    const existing = merged.find(
+      (candidate) =>
+        candidate.sha === sha &&
+        (candidate.remoteUrls.length === 0 ||
+          remoteUrls.length === 0 ||
+          remoteUrls.some((remoteUrl) =>
+            candidate.remoteUrls.includes(remoteUrl),
+          )),
+    );
+    if (!existing) {
+      merged.push({ remoteUrls, branch, sha });
+      continue;
+    }
+    for (const remoteUrl of remoteUrls) {
+      if (!existing.remoteUrls.includes(remoteUrl)) {
+        existing.remoteUrls.push(remoteUrl);
+      }
+    }
+    existing.branch ??= branch;
+  }
+
+  // A later action can bridge two earlier entries (same SHA seen with
+  // [remoteA], [remoteB], then [remoteA, remoteB]); coalesce until stable.
+  for (let i = 0; i < merged.length; i++) {
+    const target = merged[i]!;
+    for (let j = i + 1; j < merged.length;) {
+      const candidate = merged[j]!;
+      if (
+        candidate.sha === target.sha &&
+        candidate.remoteUrls.some((remoteUrl) =>
+          target.remoteUrls.includes(remoteUrl),
+        )
+      ) {
+        for (const remoteUrl of candidate.remoteUrls) {
+          if (!target.remoteUrls.includes(remoteUrl)) {
+            target.remoteUrls.push(remoteUrl);
+          }
+        }
+        target.branch ??= candidate.branch;
+        merged.splice(j, 1);
+        j = i + 1;
+      } else {
+        j++;
+      }
+    }
+  }
+
+  return merged.map(({ remoteUrls, branch, sha }) => {
+    const remoteUrl = remoteUrls[0];
+    return {
+      repo: remoteUrl ? repoNameFromRemoteUrl(remoteUrl) : undefined,
+      remoteUrl,
+      remoteUrls,
+      branch,
+      sha,
+    };
+  });
+}
+
+/**
+ * Parameters, branch input, and checkout evidence for one build. All fields
+ * are undefined when the build's metadata could not be fetched, so callers
+ * never report "no checkout" for a build they know nothing about.
+ */
+function extractBuildMetadata(build: JenkinsApiBuild | null): {
+  parameters?: JenkinsBuildParameter[];
+  branch?: string;
+  revisions?: JenkinsRevision[];
+} {
+  if (!build) {
+    return {};
+  }
+  const parameters = extractBuildParameters(build.actions);
+  return {
+    parameters,
+    branch: extractBranchParam(parameters),
+    revisions: extractGitRevisions(build.actions),
+  };
+}
+
 function normalizeArtifact(artifact: JenkinsApiArtifact): ArtifactEntry | null {
   const relativePath =
     typeof artifact.relativePath === "string"
@@ -1428,7 +1571,6 @@ function normalizeBuildHistoryEntry(
   if (!buildUrl) {
     return null;
   }
-  const parameters = extractBuildParameters(build.actions);
   return {
     buildNumber: build.number,
     buildUrl,
@@ -1437,8 +1579,7 @@ function normalizeBuildHistoryEntry(
     timestampMs: build.timestamp,
     durationMs: build.duration,
     estimatedDurationMs: build.estimatedDuration,
-    parameters,
-    branch: extractBranchParam(parameters),
+    ...extractBuildMetadata(build),
   };
 }
 

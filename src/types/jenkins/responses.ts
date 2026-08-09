@@ -44,8 +44,20 @@ type JenkinsApiBuildParameter = {
   value?: unknown;
 };
 
+type JenkinsApiGitBranch = {
+  name?: string;
+};
+
+type JenkinsApiGitRevision = {
+  SHA1?: string;
+  branch?: JenkinsApiGitBranch[];
+};
+
 export type JenkinsApiBuildAction = {
+  _class?: string;
   parameters?: JenkinsApiBuildParameter[];
+  lastBuiltRevision?: JenkinsApiGitRevision;
+  remoteUrls?: string[];
 };
 
 export type JenkinsApiBuild = {

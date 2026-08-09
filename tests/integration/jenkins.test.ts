@@ -1349,6 +1349,89 @@ describe.skipIf(!integrationEnabled)(
       });
     }, 120_000);
 
+    test("reports attributable git revisions for status and history", async () => {
+      await withCliHome(async (home) => {
+        const jobUrl = `${jenkinsUrl}/job/cli-git-revisions/`;
+        const build = await runCli(home, [
+          "build",
+          "--job-url",
+          jobUrl,
+          "--without-params",
+          "--watch",
+        ]);
+        expect(build.output).toContain("SUCCESS");
+
+        type Revision = {
+          repo?: string;
+          remoteUrl?: string;
+          remoteUrls: string[];
+          branch?: string;
+          sha: string;
+        };
+        const status = parseJson<{
+          data: { build: { number: number; revisions: Revision[] } };
+        }>(await runCli(home, ["status", "--job-url", jobUrl, "--json"]));
+        expect(status.data.build.revisions).toHaveLength(2);
+
+        const statusByRepo = new Map(
+          status.data.build.revisions.map((revision) => [
+            revision.repo,
+            revision,
+          ]),
+        );
+        for (const repo of ["pipeline-definitions", "backend-api"]) {
+          const revision = statusByRepo.get(repo);
+          if (!revision) {
+            throw new Error(`Missing revision for ${repo}`);
+          }
+          expect(revision.remoteUrl ?? "").toEndWith(`/${repo}.git`);
+          expect(revision.remoteUrls).toContain(revision.remoteUrl ?? "");
+          expect(revision.branch ?? "").toContain("main");
+          expect(revision.sha).toMatch(/^[0-9a-f]{40}$/);
+        }
+
+        const history = parseJson<{
+          data: Array<{ number: number; revisions: Revision[] }>;
+        }>(await runCli(home, ["history", "--job-url", jobUrl, "--json"]));
+        expect(history.data[0]?.number).toBe(status.data.build.number);
+        const historyByRepo = new Map(
+          history.data[0]?.revisions.map((revision) => [
+            revision.repo,
+            revision,
+          ]),
+        );
+        expect(historyByRepo.get("pipeline-definitions")?.sha).toBe(
+          statusByRepo.get("pipeline-definitions")?.sha,
+        );
+        expect(historyByRepo.get("backend-api")?.sha).toBe(
+          statusByRepo.get("backend-api")?.sha,
+        );
+
+        const wait = parseJson<{
+          data: { result: string; build: { revisions: Revision[] } };
+        }>(await runCli(home, ["wait", "--job-url", jobUrl, "--json"]));
+        expect(wait.data.result).toBe("SUCCESS");
+        expect(
+          wait.data.build.revisions.map((revision) => revision.sha).sort(),
+        ).toEqual(
+          status.data.build.revisions.map((revision) => revision.sha).sort(),
+        );
+
+        const noScmJobUrl = `${jenkinsUrl}/job/cli-no-params/`;
+        await runCli(home, [
+          "build",
+          "--job-url",
+          noScmJobUrl,
+          "--without-params",
+          "--watch",
+        ]);
+        const noScmStatus = parseJson<{
+          data: { build: { revisions: Revision[] } };
+        }>(await runCli(home, ["status", "--job-url", noScmJobUrl, "--json"]));
+        expect(noScmStatus.data.build.revisions).toEqual([]);
+      });
+    }, 120_000);
+
     test("filters and selects real whole-build and Pipeline logs", async () => {
       await withCliHome(async (home) => {
         const pipelineJobUrl = `${jenkinsUrl}/job/cli-pipeline-logs/`;

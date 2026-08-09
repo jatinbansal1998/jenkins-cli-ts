@@ -76,6 +76,15 @@ describe("status --json", () => {
           building: false,
           lastBuildTimestamp: 1_700_000_000_000,
           lastBuildDurationMs: 12_000,
+          revisions: [
+            {
+              repo: "api",
+              remoteUrl: "https://github.com/acme/api.git",
+              remoteUrls: ["https://github.com/acme/api.git"],
+              branch: "origin/main",
+              sha: "a1b2c3d4",
+            },
+          ],
         })),
       }),
       env,
@@ -100,6 +109,7 @@ describe("status --json", () => {
           building: boolean;
           durationMs?: number;
           timestampMs?: number;
+          revisions: Array<{ repo: string; sha: string }>;
         } | null;
       };
     };
@@ -114,6 +124,7 @@ describe("status --json", () => {
       building: false,
       durationMs: 12_000,
       timestampMs: 1_700_000_000_000,
+      revisions: [{ repo: "api", sha: "a1b2c3d4" }],
     });
     expect(logSpy).toHaveBeenCalledTimes(0);
   });
@@ -149,6 +160,7 @@ describe("status --json", () => {
       result: "FAILURE",
       building: false,
       parameters: [{ name: "MESSAGE", value: "historical" }],
+      revisions: [],
     }));
     const getJobStatus = mock(async () => {
       throw new Error("must not fetch latest status");
@@ -171,6 +183,7 @@ describe("status --json", () => {
       number: 17,
       url: "https://jenkins.example.com/job/api/17/",
       result: "FAILURE",
+      revisions: [],
     });
     expect(getBuildStatus).toHaveBeenCalledWith(
       "https://jenkins.example.com/job/api/17/",
