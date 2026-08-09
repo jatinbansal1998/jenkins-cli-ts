@@ -11,6 +11,7 @@ type SentryAdapter = {
   isEnabled: typeof Sentry.isEnabled;
   captureException: typeof Sentry.captureException;
   flush: typeof Sentry.flush;
+  onUnhandledRejectionIntegration: typeof Sentry.onUnhandledRejectionIntegration;
 };
 
 const DEFAULT_SENTRY_DSN =
@@ -63,6 +64,12 @@ export function initializeErrorReporting(adapter: SentryAdapter): boolean {
       sendClientReports: false,
       shutdownTimeout: FLUSH_TIMEOUT_MS,
       tracePropagationTargets: [],
+      integrations: (defaultIntegrations) =>
+        defaultIntegrations.map((integration) =>
+          integration.name === "OnUnhandledRejection"
+            ? adapter.onUnhandledRejectionIntegration({ mode: "strict" })
+            : integration,
+        ),
       dataCollection: {
         userInfo: false,
         cookies: false,
@@ -149,6 +156,7 @@ async function loadSentryAdapter(): Promise<SentryAdapter> {
     isEnabled: sentry.isEnabled,
     captureException: sentry.captureException,
     flush: sentry.flush,
+    onUnhandledRejectionIntegration: sentry.onUnhandledRejectionIntegration,
   };
 }
 

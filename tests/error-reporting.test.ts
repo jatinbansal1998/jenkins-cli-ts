@@ -88,6 +88,19 @@ describe("error reporting configuration", () => {
     expect(options!.enableMetrics).toBeFalse();
     expect(options!.shutdownTimeout).toBe(1_500);
     expect(options!.tracePropagationTargets).toEqual([]);
+    expect(options!.integrations).toBeFunction();
+    if (typeof options!.integrations !== "function") {
+      throw new Error("Expected an integrations callback.");
+    }
+    const defaultIntegrations = [
+      { name: "KeepDefault" },
+      { name: "OnUnhandledRejection" },
+    ];
+    const integrations = options!.integrations(defaultIntegrations);
+    expect(adapter.unhandledRejectionMode).toBe("strict");
+    expect(integrations[0]).toBe(defaultIntegrations[0]);
+    expect(integrations[1]).not.toBe(defaultIntegrations[1]);
+    expect(integrations[1]?.name).toBe("OnUnhandledRejection");
     expect(options!.dataCollection).toEqual({
       userInfo: false,
       cookies: false,
@@ -171,6 +184,43 @@ describe("error reporting configuration", () => {
 });
 
 describe("unexpected error capture", () => {
+  test("keeps unhandled rejections fatal when Sentry is enabled", () => {
+    const marker = "unhandled-marker";
+    const result = Bun.spawnSync({
+      cmd: [
+        "bun",
+        "-e",
+        `
+          const { initializeDefaultErrorReporting } = await import("./src/error-reporting.ts");
+          if (!(await initializeDefaultErrorReporting())) {
+            throw new Error("Sentry did not initialize");
+          }
+          Promise.reject(new Error("${marker}"));
+          await Bun.sleep(100);
+          console.log("after-marker");
+        `,
+      ],
+      cwd: process.cwd(),
+      env: {
+        ...process.env,
+        JENKINS_ERROR_REPORTING_DISABLED: undefined,
+        SENTRY_DSN: "http://public@127.0.0.1:9/1",
+        SENTRY_ENVIRONMENT: "transport-test",
+      },
+      stdout: "pipe",
+      stderr: "pipe",
+      timeout: 5_000,
+    });
+    const output =
+      new TextDecoder().decode(result.stdout) +
+      new TextDecoder().decode(result.stderr);
+
+    expect(result.exitCode, output).toBe(1);
+    expect(output).toContain(marker);
+    expect(output).not.toContain("ECONNREFUSED");
+    expect(output).not.toContain("[Sentry]");
+  });
+
   test("does not capture expected CLI errors", async () => {
     let captures = 0;
     let flushes = 0;
@@ -242,6 +292,7 @@ function createAdapter(
     flush?: (timeout?: number) => Promise<boolean>;
   } = {},
 ) {
+  let unhandledRejectionMode: string | undefined;
   return {
     init: (options: InitOptions) => {
       overrides.init?.(options);
@@ -253,6 +304,15 @@ function createAdapter(
       return "test-event-id";
     },
     flush: overrides.flush ?? (async () => true),
+    onUnhandledRejectionIntegration: (
+      options: Parameters<typeof Sentry.onUnhandledRejectionIntegration>[0],
+    ) => {
+      unhandledRejectionMode = options?.mode;
+      return { name: "OnUnhandledRejection" };
+    },
+    get unhandledRejectionMode() {
+      return unhandledRejectionMode;
+    },
   };
 }
 
