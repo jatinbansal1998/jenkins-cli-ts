@@ -288,9 +288,8 @@ export class JenkinsClient {
         lastBuild.timestamp,
       );
     }
-    const parameters = extractBuildParameters(buildDetails?.actions);
-    const branch = extractBranchParam(parameters);
-    const revisions = extractGitRevisions(buildDetails?.actions);
+    const { parameters, branch, revisions } =
+      extractBuildMetadata(buildDetails);
 
     return {
       disabled: data.disabled,
@@ -346,9 +345,8 @@ export class JenkinsClient {
         buildDetails.timestamp,
       );
     }
-    const parameters = extractBuildParameters(buildDetails.actions);
-    const branch = extractBranchParam(parameters);
-    const revisions = extractGitRevisions(buildDetails.actions);
+    const { parameters, branch, revisions } =
+      extractBuildMetadata(buildDetails);
 
     return {
       buildNumber: buildDetails.number,
@@ -1352,7 +1350,7 @@ function isBuildResourceContext(context: string): boolean {
 const CLOUDBEES_FOLDER_CLASS = "com.cloudbees.hudson.plugins.folder.Folder";
 const GIT_BUILD_DATA_CLASS = "hudson.plugins.git.util.BuildData";
 const BUILD_ACTION_FIELDS =
-  "parameters[name,value],_class,lastBuiltRevision[SHA1,branch[name,SHA1]],remoteUrls";
+  "parameters[name,value],_class,lastBuiltRevision[SHA1,branch[name]],remoteUrls";
 const BUILD_HISTORY_FIELDS = `number,url,result,building,timestamp,duration,estimatedDuration,actions[${BUILD_ACTION_FIELDS}]`;
 const BUILD_DETAILS_FIELDS = `${BUILD_HISTORY_FIELDS},queueId`;
 
@@ -1405,6 +1403,15 @@ function extractBuildParameters(
   return params.length > 0 ? params : undefined;
 }
 
+function repoNameFromRemoteUrl(remoteUrl: string): string {
+  const basename = remoteUrl
+    .replace(/\/+$/, "")
+    .replace(/\.git$/i, "")
+    .split("/")
+    .pop();
+  return basename || remoteUrl;
+}
+
 function extractGitRevisions(
   actions?: JenkinsApiBuildAction[],
 ): JenkinsRevision[] {
@@ -1412,44 +1419,81 @@ function extractGitRevisions(
     return [];
   }
 
-  const revisions = new Map<string, JenkinsRevision>();
+  // Jenkins may attach several BuildData actions for the same checkout (and
+  // their order is not contractual), so merge entries that share a commit
+  // SHA and an overlapping remote-URL set (or report no remotes at all):
+  // union the remote URLs and keep the first branch any entry reports.
+  // Distinct remotes checked out at the same SHA stay separate entries.
+  const merged: Array<{ remoteUrls: string[]; branch?: string; sha: string }> =
+    [];
   for (const action of actions) {
     if (action?._class !== GIT_BUILD_DATA_CLASS) {
       continue;
     }
     const sha = action.lastBuiltRevision?.SHA1;
+    if (typeof sha !== "string" || sha.length === 0) {
+      continue;
+    }
     const remoteUrls = Array.isArray(action.remoteUrls)
       ? action.remoteUrls.filter(
           (remoteUrl): remoteUrl is string =>
             typeof remoteUrl === "string" && remoteUrl.length > 0,
         )
       : [];
-    if (
-      typeof sha !== "string" ||
-      sha.length === 0 ||
-      remoteUrls.length === 0
-    ) {
-      continue;
-    }
+    const branch = action.lastBuiltRevision?.branch?.[0]?.name || undefined;
 
-    const remoteUrl = remoteUrls[0]!;
-    const key = `${remoteUrl}@${sha}`;
-    if (revisions.has(key)) {
+    const existing = merged.find(
+      (candidate) =>
+        candidate.sha === sha &&
+        (candidate.remoteUrls.length === 0 ||
+          remoteUrls.length === 0 ||
+          remoteUrls.some((remoteUrl) =>
+            candidate.remoteUrls.includes(remoteUrl),
+          )),
+    );
+    if (!existing) {
+      merged.push({ remoteUrls, branch, sha });
       continue;
     }
-    revisions.set(key, {
-      repo:
-        remoteUrl
-          .replace(/\.git$/, "")
-          .split("/")
-          .pop() ?? remoteUrl,
+    for (const remoteUrl of remoteUrls) {
+      if (!existing.remoteUrls.includes(remoteUrl)) {
+        existing.remoteUrls.push(remoteUrl);
+      }
+    }
+    existing.branch ??= branch;
+  }
+
+  return merged.map(({ remoteUrls, branch, sha }) => {
+    const remoteUrl = remoteUrls[0];
+    return {
+      repo: remoteUrl ? repoNameFromRemoteUrl(remoteUrl) : undefined,
       remoteUrl,
       remoteUrls,
-      branch: action.lastBuiltRevision?.branch?.[0]?.name ?? "",
+      branch,
       sha,
-    });
+    };
+  });
+}
+
+/**
+ * Parameters, branch input, and checkout evidence for one build. All fields
+ * are undefined when the build's metadata could not be fetched, so callers
+ * never report "no checkout" for a build they know nothing about.
+ */
+function extractBuildMetadata(build: JenkinsApiBuild | null): {
+  parameters?: JenkinsBuildParameter[];
+  branch?: string;
+  revisions?: JenkinsRevision[];
+} {
+  if (!build) {
+    return {};
   }
-  return [...revisions.values()];
+  const parameters = extractBuildParameters(build.actions);
+  return {
+    parameters,
+    branch: extractBranchParam(parameters),
+    revisions: extractGitRevisions(build.actions),
+  };
 }
 
 function normalizeArtifact(artifact: JenkinsApiArtifact): ArtifactEntry | null {
@@ -1479,7 +1523,6 @@ function normalizeBuildHistoryEntry(
   if (!buildUrl) {
     return null;
   }
-  const parameters = extractBuildParameters(build.actions);
   return {
     buildNumber: build.number,
     buildUrl,
@@ -1488,9 +1531,7 @@ function normalizeBuildHistoryEntry(
     timestampMs: build.timestamp,
     durationMs: build.duration,
     estimatedDurationMs: build.estimatedDuration,
-    parameters,
-    branch: extractBranchParam(parameters),
-    revisions: extractGitRevisions(build.actions),
+    ...extractBuildMetadata(build),
   };
 }
 

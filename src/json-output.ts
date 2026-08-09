@@ -52,7 +52,9 @@ export type JsonBuild = {
   estimatedDurationMs?: number;
   queueTimeMs?: number;
   branch?: string;
-  revisions: JenkinsRevision[];
+  /** Checkout evidence: `[]` means no git-plugin checkout; omitted means the
+   * build's metadata could not be fetched. */
+  revisions?: JenkinsRevision[];
   parameters?: JenkinsBuildParameter[];
   stages?: JsonStage[];
 };
@@ -302,7 +304,7 @@ export function mapBuild(input: MapBuildInput): JsonBuild {
     estimatedDurationMs: input.estimatedDurationMs,
     queueTimeMs: input.queueTimeMs,
     branch: input.branch,
-    revisions: input.revisions ?? [],
+    revisions: input.revisions,
     parameters: input.parameters,
     stages: mapStages(input.stages),
   };

@@ -103,6 +103,7 @@ describe("history --json", () => {
           building: false,
           timestampMs: 1_699_000_000_000,
           durationMs: 60_000,
+          revisions: [],
         },
       ],
       total: 2,

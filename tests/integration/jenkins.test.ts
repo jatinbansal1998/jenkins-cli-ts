@@ -1362,10 +1362,10 @@ describe.skipIf(!integrationEnabled)(
         expect(build.output).toContain("SUCCESS");
 
         type Revision = {
-          repo: string;
-          remoteUrl: string;
+          repo?: string;
+          remoteUrl?: string;
           remoteUrls: string[];
-          branch: string;
+          branch?: string;
           sha: string;
         };
         const status = parseJson<{
@@ -1384,9 +1384,9 @@ describe.skipIf(!integrationEnabled)(
           if (!revision) {
             throw new Error(`Missing revision for ${repo}`);
           }
-          expect(revision.remoteUrl).toEndWith(`/${repo}.git`);
-          expect(revision.remoteUrls).toContain(revision.remoteUrl);
-          expect(revision.branch).toContain("main");
+          expect(revision.remoteUrl ?? "").toEndWith(`/${repo}.git`);
+          expect(revision.remoteUrls).toContain(revision.remoteUrl ?? "");
+          expect(revision.branch ?? "").toContain("main");
           expect(revision.sha).toMatch(/^[0-9a-f]{40}$/);
         }
 
@@ -1405,6 +1405,16 @@ describe.skipIf(!integrationEnabled)(
         );
         expect(historyByRepo.get("backend-api")?.sha).toBe(
           statusByRepo.get("backend-api")?.sha,
+        );
+
+        const wait = parseJson<{
+          data: { result: string; build: { revisions: Revision[] } };
+        }>(await runCli(home, ["wait", "--job-url", jobUrl, "--json"]));
+        expect(wait.data.result).toBe("SUCCESS");
+        expect(
+          wait.data.build.revisions.map((revision) => revision.sha).sort(),
+        ).toEqual(
+          status.data.build.revisions.map((revision) => revision.sha).sort(),
         );
 
         const noScmJobUrl = `${jenkinsUrl}/job/cli-no-params/`;

@@ -8,10 +8,12 @@ export type JenkinsBuildParameter = {
 };
 
 export type JenkinsRevision = {
-  repo: string;
-  remoteUrl: string;
+  /** Basename of remoteUrl; a convenience label that can collide. */
+  repo?: string;
+  /** First remote URL Jenkins reported; omitted when it reported none. */
+  remoteUrl?: string;
   remoteUrls: string[];
-  branch: string;
+  branch?: string;
   sha: string;
 };
 

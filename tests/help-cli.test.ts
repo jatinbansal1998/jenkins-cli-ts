@@ -76,17 +76,22 @@ describe("root help for agents", () => {
     );
   });
 
-  test("status and history help distinguish branch input from git revisions", () => {
-    for (const command of ["status", "history"]) {
+  test("status, history, and wait help distinguish branch input from git revisions", () => {
+    for (const command of ["status", "history", "wait"]) {
       const result = runCli([command, "--help"]);
 
       expect(result.exitCode).toBe(0);
+      // Full rendered lines: proves the block survives yargs' 80-column
+      // wrap without orphaned fragments and the columns stay aligned.
       expect(result.output).toContain(
-        "Configured branch parameter value (build input, not checkout",
+        "  branch       Configured branch parameter value (an input, not\n" +
+          "               checkout evidence)",
       );
-      expect(result.output).toContain("revisions[]");
-      expect(result.output).toContain("deduped by remoteUrl + SHA");
-      expect(result.output).toContain("order best-effort");
+      expect(result.output).toContain(
+        "  revisions[]  Git-plugin checkout evidence: repo, remote URL(s),\n" +
+          "               branch, SHA. Duplicate checkouts are merged; omitted\n" +
+          "               when the build's metadata could not be fetched.",
+      );
     }
   });
 

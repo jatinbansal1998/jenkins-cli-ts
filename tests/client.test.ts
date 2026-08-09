@@ -420,7 +420,7 @@ describe("JenkinsClient pipeline stage cloning", () => {
       const url = String(input);
       if (
         url ===
-        "https://jenkins.example.com/job/my-job/api/json?tree=builds[number,url,result,building,timestamp,duration,estimatedDuration,actions[parameters[name,value],_class,lastBuiltRevision[SHA1,branch[name,SHA1]],remoteUrls]]"
+        "https://jenkins.example.com/job/my-job/api/json?tree=builds[number,url,result,building,timestamp,duration,estimatedDuration,actions[parameters[name,value],_class,lastBuiltRevision[SHA1,branch[name]],remoteUrls]]"
       ) {
         return new Response(
           JSON.stringify({
@@ -508,15 +508,17 @@ describe("JenkinsClient build transport", () => {
       apiToken: "token",
     });
 
-    expect(
-      await client.getJobStatus("https://jenkins.example.com/job/my-job/"),
-    ).toMatchObject({
+    const status = await client.getJobStatus(
+      "https://jenkins.example.com/job/my-job/",
+    );
+    expect(status).toMatchObject({
       disabled: true,
       lastBuildNumber: 9,
       result: "SUCCESS",
       building: false,
-      revisions: [],
     });
+    // The details fetch failed, so checkout evidence is unknown, not "none".
+    expect(status.revisions).toBeUndefined();
     expect(String(fetchMock.mock.calls[0]?.[0])).toContain(
       "tree=disabled,lastBuild",
     );
@@ -556,7 +558,7 @@ describe("JenkinsClient build transport", () => {
     expect(error.code).toBe("BUILD_NOT_FOUND");
   });
 
-  test("extracts only deduped git-plugin revisions from the build response", async () => {
+  test("merges git-plugin revisions by commit SHA", async () => {
     const fetchMock = mock(async (input: FetchInput) => {
       const url = String(input);
       if (url.includes("/api/json?tree=")) {
@@ -573,6 +575,11 @@ describe("JenkinsClient build transport", () => {
             },
             {
               _class: "hudson.plugins.git.util.BuildData",
+              lastBuiltRevision: { SHA1: "a1b2c3d4" },
+              remoteUrls: ["https://github.com/acme/backend-api.git"],
+            },
+            {
+              _class: "hudson.plugins.git.util.BuildData",
               lastBuiltRevision: {
                 SHA1: "a1b2c3d4",
                 branch: [{ name: "refs/remotes/origin/feature/test" }],
@@ -585,7 +592,7 @@ describe("JenkinsClient build transport", () => {
             {
               _class: "hudson.plugins.git.util.BuildData",
               lastBuiltRevision: { SHA1: "a1b2c3d4" },
-              remoteUrls: ["https://github.com/acme/backend-api.git"],
+              remoteUrls: ["https://github.com/tools/replica.git"],
             },
             {
               _class: "hudson.plugins.git.util.BuildData",
@@ -593,7 +600,7 @@ describe("JenkinsClient build transport", () => {
                 SHA1: "d4c3b2a1",
                 branch: [{ name: "origin/main" }],
               },
-              remoteUrls: ["https://github.com/acme/pipeline-definitions.git"],
+              remoteUrls: ["https://github.com/acme/pipeline-definitions.git/"],
             },
             {
               _class: "hudson.plugins.git.util.BuildData",
@@ -614,6 +621,8 @@ describe("JenkinsClient build transport", () => {
 
     expect(status.revisions).toEqual([
       {
+        // Merged with the later, richer BuildData for the same SHA: remote
+        // URLs are unioned and its branch fills the gap.
         repo: "backend-api",
         remoteUrl: "https://github.com/acme/backend-api.git",
         remoteUrls: [
@@ -624,16 +633,34 @@ describe("JenkinsClient build transport", () => {
         sha: "a1b2c3d4",
       },
       {
+        // A distinct remote checked out at the same SHA stays separate.
+        repo: "replica",
+        remoteUrl: "https://github.com/tools/replica.git",
+        remoteUrls: ["https://github.com/tools/replica.git"],
+        branch: undefined,
+        sha: "a1b2c3d4",
+      },
+      {
+        // repo strips the trailing slash and ".git" from the remote URL.
         repo: "pipeline-definitions",
-        remoteUrl: "https://github.com/acme/pipeline-definitions.git",
-        remoteUrls: ["https://github.com/acme/pipeline-definitions.git"],
+        remoteUrl: "https://github.com/acme/pipeline-definitions.git/",
+        remoteUrls: ["https://github.com/acme/pipeline-definitions.git/"],
         branch: "origin/main",
         sha: "d4c3b2a1",
+      },
+      {
+        // Checkout evidence without remote URLs keeps its SHA; repo,
+        // remoteUrl, and branch are omitted.
+        repo: undefined,
+        remoteUrl: undefined,
+        remoteUrls: [],
+        branch: undefined,
+        sha: "missing-remote",
       },
     ]);
     expect(fetchMock).toHaveBeenCalledTimes(2);
     expect(String(fetchMock.mock.calls[0]?.[0])).toContain(
-      "actions[parameters[name,value],_class,lastBuiltRevision[SHA1,branch[name,SHA1]],remoteUrls]",
+      "actions[parameters[name,value],_class,lastBuiltRevision[SHA1,branch[name]],remoteUrls]",
     );
   });
 
@@ -849,7 +876,7 @@ describe("JenkinsClient listBuildHistory", () => {
       const url = String(input);
       if (
         url ===
-        "https://jenkins.example.com/job/my-job/api/json?tree=builds[number,url,result,building,timestamp,duration,estimatedDuration,actions[parameters[name,value],_class,lastBuiltRevision[SHA1,branch[name,SHA1]],remoteUrls]]"
+        "https://jenkins.example.com/job/my-job/api/json?tree=builds[number,url,result,building,timestamp,duration,estimatedDuration,actions[parameters[name,value],_class,lastBuiltRevision[SHA1,branch[name]],remoteUrls]]"
       ) {
         return new Response(
           JSON.stringify({

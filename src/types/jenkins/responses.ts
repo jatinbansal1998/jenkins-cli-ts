@@ -46,7 +46,6 @@ type JenkinsApiBuildParameter = {
 
 type JenkinsApiGitBranch = {
   name?: string;
-  SHA1?: string;
 };
 
 type JenkinsApiGitRevision = {

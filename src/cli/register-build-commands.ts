@@ -22,12 +22,8 @@ import {
   wasBranchParamExplicitlyPassed,
   wasWatchExplicitlyPassed,
 } from "./options";
+import { BUILD_METADATA_HELP } from "./help-epilog";
 import type { CommandRegistrationDependencies } from "./registration-types";
-
-const BUILD_REVISION_HELP = `JSON build metadata:
-  branch        Configured branch parameter value (build input, not checkout evidence)
-  revisions[]  Git-plugin checkouts with repo, remote URL(s), raw branch, and SHA;
-               always an array, deduped by remoteUrl + SHA, order best-effort`;
 
 export function registerBuildCommands(
   parser: Argv,
@@ -79,7 +75,7 @@ export function registerBuildCommands(
             addBuildUrlOption(addBuildOption(addJobOptions(yargsInstance))),
             "Watch selected build status until completion",
           ),
-        ).epilog(BUILD_REVISION_HELP),
+        ).epilog(BUILD_METADATA_HELP),
       async (argv) => {
         await runTrackedCommandWithContext(
           "status",
@@ -111,7 +107,7 @@ export function registerBuildCommands(
             default: 0,
             describe: "Skip the first N builds before showing the next 5",
           }),
-        ).epilog(BUILD_REVISION_HELP),
+        ).epilog(BUILD_METADATA_HELP),
       async (argv) => {
         await runTrackedCommandWithContext(
           "history",
@@ -264,7 +260,7 @@ function configureWaitOptions(yargsInstance: Argv): Argv {
         type: "string",
         describe: "Timeout (e.g. 30m, 2h)",
       }),
-  );
+  ).epilog(BUILD_METADATA_HELP);
 }
 
 function configureLogsOptions(yargsInstance: Argv): Argv {

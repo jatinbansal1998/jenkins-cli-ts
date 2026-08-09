@@ -11,7 +11,12 @@ import {
   mapBuild,
   toJsonError,
 } from "../json-output";
-import type { BuildStatus, JobStatus } from "../types/jenkins";
+import type {
+  BuildStatus,
+  JenkinsBuildParameter,
+  JenkinsRevision,
+  JobStatus,
+} from "../types/jenkins";
 import {
   getKnownStageTotal,
   persistKnownTotalStages,
@@ -64,6 +69,9 @@ type WaitResult = {
   timedOut?: boolean;
   durationMs?: number;
   queueTimeMs?: number;
+  parameters?: JenkinsBuildParameter[];
+  branch?: string;
+  revisions?: JenkinsRevision[];
   hadStageInfo?: boolean;
 };
 
@@ -174,6 +182,9 @@ async function runWaitJson(options: WaitOptions): Promise<WaitResult> {
         building: false,
         durationMs: result.durationMs,
         queueTimeMs: result.queueTimeMs,
+        parameters: result.parameters,
+        branch: result.branch,
+        revisions: result.revisions,
       }),
       waitedMs,
     };
@@ -322,6 +333,9 @@ export async function waitForBuild(options: {
             buildUrl: finalBuildUrl,
             durationMs: initialStatus.lastBuildDurationMs,
             queueTimeMs: initialStatus.queueTimeMs,
+            parameters: initialStatus.parameters,
+            branch: initialStatus.branch,
+            revisions: initialStatus.revisions,
             hadStageInfo: Boolean(initialStatus.stages?.length),
           }),
         });
@@ -503,6 +517,9 @@ export async function waitForBuild(options: {
               cancelIssued,
               durationMs: status.durationMs,
               queueTimeMs: status.queueTimeMs,
+              parameters: status.parameters,
+              branch: status.branch,
+              revisions: status.revisions,
               hadStageInfo: Boolean(status.stages?.length),
             }),
           });
@@ -570,6 +587,9 @@ export async function waitForBuild(options: {
                 cancelIssued,
                 durationMs: status.lastBuildDurationMs,
                 queueTimeMs: status.queueTimeMs,
+                parameters: status.parameters,
+                branch: status.branch,
+                revisions: status.revisions,
                 hadStageInfo: Boolean(status.stages?.length),
               }),
             });

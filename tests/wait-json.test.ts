@@ -77,6 +77,17 @@ describe("wait --json", () => {
           building: false,
           timestampMs: 1_700_000_000_000,
           durationMs: 5_000,
+          parameters: [{ name: "BRANCH", value: "main" }],
+          branch: "main",
+          revisions: [
+            {
+              repo: "api",
+              remoteUrl: "https://github.com/acme/api.git",
+              remoteUrls: ["https://github.com/acme/api.git"],
+              branch: "refs/remotes/origin/main",
+              sha: "a1b2c3d4",
+            },
+          ],
         })),
       }),
       env,
@@ -104,6 +115,9 @@ describe("wait --json", () => {
       number: 9,
       url: "https://jenkins.example.com/job/api/9/",
       durationMs: 5_000,
+      branch: "main",
+      parameters: [{ name: "BRANCH", value: "main" }],
+      revisions: [{ repo: "api", sha: "a1b2c3d4" }],
     });
     expect(typeof parsed.data.waitedMs).toBe("number");
     expect(process.exitCode).toBe(0);

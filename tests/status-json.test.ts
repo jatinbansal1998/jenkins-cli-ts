@@ -160,6 +160,7 @@ describe("status --json", () => {
       result: "FAILURE",
       building: false,
       parameters: [{ name: "MESSAGE", value: "historical" }],
+      revisions: [],
     }));
     const getJobStatus = mock(async () => {
       throw new Error("must not fetch latest status");

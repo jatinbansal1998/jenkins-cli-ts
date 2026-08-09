@@ -504,17 +504,24 @@ and `wait`:
 
 `branch` is the configured branch parameter's value: a build input echoed back
 by Jenkins, not evidence of what was checked out. `revisions[]` is checkout
-evidence from git-plugin `BuildData` actions. It is always an array, including
-`[]` when the build has no git-plugin checkout (for example, a clone performed
-by a shell step).
+evidence from git-plugin `BuildData` actions. `[]` means the build has no
+git-plugin checkout (for example, a clone performed by a shell step). The
+field is omitted entirely when the build's metadata could not be fetched, so
+an unknown checkout state is never reported as "no checkout".
 
-Multi-SCM builds can contain several revisions. Select one explicitly by
-`repo` or `remoteUrl`; the CLI does not guess a primary revision. Each entry
-keeps the first remote as `remoteUrl`, all configured remotes as `remoteUrls`,
-and the plugin's branch string without normalization. Duplicate
-`remoteUrl`/`sha` pairs are removed. Array order follows Jenkins action order
-and is best-effort, not contractual. Other fields that Jenkins does not return
-are omitted from the document.
+Multi-SCM builds can contain several revisions. Duplicate `BuildData` actions
+for the same checkout — same commit SHA with overlapping remote URLs, or with
+no remote URLs reported — are merged: remote URLs are unioned and the first
+reported branch wins. Distinct remotes checked out at the same commit stay
+separate entries. `remoteUrl` is the first remote URL Jenkins
+returned (response order, not configuration order) and `repo` is its basename
+— a convenience label that can collide when two repositories share a name, so
+select a revision by `remoteUrl` when exactness matters. `repo` and
+`remoteUrl` are omitted when Jenkins reports a checkout without remote URLs;
+`branch` is omitted when the plugin reports none and is otherwise the raw
+plugin string without normalization. Array order is best-effort, not
+contractual. Other fields that Jenkins does not return are omitted from the
+document.
 
 **`params`** — `data` is the normalized parameter-definition array. Sensitive
 parameters set `sensitive: true` and omit `defaultValue`:
@@ -656,7 +663,18 @@ jenkins-cli wait --json --build-url https://jenkins.example.com/job/api/42/
       "url": "https://jenkins.example.com/job/api/42/",
       "result": "SUCCESS",
       "building": false,
-      "durationMs": 12000
+      "durationMs": 12000,
+      "branch": "main",
+      "revisions": [
+        {
+          "repo": "api",
+          "remoteUrl": "https://github.com/acme/api.git",
+          "remoteUrls": ["https://github.com/acme/api.git"],
+          "branch": "refs/remotes/origin/main",
+          "sha": "a1b2c3d4e5f67890a1b2c3d4e5f67890a1b2c3d4"
+        }
+      ],
+      "parameters": [{ "name": "BRANCH", "value": "main" }]
     },
     "waitedMs": 42000
   }
@@ -913,8 +931,8 @@ jenkins-cli status --build-url "https://jenkins.example.com/job/api-prod/184/"
 
 With `--json`, `build.branch` is the configured branch parameter input, while
 `build.revisions[]` reports git-plugin checkouts with repository identity and
-commit SHA. Use `repo` or `remoteUrl` to select the intended checkout in a
-multi-SCM build.
+commit SHA. Use `remoteUrl` (exact) or `repo` (basename, can collide) to
+select the intended checkout in a multi-SCM build.
 
 Watch the latest build status from status command:
 
