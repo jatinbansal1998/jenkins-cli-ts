@@ -664,6 +664,90 @@ describe("JenkinsClient build transport", () => {
     );
   });
 
+  test("bridges overlapping revision groups, redacts credentials, and handles SCP remotes", async () => {
+    const fetchMock = mock(async (input: FetchInput) => {
+      const url = String(input);
+      if (url.includes("/api/json?tree=")) {
+        return Response.json({
+          number: 7,
+          url: "https://jenkins.example.com/job/my-job/7/",
+          result: "SUCCESS",
+          actions: [
+            {
+              _class: "hudson.plugins.git.util.BuildData",
+              lastBuiltRevision: {
+                SHA1: "feedbeef",
+                branch: [{ name: "origin/main" }],
+              },
+              remoteUrls: [
+                "https://ci-user:secret-token@git.example.com/acme/api.git",
+              ],
+            },
+            {
+              _class: "hudson.plugins.git.util.BuildData",
+              lastBuiltRevision: { SHA1: "cafe1234" },
+              remoteUrls: ["git@git.example.com:tooling.git"],
+            },
+            {
+              _class: "hudson.plugins.git.util.BuildData",
+              lastBuiltRevision: { SHA1: "bridge99" },
+              remoteUrls: ["https://a.example.com/x.git"],
+            },
+            {
+              _class: "hudson.plugins.git.util.BuildData",
+              lastBuiltRevision: { SHA1: "bridge99" },
+              remoteUrls: ["https://b.example.com/x-mirror.git"],
+            },
+            {
+              _class: "hudson.plugins.git.util.BuildData",
+              lastBuiltRevision: { SHA1: "bridge99" },
+              remoteUrls: [
+                "https://a.example.com/x.git",
+                "https://b.example.com/x-mirror.git",
+              ],
+            },
+          ],
+        });
+      }
+      return new Response("", { status: 404 });
+    });
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+    const client = createClient();
+
+    const status = await client.getBuildStatus(
+      "https://jenkins.example.com/job/my-job/7/",
+    );
+
+    expect(JSON.stringify(status)).not.toContain("secret-token");
+    expect(status.revisions).toEqual([
+      {
+        repo: "api",
+        remoteUrl: "https://git.example.com/acme/api.git",
+        remoteUrls: ["https://git.example.com/acme/api.git"],
+        branch: "origin/main",
+        sha: "feedbeef",
+      },
+      {
+        repo: "tooling",
+        remoteUrl: "git@git.example.com:tooling.git",
+        remoteUrls: ["git@git.example.com:tooling.git"],
+        branch: undefined,
+        sha: "cafe1234",
+      },
+      {
+        // The third action bridges the first two disjoint groups.
+        repo: "x",
+        remoteUrl: "https://a.example.com/x.git",
+        remoteUrls: [
+          "https://a.example.com/x.git",
+          "https://b.example.com/x-mirror.git",
+        ],
+        branch: undefined,
+        sha: "bridge99",
+      },
+    ]);
+  });
+
   test("requests and returns progressive console logs", async () => {
     const fetchMock = mock(async (_input: FetchInput, _init?: FetchInit) =>
       Promise.resolve(

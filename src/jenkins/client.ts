@@ -1404,12 +1404,32 @@ function extractBuildParameters(
 }
 
 function repoNameFromRemoteUrl(remoteUrl: string): string {
+  // Split on ":" as well for SCP-style remotes (git@host:repo.git).
   const basename = remoteUrl
     .replace(/\/+$/, "")
     .replace(/\.git$/i, "")
-    .split("/")
+    .split(/[/:]/)
     .pop();
   return basename || remoteUrl;
+}
+
+/** Strip userinfo from http(s) remote URLs so embedded credentials never
+ * reach JSON output. Other schemes (ssh's git@ is load-bearing) pass through. */
+function sanitizeRemoteUrl(remoteUrl: string): string {
+  if (!/^https?:\/\//i.test(remoteUrl)) {
+    return remoteUrl;
+  }
+  try {
+    const url = new URL(remoteUrl);
+    if (url.username || url.password) {
+      url.username = "";
+      url.password = "";
+      return url.toString();
+    }
+  } catch {
+    // Not parseable as a URL; report it as Jenkins returned it.
+  }
+  return remoteUrl;
 }
 
 function extractGitRevisions(
@@ -1435,10 +1455,12 @@ function extractGitRevisions(
       continue;
     }
     const remoteUrls = Array.isArray(action.remoteUrls)
-      ? action.remoteUrls.filter(
-          (remoteUrl): remoteUrl is string =>
-            typeof remoteUrl === "string" && remoteUrl.length > 0,
-        )
+      ? action.remoteUrls
+          .filter(
+            (remoteUrl): remoteUrl is string =>
+              typeof remoteUrl === "string" && remoteUrl.length > 0,
+          )
+          .map(sanitizeRemoteUrl)
       : [];
     const branch = action.lastBuiltRevision?.branch?.[0]?.name || undefined;
 
@@ -1461,6 +1483,32 @@ function extractGitRevisions(
       }
     }
     existing.branch ??= branch;
+  }
+
+  // A later action can bridge two earlier entries (same SHA seen with
+  // [remoteA], [remoteB], then [remoteA, remoteB]); coalesce until stable.
+  for (let i = 0; i < merged.length; i++) {
+    const target = merged[i]!;
+    for (let j = i + 1; j < merged.length;) {
+      const candidate = merged[j]!;
+      if (
+        candidate.sha === target.sha &&
+        candidate.remoteUrls.some((remoteUrl) =>
+          target.remoteUrls.includes(remoteUrl),
+        )
+      ) {
+        for (const remoteUrl of candidate.remoteUrls) {
+          if (!target.remoteUrls.includes(remoteUrl)) {
+            target.remoteUrls.push(remoteUrl);
+          }
+        }
+        target.branch ??= candidate.branch;
+        merged.splice(j, 1);
+        j = i + 1;
+      } else {
+        j++;
+      }
+    }
   }
 
   return merged.map(({ remoteUrls, branch, sha }) => {
