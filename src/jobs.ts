@@ -660,7 +660,9 @@ function scoreSubstringMatch(
   const isSingleTokenQuery = queryTokenCount === 1;
   const perTokenPenalty = isSingleTokenQuery ? 4 : 8;
   const penalty = extraTokens * perTokenPenalty;
-  return Math.max(25, SCORES.SUBSTRING - penalty);
+  // A genuine substring match must never fall below MIN_SCORE: otherwise a
+  // more specific query can hide jobs that a shorter query still shows.
+  return Math.max(MIN_SCORE, SCORES.SUBSTRING - penalty);
 }
 
 const MIN_FUZZY_TOKEN_LENGTH = 4;
