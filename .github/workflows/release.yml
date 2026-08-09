@@ -203,6 +203,12 @@ jobs:
           path: ${{ runner.temp }}/jenkins-cli-integration-tools
           key: jenkins-native-release-${{ runner.os }}-${{ runner.arch }}-2.568.1-2.15.0-${{ hashFiles('tests/integration/jenkins/plugins.txt') }}
 
+      - name: Install Linux keyring tooling
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libsecret-tools gnome-keyring dbus dbus-x11 util-linux
+
       - name: Expose Git shell to Jenkins on Windows
         if: runner.os == 'Windows'
         shell: pwsh
