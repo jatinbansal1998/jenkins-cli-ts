@@ -94,10 +94,10 @@ export async function observeInteractiveCli(
     transcript += chunk;
   });
   let stdinEnded = false;
-  const endStdin = () => {
+  const endStdin = async () => {
     if (stdinEnded) return;
     stdinEnded = true;
-    void subprocess.stdin.end();
+    await subprocess.stdin.end();
   };
 
   try {
@@ -129,7 +129,7 @@ export async function observeInteractiveCli(
         );
       }
     } else {
-      endStdin();
+      await endStdin();
       if (subprocess.exitCode === null) subprocess.kill();
       await subprocess.exited;
     }
@@ -140,7 +140,8 @@ export async function observeInteractiveCli(
       output: stripTerminalCodes(transcript),
     };
   } catch (error) {
-    endStdin();
+    // A failed stdin close must not mask the primary failure.
+    await endStdin().catch(() => {});
     if (subprocess.exitCode === null) {
       subprocess.kill();
     }

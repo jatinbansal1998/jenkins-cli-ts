@@ -23,21 +23,62 @@
     "typescript/no-misused-promises": "error",
     "typescript/consistent-type-imports": [
       "error",
-      { "disallowTypeAnnotations": false }
+      {
+        "disallowTypeAnnotations": false
+      }
     ],
     "unicorn/prefer-string-replace-all": "error",
     "eslint/no-restricted-imports": [
       "error",
       {
         "paths": [
-          { "name": "dotenv", "message": "Bun auto-loads .env." },
-          { "name": "execa", "message": "Use Bun.$`cmd`." },
-          { "name": "express", "message": "Use Bun.serve()." },
-          { "name": "better-sqlite3", "message": "Use bun:sqlite." },
-          { "name": "ioredis", "message": "Use Bun.redis." },
-          { "name": "pg", "message": "Use Bun.sql." },
-          { "name": "jest", "message": "Use bun:test." },
-          { "name": "vitest", "message": "Use bun:test." }
+          {
+            "name": "dotenv",
+            "message": "Bun auto-loads .env."
+          },
+          {
+            "name": "execa",
+            "message": "Use Bun.$`cmd`."
+          },
+          {
+            "name": "express",
+            "message": "Use Bun.serve()."
+          },
+          {
+            "name": "better-sqlite3",
+            "message": "Use bun:sqlite."
+          },
+          {
+            "name": "ioredis",
+            "message": "Use Bun.redis."
+          },
+          {
+            "name": "pg",
+            "message": "Use Bun.sql."
+          },
+          {
+            "name": "jest",
+            "message": "Use bun:test."
+          },
+          {
+            "name": "vitest",
+            "message": "Use bun:test."
+          }
+        ],
+        "patterns": [
+          {
+            "group": [
+              "dotenv/*",
+              "execa/*",
+              "express/*",
+              "better-sqlite3/*",
+              "ioredis/*",
+              "pg/*",
+              "jest/*",
+              "vitest/*"
+            ],
+            "message": "Use the Bun equivalent (see the paths list)."
+          }
         ]
       }
     ],

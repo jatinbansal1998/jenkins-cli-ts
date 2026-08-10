@@ -16,7 +16,7 @@
     "lint:fix": "oxlint --fix --type-aware",
     "knip": "knip",
     "typecheck": "tsc --noEmit",
-    "check": "bun run lint:fix && bun run format && bun run typecheck && bun run knip",
+    "check": "bun run lint:fix && bun run format && bun run lint && bun run typecheck && bun run knip",
     "test": "bun test",
     "sentry:smoke": "bun scripts/verify-sentry.ts",
     "sentry:smoke:build": "bun scripts/build-sentry-smoke.ts",
