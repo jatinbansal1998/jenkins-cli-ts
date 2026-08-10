@@ -1,53 +1,17 @@
-import type {
-  BuildStatus,
-  JenkinsPipelineStage,
-  JobStatus,
-} from "./types/jenkins";
+import type { BuildStatus, JenkinsPipelineStage } from "./types/jenkins";
 
 const ANSI_BOLD = "\u001b[1m";
 const ANSI_RESET = "\u001b[0m";
 
-export type StatusDetails = {
-  building?: boolean;
-  timestampMs?: number;
-  durationMs?: number;
-  estimatedDurationMs?: number;
-  queueTimeMs?: number;
-  parameters?: { name: string; value: string }[];
-  stages?: JenkinsPipelineStage[];
+export type StatusDetails = BuildStatus & {
   knownTotalStages?: number;
 };
 
-export function toStatusDetailsFromBuild(
+export function toStatusDetails(
   status: BuildStatus,
   options: { knownTotalStages?: number } = {},
 ): StatusDetails {
-  return {
-    building: status.building,
-    timestampMs: status.timestampMs,
-    durationMs: status.durationMs,
-    estimatedDurationMs: status.estimatedDurationMs,
-    queueTimeMs: status.queueTimeMs,
-    parameters: status.parameters,
-    stages: status.stages,
-    knownTotalStages: options.knownTotalStages,
-  };
-}
-
-export function toStatusDetailsFromJob(
-  status: JobStatus,
-  options: { knownTotalStages?: number } = {},
-): StatusDetails {
-  return {
-    building: status.building,
-    timestampMs: status.lastBuildTimestamp,
-    durationMs: status.lastBuildDurationMs,
-    estimatedDurationMs: status.lastBuildEstimatedDurationMs,
-    queueTimeMs: status.queueTimeMs,
-    parameters: status.parameters,
-    stages: status.stages,
-    knownTotalStages: options.knownTotalStages,
-  };
+  return { ...status, knownTotalStages: options.knownTotalStages };
 }
 
 type StatusSummaryInput = {
@@ -76,6 +40,9 @@ export function formatStatusDetails(
     timingParts.push(
       formatLabelValue("Started:", formatLocalTime(status.timestampMs)),
     );
+  }
+  if (status.triggeredBy) {
+    timingParts.push(formatLabelValue("By:", status.triggeredBy));
   }
   if (typeof status.queueTimeMs === "number" && status.queueTimeMs > 0) {
     timingParts.push(
@@ -176,7 +143,15 @@ function resolveDurationMs(status: StatusDetails): number {
 }
 
 function formatLocalTime(timestampMs: number): string {
-  return new Date(timestampMs).toLocaleString();
+  const date = new Date(timestampMs);
+  // "7 August 2026, 4:23:22 PM" — an unambiguous day-month-year date instead
+  // of the locale default's easily misread numeric form (8/7/2026).
+  const datePart = date.toLocaleDateString("en-GB", {
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+  });
+  return `${datePart}, ${date.toLocaleTimeString()}`;
 }
 
 function formatParams(

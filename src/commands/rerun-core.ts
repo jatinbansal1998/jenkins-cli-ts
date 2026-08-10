@@ -28,7 +28,7 @@ export async function rerunLastBuildForJob(
   options: RerunSharedOptions,
 ): Promise<RerunBuildResult> {
   const status = await options.client.getJobStatus(options.jobUrl);
-  if (typeof status.lastBuildNumber !== "number" && !status.lastBuildUrl) {
+  if (typeof status.buildNumber !== "number" && !status.buildUrl) {
     throw new CliError(`No previous build found for ${options.jobLabel}.`, [
       "Run a build first, then rerun once a previous build exists.",
     ]);
@@ -39,8 +39,8 @@ export async function rerunLastBuildForJob(
     env: options.env,
     jobUrl: options.jobUrl,
     status,
-    sourceBuildUrl: status.lastBuildUrl,
-    sourceBuildNumber: status.lastBuildNumber,
+    sourceBuildUrl: status.buildUrl,
+    sourceBuildNumber: status.buildNumber,
   });
 }
 

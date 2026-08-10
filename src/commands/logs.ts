@@ -296,10 +296,10 @@ async function resolveLogTarget(
   }
 
   const status = await options.client.getJobStatus(target.jobUrl);
-  if (!status.lastBuildUrl) {
+  if (!status.buildUrl) {
     throw noBuildsError(target.jobLabel);
   }
-  return { buildUrl: status.lastBuildUrl, jobLabel: target.jobLabel };
+  return { buildUrl: status.buildUrl, jobLabel: target.jobLabel };
 }
 
 async function resolveEffectiveOptions(

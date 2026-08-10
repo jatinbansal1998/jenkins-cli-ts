@@ -74,7 +74,7 @@ describe("status command", () => {
       client: createClient({
         getJobStatus: mock(async () => ({
           disabled: false,
-          lastBuildNumber: 42,
+          buildNumber: 42,
           result: "SUCCESS",
           building: false,
         })),
@@ -106,12 +106,12 @@ describe("status command", () => {
     await runStatus({
       client: createClient({
         getJobStatus: mock(async () => ({
-          lastBuildNumber: 42,
-          lastBuildUrl: "https://jenkins.example.com/job/api/42/",
+          buildNumber: 42,
+          buildUrl: "https://jenkins.example.com/job/api/42/",
           result: "UNSTABLE",
           building: false,
-          lastBuildTimestamp: 1_700_000_000_000,
-          lastBuildDurationMs: 12_000,
+          timestampMs: 1_700_000_000_000,
+          durationMs: 12_000,
           stages,
         })),
       }),

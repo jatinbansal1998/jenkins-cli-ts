@@ -70,12 +70,12 @@ describe("status --json", () => {
       client: createClient({
         getJobStatus: mock(async () => ({
           disabled: true,
-          lastBuildNumber: 42,
-          lastBuildUrl: "https://jenkins.example.com/job/api/42/",
+          buildNumber: 42,
+          buildUrl: "https://jenkins.example.com/job/api/42/",
           result: "SUCCESS",
           building: false,
-          lastBuildTimestamp: 1_700_000_000_000,
-          lastBuildDurationMs: 12_000,
+          timestampMs: 1_700_000_000_000,
+          durationMs: 12_000,
           revisions: [
             {
               repo: "api",

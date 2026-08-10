@@ -7,7 +7,7 @@ import { printMenuActionError, runMenuAction } from "./menu-action";
 import type { JenkinsClient } from "../jenkins/client";
 import type { BuildHistoryEntry, BuildHistoryPage } from "../types/jenkins";
 import {
-  jsonBuildFromHistoryEntry,
+  jsonBuild,
   type JsonBuild,
   type JsonWrite,
   runJsonCommand,
@@ -159,7 +159,7 @@ async function runHistoryJson(options: HistoryOptions): Promise<void> {
         offset: normalizeOffset(options.offset),
         limit: HISTORY_PAGE_SIZE,
       });
-      return page.builds.map(jsonBuildFromHistoryEntry);
+      return page.builds.map(jsonBuild);
     },
     { write: options.write },
   );

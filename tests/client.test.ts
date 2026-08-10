@@ -420,7 +420,7 @@ describe("JenkinsClient pipeline stage cloning", () => {
       const url = String(input);
       if (
         url ===
-        "https://jenkins.example.com/job/my-job/api/json?tree=builds[number,url,result,building,timestamp,duration,estimatedDuration,actions[parameters[name,value],_class,lastBuiltRevision[SHA1,branch[name]],remoteUrls]]"
+        "https://jenkins.example.com/job/my-job/api/json?tree=builds[number,url,result,building,timestamp,duration,estimatedDuration,actions[parameters[name,value],_class,lastBuiltRevision[SHA1,branch[name]],remoteUrls,causes[shortDescription,userId,userName]]]"
       ) {
         return new Response(
           JSON.stringify({
@@ -513,7 +513,7 @@ describe("JenkinsClient build transport", () => {
     );
     expect(status).toMatchObject({
       disabled: true,
-      lastBuildNumber: 9,
+      buildNumber: 9,
       result: "SUCCESS",
       building: false,
     });
@@ -556,6 +556,76 @@ describe("JenkinsClient build transport", () => {
     );
 
     expect(error.code).toBe("BUILD_NOT_FOUND");
+  });
+
+  test("extracts the trigger from the build's cause action", async () => {
+    const fetchMock = mock(async (input: FetchInput) => {
+      const url = String(input);
+      if (url.includes("/api/json?tree=")) {
+        return Response.json({
+          number: 156,
+          url: "https://jenkins.example.com/job/my-job/156/",
+          result: "SUCCESS",
+          actions: [
+            {},
+            {
+              _class: "hudson.model.CauseAction",
+              causes: [
+                {
+                  shortDescription: "Started by user Jatin Bansal",
+                  userId: "jatin",
+                  userName: "Jatin Bansal",
+                },
+              ],
+            },
+          ],
+        });
+      }
+      return new Response("", { status: 404 });
+    });
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+    const client = createClient();
+
+    const status = await client.getBuildStatus(
+      "https://jenkins.example.com/job/my-job/156/",
+    );
+
+    expect(status.triggeredBy).toBe("Jatin Bansal");
+    expect(String(fetchMock.mock.calls[0]?.[0])).toContain(
+      "causes[shortDescription,userId,userName]",
+    );
+  });
+
+  test("falls back to the cause description for non-user triggers", async () => {
+    const fetchMock = mock(async (input: FetchInput) => {
+      const url = String(input);
+      if (url.includes("/api/json?tree=")) {
+        return Response.json({
+          number: 157,
+          url: "https://jenkins.example.com/job/my-job/157/",
+          result: "SUCCESS",
+          actions: [
+            {
+              _class: "hudson.model.CauseAction",
+              causes: [
+                {
+                  shortDescription: "Started by timer",
+                },
+              ],
+            },
+          ],
+        });
+      }
+      return new Response("", { status: 404 });
+    });
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+    const client = createClient();
+
+    const status = await client.getBuildStatus(
+      "https://jenkins.example.com/job/my-job/157/",
+    );
+
+    expect(status.triggeredBy).toBe("timer");
   });
 
   test("merges git-plugin revisions by commit SHA", async () => {
@@ -660,7 +730,7 @@ describe("JenkinsClient build transport", () => {
     ]);
     expect(fetchMock).toHaveBeenCalledTimes(2);
     expect(String(fetchMock.mock.calls[0]?.[0])).toContain(
-      "actions[parameters[name,value],_class,lastBuiltRevision[SHA1,branch[name]],remoteUrls]",
+      "actions[parameters[name,value],_class,lastBuiltRevision[SHA1,branch[name]],remoteUrls,causes[shortDescription,userId,userName]]",
     );
   });
 
@@ -960,7 +1030,7 @@ describe("JenkinsClient listBuildHistory", () => {
       const url = String(input);
       if (
         url ===
-        "https://jenkins.example.com/job/my-job/api/json?tree=builds[number,url,result,building,timestamp,duration,estimatedDuration,actions[parameters[name,value],_class,lastBuiltRevision[SHA1,branch[name]],remoteUrls]]"
+        "https://jenkins.example.com/job/my-job/api/json?tree=builds[number,url,result,building,timestamp,duration,estimatedDuration,actions[parameters[name,value],_class,lastBuiltRevision[SHA1,branch[name]],remoteUrls,causes[shortDescription,userId,userName]]]"
       ) {
         return new Response(
           JSON.stringify({

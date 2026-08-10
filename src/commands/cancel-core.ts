@@ -329,11 +329,11 @@ async function resolveCancelTarget(
   }
 
   const jobStatus = await options.client.getJobStatus(target.jobUrl);
-  if (jobStatus.building && jobStatus.lastBuildUrl) {
+  if (jobStatus.building && jobStatus.buildUrl) {
     return {
       kind: "build",
-      buildUrl: jobStatus.lastBuildUrl,
-      buildNumber: jobStatus.lastBuildNumber,
+      buildUrl: jobStatus.buildUrl,
+      buildNumber: jobStatus.buildNumber,
       label: `running build for ${target.jobLabel}`,
     };
   }

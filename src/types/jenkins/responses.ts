@@ -53,11 +53,18 @@ type JenkinsApiGitRevision = {
   branch?: JenkinsApiGitBranch[];
 };
 
+export type JenkinsApiBuildCause = {
+  shortDescription?: string;
+  userId?: string;
+  userName?: string;
+};
+
 export type JenkinsApiBuildAction = {
   _class?: string;
   parameters?: JenkinsApiBuildParameter[];
   lastBuiltRevision?: JenkinsApiGitRevision;
   remoteUrls?: string[];
+  causes?: JenkinsApiBuildCause[];
 };
 
 export type JenkinsApiBuild = {

@@ -288,23 +288,24 @@ export class JenkinsClient {
         lastBuild.timestamp,
       );
     }
-    const { parameters, branch, revisions } =
+    const { parameters, branch, revisions, triggeredBy } =
       extractBuildMetadata(buildDetails);
 
     return {
       disabled: data.disabled,
-      lastBuildNumber: lastBuild.number,
-      lastBuildUrl: lastBuild.url,
+      buildNumber: lastBuild.number,
+      buildUrl: lastBuild.url,
       result: lastBuild.result ?? null,
       building: lastBuild.building ?? false,
-      lastBuildTimestamp: lastBuild.timestamp,
-      lastBuildDurationMs: lastBuild.duration,
-      lastBuildEstimatedDurationMs: lastBuild.estimatedDuration,
+      timestampMs: lastBuild.timestamp,
+      durationMs: lastBuild.duration,
+      estimatedDurationMs: lastBuild.estimatedDuration,
       queueTimeMs,
       parameters,
       branch,
       revisions,
       stages: pipeline?.stages,
+      triggeredBy,
     };
   }
 
@@ -345,7 +346,7 @@ export class JenkinsClient {
         buildDetails.timestamp,
       );
     }
-    const { parameters, branch, revisions } =
+    const { parameters, branch, revisions, triggeredBy } =
       extractBuildMetadata(buildDetails);
 
     return {
@@ -361,6 +362,7 @@ export class JenkinsClient {
       branch,
       revisions,
       stages: pipeline?.stages,
+      triggeredBy,
     };
   }
 
@@ -1350,7 +1352,7 @@ function isBuildResourceContext(context: string): boolean {
 const CLOUDBEES_FOLDER_CLASS = "com.cloudbees.hudson.plugins.folder.Folder";
 const GIT_BUILD_DATA_CLASS = "hudson.plugins.git.util.BuildData";
 const BUILD_ACTION_FIELDS =
-  "parameters[name,value],_class,lastBuiltRevision[SHA1,branch[name]],remoteUrls";
+  "parameters[name,value],_class,lastBuiltRevision[SHA1,branch[name]],remoteUrls,causes[shortDescription,userId,userName]";
 const BUILD_HISTORY_FIELDS = `number,url,result,building,timestamp,duration,estimatedDuration,actions[${BUILD_ACTION_FIELDS}]`;
 const BUILD_DETAILS_FIELDS = `${BUILD_HISTORY_FIELDS},queueId`;
 
@@ -1401,6 +1403,39 @@ function extractBuildParameters(
     }
   }
   return params.length > 0 ? params : undefined;
+}
+
+/**
+ * Who or what started the build, from the standard CauseAction every Jenkins
+ * build carries. User-triggered builds report the user's display name; other
+ * triggers (timer, SCM, upstream) keep Jenkins' short description minus the
+ * redundant "Started by " prefix.
+ */
+function extractTriggeredBy(
+  actions?: JenkinsApiBuildAction[],
+): string | undefined {
+  if (!Array.isArray(actions)) {
+    return undefined;
+  }
+  for (const action of actions) {
+    if (!action || !Array.isArray(action.causes)) {
+      continue;
+    }
+    for (const cause of action.causes) {
+      if (!cause) {
+        continue;
+      }
+      const userLabel = cause.userName?.trim() || cause.userId?.trim();
+      if (userLabel) {
+        return userLabel;
+      }
+      const description = cause.shortDescription?.trim();
+      if (description) {
+        return description.replace(/^started by\s+/i, "");
+      }
+    }
+  }
+  return undefined;
 }
 
 function repoNameFromRemoteUrl(remoteUrl: string): string {
@@ -1532,6 +1567,7 @@ function extractBuildMetadata(build: JenkinsApiBuild | null): {
   parameters?: JenkinsBuildParameter[];
   branch?: string;
   revisions?: JenkinsRevision[];
+  triggeredBy?: string;
 } {
   if (!build) {
     return {};
@@ -1541,6 +1577,7 @@ function extractBuildMetadata(build: JenkinsApiBuild | null): {
     parameters,
     branch: extractBranchParam(parameters),
     revisions: extractGitRevisions(build.actions),
+    triggeredBy: extractTriggeredBy(build.actions),
   };
 }
 

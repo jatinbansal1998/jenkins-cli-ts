@@ -498,9 +498,14 @@ and `wait`:
     }
   ],
   "parameters": [{ "name": "BRANCH", "value": "main" }],
-  "stages": [{ "name": "Build", "status": "SUCCESS", "durationMs": 8000 }]
+  "stages": [{ "name": "Build", "status": "SUCCESS", "durationMs": 8000 }],
+  "triggeredBy": "Jane Doe"
 }
 ```
+
+`triggeredBy` comes from the build's cause action: the triggering user's
+display name, or Jenkins' cause description (minus the "Started by" prefix)
+for timer, SCM, and upstream triggers. Omitted when Jenkins reports no cause.
 
 `branch` is the configured branch parameter's value: a build input echoed back
 by Jenkins, not evidence of what was checked out. `revisions[]` is checkout

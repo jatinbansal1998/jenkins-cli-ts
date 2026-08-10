@@ -53,8 +53,7 @@ import {
   formatStatusDetails,
   formatStatusSummary,
   type StatusDetails,
-  toStatusDetailsFromBuild,
-  toStatusDetailsFromJob,
+  toStatusDetails,
   formatDuration,
 } from "../status-format";
 import {
@@ -274,7 +273,7 @@ export async function runBuild(options: BuildOptions): Promise<BuildRunResult> {
     try {
       const preTriggerStatus =
         await options.client.getJobStatus(resolvedJobUrl);
-      baselineBuildNumber = preTriggerStatus.lastBuildNumber;
+      baselineBuildNumber = preTriggerStatus.buildNumber;
     } catch {
       // Best-effort only.
     }
@@ -664,7 +663,7 @@ async function runBuildOnce(options: {
   let baselineBuildNumber: number | undefined;
   try {
     const preTriggerStatus = await options.client.getJobStatus(jobUrl);
-    baselineBuildNumber = preTriggerStatus.lastBuildNumber;
+    baselineBuildNumber = preTriggerStatus.buildNumber;
   } catch {
     // Best-effort only.
   }
@@ -810,13 +809,13 @@ async function watchBuildStatusStructured(options: {
     } else {
       const status = await options.client.getJobStatus(options.jobUrl);
       if (
-        typeof status.lastBuildNumber === "number" &&
+        typeof status.buildNumber === "number" &&
         (options.baselineBuildNumber === undefined ||
-          status.lastBuildNumber !== options.baselineBuildNumber ||
+          status.buildNumber !== options.baselineBuildNumber ||
           status.building)
       ) {
-        buildNumber = status.lastBuildNumber;
-        buildUrl = status.lastBuildUrl;
+        buildNumber = status.buildNumber;
+        buildUrl = status.buildUrl;
         if (!status.building) {
           return {
             result: status.result ?? "UNKNOWN",
@@ -1110,9 +1109,9 @@ async function watchBuildStatus(options: {
   try {
     if (!buildUrl && baselineBuildNumber === undefined) {
       const initialStatus = await options.client.getJobStatus(options.jobUrl);
-      baselineBuildNumber = initialStatus.lastBuildNumber;
-      if (initialStatus.lastBuildNumber && initialStatus.building) {
-        targetBuildNumber = initialStatus.lastBuildNumber;
+      baselineBuildNumber = initialStatus.buildNumber;
+      if (initialStatus.buildNumber && initialStatus.building) {
+        targetBuildNumber = initialStatus.buildNumber;
       }
     }
 
@@ -1179,7 +1178,7 @@ async function watchBuildStatus(options: {
       if (buildUrl) {
         const status = await options.client.getBuildStatus(buildUrl);
         const result = status.building ? "RUNNING" : status.result || "UNKNOWN";
-        const details = toStatusDetailsFromBuild(status, { knownTotalStages });
+        const details = toStatusDetails(status, { knownTotalStages });
         const message = formatWatchMessage({
           jobLabel: options.jobLabel,
           buildNumber: status.buildNumber ?? buildNumber,
@@ -1231,7 +1230,7 @@ async function watchBuildStatus(options: {
         const fallbackStatus = await options.client.getJobStatus(
           options.jobUrl,
         );
-        const currentNumber = fallbackStatus.lastBuildNumber;
+        const currentNumber = fallbackStatus.buildNumber;
         if (
           targetBuildNumber === undefined &&
           typeof currentNumber === "number" &&
@@ -1248,8 +1247,8 @@ async function watchBuildStatus(options: {
         ) {
           queueUrl = undefined;
           buildNumber = currentNumber;
-          if (fallbackStatus.lastBuildUrl) {
-            buildUrl = fallbackStatus.lastBuildUrl;
+          if (fallbackStatus.buildUrl) {
+            buildUrl = fallbackStatus.buildUrl;
           }
           continue;
         }
@@ -1263,7 +1262,7 @@ async function watchBuildStatus(options: {
         });
       } else {
         const status = await options.client.getJobStatus(options.jobUrl);
-        const currentNumber = status.lastBuildNumber;
+        const currentNumber = status.buildNumber;
         if (
           typeof currentNumber === "number" &&
           targetBuildNumber === undefined
@@ -1285,7 +1284,7 @@ async function watchBuildStatus(options: {
           const result = status.building
             ? "RUNNING"
             : status.result || "UNKNOWN";
-          const details = toStatusDetailsFromJob(status, { knownTotalStages });
+          const details = toStatusDetails(status, { knownTotalStages });
           const message = formatWatchMessage({
             jobLabel: options.jobLabel,
             buildNumber: currentNumber,
@@ -1302,7 +1301,7 @@ async function watchBuildStatus(options: {
               buildNumber: currentNumber,
               result,
             });
-            const url = status.lastBuildUrl || options.jobUrl;
+            const url = status.buildUrl || options.jobUrl;
             if (result === "SUCCESS") {
               await persistKnownTotalStages({
                 env: options.env,

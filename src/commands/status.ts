@@ -8,8 +8,7 @@ import { resolveBuildSelector } from "../build-selector";
 import { CliError, printOk } from "../cli";
 import { runMenuAction } from "./menu-action";
 import {
-  jsonBuildFromJobStatus,
-  jsonBuildFromBuildStatus,
+  jsonBuild,
   type JsonBuild,
   type JsonWrite,
   runJsonCommand,
@@ -28,8 +27,7 @@ import {
 import {
   formatStatusDetails,
   formatStatusSummary,
-  toStatusDetailsFromJob,
-  toStatusDetailsFromBuild,
+  toStatusDetails,
 } from "../status-format";
 import type { EnvConfig } from "../env";
 import type { JenkinsClient } from "../jenkins/client";
@@ -126,7 +124,7 @@ export async function runStatus(options: StatusOptions): Promise<void> {
 
       const status = await options.client.getJobStatus(target.jobUrl);
       const jobState = getJobState(status.disabled);
-      if (!status.lastBuildNumber) {
+      if (!status.buildNumber) {
         printOk(
           appendJobState(
             `No builds found for ${target.jobLabel || target.jobUrl}.`,
@@ -137,7 +135,7 @@ export async function runStatus(options: StatusOptions): Promise<void> {
       }
 
       const result = status.building ? "RUNNING" : status.result || "UNKNOWN";
-      const url = status.lastBuildUrl || target.jobUrl;
+      const url = status.buildUrl || target.jobUrl;
       const knownTotalStages = await getKnownStageTotal({
         env: options.env,
         jobUrl: target.jobUrl,
@@ -145,11 +143,11 @@ export async function runStatus(options: StatusOptions): Promise<void> {
       });
       const summary = formatStatusSummary({
         jobLabel: target.jobLabel || target.jobUrl,
-        buildNumber: status.lastBuildNumber,
+        buildNumber: status.buildNumber,
         result,
       });
       const details = formatStatusDetails(
-        toStatusDetailsFromJob(status, { knownTotalStages }),
+        toStatusDetails(status, { knownTotalStages }),
         url,
       );
       const output = details ? `${summary}\n${details}` : summary;
@@ -334,7 +332,7 @@ async function runStatusJson(options: StatusOptions): Promise<void> {
         const status = await options.client.getBuildStatus(target.buildUrl);
         return {
           job: target.jobLabel,
-          build: jsonBuildFromBuildStatus(status),
+          build: jsonBuild(status),
         };
       }
       if (target.kind !== "job") {
@@ -347,7 +345,7 @@ async function runStatusJson(options: StatusOptions): Promise<void> {
       return {
         job: target.jobLabel,
         ...(jobState ? { jobState } : {}),
-        build: status.lastBuildNumber ? jsonBuildFromJobStatus(status) : null,
+        build: status.buildNumber ? jsonBuild(status) : null,
       };
     },
     { write: options.write },
@@ -385,7 +383,7 @@ async function runExactStatus(options: StatusOptions): Promise<void> {
     exact: true,
   });
   const details = formatStatusDetails(
-    toStatusDetailsFromBuild(status, { knownTotalStages }),
+    toStatusDetails(status, { knownTotalStages }),
     buildUrl,
   );
   printOk(details ? `${summary}\n${details}` : summary);
@@ -427,7 +425,7 @@ async function runStatusOnce(options: StatusOptions): Promise<void> {
 
   const status = await options.client.getJobStatus(jobUrl);
   const jobState = getJobState(status.disabled);
-  if (!status.lastBuildNumber) {
+  if (!status.buildNumber) {
     printOk(
       appendJobState(`No builds found for ${jobLabel || jobUrl}.`, jobState),
     );
@@ -435,7 +433,7 @@ async function runStatusOnce(options: StatusOptions): Promise<void> {
   }
 
   const result = status.building ? "RUNNING" : status.result || "UNKNOWN";
-  const url = status.lastBuildUrl || jobUrl;
+  const url = status.buildUrl || jobUrl;
   const knownTotalStages = await getKnownStageTotal({
     env: options.env,
     jobUrl,
@@ -443,11 +441,11 @@ async function runStatusOnce(options: StatusOptions): Promise<void> {
   });
   const summary = formatStatusSummary({
     jobLabel: jobLabel || jobUrl,
-    buildNumber: status.lastBuildNumber,
+    buildNumber: status.buildNumber,
     result,
   });
   const details = formatStatusDetails(
-    toStatusDetailsFromJob(status, { knownTotalStages }),
+    toStatusDetails(status, { knownTotalStages }),
     url,
   );
   const output = details ? `${summary}\n${details}` : summary;

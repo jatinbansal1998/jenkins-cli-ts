@@ -54,13 +54,14 @@ describe("wait command", () => {
       spyOn(stageCountCacheModule, "persistKnownTotalStages"),
     ).mockResolvedValue();
     const getJobStatus = mock(async () => ({
-      lastBuildNumber: 42,
-      lastBuildUrl: "https://jenkins.example.com/job/api/42/",
+      buildNumber: 42,
+      buildUrl: "https://jenkins.example.com/job/api/42/",
       result: "UNSTABLE",
       building: false,
-      lastBuildTimestamp: 1700000000000,
-      lastBuildDurationMs: 25_000,
+      timestampMs: 1700000000000,
+      durationMs: 25_000,
       stages: [{ id: "1", name: "Deploy", status: "UNSTABLE" }],
+      triggeredBy: "timer",
     }));
     const getBuildStatus = mock(async () => {
       throw new Error("should not fetch build status for completed build");
@@ -83,6 +84,7 @@ describe("wait command", () => {
       result: "UNSTABLE",
       buildNumber: 42,
       buildUrl: "https://jenkins.example.com/job/api/42/",
+      triggeredBy: "timer",
     });
     expect(getJobStatus).toHaveBeenCalledTimes(1);
     expect(getBuildStatus).toHaveBeenCalledTimes(0);
@@ -92,12 +94,12 @@ describe("wait command", () => {
   test("waitForBuild falls back from queue lookup to job/build status", async () => {
     const getQueueBuild = mock(async () => null);
     const getJobStatus = mock(async () => ({
-      lastBuildNumber: 7,
-      lastBuildUrl: "https://jenkins.example.com/job/api/7/",
+      buildNumber: 7,
+      buildUrl: "https://jenkins.example.com/job/api/7/",
       result: "SUCCESS",
       building: false,
-      lastBuildTimestamp: 1700000000000,
-      lastBuildDurationMs: 10_000,
+      timestampMs: 1700000000000,
+      durationMs: 10_000,
     }));
     const getBuildStatus = mock(async () => ({
       buildNumber: 7,

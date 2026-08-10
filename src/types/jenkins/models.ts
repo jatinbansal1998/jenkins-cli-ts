@@ -87,22 +87,11 @@ export type RunningBuildSummary = {
   buildUrl: string;
 };
 
-export type JobStatus = {
-  disabled?: boolean;
-  lastBuildNumber?: number;
-  lastBuildUrl?: string;
-  result?: string | null;
-  building?: boolean;
-  lastBuildTimestamp?: number;
-  lastBuildDurationMs?: number;
-  lastBuildEstimatedDurationMs?: number;
-  queueTimeMs?: number;
-  parameters?: JenkinsBuildParameter[];
-  branch?: string;
-  revisions?: JenkinsRevision[];
-  stages?: JenkinsPipelineStage[];
-};
-
+/**
+ * Normalized Jenkins build. The single shape shared by build status, job
+ * status (the job's last build), and history entries — add new build fields
+ * here once.
+ */
 export type BuildStatus = {
   buildNumber?: number;
   buildUrl?: string;
@@ -116,6 +105,12 @@ export type BuildStatus = {
   branch?: string;
   revisions?: JenkinsRevision[];
   stages?: JenkinsPipelineStage[];
+  triggeredBy?: string;
+};
+
+/** A job's last build plus job-level state. */
+export type JobStatus = BuildStatus & {
+  disabled?: boolean;
 };
 
 export type ArtifactEntry = {
@@ -129,18 +124,8 @@ export type BuildArtifacts = {
   artifacts: ArtifactEntry[];
 };
 
-export type BuildHistoryEntry = {
-  buildNumber?: number;
+export type BuildHistoryEntry = BuildStatus & {
   buildUrl: string;
-  result?: string | null;
-  building?: boolean;
-  timestampMs?: number;
-  durationMs?: number;
-  estimatedDurationMs?: number;
-  parameters?: JenkinsBuildParameter[];
-  branch?: string;
-  revisions?: JenkinsRevision[];
-  stages?: JenkinsPipelineStage[];
   failure?: JenkinsBuildFailure;
 };
 

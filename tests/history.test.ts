@@ -291,8 +291,8 @@ describe("runHistory", () => {
       hasPrevious: false,
     }));
     const getJobStatus = mock(async () => ({
-      lastBuildNumber: 99,
-      lastBuildUrl: "https://jenkins.example.com/job/api/99/",
+      buildNumber: 99,
+      buildUrl: "https://jenkins.example.com/job/api/99/",
       parameters: [
         { name: "BRANCH", value: "release/99" },
         { name: "DEPLOY_ENV", value: "prod" },
@@ -484,7 +484,7 @@ describe("runHistory", () => {
     const triggerBuild = mock(async () => ({
       queueUrl: "https://jenkins.example.com/queue/item/123/",
     }));
-    const getJobStatus = mock(async () => ({ lastBuildNumber: 99 }));
+    const getJobStatus = mock(async () => ({ buildNumber: 99 }));
     const client = {
       listBuildHistory,
       triggerBuild,

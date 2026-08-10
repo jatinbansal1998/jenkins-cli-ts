@@ -96,6 +96,33 @@ describe("status formatting", () => {
     expect(message).not.toContain("Deploy");
   });
 
+  test("shows the trigger and a day-month-year start time", () => {
+    const message = formatStatusDetails(
+      {
+        // 2026-08-07T16:23:22 in the local timezone.
+        timestampMs: new Date(2026, 7, 7, 16, 23, 22).getTime(),
+        durationMs: 93_000,
+        triggeredBy: "jatin bansal",
+      },
+      "https://jenkins.example/job/demo/156/",
+    );
+
+    expect(message).toContain("Started:");
+    expect(message).toContain("7 August 2026");
+    expect(message).not.toContain("8/7/2026");
+    expect(message).toContain("By:");
+    expect(message).toContain("jatin bansal");
+  });
+
+  test("omits the trigger when Jenkins reported no cause", () => {
+    const message = formatStatusDetails(
+      { durationMs: 93_000 },
+      "https://jenkins.example/job/demo/156/",
+    );
+
+    expect(message).not.toContain("By:");
+  });
+
   test("formats stage details with a single label", () => {
     const message = formatStatusDetails(
       {
