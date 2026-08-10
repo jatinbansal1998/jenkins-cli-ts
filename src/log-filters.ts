@@ -10,10 +10,18 @@ type LogLineTransformOptions = {
   noTimestamps: boolean;
 };
 
-const CONCEALED_JENKINS_METADATA = /\x1b\[8mha:\/{4}.*?\x1b\[0m/g;
-const OSC_SEQUENCE = /\x1b\][^\x07]*(?:\x07|\x1b\\)/g;
-const CSI_SEQUENCE = /\x1b\[[0-?]*[ -/]*[@-~]/g;
-const ESC_SEQUENCE = /\x1b[@-_]/g;
+const ESC = "\u001b";
+const BEL = "\u0007";
+const CONCEALED_JENKINS_METADATA = new RegExp(
+  `${ESC}\\[8mha:/{4}.*?${ESC}\\[0m`,
+  "g",
+);
+const OSC_SEQUENCE = new RegExp(
+  `${ESC}\\][^${BEL}]*(?:${BEL}|${ESC}\\\\)`,
+  "g",
+);
+const CSI_SEQUENCE = new RegExp(`${ESC}\\[[0-?]*[ -/]*[@-~]`, "g");
+const ESC_SEQUENCE = new RegExp(`${ESC}[@-_]`, "g");
 const LOG_TIMESTAMP_PREFIX =
   /^\[\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})\]\s?/;
 
@@ -145,7 +153,7 @@ export function transformLogLine(
       .replace(OSC_SEQUENCE, "")
       .replace(CSI_SEQUENCE, "")
       .replace(ESC_SEQUENCE, "")
-      .replaceAll("\x1b", "");
+      .replaceAll(ESC, "");
     if (/^\[Pipeline\](?:\s|$)/.test(stripLogTimestamp(transformed))) {
       return null;
     }

@@ -178,7 +178,7 @@ export function registerBuildCommands(
               stageId: optionalString(argv.stageId),
               failed: Boolean(argv.failed),
               plain: Boolean(argv.plain),
-              noTimestamps: Boolean(argv.noTimestamps),
+              noTimestamps: argv.timestamps === false,
               grep: optionalString(argv.grep),
               context:
                 typeof argv.context === "number" ? argv.context : undefined,
@@ -306,6 +306,10 @@ function configureLogsOptions(yargsInstance: Argv): Argv {
     .option("plain", {
       type: "boolean",
       describe: "Strip ANSI, Jenkins metadata, and Pipeline framing",
+    })
+    .option("timestamps", {
+      type: "boolean",
+      hidden: true,
     })
     .option("no-timestamps", {
       type: "boolean",

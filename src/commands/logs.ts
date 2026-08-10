@@ -1028,7 +1028,7 @@ function createPostProcessingEmitter(
       const carried = partial;
       const lines = splitLogLines(`${carried?.text ?? ""}${event.text}`);
       partial = undefined;
-      for (const [index, text] of lines.entries()) {
+      for (const [index, lineText] of lines.entries()) {
         const lineEvent =
           index === 0 && carried
             ? {
@@ -1037,8 +1037,8 @@ function createPostProcessingEmitter(
                 identity: carried.event.identity ?? event.identity,
               }
             : event;
-        const line = { text, event: lineEvent };
-        if (/(?:\r\n|\n|\r)$/.test(text)) {
+        const line = { text: lineText, event: lineEvent };
+        if (/(?:\r\n|\n|\r)$/.test(lineText)) {
           processLine(line);
         } else {
           partial = line;

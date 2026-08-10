@@ -1493,7 +1493,7 @@ describe.skipIf(!integrationEnabled)(
           "1",
           "--no-follow",
         ]);
-        expect(queried.stdout).toBe(
+        expect(queried.stdout.replaceAll("\r\n", "\n")).toBe(
           [
             "pipeline-logs-context-before",
             "pipeline-logs-context-target",

@@ -119,6 +119,11 @@ describe("compiled CLI", () => {
     expect(build.output).toContain("jenkins-cli build");
     expect(build.output).toContain("--param");
     expect(build.output).toContain("--watch");
+
+    const logs = await runCompiled(["logs", "--no-timestamps", "--help"]);
+    expect(logs.exitCode).toBe(0);
+    expect(logs.output).toContain("--no-timestamps");
+    expect(logs.output).not.toContain("Unknown argument: timestamps");
   });
 
   test("renders the full compiled command reference", async () => {
