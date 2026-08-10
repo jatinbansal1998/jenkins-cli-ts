@@ -11,19 +11,14 @@ type LogLineTransformOptions = {
 };
 
 const ESC = "\u001b";
-const BEL = "\u0007";
 const CONCEALED_JENKINS_METADATA = new RegExp(
   `${ESC}\\[8mha:/{4}.*?${ESC}\\[0m`,
   "g",
 );
-const OSC_SEQUENCE = new RegExp(
-  `${ESC}\\][^${BEL}]*(?:${BEL}|${ESC}\\\\)`,
-  "g",
-);
-const CSI_SEQUENCE = new RegExp(`${ESC}\\[[0-?]*[ -/]*[@-~]`, "g");
-const ESC_SEQUENCE = new RegExp(`${ESC}[@-_]`, "g");
+// Covers bracketed ISO-8601 stamps and Timestamper's default [HH:mm:ss] form,
+// with up to two separator spaces.
 const LOG_TIMESTAMP_PREFIX =
-  /^\[\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})\]\s?/;
+  /^\[(?:\d{4}-\d{2}-\d{2}T)?\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})?\] {0,2}/;
 
 export function parseSinceCutoff(value: string, nowMs: number): number {
   const input = value.trim();
@@ -148,12 +143,11 @@ export function transformLogLine(
   let transformed = body;
 
   if (options.plain) {
-    transformed = transformed
-      .replace(CONCEALED_JENKINS_METADATA, "")
-      .replace(OSC_SEQUENCE, "")
-      .replace(CSI_SEQUENCE, "")
-      .replace(ESC_SEQUENCE, "")
-      .replaceAll(ESC, "");
+    // The concealed-metadata replace must run before the ANSI strip: it needs
+    // the ESC[8m…ESC[0m framing intact to locate the ha:// payload.
+    transformed = Bun.stripANSI(
+      transformed.replace(CONCEALED_JENKINS_METADATA, ""),
+    );
     if (/^\[Pipeline\](?:\s|$)/.test(stripLogTimestamp(transformed))) {
       return null;
     }

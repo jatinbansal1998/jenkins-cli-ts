@@ -99,6 +99,39 @@ describe("log filters", () => {
     ).toBeNull();
   });
 
+  test("plain output keeps visible text between OSC sequences", () => {
+    expect(
+      transformLogLine(
+        "see \x1b]8;;https://x/report\x1b\\Report\x1b]8;;\x1b\\ done\n",
+        { plain: true, noTimestamps: false },
+      ),
+    ).toBe("see Report done\n");
+  });
+
+  test("plain drops Pipeline framing behind [HH:mm:ss] timestamp prefixes", () => {
+    expect(
+      transformLogLine("[12:00:00] [Pipeline] sh\n", {
+        plain: true,
+        noTimestamps: false,
+      }),
+    ).toBeNull();
+  });
+
+  test("no-timestamps strips [HH:mm:ss] prefixes and double-space separators", () => {
+    expect(
+      transformLogLine("[12:00:00] output\n", {
+        plain: false,
+        noTimestamps: true,
+      }),
+    ).toBe("output\n");
+    expect(
+      transformLogLine("[2026-08-10T12:34:56.789Z]  output\n", {
+        plain: false,
+        noTimestamps: true,
+      }),
+    ).toBe("output\n");
+  });
+
   test("no-timestamps removes only a leading bracketed ISO-8601 prefix", () => {
     expect(
       transformLogLine("[2026-08-10T12:34:56.789+05:30] output\r\n", {

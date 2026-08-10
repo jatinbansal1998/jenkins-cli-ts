@@ -112,6 +112,10 @@ type LogEmitter = {
   }) => void;
 };
 
+// flush drains any buffered partial line on paths that never reach complete
+// (cancellation, streaming errors).
+type PostProcessingEmitter = LogEmitter & { flush?: () => void };
+
 type LogsDependencies = {
   select: typeof select;
   confirm: typeof confirm;
@@ -228,6 +232,7 @@ async function runLogsCore(
       });
     }
   } finally {
+    outputEmitter.flush?.();
     localCancellation?.cleanup();
   }
 
@@ -881,6 +886,19 @@ function validateLogOptions(options: LogsOptions): void {
       "INVALID_LOG_SELECTOR",
     );
   }
+  if (
+    options.jsonl &&
+    (options.plain || options.noTimestamps || options.grep !== undefined)
+  ) {
+    throw new CliError(
+      "Cannot combine --jsonl with --plain, --no-timestamps, or --grep.",
+      [
+        "The JSONL stream reports raw console text with exact byte offsets.",
+        "Filter it downstream (for example with jq), or drop --jsonl.",
+      ],
+      "INVALID_USAGE",
+    );
+  }
   if (options.tail !== undefined) {
     tailLogLines("", options.tail);
   }
@@ -974,14 +992,18 @@ function createTextEmitter(
 function createPostProcessingEmitter(
   emitter: LogEmitter,
   options: EffectiveLogOptions,
-): LogEmitter {
+): PostProcessingEmitter {
   if (!options.plain && !options.noTimestamps && !options.grep) {
     return emitter;
   }
 
   type ChunkEvent = Parameters<LogEmitter["chunk"]>[0];
   type BufferedLine = { text: string; event: ChunkEvent };
-  let partial: BufferedLine | undefined;
+  // Pipeline streaming interleaves chunks from several node logs through this
+  // one emitter. A line belongs to exactly one node, so partial-line assembly
+  // is keyed per node; grep context is shared because within a stage every
+  // step is its own node and context must span adjacent steps.
+  const partials = new Map<string, BufferedLine>();
   let before: BufferedLine[] = [];
   let after = 0;
 
@@ -1021,13 +1043,20 @@ function createPostProcessingEmitter(
       before.shift();
     }
   };
+  const flush = (): void => {
+    for (const partial of partials.values()) {
+      processLine(partial);
+    }
+    partials.clear();
+  };
 
   return {
     start: (event) => emitter.start(event),
     chunk: (event) => {
-      const carried = partial;
+      const key = event.identity?.nodeId ?? "";
+      const carried = partials.get(key);
       const lines = splitLogLines(`${carried?.text ?? ""}${event.text}`);
-      partial = undefined;
+      partials.delete(key);
       for (const [index, lineText] of lines.entries()) {
         const lineEvent =
           index === 0 && carried
@@ -1038,20 +1067,20 @@ function createPostProcessingEmitter(
               }
             : event;
         const line = { text: lineText, event: lineEvent };
-        if (/(?:\r\n|\n|\r)$/.test(lineText)) {
+        // The final line is carried even when it ends in a lone \r: the \n
+        // half of a \r\n pair may arrive in the next chunk.
+        if (index < lines.length - 1 || lineText.endsWith("\n")) {
           processLine(line);
         } else {
-          partial = line;
+          partials.set(key, line);
         }
       }
     },
     complete: (event) => {
-      if (partial) {
-        processLine(partial);
-        partial = undefined;
-      }
+      flush();
       emitter.complete(event);
     },
+    flush,
   };
 }
 

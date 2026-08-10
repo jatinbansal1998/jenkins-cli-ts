@@ -191,6 +191,172 @@ describe("logs command", () => {
     expect(output.join("")).toBe("before\ntarget\nafter\n");
   });
 
+  test("keeps a CRLF split across chunk boundaries as one line", async () => {
+    const output: string[] = [];
+    const first = "a\r\nb\r";
+    const second = "\nhit\r\nc\r\nd\r\n";
+    const getConsoleChunk = mock(async (_url: string, offset: number) =>
+      offset === 0
+        ? { text: first, nextStart: Buffer.byteLength(first), hasMore: true }
+        : {
+            text: second,
+            nextStart: Buffer.byteLength(first + second),
+            hasMore: false,
+          },
+    );
+
+    await runLogs({
+      client: client({
+        getBuildStatus: mock(async () => ({
+          buildNumber: 9,
+          buildUrl,
+          building: false,
+          result: "SUCCESS",
+        })),
+        getConsoleChunk,
+      }),
+      env,
+      buildUrl,
+      follow: false,
+      grep: "hit",
+      context: 1,
+      nonInteractive: true,
+      writeText: (value) => output.push(value),
+    });
+
+    expect(output.join("")).toBe("b\r\nhit\r\nc\r\n");
+  });
+
+  test("never merges an unterminated tail with the next Pipeline node's log", async () => {
+    const output: string[] = [];
+    const getPipelineDescription = mock(async () => ({
+      stages: [
+        {
+          id: "10",
+          name: "Test",
+          status: "SUCCESS",
+          _links: { self: { href: "/node/10/wfapi/describe" } },
+        },
+      ],
+    }));
+    const getPipelineNodeDescription = mock(async () => ({
+      id: "10",
+      name: "Test",
+      status: "SUCCESS",
+      stageFlowNodes: [
+        {
+          id: "11",
+          name: "First Step",
+          status: "SUCCESS",
+          parentNodes: ["10"],
+          _links: { log: { href: "/node/11/wfapi/log" } },
+        },
+        {
+          id: "12",
+          name: "Second Step",
+          status: "SUCCESS",
+          parentNodes: ["11"],
+          _links: { log: { href: "/node/12/wfapi/log" } },
+        },
+      ],
+    }));
+    const getPipelineNodeLog = mock(async (href: string) =>
+      href.includes("/11/")
+        ? { nodeId: "11", hasMore: false, consoleUrl: "/node/11/log" }
+        : { nodeId: "12", hasMore: false, consoleUrl: "/node/12/log" },
+    );
+    const getPipelineNodeConsoleChunk = mock(async (consoleUrl: string) =>
+      consoleUrl.includes("/11/")
+        ? { text: "keep\nno-newline-tail", nextStart: 21, hasMore: false }
+        : { text: "ERROR: boom\nline3\n", nextStart: 18, hasMore: false },
+    );
+
+    await runLogs({
+      client: client({
+        getBuildStatus: mock(async () => ({
+          buildNumber: 9,
+          buildUrl,
+          building: false,
+          result: "SUCCESS",
+        })),
+        getPipelineDescription,
+        getPipelineNodeDescription,
+        getPipelineNodeLog,
+        getPipelineNodeConsoleChunk,
+      }),
+      env,
+      buildUrl,
+      stage: "Test",
+      grep: "^ERROR",
+      follow: false,
+      nonInteractive: true,
+      writeText: (value) => output.push(value),
+    });
+
+    expect(output.join("")).toBe("ERROR: boom\n");
+  });
+
+  test("flushes a buffered partial line when following is cancelled", async () => {
+    const output: string[] = [];
+    let cancelled = false;
+    const getConsoleChunk = mock(async () => {
+      cancelled = true;
+      return { text: "tail without newline", nextStart: 20, hasMore: false };
+    });
+
+    await runLogs({
+      client: client({
+        getBuildStatus: mock(async () => ({
+          buildNumber: 9,
+          buildUrl,
+          building: true,
+        })),
+        getConsoleChunk,
+      }),
+      env,
+      buildUrl,
+      follow: true,
+      plain: true,
+      poll: "1ms",
+      nonInteractive: true,
+      cancelSignal: {
+        isCancelled: () => cancelled,
+        wait: new Promise<void>(() => undefined),
+      },
+      writeText: (value) => output.push(value),
+    });
+
+    expect(output.join("")).toBe("tail without newline");
+  });
+
+  test("rejects --jsonl combined with post-processing filters", async () => {
+    for (const options of [
+      { plain: true },
+      { noTimestamps: true },
+      { grep: "x" },
+    ]) {
+      const written: string[] = [];
+      await runLogs({
+        client: client({}),
+        env,
+        buildUrl,
+        follow: false,
+        nonInteractive: true,
+        jsonl: true,
+        write: (value) => written.push(value),
+        ...options,
+      });
+      const event = JSON.parse(written.join("")) as {
+        type: string;
+        error: { code?: string };
+      };
+      expect(event.type).toBe("error");
+      expect(event.error.code).toBe("INVALID_USAGE");
+      expect(process.exitCode).toBe(1);
+      process.exitCode = 0;
+    }
+  });
+
   test("rejects invalid grep and context values before reading Jenkins", async () => {
     for (const options of [
       { grep: "[" },

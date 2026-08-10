@@ -5,7 +5,7 @@
 import { autocomplete, confirm, isCancel, select, text } from "../clack";
 import { runInteractiveSubcommandWithAnalytics } from "../analytics";
 import { resolveBuildSelector } from "../build-selector";
-import { CliError, printOk } from "../cli";
+import { CliError, printHint, printOk } from "../cli";
 import { runMenuAction } from "./menu-action";
 import {
   jsonBuild,
@@ -329,11 +329,11 @@ async function runStatusJson(options: StatusOptions): Promise<void> {
 
       if (target.kind === "build") {
         await recordRecentJob({ env: options.env, jobUrl: target.jobUrl });
-        const [status, jobStatus] = await Promise.all([
+        const [status, disabled] = await Promise.all([
           options.client.getBuildStatus(target.buildUrl),
-          options.client.getJobStatus(target.jobUrl).catch(() => undefined),
+          readJobDisabled(options.client, target.jobUrl),
         ]);
-        const jobState = getJobState(jobStatus?.disabled);
+        const jobState = getJobState(disabled);
         return {
           job: target.jobLabel,
           ...(jobState ? { jobState } : {}),
@@ -372,7 +372,10 @@ async function runExactStatus(options: StatusOptions): Promise<void> {
   }
 
   await recordRecentJob({ env: options.env, jobUrl: target.jobUrl });
-  const status = await options.client.getBuildStatus(target.buildUrl);
+  const [status, disabled] = await Promise.all([
+    options.client.getBuildStatus(target.buildUrl),
+    readJobDisabled(options.client, target.jobUrl),
+  ]);
   const result = status.building ? "RUNNING" : status.result || "UNKNOWN";
   const buildUrl = status.buildUrl || target.buildUrl;
   const buildNumber = status.buildNumber ?? target.buildNumber;
@@ -391,7 +394,12 @@ async function runExactStatus(options: StatusOptions): Promise<void> {
     toStatusDetails(status, { knownTotalStages }),
     buildUrl,
   );
-  printOk(details ? `${summary}\n${details}` : summary);
+  printOk(
+    appendJobState(
+      details ? `${summary}\n${details}` : summary,
+      getJobState(disabled),
+    ),
+  );
 
   if (!status.building && (result === "SUCCESS" || result === "UNSTABLE")) {
     await persistKnownTotalStages({
@@ -473,6 +481,22 @@ async function runStatusOnce(options: StatusOptions): Promise<void> {
       nonInteractive: true,
       suppressExitCode: false,
     });
+  }
+}
+
+async function readJobDisabled(
+  client: JenkinsClient,
+  jobUrl: string,
+): Promise<boolean | undefined> {
+  try {
+    return await client.getJobDisabled(jobUrl);
+  } catch (error) {
+    printHint(
+      `Could not determine job state: ${
+        error instanceof Error ? error.message : String(error)
+      }`,
+    );
+    return undefined;
   }
 }
 

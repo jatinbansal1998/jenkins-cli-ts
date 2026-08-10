@@ -1004,6 +1004,68 @@ async function captureCliError(promise: Promise<unknown>): Promise<CliError> {
 }
 
 describe("JenkinsClient listBuildHistory", () => {
+  test("keeps hasNext when the lookahead entry is malformed", async () => {
+    const fetchMock = mock(async (input: FetchInput) => {
+      const url = String(input);
+      if (url.includes("{0,3}")) {
+        return Response.json({
+          builds: [
+            { number: 5, url: "https://jenkins.example.com/job/my-job/5/" },
+            { number: 4, url: "https://jenkins.example.com/job/my-job/4/" },
+            { number: 3 },
+          ],
+        });
+      }
+      return new Response("", { status: 404 });
+    });
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+    const client = new JenkinsClient({
+      baseUrl: "https://jenkins.example.com",
+      user: "user",
+      apiToken: "token",
+      timeoutMs: 1_000,
+    });
+
+    const page = await client.listBuildHistory(
+      "https://jenkins.example.com/job/my-job/",
+      { offset: 0, limit: 2 },
+    );
+    expect(page.hasNext).toBe(true);
+    expect(page.builds.map((build) => build.buildNumber)).toEqual([5, 4]);
+  });
+
+  test("never promotes the lookahead build into the current page", async () => {
+    const fetchMock = mock(async (input: FetchInput) => {
+      const url = String(input);
+      if (url.includes("{0,3}")) {
+        return Response.json({
+          builds: [
+            { number: 5, url: "https://jenkins.example.com/job/my-job/5/" },
+            { number: 4 },
+            { number: 3, url: "https://jenkins.example.com/job/my-job/3/" },
+          ],
+        });
+      }
+      return new Response("", { status: 404 });
+    });
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+    const client = new JenkinsClient({
+      baseUrl: "https://jenkins.example.com",
+      user: "user",
+      apiToken: "token",
+      timeoutMs: 1_000,
+    });
+
+    const page = await client.listBuildHistory(
+      "https://jenkins.example.com/job/my-job/",
+      { offset: 0, limit: 2 },
+    );
+    expect(page.hasNext).toBe(true);
+    expect(page.builds.map((build) => build.buildNumber)).toEqual([5]);
+  });
+
   test("returns paginated build history with failed step details", async () => {
     const fetchMock = mock(async (input: FetchInput, _init?: FetchInit) => {
       const url = String(input);
