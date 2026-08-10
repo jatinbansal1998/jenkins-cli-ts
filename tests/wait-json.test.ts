@@ -88,6 +88,7 @@ describe("wait --json", () => {
               sha: "a1b2c3d4",
             },
           ],
+          triggeredBy: "Jane Doe",
         })),
       }),
       env,
@@ -118,6 +119,7 @@ describe("wait --json", () => {
       branch: "main",
       parameters: [{ name: "BRANCH", value: "main" }],
       revisions: [{ repo: "api", sha: "a1b2c3d4" }],
+      triggeredBy: "Jane Doe",
     });
     expect(typeof parsed.data.waitedMs).toBe("number");
     expect(process.exitCode).toBe(0);

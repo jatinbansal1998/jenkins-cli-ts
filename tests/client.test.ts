@@ -420,7 +420,7 @@ describe("JenkinsClient pipeline stage cloning", () => {
       const url = String(input);
       if (
         url ===
-        "https://jenkins.example.com/job/my-job/api/json?tree=builds[number,url,result,building,timestamp,duration,estimatedDuration,actions[parameters[name,value],_class,lastBuiltRevision[SHA1,branch[name]],remoteUrls,causes[_class,shortDescription,userId,userName]]]"
+        "https://jenkins.example.com/job/my-job/api/json?tree=builds[number,url,result,building,timestamp,duration,estimatedDuration,actions[parameters[name,value],_class,lastBuiltRevision[SHA1,branch[name]],remoteUrls,causes[shortDescription,userId,userName]]]"
       ) {
         return new Response(
           JSON.stringify({
@@ -572,7 +572,6 @@ describe("JenkinsClient build transport", () => {
               _class: "hudson.model.CauseAction",
               causes: [
                 {
-                  _class: "hudson.model.Cause$UserIdCause",
                   shortDescription: "Started by user Jatin Bansal",
                   userId: "jatin",
                   userName: "Jatin Bansal",
@@ -593,7 +592,7 @@ describe("JenkinsClient build transport", () => {
 
     expect(status.triggeredBy).toBe("Jatin Bansal");
     expect(String(fetchMock.mock.calls[0]?.[0])).toContain(
-      "causes[_class,shortDescription,userId,userName]",
+      "causes[shortDescription,userId,userName]",
     );
   });
 
@@ -610,7 +609,6 @@ describe("JenkinsClient build transport", () => {
               _class: "hudson.model.CauseAction",
               causes: [
                 {
-                  _class: "hudson.triggers.TimerTrigger$TimerTriggerCause",
                   shortDescription: "Started by timer",
                 },
               ],
@@ -732,7 +730,7 @@ describe("JenkinsClient build transport", () => {
     ]);
     expect(fetchMock).toHaveBeenCalledTimes(2);
     expect(String(fetchMock.mock.calls[0]?.[0])).toContain(
-      "actions[parameters[name,value],_class,lastBuiltRevision[SHA1,branch[name]],remoteUrls,causes[_class,shortDescription,userId,userName]]",
+      "actions[parameters[name,value],_class,lastBuiltRevision[SHA1,branch[name]],remoteUrls,causes[shortDescription,userId,userName]]",
     );
   });
 
@@ -1032,7 +1030,7 @@ describe("JenkinsClient listBuildHistory", () => {
       const url = String(input);
       if (
         url ===
-        "https://jenkins.example.com/job/my-job/api/json?tree=builds[number,url,result,building,timestamp,duration,estimatedDuration,actions[parameters[name,value],_class,lastBuiltRevision[SHA1,branch[name]],remoteUrls,causes[_class,shortDescription,userId,userName]]]"
+        "https://jenkins.example.com/job/my-job/api/json?tree=builds[number,url,result,building,timestamp,duration,estimatedDuration,actions[parameters[name,value],_class,lastBuiltRevision[SHA1,branch[name]],remoteUrls,causes[shortDescription,userId,userName]]]"
       ) {
         return new Response(
           JSON.stringify({

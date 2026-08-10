@@ -61,6 +61,7 @@ describe("wait command", () => {
       timestampMs: 1700000000000,
       durationMs: 25_000,
       stages: [{ id: "1", name: "Deploy", status: "UNSTABLE" }],
+      triggeredBy: "timer",
     }));
     const getBuildStatus = mock(async () => {
       throw new Error("should not fetch build status for completed build");
@@ -83,6 +84,7 @@ describe("wait command", () => {
       result: "UNSTABLE",
       buildNumber: 42,
       buildUrl: "https://jenkins.example.com/job/api/42/",
+      triggeredBy: "timer",
     });
     expect(getJobStatus).toHaveBeenCalledTimes(1);
     expect(getBuildStatus).toHaveBeenCalledTimes(0);

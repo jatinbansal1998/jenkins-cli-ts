@@ -54,7 +54,6 @@ type JenkinsApiGitRevision = {
 };
 
 export type JenkinsApiBuildCause = {
-  _class?: string;
   shortDescription?: string;
   userId?: string;
   userName?: string;

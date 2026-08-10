@@ -1352,7 +1352,7 @@ function isBuildResourceContext(context: string): boolean {
 const CLOUDBEES_FOLDER_CLASS = "com.cloudbees.hudson.plugins.folder.Folder";
 const GIT_BUILD_DATA_CLASS = "hudson.plugins.git.util.BuildData";
 const BUILD_ACTION_FIELDS =
-  "parameters[name,value],_class,lastBuiltRevision[SHA1,branch[name]],remoteUrls,causes[_class,shortDescription,userId,userName]";
+  "parameters[name,value],_class,lastBuiltRevision[SHA1,branch[name]],remoteUrls,causes[shortDescription,userId,userName]";
 const BUILD_HISTORY_FIELDS = `number,url,result,building,timestamp,duration,estimatedDuration,actions[${BUILD_ACTION_FIELDS}]`;
 const BUILD_DETAILS_FIELDS = `${BUILD_HISTORY_FIELDS},queueId`;
 

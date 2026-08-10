@@ -450,7 +450,12 @@ describe.skipIf(!integrationEnabled)(
         ).toMatchObject({
           ok: true,
           command: "wait",
-          data: { build: { number: first.data.buildNumber } },
+          data: {
+            build: {
+              number: first.data.buildNumber,
+              triggeredBy: "integration-test",
+            },
+          },
         });
 
         const logs = await runCli(home, [

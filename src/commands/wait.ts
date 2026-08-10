@@ -71,6 +71,7 @@ type WaitResult = {
   parameters?: JenkinsBuildParameter[];
   branch?: string;
   revisions?: JenkinsRevision[];
+  triggeredBy?: string;
   hadStageInfo?: boolean;
 };
 
@@ -184,6 +185,7 @@ async function runWaitJson(options: WaitOptions): Promise<WaitResult> {
         parameters: result.parameters,
         branch: result.branch,
         revisions: result.revisions,
+        triggeredBy: result.triggeredBy,
       }),
       waitedMs,
     };
@@ -335,6 +337,7 @@ export async function waitForBuild(options: {
             parameters: initialStatus.parameters,
             branch: initialStatus.branch,
             revisions: initialStatus.revisions,
+            triggeredBy: initialStatus.triggeredBy,
             hadStageInfo: Boolean(initialStatus.stages?.length),
           }),
         });
@@ -519,6 +522,7 @@ export async function waitForBuild(options: {
               parameters: status.parameters,
               branch: status.branch,
               revisions: status.revisions,
+              triggeredBy: status.triggeredBy,
               hadStageInfo: Boolean(status.stages?.length),
             }),
           });
@@ -589,6 +593,7 @@ export async function waitForBuild(options: {
                 parameters: status.parameters,
                 branch: status.branch,
                 revisions: status.revisions,
+                triggeredBy: status.triggeredBy,
                 hadStageInfo: Boolean(status.stages?.length),
               }),
             });
