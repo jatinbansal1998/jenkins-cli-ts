@@ -410,7 +410,7 @@ describe("JenkinsClient pipeline stage cloning", () => {
       const url = String(input);
       if (
         url ===
-        "https://jenkins.example.com/job/my-job/api/json?tree=builds[number,url,result,building,timestamp,duration,estimatedDuration,actions[parameters[name,value],_class,lastBuiltRevision[SHA1,branch[name]],remoteUrls,causes[shortDescription,userId,userName]]]"
+        "https://jenkins.example.com/job/my-job/api/json?tree=builds[number,url,result,building,timestamp,duration,estimatedDuration,actions[parameters[name,value],_class,lastBuiltRevision[SHA1,branch[name]],remoteUrls,causes[shortDescription,userId,userName]]]{0,2}"
       ) {
         return new Response(
           JSON.stringify({
@@ -1009,18 +1009,11 @@ describe("JenkinsClient listBuildHistory", () => {
       const url = String(input);
       if (
         url ===
-        "https://jenkins.example.com/job/my-job/api/json?tree=builds[number,url,result,building,timestamp,duration,estimatedDuration,actions[parameters[name,value],_class,lastBuiltRevision[SHA1,branch[name]],remoteUrls,causes[shortDescription,userId,userName]]]"
+        "https://jenkins.example.com/job/my-job/api/json?tree=builds[number,url,result,building,timestamp,duration,estimatedDuration,actions[parameters[name,value],_class,lastBuiltRevision[SHA1,branch[name]],remoteUrls,causes[shortDescription,userId,userName]]]{1,4}"
       ) {
         return new Response(
           JSON.stringify({
             builds: [
-              {
-                number: 103,
-                url: "https://jenkins.example.com/job/my-job/103/",
-                result: "SUCCESS",
-                timestamp: 1030,
-                duration: 10_000,
-              },
               {
                 number: 102,
                 url: "https://jenkins.example.com/job/my-job/102/",
@@ -1051,6 +1044,13 @@ describe("JenkinsClient listBuildHistory", () => {
                 result: "SUCCESS",
                 timestamp: 1010,
                 duration: 6_000,
+              },
+              {
+                number: 100,
+                url: "https://jenkins.example.com/job/my-job/100/",
+                result: "SUCCESS",
+                timestamp: 1000,
+                duration: 5_000,
               },
             ],
           }),
@@ -1133,10 +1133,9 @@ describe("JenkinsClient listBuildHistory", () => {
       },
     );
 
-    expect(page.total).toBe(3);
     expect(page.offset).toBe(1);
     expect(page.limit).toBe(2);
-    expect(page.hasNext).toBe(false);
+    expect(page.hasNext).toBe(true);
     expect(page.hasPrevious).toBe(true);
     expect(page.builds).toHaveLength(2);
     expect(page.builds[0]).toMatchObject({

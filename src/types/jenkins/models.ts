@@ -131,7 +131,6 @@ export type BuildHistoryEntry = BuildStatus & {
 
 export type BuildHistoryPage = {
   builds: BuildHistoryEntry[];
-  total: number;
   offset: number;
   limit: number;
   hasNext: boolean;

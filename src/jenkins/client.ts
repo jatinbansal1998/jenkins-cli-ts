@@ -371,9 +371,11 @@ export class JenkinsClient {
   ): Promise<BuildHistoryPage> {
     const limit = normalizePageLimit(options.limit);
     const offset = normalizePageOffset(options.offset);
+    // Jenkins ranges use an exclusive end; one lookahead build drives hasNext.
+    const rangeEnd = offset + limit + 1;
     const url = this.withJob(
       jobUrl,
-      `api/json?tree=builds[${BUILD_HISTORY_FIELDS}]`,
+      `api/json?tree=builds[${BUILD_HISTORY_FIELDS}]{${offset},${rangeEnd}}`,
     );
     const payload = await this.requestJson<JenkinsApiBuildsResponse>(
       url,
@@ -384,7 +386,7 @@ export class JenkinsClient {
     )
       .map(normalizeBuildHistoryEntry)
       .filter((entry): entry is BuildHistoryEntry => Boolean(entry));
-    const pageBuilds = normalizedBuilds.slice(offset, offset + limit);
+    const pageBuilds = normalizedBuilds.slice(0, limit);
     const enrichedBuilds = await Promise.all(
       pageBuilds.map(async (entry) => {
         const pipeline = await this.getPipelineInfo(entry.buildUrl, {
@@ -400,10 +402,9 @@ export class JenkinsClient {
 
     return {
       builds: enrichedBuilds,
-      total: normalizedBuilds.length,
       offset,
       limit,
-      hasNext: offset + limit < normalizedBuilds.length,
+      hasNext: normalizedBuilds.length > limit,
       hasPrevious: offset > 0,
     };
   }
