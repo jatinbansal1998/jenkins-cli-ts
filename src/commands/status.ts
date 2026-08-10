@@ -331,9 +331,9 @@ async function runStatusJson(options: StatusOptions): Promise<void> {
         await recordRecentJob({ env: options.env, jobUrl: target.jobUrl });
         const [status, jobStatus] = await Promise.all([
           options.client.getBuildStatus(target.buildUrl),
-          options.client.getJobStatus(target.jobUrl),
+          options.client.getJobStatus(target.jobUrl).catch(() => undefined),
         ]);
-        const jobState = getJobState(jobStatus.disabled);
+        const jobState = getJobState(jobStatus?.disabled);
         return {
           job: target.jobLabel,
           ...(jobState ? { jobState } : {}),

@@ -201,6 +201,52 @@ describe("status --json", () => {
     );
   });
 
+  test("keeps the selected build when the current job state is unavailable", async () => {
+    const sink = capture();
+    const getBuildStatus = mock(async () => ({
+      buildNumber: 17,
+      buildUrl: "https://jenkins.example.com/job/api/17/",
+      result: "FAILURE",
+      building: false,
+      revisions: [],
+    }));
+    const getJobStatus = mock(async () => {
+      throw new Error("current job status unavailable");
+    });
+
+    await runStatus({
+      client: createClient({ getBuildStatus, getJobStatus }),
+      env,
+      jobUrl: "https://jenkins.example.com/job/api/",
+      build: 17,
+      nonInteractive: true,
+      json: true,
+      write: sink.write,
+    });
+
+    const parsed = JSON.parse(sink.output()) as {
+      ok: boolean;
+      data: {
+        jobState?: string;
+        build: { number: number; url: string; result: string };
+      };
+    };
+    expect(parsed.ok).toBe(true);
+    expect(parsed.data).not.toHaveProperty("jobState");
+    expect(parsed.data.build).toMatchObject({
+      number: 17,
+      url: "https://jenkins.example.com/job/api/17/",
+      result: "FAILURE",
+      revisions: [],
+    });
+    expect(getBuildStatus).toHaveBeenCalledWith(
+      "https://jenkins.example.com/job/api/17/",
+    );
+    expect(getJobStatus).toHaveBeenCalledWith(
+      "https://jenkins.example.com/job/api",
+    );
+  });
+
   test("rejects --json combined with --watch", async () => {
     const sink = capture();
 
