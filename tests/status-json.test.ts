@@ -162,16 +162,10 @@ describe("status --json", () => {
       parameters: [{ name: "MESSAGE", value: "historical" }],
       revisions: [],
     }));
-    const getJobStatus = mock(async () => ({
-      disabled: false,
-      buildNumber: 99,
-      buildUrl: "https://jenkins.example.com/job/api/99/",
-      result: "SUCCESS",
-      building: false,
-    }));
+    const getJobDisabled = mock(async () => false);
 
     await runStatus({
-      client: createClient({ getBuildStatus, getJobStatus }),
+      client: createClient({ getBuildStatus, getJobDisabled }),
       env,
       jobUrl: "https://jenkins.example.com/job/api/",
       build: 17,
@@ -196,13 +190,16 @@ describe("status --json", () => {
     expect(getBuildStatus).toHaveBeenCalledWith(
       "https://jenkins.example.com/job/api/17/",
     );
-    expect(getJobStatus).toHaveBeenCalledWith(
+    expect(getJobDisabled).toHaveBeenCalledWith(
       "https://jenkins.example.com/job/api",
     );
   });
 
   test("keeps the selected build when the current job state is unavailable", async () => {
     const sink = capture();
+    const errorSpy = trackRestore(spyOn(console, "error")).mockImplementation(
+      () => undefined,
+    );
     const getBuildStatus = mock(async () => ({
       buildNumber: 17,
       buildUrl: "https://jenkins.example.com/job/api/17/",
@@ -210,12 +207,12 @@ describe("status --json", () => {
       building: false,
       revisions: [],
     }));
-    const getJobStatus = mock(async () => {
+    const getJobDisabled = mock(async () => {
       throw new Error("current job status unavailable");
     });
 
     await runStatus({
-      client: createClient({ getBuildStatus, getJobStatus }),
+      client: createClient({ getBuildStatus, getJobDisabled }),
       env,
       jobUrl: "https://jenkins.example.com/job/api/",
       build: 17,
@@ -242,8 +239,11 @@ describe("status --json", () => {
     expect(getBuildStatus).toHaveBeenCalledWith(
       "https://jenkins.example.com/job/api/17/",
     );
-    expect(getJobStatus).toHaveBeenCalledWith(
+    expect(getJobDisabled).toHaveBeenCalledWith(
       "https://jenkins.example.com/job/api",
+    );
+    expect(errorSpy).toHaveBeenCalledWith(
+      expect.stringContaining("Could not determine job state"),
     );
   });
 

@@ -410,7 +410,7 @@ describe("JenkinsClient pipeline stage cloning", () => {
       const url = String(input);
       if (
         url ===
-        "https://jenkins.example.com/job/my-job/api/json?tree=builds[number,url,result,building,timestamp,duration,estimatedDuration,actions[parameters[name,value],_class,lastBuiltRevision[SHA1,branch[name]],remoteUrls,causes[shortDescription,userId,userName]]]{0,2}"
+        "https://jenkins.example.com/job/my-job/api/json?tree=builds[number,url,result,building,timestamp,duration,estimatedDuration,actions[parameters[name,value],_class,lastBuiltRevision[SHA1,branch[name]],remoteUrls,causes[shortDescription,userId,userName]]]{0,2},lastBuild[number]"
       ) {
         return new Response(
           JSON.stringify({
@@ -1004,12 +1004,170 @@ async function captureCliError(promise: Promise<unknown>): Promise<CliError> {
 }
 
 describe("JenkinsClient listBuildHistory", () => {
+  test("keeps hasNext when the lookahead entry is malformed", async () => {
+    const fetchMock = mock(async (input: FetchInput) => {
+      const url = String(input);
+      if (url.includes("{0,3}")) {
+        return Response.json({
+          builds: [
+            { number: 5, url: "https://jenkins.example.com/job/my-job/5/" },
+            { number: 4, url: "https://jenkins.example.com/job/my-job/4/" },
+            { number: 3 },
+          ],
+        });
+      }
+      return new Response("", { status: 404 });
+    });
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+    const client = new JenkinsClient({
+      baseUrl: "https://jenkins.example.com",
+      user: "user",
+      apiToken: "token",
+      timeoutMs: 1_000,
+    });
+
+    const page = await client.listBuildHistory(
+      "https://jenkins.example.com/job/my-job/",
+      { offset: 0, limit: 2 },
+    );
+    expect(page.hasNext).toBe(true);
+    expect(page.builds.map((build) => build.buildNumber)).toEqual([5, 4]);
+  });
+
+  test("never promotes the lookahead build into the current page", async () => {
+    const fetchMock = mock(async (input: FetchInput) => {
+      const url = String(input);
+      if (url.includes("{0,3}")) {
+        return Response.json({
+          builds: [
+            { number: 5, url: "https://jenkins.example.com/job/my-job/5/" },
+            { number: 4 },
+            { number: 3, url: "https://jenkins.example.com/job/my-job/3/" },
+          ],
+        });
+      }
+      return new Response("", { status: 404 });
+    });
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+    const client = new JenkinsClient({
+      baseUrl: "https://jenkins.example.com",
+      user: "user",
+      apiToken: "token",
+      timeoutMs: 1_000,
+    });
+
+    const page = await client.listBuildHistory(
+      "https://jenkins.example.com/job/my-job/",
+      { offset: 0, limit: 2 },
+    );
+    expect(page.hasNext).toBe(true);
+    expect(page.builds.map((build) => build.buildNumber)).toEqual([5]);
+  });
+
+  test("windows client-side when the controller ignores the range spec", async () => {
+    const fetchMock = mock(async (input: FetchInput) => {
+      const url = String(input);
+      if (url.includes("{5,11}")) {
+        return Response.json({
+          builds: Array.from({ length: 12 }, (_, index) => ({
+            number: 12 - index,
+            url: `https://jenkins.example.com/job/my-job/${12 - index}/`,
+          })),
+        });
+      }
+      return new Response("", { status: 404 });
+    });
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+    const client = new JenkinsClient({
+      baseUrl: "https://jenkins.example.com",
+      user: "user",
+      apiToken: "token",
+      timeoutMs: 1_000,
+    });
+
+    const page = await client.listBuildHistory(
+      "https://jenkins.example.com/job/my-job/",
+      { offset: 5, limit: 5 },
+    );
+    expect(page.hasNext).toBe(true);
+    expect(page.builds.map((build) => build.buildNumber)).toEqual([
+      7, 6, 5, 4, 3,
+    ]);
+  });
+
+  test("windows client-side even when the ignored-range response is short", async () => {
+    const fetchMock = mock(async (input: FetchInput) => {
+      const url = String(input);
+      if (url.includes("{5,11}")) {
+        return Response.json({
+          builds: Array.from({ length: 6 }, (_, index) => ({
+            number: 6 - index,
+            url: `https://jenkins.example.com/job/my-job/${6 - index}/`,
+          })),
+          lastBuild: { number: 6 },
+        });
+      }
+      return new Response("", { status: 404 });
+    });
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+    const client = new JenkinsClient({
+      baseUrl: "https://jenkins.example.com",
+      user: "user",
+      apiToken: "token",
+      timeoutMs: 1_000,
+    });
+
+    const page = await client.listBuildHistory(
+      "https://jenkins.example.com/job/my-job/",
+      { offset: 5, limit: 5 },
+    );
+    expect(page.hasNext).toBe(false);
+    expect(page.builds.map((build) => build.buildNumber)).toEqual([1]);
+  });
+
+  test("keeps an honoured range window that happens to start mid-history", async () => {
+    const fetchMock = mock(async (input: FetchInput) => {
+      const url = String(input);
+      if (url.includes("{5,11}")) {
+        return Response.json({
+          builds: Array.from({ length: 6 }, (_, index) => ({
+            number: 15 - index,
+            url: `https://jenkins.example.com/job/my-job/${15 - index}/`,
+          })),
+          lastBuild: { number: 20 },
+        });
+      }
+      return new Response("", { status: 404 });
+    });
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+    const client = new JenkinsClient({
+      baseUrl: "https://jenkins.example.com",
+      user: "user",
+      apiToken: "token",
+      timeoutMs: 1_000,
+    });
+
+    const page = await client.listBuildHistory(
+      "https://jenkins.example.com/job/my-job/",
+      { offset: 5, limit: 5 },
+    );
+    expect(page.hasNext).toBe(true);
+    expect(page.builds.map((build) => build.buildNumber)).toEqual([
+      15, 14, 13, 12, 11,
+    ]);
+  });
+
   test("returns paginated build history with failed step details", async () => {
     const fetchMock = mock(async (input: FetchInput, _init?: FetchInit) => {
       const url = String(input);
       if (
         url ===
-        "https://jenkins.example.com/job/my-job/api/json?tree=builds[number,url,result,building,timestamp,duration,estimatedDuration,actions[parameters[name,value],_class,lastBuiltRevision[SHA1,branch[name]],remoteUrls,causes[shortDescription,userId,userName]]]{1,4}"
+        "https://jenkins.example.com/job/my-job/api/json?tree=builds[number,url,result,building,timestamp,duration,estimatedDuration,actions[parameters[name,value],_class,lastBuiltRevision[SHA1,branch[name]],remoteUrls,causes[shortDescription,userId,userName]]]{1,4},lastBuild[number]"
       ) {
         return new Response(
           JSON.stringify({

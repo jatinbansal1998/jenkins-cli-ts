@@ -81,6 +81,7 @@ export type JenkinsApiBuild = {
 
 export type JenkinsApiBuildsResponse = {
   builds?: JenkinsApiBuild[];
+  lastBuild?: { number?: number };
 };
 
 export type JenkinsApiArtifact = {

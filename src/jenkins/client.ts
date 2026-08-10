@@ -251,6 +251,15 @@ export class JenkinsClient {
     }
   }
 
+  async getJobDisabled(jobUrl: string): Promise<boolean | undefined> {
+    const url = this.withJob(jobUrl, "api/json?tree=disabled");
+    const data = await this.requestJson<JenkinsJobStatusResponse>(
+      url,
+      "job state",
+    );
+    return data.disabled;
+  }
+
   async getJobStatus(jobUrl: string): Promise<JobStatus> {
     const url = this.withJob(
       jobUrl,
@@ -373,20 +382,36 @@ export class JenkinsClient {
     const offset = normalizePageOffset(options.offset);
     // Jenkins ranges use an exclusive end; one lookahead build drives hasNext.
     const rangeEnd = offset + limit + 1;
+    // lastBuild is unaffected by the range spec; it detects below whether the
+    // controller honoured the requested window.
     const url = this.withJob(
       jobUrl,
-      `api/json?tree=builds[${BUILD_HISTORY_FIELDS}]{${offset},${rangeEnd}}`,
+      `api/json?tree=builds[${BUILD_HISTORY_FIELDS}]{${offset},${rangeEnd}},lastBuild[number]`,
     );
     const payload = await this.requestJson<JenkinsApiBuildsResponse>(
       url,
       "list build history",
     );
-    const normalizedBuilds = (
-      Array.isArray(payload.builds) ? payload.builds : []
-    )
+    const rawBuilds = Array.isArray(payload.builds) ? payload.builds : [];
+    // A controller or proxy that ignores the {start,end} range spec returns
+    // the full newest-first list, which must be windowed client-side or every
+    // offset would show page one. Detected via the lastBuild sentinel (at a
+    // non-zero offset an honoured range never starts at the newest build),
+    // with the response size as fallback when lastBuild is unavailable.
+    const rangeIgnored =
+      (offset > 0 &&
+        rawBuilds.length > 0 &&
+        typeof payload.lastBuild?.number === "number" &&
+        rawBuilds[0]?.number === payload.lastBuild.number) ||
+      rawBuilds.length > limit + 1;
+    const windowed = rangeIgnored ? rawBuilds.slice(offset) : rawBuilds;
+    // Window and lookahead must be split before normalization: a malformed
+    // entry dropped by the filter must not hide the next page or pull the
+    // lookahead build into the current one.
+    const pageBuilds = windowed
+      .slice(0, limit)
       .map(normalizeBuildHistoryEntry)
       .filter((entry): entry is BuildHistoryEntry => Boolean(entry));
-    const pageBuilds = normalizedBuilds.slice(0, limit);
     const enrichedBuilds = await Promise.all(
       pageBuilds.map(async (entry) => {
         const pipeline = await this.getPipelineInfo(entry.buildUrl, {
@@ -404,7 +429,7 @@ export class JenkinsClient {
       builds: enrichedBuilds,
       offset,
       limit,
-      hasNext: normalizedBuilds.length > limit,
+      hasNext: windowed.length > limit,
       hasPrevious: offset > 0,
     };
   }
@@ -1699,10 +1724,6 @@ function serializeUnknownValue(value: unknown): string {
 }
 
 const MAX_JENKINS_ERROR_DETAIL_LENGTH = 2_000;
-const ANSI_TERMINAL_SEQUENCE = new RegExp(
-  `${String.fromCharCode(27)}\\[[0-?]*[ -/]*[@-~]`,
-  "g",
-);
 
 async function readJenkinsErrorDetail(
   response: Response,
@@ -1764,7 +1785,7 @@ function decodeBasicHtmlEntities(value: string): string {
 }
 
 function truncateErrorDetail(value: string): string {
-  const safeValue = Array.from(value.replace(ANSI_TERMINAL_SEQUENCE, ""))
+  const safeValue = Array.from(Bun.stripANSI(value))
     .filter((character) => {
       const code = character.charCodeAt(0);
       return (

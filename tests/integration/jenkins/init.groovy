@@ -290,6 +290,7 @@ timestamps {
       echo 'pipeline-logs-context-before'
       echo "\u001B[8mha:////synthetic-metadata\u001B[0m\u001B[36mpipeline-logs-context-target\u001B[0m"
       echo 'pipeline-logs-context-after'
+      echo "pipeline-logs-osc ]8;;https://example.invalid/\\\\pipeline-logs-link-label]8;;\\\\ end"
     }
     stage('Test') {
       echo 'pipeline-logs-test-first'

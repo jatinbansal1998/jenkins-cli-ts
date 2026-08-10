@@ -445,6 +445,7 @@ describe.skipIf(!integrationEnabled)(
         const plainStatus = stripTerminalCodes(humanStatus.output);
         expect(plainStatus).toMatch(/Started: \d{1,2} [A-Z][a-z]+ \d{4},/);
         expect(plainStatus).toContain("By: integration-test");
+        expect(plainStatus).toContain("Job state: ENABLED");
 
         expect(
           parseJson(
@@ -1516,6 +1517,20 @@ describe.skipIf(!integrationEnabled)(
         expect(queried.stdout).not.toContain("[Pipeline]");
         expect(queried.stdout).not.toMatch(/^\[\d{4}-\d{2}-\d{2}T/m);
 
+        const oscPlain = await runCli(home, [
+          "logs",
+          "--build-url",
+          pipelineBuildUrl,
+          "--plain",
+          "--no-timestamps",
+          "--grep",
+          "pipeline-logs-osc",
+          "--no-follow",
+        ]);
+        expect(oscPlain.stdout.replaceAll("\r\n", "\n")).toBe(
+          "pipeline-logs-osc pipeline-logs-link-label end\n",
+        );
+
         const prepare = await runCli(home, [
           "logs",
           "--build-url",
@@ -1824,9 +1839,13 @@ describe.skipIf(!integrationEnabled)(
           ["history", "--job-url", historyJobUrl, "--offset", "5", "--json"],
           (result) => {
             const payload = JSON.parse(result.stdout) as {
-              data?: Array<{ result?: string }>;
+              data?: Array<{ number?: number; result?: string }>;
             };
-            return payload.data?.length === 5;
+            return (
+              payload.data?.length === 5 &&
+              payload.data[0]?.number === 6 &&
+              payload.data.every((build) => build.result === "SUCCESS")
+            );
           },
           30_000,
         );
