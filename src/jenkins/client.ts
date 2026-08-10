@@ -382,9 +382,11 @@ export class JenkinsClient {
     const offset = normalizePageOffset(options.offset);
     // Jenkins ranges use an exclusive end; one lookahead build drives hasNext.
     const rangeEnd = offset + limit + 1;
+    // lastBuild is unaffected by the range spec; it detects below whether the
+    // controller honoured the requested window.
     const url = this.withJob(
       jobUrl,
-      `api/json?tree=builds[${BUILD_HISTORY_FIELDS}]{${offset},${rangeEnd}}`,
+      `api/json?tree=builds[${BUILD_HISTORY_FIELDS}]{${offset},${rangeEnd}},lastBuild[number]`,
     );
     const payload = await this.requestJson<JenkinsApiBuildsResponse>(
       url,
@@ -392,10 +394,17 @@ export class JenkinsClient {
     );
     const rawBuilds = Array.isArray(payload.builds) ? payload.builds : [];
     // A controller or proxy that ignores the {start,end} range spec returns
-    // the full list; an oversized response must be windowed client-side or
-    // every offset would show page one.
-    const windowed =
-      rawBuilds.length > limit + 1 ? rawBuilds.slice(offset) : rawBuilds;
+    // the full newest-first list, which must be windowed client-side or every
+    // offset would show page one. Detected via the lastBuild sentinel (at a
+    // non-zero offset an honoured range never starts at the newest build),
+    // with the response size as fallback when lastBuild is unavailable.
+    const rangeIgnored =
+      (offset > 0 &&
+        rawBuilds.length > 0 &&
+        typeof payload.lastBuild?.number === "number" &&
+        rawBuilds[0]?.number === payload.lastBuild.number) ||
+      rawBuilds.length > limit + 1;
+    const windowed = rangeIgnored ? rawBuilds.slice(offset) : rawBuilds;
     // Window and lookahead must be split before normalization: a malformed
     // entry dropped by the filter must not hide the next page or pull the
     // lookahead build into the current one.
