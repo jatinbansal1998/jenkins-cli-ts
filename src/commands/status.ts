@@ -329,9 +329,14 @@ async function runStatusJson(options: StatusOptions): Promise<void> {
 
       if (target.kind === "build") {
         await recordRecentJob({ env: options.env, jobUrl: target.jobUrl });
-        const status = await options.client.getBuildStatus(target.buildUrl);
+        const [status, jobStatus] = await Promise.all([
+          options.client.getBuildStatus(target.buildUrl),
+          options.client.getJobStatus(target.jobUrl),
+        ]);
+        const jobState = getJobState(jobStatus.disabled);
         return {
           job: target.jobLabel,
+          ...(jobState ? { jobState } : {}),
           build: jsonBuild(status),
         };
       }

@@ -400,8 +400,17 @@ describe.skipIf(!integrationEnabled)(
           ]),
         );
         expect(second.data.buildNumber).toBeGreaterThan(first.data.buildNumber);
+        await runCli(home, ["list", "--refresh", "--json"]);
 
         for (const args of [
+          [
+            "status",
+            "--job",
+            "cli-exact",
+            "--build",
+            String(first.data.buildNumber),
+            "--json",
+          ],
           [
             "status",
             "--job-url",
@@ -416,6 +425,7 @@ describe.skipIf(!integrationEnabled)(
             ok: true,
             command: "status",
             data: {
+              jobState: "ENABLED",
               build: {
                 number: first.data.buildNumber,
                 url: first.data.buildUrl,

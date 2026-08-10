@@ -152,7 +152,7 @@ describe("status --json", () => {
     expect(parsed.data.build).toBeNull();
   });
 
-  test("returns the selected immutable build instead of fetching latest", async () => {
+  test("returns the selected immutable build with the current job state", async () => {
     const sink = capture();
     const getBuildStatus = mock(async () => ({
       buildNumber: 17,
@@ -162,9 +162,13 @@ describe("status --json", () => {
       parameters: [{ name: "MESSAGE", value: "historical" }],
       revisions: [],
     }));
-    const getJobStatus = mock(async () => {
-      throw new Error("must not fetch latest status");
-    });
+    const getJobStatus = mock(async () => ({
+      disabled: false,
+      buildNumber: 99,
+      buildUrl: "https://jenkins.example.com/job/api/99/",
+      result: "SUCCESS",
+      building: false,
+    }));
 
     await runStatus({
       client: createClient({ getBuildStatus, getJobStatus }),
@@ -177,8 +181,12 @@ describe("status --json", () => {
     });
 
     const parsed = JSON.parse(sink.output()) as {
-      data: { build: { number: number; url: string; result: string } };
+      data: {
+        jobState: string;
+        build: { number: number; url: string; result: string };
+      };
     };
+    expect(parsed.data.jobState).toBe("ENABLED");
     expect(parsed.data.build).toMatchObject({
       number: 17,
       url: "https://jenkins.example.com/job/api/17/",
@@ -188,7 +196,9 @@ describe("status --json", () => {
     expect(getBuildStatus).toHaveBeenCalledWith(
       "https://jenkins.example.com/job/api/17/",
     );
-    expect(getJobStatus).not.toHaveBeenCalled();
+    expect(getJobStatus).toHaveBeenCalledWith(
+      "https://jenkins.example.com/job/api",
+    );
   });
 
   test("rejects --json combined with --watch", async () => {
