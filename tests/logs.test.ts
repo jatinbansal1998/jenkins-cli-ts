@@ -248,7 +248,7 @@ describe("logs command", () => {
       value: true,
     });
     setLogsDependenciesForTesting({
-      select: mock(async () => cancelled) as never,
+      select: mock(async () => cancelled),
       isCancel: (value) => value === cancelled,
     });
     try {
@@ -311,8 +311,8 @@ describe("logs command", () => {
     });
     setLogsDependenciesForTesting({
       select: selectPrompt as never,
-      text: mock(async () => "1") as never,
-      confirm: confirmPrompt as never,
+      text: mock(async () => "1"),
+      confirm: confirmPrompt,
       isCancel: (_value): _value is symbol => false,
     });
     try {

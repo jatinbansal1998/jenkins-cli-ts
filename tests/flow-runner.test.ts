@@ -301,7 +301,7 @@ describe("flow runner", () => {
     resetValidatedFlowsForTesting();
     const prompts: PromptAdapter = {
       autocomplete: async () => "",
-      branchPicker: async () => CANCEL as unknown as symbol,
+      branchPicker: async () => CANCEL,
       select: async () => "",
       confirm: async () => false,
       text: async () => "",
@@ -482,14 +482,14 @@ describe("flow runner", () => {
       },
       handlers: {
         capture: ({
-          context,
+          context: captureContext,
           input,
         }: {
           context: CaptureContext;
           input?: FlowPromptValue;
         }) => {
-          context.captured = input as AutocompletePromptValue;
-          return `select:${context.captured.value}`;
+          captureContext.captured = input as AutocompletePromptValue;
+          return `select:${captureContext.captured.value}`;
         },
       },
       prompts,

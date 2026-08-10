@@ -93,9 +93,9 @@ describe("notifyBuildComplete", () => {
 
   test("swallows spawn failures entirely", async () => {
     setPlatform("darwin");
-    spawnSpy.mockImplementation((() => {
+    spawnSpy.mockImplementation(() => {
       throw new Error("osascript missing");
-    }) as unknown as typeof Bun.spawn);
+    });
 
     await expect(
       notifyBuildComplete({ message: "Build finished" }),

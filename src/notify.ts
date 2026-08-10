@@ -41,6 +41,6 @@ export async function notifyBuildComplete(
 }
 
 function escapeAppleScriptString(value: string): string {
-  const escaped = value.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+  const escaped = value.replaceAll("\\", "\\\\").replaceAll('"', '\\"');
   return `"${escaped}"`;
 }

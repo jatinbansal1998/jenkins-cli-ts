@@ -406,7 +406,7 @@ async function prepareNativeJenkins(
     fetch: () => new Response("port probe"),
   });
   const port = portProbe.port;
-  portProbe.stop(true);
+  await portProbe.stop(true);
   const jenkinsUrl = `http://127.0.0.1:${port}/jenkins`;
   const java = Bun.which("java");
   if (!java) {

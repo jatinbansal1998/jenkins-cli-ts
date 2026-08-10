@@ -8,9 +8,7 @@ import type { JenkinsJob } from "../types/jenkins";
 import { getJobDisplayName, loadJobs, resolveJobMatch } from "../jobs";
 
 export function ensureValidUrl(value: string, label: string): void {
-  try {
-    new URL(value);
-  } catch {
+  if (!URL.canParse(value)) {
     throw new CliError(`Invalid --${label} value.`, [
       `Provide a full URL like https://jenkins.example.com/job/example/.`,
     ]);

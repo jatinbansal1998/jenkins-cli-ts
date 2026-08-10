@@ -95,7 +95,7 @@ function trackRestore<T extends { mockRestore(): void }>(
   return mockWithRestore;
 }
 
-mock.module("../src/commands/list-deps", () => ({
+void mock.module("../src/commands/list-deps", () => ({
   ...realListDeps,
   listDeps: {
     ...realListDeps.listDeps,
@@ -292,9 +292,7 @@ describe("runList", () => {
     expect(loadPreferredJobsMock).toHaveBeenCalledTimes(0);
     expect(selectMock).toHaveBeenCalledTimes(1);
     expect(autocompleteMock).toHaveBeenCalledTimes(1);
-    const autocompleteCalls = autocompleteMock.mock.calls as unknown as Array<
-      Array<unknown>
-    >;
+    const autocompleteCalls = autocompleteMock.mock.calls;
     expect(autocompleteCalls[0]?.[0]).toEqual(
       expect.objectContaining({
         initialUserInput: "beta",

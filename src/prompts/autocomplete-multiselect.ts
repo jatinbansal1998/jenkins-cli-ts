@@ -8,11 +8,7 @@ import {
   symbol,
 } from "@clack/prompts";
 import { styleText } from "node:util";
-import type {
-  PromptAdapter,
-  PromptFilterOption,
-  PromptOption,
-} from "../flows/types";
+import type { PromptAdapter, PromptOption } from "../flows/types";
 import { formatFocusedOption } from "./focused-option";
 
 type AutocompleteMultiselect = NonNullable<
@@ -69,8 +65,7 @@ export const autocompleteMultiselect: AutocompleteMultiselect = async (
     multiple: true,
     placeholder: options.placeholder,
     filter: options.filter
-      ? (search, option) =>
-          options.filter?.(search, option as PromptFilterOption) ?? true
+      ? (search, option) => options.filter?.(search, option) ?? true
       : undefined,
     validate: (): string | Error | undefined => {
       if (options.required && prompt.selectedValues.length === 0) {

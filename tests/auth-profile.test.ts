@@ -285,12 +285,16 @@ describe("runAuthLogout", () => {
 
   test("asks for confirmation on interactive runs and aborts on decline", async () => {
     const messages: string[] = [];
-    const deps = makeDeps(baseConfig(), {}, {
-      confirm: async (options: { message: string }) => {
-        messages.push(options.message);
-        return false;
+    const deps = makeDeps(
+      baseConfig(),
+      {},
+      {
+        confirm: async (options: { message: string }) => {
+          messages.push(options.message);
+          return false;
+        },
       },
-    } as Partial<AuthCommandDeps>);
+    );
     await expect(
       runAuthLogout({ nonInteractive: false }, deps, () => {}),
     ).rejects.toThrow("Operation cancelled.");
@@ -303,12 +307,16 @@ describe("runAuthLogout", () => {
   test("logout --all deletes every profile after one confirmation", async () => {
     const workAccount = buildSecureStoreAccount("work", URL_A);
     const messages: string[] = [];
-    const deps = makeDeps(baseConfig(), { [workAccount]: "secret" }, {
-      confirm: async (options: { message: string }) => {
-        messages.push(options.message);
-        return true;
+    const deps = makeDeps(
+      baseConfig(),
+      { [workAccount]: "secret" },
+      {
+        confirm: async (options: { message: string }) => {
+          messages.push(options.message);
+          return true;
+        },
       },
-    } as Partial<AuthCommandDeps>);
+    );
     const out = collect();
     await runAuthLogout({ all: true, nonInteractive: false }, deps, out.write);
     expect(messages).toHaveLength(1);
@@ -365,11 +373,15 @@ describe("profile delete compatibility", () => {
   });
 
   test("fails strictly when the secure store is inaccessible", async () => {
-    const deps = makeDeps(baseConfig(), {}, {
-      getToken: async () => {
-        throw new Error("keyring locked");
+    const deps = makeDeps(
+      baseConfig(),
+      {},
+      {
+        getToken: async () => {
+          throw new Error("keyring locked");
+        },
       },
-    } as Partial<AuthCommandDeps>);
+    );
     await expect(
       runProfileDelete({ name: "work", nonInteractive: true }, deps, () => {}),
     ).rejects.toThrow("Unable to access the OS secure store");

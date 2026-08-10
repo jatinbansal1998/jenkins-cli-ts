@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import * as clack from "../src/clack";
+import type * as clack from "../src/clack";
 import type { EnvConfig } from "../src/env";
 import {
   BRANCH_REMOVE_VALUE,
@@ -64,8 +64,8 @@ const textPrompt = ((options: Parameters<typeof clack.text>[0]) =>
   textMock(options)) as typeof clack.text;
 const passwordPrompt = ((options: Parameters<typeof clack.password>[0]) =>
   passwordMock(options)) as typeof clack.password;
-const isCancelPrompt = ((value: unknown): value is symbol =>
-  Boolean(isCancelMock(value))) as typeof clack.isCancel;
+const isCancelPrompt = (value: unknown): value is symbol =>
+  Boolean(isCancelMock(value));
 const spinnerPrompt = (() => spinnerMock()) as () => WatchSpinner;
 
 const runCancelMock = mock(async (..._args: unknown[]) => undefined);
@@ -282,9 +282,7 @@ describe("build command navigation", () => {
       watch: false,
     });
 
-    const selectCalls = selectMock.mock.calls as unknown as Array<
-      Array<unknown>
-    >;
+    const selectCalls = selectMock.mock.calls;
     expect(selectCalls[0]?.[0]).toEqual(
       expect.objectContaining({
         message: expect.stringContaining("Build mode"),
@@ -402,9 +400,7 @@ describe("build command navigation", () => {
     expect(triggerBuild).toHaveBeenCalledTimes(1);
     expect(triggerBuild).toHaveBeenCalledWith(NORMALIZED_JOB_URL, {});
     expect(branchPickerMock).toHaveBeenCalledTimes(1);
-    const selectCalls = selectMock.mock.calls as unknown as Array<
-      Array<unknown>
-    >;
+    const selectCalls = selectMock.mock.calls;
     expect(selectCalls[1]?.[0]).toEqual(
       expect.objectContaining({
         message: expect.stringContaining("Build mode"),

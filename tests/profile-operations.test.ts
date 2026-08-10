@@ -372,7 +372,7 @@ describe("deleteProfilesStrict", () => {
     const harness = makeHarness(config, { [WORK_ACCOUNT]: "secret" });
     await deleteProfilesStrict(["work"], harness.deps);
     const written = harness.config();
-    expect(written?.profiles.home).toEqual(config.profiles.home!);
+    expect(written?.profiles.home).toEqual(config.profiles.home);
     expect(written?.debug).toBe(true);
     expect(written?.analyticsDisabled).toBe(true);
   });
@@ -391,7 +391,7 @@ describe("deleteAllProfiles", () => {
       [WORK_ACCOUNT]: "secret",
     });
     const result = await deleteAllProfiles(harness.deps);
-    expect(result.deleted.sort()).toEqual(["home", "work"]);
+    expect(result.deleted.toSorted()).toEqual(["home", "work"]);
     expect(result.nextDefault).toBeUndefined();
     expect(harness.store.size).toBe(0);
     expect(harness.config()?.profiles).toEqual({});

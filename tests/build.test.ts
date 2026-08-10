@@ -7,7 +7,7 @@ import {
   spyOn,
   test,
 } from "bun:test";
-import * as clack from "../src/clack";
+import type * as clack from "../src/clack";
 import type { EnvConfig } from "../src/env";
 import { BUILD_WITHOUT_PARAMS_VALUE } from "../src/flows/constants";
 import type { JenkinsClient } from "../src/jenkins/client";
@@ -31,8 +31,8 @@ const spinnerMock = mock((..._args: unknown[]) => ({
 }));
 const selectPrompt = ((options: Parameters<typeof clack.select>[0]) =>
   selectMock(options)) as typeof clack.select;
-const isCancelPrompt = ((value: unknown): value is symbol =>
-  Boolean(isCancelMock(value))) as typeof clack.isCancel;
+const isCancelPrompt = (value: unknown): value is symbol =>
+  Boolean(isCancelMock(value));
 const spinnerPrompt = (() => spinnerMock()) as () => WatchSpinner;
 
 const runCancelMock = mock(async (..._args: unknown[]) => undefined);

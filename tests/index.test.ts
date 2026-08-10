@@ -218,37 +218,37 @@ describe("cli default command", () => {
   });
 });
 
-describe("cli argument routing", () => {
-  function runCli(args: string[]): {
-    exitCode: number;
-    output: string;
-  } {
-    const tempHome = fs.mkdtempSync(join(tmpdir(), "jenkins-cli-home-"));
-    try {
-      const result = Bun.spawnSync({
-        cmd: ["bun", "run", "src/index.ts", ...args],
-        cwd: process.cwd(),
-        env: {
-          ...process.env,
-          HOME: tempHome,
-          JENKINS_URL: "https://jenkins.example.com",
-          JENKINS_USER: "ci-user",
-          JENKINS_API_TOKEN: "ci-token",
-        },
-        stdout: "pipe",
-        stderr: "pipe",
-      });
-      return {
-        exitCode: result.exitCode,
-        output:
-          new TextDecoder().decode(result.stdout) +
-          new TextDecoder().decode(result.stderr),
-      };
-    } finally {
-      fs.rmSync(tempHome, { recursive: true, force: true });
-    }
+function runCli(args: string[]): {
+  exitCode: number;
+  output: string;
+} {
+  const tempHome = fs.mkdtempSync(join(tmpdir(), "jenkins-cli-home-"));
+  try {
+    const result = Bun.spawnSync({
+      cmd: ["bun", "run", "src/index.ts", ...args],
+      cwd: process.cwd(),
+      env: {
+        ...process.env,
+        HOME: tempHome,
+        JENKINS_URL: "https://jenkins.example.com",
+        JENKINS_USER: "ci-user",
+        JENKINS_API_TOKEN: "ci-token",
+      },
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    return {
+      exitCode: result.exitCode,
+      output:
+        new TextDecoder().decode(result.stdout) +
+        new TextDecoder().decode(result.stderr),
+    };
+  } finally {
+    fs.rmSync(tempHome, { recursive: true, force: true });
   }
+}
 
+describe("cli argument routing", () => {
   test("--version reports the package version and build target", () => {
     const packageJson = JSON.parse(
       fs.readFileSync(join(process.cwd(), "package.json"), "utf8"),

@@ -250,10 +250,10 @@ async function post(scenario: string, url: string): Promise<void> {
 
 function normalizeBody(body: string): string {
   return body
-    .replace(/<style>[\s\S]*?<\/style>/gi, "")
-    .replace(/<script[\s\S]*?<\/script>/gi, "")
-    .replace(/<[^>]+>/g, " ")
-    .replace(/\s+/g, " ")
+    .replaceAll(/<style>[\s\S]*?<\/style>/gi, "")
+    .replaceAll(/<script[\s\S]*?<\/script>/gi, "")
+    .replaceAll(/<[^>]+>/g, " ")
+    .replaceAll(/\s+/g, " ")
     .trim();
 }
 

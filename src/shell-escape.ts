@@ -3,5 +3,5 @@ export function shellEscape(value: string): string {
   if (value === "") {
     return "''";
   }
-  return `'${value.replace(/'/g, `'\\''`)}'`;
+  return `'${value.replaceAll("'", `'\\''`)}'`;
 }

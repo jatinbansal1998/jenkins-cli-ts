@@ -40,7 +40,12 @@ function profile(overrides: Partial<JenkinsConfig["profiles"][string]> = {}) {
   };
 }
 
-function jsonResponse(body: unknown, init: ResponseInit = {}): Response {
+function jsonResponse(
+  body: unknown,
+  init: Omit<ResponseInit, "headers"> & {
+    headers?: Record<string, string>;
+  } = {},
+): Response {
   return new Response(JSON.stringify(body), {
     status: 200,
     headers: { "content-type": "application/json", ...init.headers },

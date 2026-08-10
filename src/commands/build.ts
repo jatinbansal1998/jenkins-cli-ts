@@ -911,7 +911,7 @@ function formatNonInteractiveBuildCommand(options: {
     }
   }
 
-  const customEntries = Object.entries(options.customParams ?? {}).sort(
+  const customEntries = Object.entries(options.customParams ?? {}).toSorted(
     ([left], [right]) => left.localeCompare(right),
   );
   for (const [key, value] of customEntries) {

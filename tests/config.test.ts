@@ -42,7 +42,7 @@ async function rmInMemoryOrReal(
 const renameMock = mock(renameInMemoryOrReal);
 const rmMock = mock(rmInMemoryOrReal);
 
-mock.module("node:fs/promises", () => ({
+void mock.module("node:fs/promises", () => ({
   ...realFsPromises,
   chmod: chmodMock,
   mkdir: mkdirMock,

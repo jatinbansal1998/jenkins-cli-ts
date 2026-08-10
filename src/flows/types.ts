@@ -39,7 +39,7 @@ export type PromptOption = {
   disabled?: boolean;
 };
 
-export type PromptFilterOption = {
+type PromptFilterOption = {
   value: string;
   label?: string;
   hint?: string;

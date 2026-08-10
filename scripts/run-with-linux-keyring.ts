@@ -114,8 +114,8 @@ async function runCaptured(
     stdout: "pipe",
     stderr: "pipe",
   });
-  if (input !== undefined) subprocess.stdin.write(input);
-  subprocess.stdin.end();
+  if (input !== undefined) await subprocess.stdin.write(input);
+  await subprocess.stdin.end();
   const [exitCode, stdout, stderr] = await Promise.all([
     subprocess.exited,
     new Response(subprocess.stdout).text(),

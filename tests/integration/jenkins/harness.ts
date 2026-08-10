@@ -94,10 +94,10 @@ export async function observeInteractiveCli(
     transcript += chunk;
   });
   let stdinEnded = false;
-  const endStdin = () => {
+  const endStdin = async () => {
     if (stdinEnded) return;
     stdinEnded = true;
-    subprocess.stdin.end();
+    await subprocess.stdin.end();
   };
 
   try {
@@ -113,8 +113,8 @@ export async function observeInteractiveCli(
           subprocess,
           scannedUpTo,
         );
-        subprocess.stdin.write(step.input);
-        subprocess.stdin.flush();
+        await subprocess.stdin.write(step.input);
+        await subprocess.stdin.flush();
       }
     }
     if (useMacOsExpect) {
@@ -129,7 +129,7 @@ export async function observeInteractiveCli(
         );
       }
     } else {
-      endStdin();
+      await endStdin();
       if (subprocess.exitCode === null) subprocess.kill();
       await subprocess.exited;
     }
@@ -140,7 +140,8 @@ export async function observeInteractiveCli(
       output: stripTerminalCodes(transcript),
     };
   } catch (error) {
-    endStdin();
+    // A failed stdin close must not mask the primary failure.
+    await endStdin().catch(() => {});
     if (subprocess.exitCode === null) {
       subprocess.kill();
     }
@@ -368,7 +369,7 @@ export function stripTerminalCodes(value: string): string {
   return value
     .replace(OSC_TERMINAL_SEQUENCE, "")
     .replace(CSI_TERMINAL_SEQUENCE, "")
-    .replace(/\r/g, "");
+    .replaceAll("\r", "");
 }
 
 export function macOsExpectScript(

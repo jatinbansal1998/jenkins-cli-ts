@@ -65,18 +65,14 @@ import type {
 } from "../types/jenkins";
 
 export type {
-  ArtifactEntry,
   BuildArtifacts,
-  BuildHistoryEntry,
   BuildHistoryPage,
   BuildStatus,
   ConsoleChunk,
   JenkinsClientOptions,
   JenkinsJob,
-  JenkinsJobLastBuild,
   JobParameterDefinition,
   JobStatus,
-  NodeSummary,
   NodesSummary,
   QueueBuildReference,
   QueueItemSummary,
@@ -537,7 +533,10 @@ export class JenkinsClient {
             break;
           }
           if (value && value.byteLength > 0) {
-            writer.write(value);
+            // write() returns a promise when the sink must flush to disk;
+            // awaiting it applies backpressure and surfaces write errors here
+            // instead of as unhandled (fatal) rejections.
+            await writer.write(value);
             bytesWritten += value.byteLength;
           }
         }
@@ -1740,12 +1739,12 @@ async function readResponseText(response: Response): Promise<string> {
 
 function normalizeJenkinsErrorBody(body: string): string {
   const withoutExecutableContent = body
-    .replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, " ")
-    .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, " ");
+    .replaceAll(/<style\b[^>]*>[\s\S]*?<\/style>/gi, " ")
+    .replaceAll(/<script\b[^>]*>[\s\S]*?<\/script>/gi, " ");
   const readable = decodeBasicHtmlEntities(
-    withoutExecutableContent.replace(/<[^>]+>/g, " "),
+    withoutExecutableContent.replaceAll(/<[^>]+>/g, " "),
   )
-    .replace(/\s+/g, " ")
+    .replaceAll(/\s+/g, " ")
     .trim();
   const jettyMessage = readable.match(
     /\bMESSAGE:\s*(.+?)(?=\s+(?:SERVLET|URI|STATUS):|$)/i,
@@ -1755,12 +1754,12 @@ function normalizeJenkinsErrorBody(body: string): string {
 
 function decodeBasicHtmlEntities(value: string): string {
   return value
-    .replace(/&nbsp;/gi, " ")
-    .replace(/&quot;/gi, '"')
-    .replace(/&#39;|&apos;/gi, "'")
-    .replace(/&lt;/gi, "<")
-    .replace(/&gt;/gi, ">")
-    .replace(/&amp;/gi, "&");
+    .replaceAll(/&nbsp;/gi, " ")
+    .replaceAll(/&quot;/gi, '"')
+    .replaceAll(/&#39;|&apos;/gi, "'")
+    .replaceAll(/&lt;/gi, "<")
+    .replaceAll(/&gt;/gi, ">")
+    .replaceAll(/&amp;/gi, "&");
 }
 
 function truncateErrorDetail(value: string): string {

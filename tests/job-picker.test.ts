@@ -1,6 +1,5 @@
 import { describe, expect, mock, test } from "bun:test";
 import type { EnvConfig } from "../src/env";
-import type { PromptAdapter } from "../src/flows/types";
 import { createJobPicker, type JobPickerDeps } from "../src/job-picker";
 import type { JenkinsJob } from "../src/types/jenkins";
 
@@ -25,14 +24,9 @@ const workerJob = jobs[1] as JenkinsJob;
 
 function createDeps(overrides: Partial<JobPickerDeps> = {}): JobPickerDeps {
   return {
-    autocomplete: mock(
-      async () => jobs[0]?.url ?? "",
-    ) as JobPickerDeps["autocomplete"],
-    autocompleteMultiselect: mock(async () =>
-      jobs.map((job) => job.url),
-    ) as JobPickerDeps["autocompleteMultiselect"],
-    isCancel: ((value: unknown) =>
-      value === CANCEL) as PromptAdapter["isCancel"],
+    autocomplete: mock(async () => jobs[0]?.url ?? ""),
+    autocompleteMultiselect: mock(async () => jobs.map((job) => job.url)),
+    isCancel: (value: unknown) => value === CANCEL,
     getSuggestedJobs: (_query, availableJobs) =>
       availableJobs.slice().reverse(),
     loadPreferredJobs: async () => jobs.slice().reverse(),
@@ -87,7 +81,7 @@ describe("shared job picker", () => {
       autocompleteMultiselect: mock(async () => [
         jobs[1]?.url ?? "",
         jobs[0]?.url ?? "",
-      ]) as JobPickerDeps["autocompleteMultiselect"],
+      ]),
     });
     const result = await createJobPicker(deps)({
       env,

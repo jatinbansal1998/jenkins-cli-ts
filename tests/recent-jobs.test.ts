@@ -46,14 +46,14 @@ const mkdirMock = mock(fs.promises.mkdir);
 const renameMock = mock(renameInMemoryOrReal);
 const rmMock = mock(rmInMemoryOrReal);
 
-mock.module("node:fs/promises", () => ({
+void mock.module("node:fs/promises", () => ({
   ...realFsPromises,
   mkdir: mkdirMock,
   rename: renameMock,
   rm: rmMock,
 }));
 
-mock.module("node:os", () => ({
+void mock.module("node:os", () => ({
   ...realOs,
   homedir: () => tempHome,
 }));

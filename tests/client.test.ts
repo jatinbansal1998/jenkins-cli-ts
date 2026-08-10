@@ -30,7 +30,7 @@ function readHeader(
     const entry = entries.find(([key]) => key.toLowerCase() === lower);
     return entry?.[1];
   }
-  const objectHeaders = headers as Record<string, string | readonly string[]>;
+  const objectHeaders = headers;
   const lower = name.toLowerCase();
   for (const [key, value] of Object.entries(objectHeaders)) {
     if (key.toLowerCase() === lower) {
@@ -70,13 +70,11 @@ describe("JenkinsClient triggerBuild", () => {
     expect(triggerCall?.[0]).toBe(
       "https://jenkins.example.com/job/my-job/buildWithParameters?delay=0sec",
     );
-    expect((triggerCall?.[1] as RequestInit | undefined)?.method).toBe("POST");
-    expect((triggerCall?.[1] as RequestInit | undefined)?.body).toBe(
-      "BRANCH=main",
+    expect(triggerCall?.[1]?.method).toBe("POST");
+    expect(triggerCall?.[1]?.body).toBe("BRANCH=main");
+    expect(readHeader(triggerCall?.[1], "Authorization")).toBe(
+      `Basic ${Buffer.from("user:token").toString("base64")}`,
     );
-    expect(
-      readHeader(triggerCall?.[1] as RequestInit | undefined, "Authorization"),
-    ).toBe(`Basic ${Buffer.from("user:token").toString("base64")}`);
   });
 
   test("resolves the queued build from Jenkins' Location header", async () => {
@@ -145,8 +143,8 @@ describe("JenkinsClient triggerBuild", () => {
     expect(triggerCall?.[0]).toBe(
       "https://jenkins.example.com/job/my-job/build?delay=0sec",
     );
-    expect((triggerCall?.[1] as RequestInit | undefined)?.method).toBe("POST");
-    expect((triggerCall?.[1] as RequestInit | undefined)?.body).toBeUndefined();
+    expect(triggerCall?.[1]?.method).toBe("POST");
+    expect(triggerCall?.[1]?.body).toBeUndefined();
   });
 
   test("refreshes crumb and retries trigger when first attempt gets 403", async () => {
@@ -194,18 +192,12 @@ describe("JenkinsClient triggerBuild", () => {
     expect(secondTriggerCall?.[0]).toBe(
       "https://jenkins.example.com/job/my-job/build?delay=0sec",
     );
-    expect(
-      readHeader(
-        firstTriggerCall?.[1] as RequestInit | undefined,
-        "Jenkins-Crumb",
-      ),
-    ).toBe("stale-crumb");
-    expect(
-      readHeader(
-        secondTriggerCall?.[1] as RequestInit | undefined,
-        "Jenkins-Crumb",
-      ),
-    ).toBe("fresh-crumb");
+    expect(readHeader(firstTriggerCall?.[1], "Jenkins-Crumb")).toBe(
+      "stale-crumb",
+    );
+    expect(readHeader(secondTriggerCall?.[1], "Jenkins-Crumb")).toBe(
+      "fresh-crumb",
+    );
   });
 
   test("keeps crumb disabled by default and posts without crumb lookup", async () => {
@@ -232,9 +224,7 @@ describe("JenkinsClient triggerBuild", () => {
     expect(triggerCall?.[0]).toBe(
       "https://jenkins.example.com/job/my-job/build?delay=0sec",
     );
-    expect(
-      readHeader(triggerCall?.[1] as RequestInit | undefined, "Jenkins-Crumb"),
-    ).toBeUndefined();
+    expect(readHeader(triggerCall?.[1], "Jenkins-Crumb")).toBeUndefined();
   });
 
   test("surfaces Jenkins' x-error without adding a mapped hint", async () => {
@@ -912,12 +902,9 @@ describe("JenkinsClient build transport", () => {
         destination,
       );
 
-      expect(
-        readHeader(
-          fetchMock.mock.calls[0]?.[1] as RequestInit | undefined,
-          "Authorization",
-        ),
-      ).toBe(`Basic ${Buffer.from("user:token").toString("base64")}`);
+      expect(readHeader(fetchMock.mock.calls[0]?.[1], "Authorization")).toBe(
+        `Basic ${Buffer.from("user:token").toString("base64")}`,
+      );
       expect(await Bun.file(destination).text()).toBe("artifact contents\n");
     } finally {
       rmSync(home, { recursive: true, force: true });
@@ -990,18 +977,10 @@ describe("JenkinsClient POST with crumb", () => {
     expect(secondStopCall?.[0]).toBe(
       "https://jenkins.example.com/job/my-job/123/stop",
     );
-    expect(
-      readHeader(
-        firstStopCall?.[1] as RequestInit | undefined,
-        "Jenkins-Crumb",
-      ),
-    ).toBe("stale-crumb");
-    expect(
-      readHeader(
-        secondStopCall?.[1] as RequestInit | undefined,
-        "Jenkins-Crumb",
-      ),
-    ).toBe("fresh-crumb");
+    expect(readHeader(firstStopCall?.[1], "Jenkins-Crumb")).toBe("stale-crumb");
+    expect(readHeader(secondStopCall?.[1], "Jenkins-Crumb")).toBe(
+      "fresh-crumb",
+    );
   });
 });
 

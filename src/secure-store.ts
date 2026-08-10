@@ -155,7 +155,7 @@ export async function deleteToken(
 function preferredOsBackend(backends: BackendInfo[]): BackendInfo | undefined {
   return backends
     .filter((backend) => backend.id in OS_BACKEND_LABELS)
-    .sort((a, b) => b.priority - a.priority)[0];
+    .toSorted((a, b) => b.priority - a.priority)[0];
 }
 
 function describeFailure(action: string, error: unknown): string {

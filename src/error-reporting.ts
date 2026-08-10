@@ -127,19 +127,19 @@ export async function captureUnexpectedError(
   adapter?: SentryAdapter,
 ): Promise<string | undefined> {
   if (error instanceof CliError) {
-    return;
+    return undefined;
   }
 
   try {
     if (resolveErrorReportingConfig().disabled) {
-      return;
+      return undefined;
     }
     const activeAdapter = adapter ?? (await loadSentryAdapter());
     if (
       !activeAdapter.isEnabled() &&
       (!initializeErrorReporting(activeAdapter) || !activeAdapter.isEnabled())
     ) {
-      return;
+      return undefined;
     }
     const eventId = activeAdapter.captureException(error);
     return (await activeAdapter.flush(FLUSH_TIMEOUT_MS)) ? eventId : undefined;
@@ -206,5 +206,5 @@ function scrubText(value: string): string {
       scrubbed = scrubbed.split(home).join("~");
     }
   }
-  return scrubbed.replace(/https?:\/\/[^\s)\]}>,]+/gi, "<redacted-url>");
+  return scrubbed.replaceAll(/https?:\/\/[^\s)\]}>,]+/gi, "<redacted-url>");
 }

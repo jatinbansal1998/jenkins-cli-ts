@@ -42,9 +42,7 @@ describe("interactive discovered parameter prompts", () => {
       options.message.includes("TAG") ? "v2" : "generic",
     );
     const password = mock(async () => "top-secret-value");
-    const confirm = mock(async (options: { message: string }) =>
-      options.message.includes("DRY_RUN") ? true : true,
-    );
+    const confirm = mock(async () => true);
     const select = mock(async () => "prod");
     const selectBranch = mock(async () => "should-not-run");
     const lines: string[] = [];
