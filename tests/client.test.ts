@@ -1066,6 +1066,38 @@ describe("JenkinsClient listBuildHistory", () => {
     expect(page.builds.map((build) => build.buildNumber)).toEqual([5]);
   });
 
+  test("windows client-side when the controller ignores the range spec", async () => {
+    const fetchMock = mock(async (input: FetchInput) => {
+      const url = String(input);
+      if (url.includes("{5,11}")) {
+        return Response.json({
+          builds: Array.from({ length: 12 }, (_, index) => ({
+            number: 12 - index,
+            url: `https://jenkins.example.com/job/my-job/${12 - index}/`,
+          })),
+        });
+      }
+      return new Response("", { status: 404 });
+    });
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+    const client = new JenkinsClient({
+      baseUrl: "https://jenkins.example.com",
+      user: "user",
+      apiToken: "token",
+      timeoutMs: 1_000,
+    });
+
+    const page = await client.listBuildHistory(
+      "https://jenkins.example.com/job/my-job/",
+      { offset: 5, limit: 5 },
+    );
+    expect(page.hasNext).toBe(true);
+    expect(page.builds.map((build) => build.buildNumber)).toEqual([
+      7, 6, 5, 4, 3,
+    ]);
+  });
+
   test("returns paginated build history with failed step details", async () => {
     const fetchMock = mock(async (input: FetchInput, _init?: FetchInit) => {
       const url = String(input);

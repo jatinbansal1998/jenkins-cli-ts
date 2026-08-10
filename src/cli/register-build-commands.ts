@@ -269,63 +269,64 @@ function configureWaitOptions(yargsInstance: Argv): Argv {
 }
 
 function configureLogsOptions(yargsInstance: Argv): Argv {
-  return addJsonLinesOption(
-    addQueueUrlOption(
-      addBuildUrlOption(addBuildOption(addJobOptions(yargsInstance))),
-    ),
-  )
-    .option("follow", {
-      type: "boolean",
-      describe: "Keep streaming logs until build completes",
-    })
-    .default("follow", undefined, "true")
-    .option("poll", {
-      type: "string",
-      describe: `Polling interval when following (e.g. ${DEFAULT_LOG_POLL_MS / 1000}s)`,
-    })
-    .option("tail", {
-      type: "number",
-      describe: "Show only the last N existing lines",
-    })
-    .option("since", {
-      type: "string",
-      describe: "Show logs after a duration or ISO-8601 timestamp",
-    })
-    .option("stage", {
-      type: "string",
-      describe: "Show logs for a uniquely named Pipeline stage",
-    })
-    .option("stage-id", {
-      type: "string",
-      describe: "Show logs for a Pipeline stage or node id",
-    })
-    .option("failed", {
-      type: "boolean",
-      describe: "Show the failed Pipeline stage and relevant error log",
-    })
-    .option("plain", {
-      type: "boolean",
-      describe: "Strip ANSI, Jenkins metadata, and Pipeline framing",
-    })
-    .option("timestamps", {
-      type: "boolean",
-      hidden: true,
-    })
-    .option("no-timestamps", {
-      type: "boolean",
-      describe: "Strip leading ISO-8601 timestamps",
-    })
-    .option("grep", {
-      type: "string",
-      describe: "Show lines matching a JavaScript regular expression",
-    })
-    .option("context", {
-      type: "number",
-      describe: "Show N lines around each --grep match",
-    })
-    .implies("context", "grep")
-    .conflicts("stage", ["stage-id", "failed"])
-    .conflicts("stage-id", ["failed"]);
+  return (
+    addJsonLinesOption(
+      addQueueUrlOption(
+        addBuildUrlOption(addBuildOption(addJobOptions(yargsInstance))),
+      ),
+    )
+      .option("follow", {
+        type: "boolean",
+        describe: "Keep streaming logs until build completes",
+      })
+      .default("follow", undefined, "true")
+      .option("poll", {
+        type: "string",
+        describe: `Polling interval when following (e.g. ${DEFAULT_LOG_POLL_MS / 1000}s)`,
+      })
+      .option("tail", {
+        type: "number",
+        describe: "Show only the last N existing lines",
+      })
+      .option("since", {
+        type: "string",
+        describe: "Show logs after a duration or ISO-8601 timestamp",
+      })
+      .option("stage", {
+        type: "string",
+        describe: "Show logs for a uniquely named Pipeline stage",
+      })
+      .option("stage-id", {
+        type: "string",
+        describe: "Show logs for a Pipeline stage or node id",
+      })
+      .option("failed", {
+        type: "boolean",
+        describe: "Show the failed Pipeline stage and relevant error log",
+      })
+      .option("plain", {
+        type: "boolean",
+        describe: "Strip ANSI, Jenkins metadata, and Pipeline framing",
+      })
+      // Registered as `timestamps` so yargs' boolean negation provides the
+      // user-facing --no-timestamps spelling.
+      .option("timestamps", {
+        type: "boolean",
+        default: true,
+        describe:
+          "Keep leading bracketed timestamps (--no-timestamps to strip)",
+      })
+      .option("grep", {
+        type: "string",
+        describe: "Show lines matching a JavaScript regular expression",
+      })
+      .option("context", {
+        type: "number",
+        describe: "Show N lines around each --grep match",
+      })
+      .conflicts("stage", ["stage-id", "failed"])
+      .conflicts("stage-id", ["failed"])
+  );
 }
 
 function configureArtifactsOptions(yargsInstance: Argv): Argv {

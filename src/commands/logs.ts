@@ -160,7 +160,7 @@ async function runLogsCore(
   options: LogsOptions,
   emitter: LogEmitter,
 ): Promise<LogsRunResult> {
-  validateLogOptions(options);
+  const grepRegex = validateLogOptions(options);
   const pollMs = parseOptionalDurationMs(
     options.poll,
     DEFAULT_LOG_POLL_MS,
@@ -186,6 +186,7 @@ async function runLogsCore(
     target,
     status.building === true,
     interactive,
+    grepRegex,
   );
   if (!effective) {
     return { cancelled: true, buildUrl: target.buildUrl };
@@ -322,6 +323,7 @@ async function resolveEffectiveOptions(
   target: ResolvedLogTarget,
   building: boolean,
   interactive: boolean,
+  grepRegex: RegExp | undefined,
 ): Promise<EffectiveLogOptions | null> {
   const effective: EffectiveLogOptions = {
     follow: options.follow !== false,
@@ -332,8 +334,7 @@ async function resolveEffectiveOptions(
     failed: options.failed,
     plain: options.plain === true,
     noTimestamps: options.noTimestamps === true,
-    grep:
-      options.grep !== undefined ? compileLogRegex(options.grep) : undefined,
+    grep: grepRegex,
     context: options.context ?? 0,
   };
   const hasExplicitMode = Boolean(
@@ -875,7 +876,7 @@ async function waitForQueuedBuild(
   }
 }
 
-function validateLogOptions(options: LogsOptions): void {
+function validateLogOptions(options: LogsOptions): RegExp | undefined {
   const selectors = [options.stage, options.stageId, options.failed]
     .map(Boolean)
     .filter(Boolean).length;
@@ -907,21 +908,21 @@ function validateLogOptions(options: LogsOptions): void {
       "Use a duration like 30m or an ISO-8601 timestamp.",
     ]);
   }
-  if (options.grep !== undefined) {
-    compileLogRegex(options.grep);
-  }
+  const grep =
+    options.grep !== undefined ? compileLogRegex(options.grep) : undefined;
   if (options.context !== undefined) {
     if (!Number.isSafeInteger(options.context) || options.context < 0) {
       throw new CliError("Invalid --context value.", [
         "Provide a non-negative integer number of lines, for example --context 2.",
       ]);
     }
-    if (options.grep === undefined) {
+    if (grep === undefined) {
       throw new CliError("--context requires --grep.", [
         "Provide a regular expression with --grep <regex>.",
       ]);
     }
   }
+  return grep;
 }
 
 function compileLogRegex(value: string): RegExp {
@@ -998,26 +999,25 @@ function createPostProcessingEmitter(
   }
 
   type ChunkEvent = Parameters<LogEmitter["chunk"]>[0];
-  type BufferedLine = { text: string; event: ChunkEvent };
   // Pipeline streaming interleaves chunks from several node logs through this
   // one emitter. A line belongs to exactly one node, so partial-line assembly
   // is keyed per node; grep context is shared because within a stage every
-  // step is its own node and context must span adjacent steps.
-  const partials = new Map<string, BufferedLine>();
-  let before: BufferedLine[] = [];
+  // step is its own node and context must span adjacent steps. Surviving
+  // lines are batched into one downstream chunk per incoming chunk; --jsonl
+  // never reaches this path, so per-line offsets are not needed.
+  const partials = new Map<string, string>();
+  let before: string[] = [];
   let after = 0;
+  let pending: string[] = [];
+  let lastEvent: ChunkEvent | undefined;
 
-  const emitLine = (line: BufferedLine): void => {
-    emitter.chunk({ ...line.event, text: line.text });
-  };
-  const processLine = (line: BufferedLine): void => {
-    const transformed = transformLogLine(line.text, options);
+  const processLine = (line: string): void => {
+    const transformed = transformLogLine(line, options);
     if (transformed === null) {
       return;
     }
-    const candidate = { ...line, text: transformed };
     if (!options.grep) {
-      emitLine(candidate);
+      pending.push(transformed);
       return;
     }
 
@@ -1025,56 +1025,54 @@ function createPostProcessingEmitter(
       transformed.replace(/(?:\r\n|\n|\r)$/, ""),
     );
     if (matches) {
-      for (const previous of before) {
-        emitLine(previous);
-      }
+      pending.push(...before, transformed);
       before = [];
-      emitLine(candidate);
       after = options.context;
       return;
     }
     if (after > 0) {
-      emitLine(candidate);
+      pending.push(transformed);
       after--;
       return;
     }
-    before.push(candidate);
-    if (before.length > options.context) {
-      before.shift();
+    if (options.context > 0) {
+      before.push(transformed);
+      if (before.length > options.context) {
+        before.shift();
+      }
     }
+  };
+  const emitPending = (): void => {
+    if (pending.length > 0 && lastEvent) {
+      emitter.chunk({ ...lastEvent, text: pending.join("") });
+    }
+    pending = [];
   };
   const flush = (): void => {
     for (const partial of partials.values()) {
       processLine(partial);
     }
     partials.clear();
+    emitPending();
   };
 
   return {
     start: (event) => emitter.start(event),
     chunk: (event) => {
+      lastEvent = event;
       const key = event.identity?.nodeId ?? "";
-      const carried = partials.get(key);
-      const lines = splitLogLines(`${carried?.text ?? ""}${event.text}`);
+      const lines = splitLogLines(`${partials.get(key) ?? ""}${event.text}`);
       partials.delete(key);
       for (const [index, lineText] of lines.entries()) {
-        const lineEvent =
-          index === 0 && carried
-            ? {
-                ...event,
-                offset: carried.event.offset,
-                identity: carried.event.identity ?? event.identity,
-              }
-            : event;
-        const line = { text: lineText, event: lineEvent };
         // The final line is carried even when it ends in a lone \r: the \n
         // half of a \r\n pair may arrive in the next chunk.
         if (index < lines.length - 1 || lineText.endsWith("\n")) {
-          processLine(line);
+          processLine(lineText);
         } else {
-          partials.set(key, line);
+          partials.set(key, lineText);
         }
       }
+      emitPending();
     },
     complete: (event) => {
       flush();

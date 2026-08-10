@@ -993,6 +993,8 @@ jenkins-cli logs --job "api-prod" --since 30m --no-follow
 jenkins-cli logs --build-url "https://jenkins.example.com/job/api-prod/184/" --stage Test
 jenkins-cli logs --build-url "https://jenkins.example.com/job/api-prod/184/" --stage-id 42
 jenkins-cli logs --job "api-prod" --failed
+jenkins-cli logs --job "api-prod" --plain --no-timestamps --no-follow
+jenkins-cli logs --job "api-prod" --grep 'ERROR|WARN' --context 2 --no-follow
 ```
 
 `--tail` prints only the last N existing lines. Combined with `--follow`, it
@@ -1001,6 +1003,16 @@ the tail. `--since` accepts a duration (`30m`, `2h`, `1d`) or an ISO-8601
 timestamp and requires timestamp metadata from the Jenkins Timestamper plugin.
 If timestamp metadata is unavailable, the command reports that capability
 instead of guessing from the visible text.
+
+`--plain` strips ANSI escape sequences and Jenkins concealed metadata, and
+drops `[Pipeline]` framing lines entirely. `--no-timestamps` removes the
+leading bracketed timestamp (ISO-8601 or `HH:mm:ss`). `--grep` keeps only
+lines matching a JavaScript regular expression; `--context N` (requires
+`--grep`) also prints N lines around each match. Filters run after
+`--tail`/`--since` select the window, so `--tail 20 --grep x` means "matches
+within the last 20 raw lines", not "the last 20 matches". These filters
+cannot be combined with `--jsonl`, whose events report raw console text with
+exact byte offsets.
 
 Pipeline stage names must resolve uniquely. For repeated stage names or
 parallel branches, the error lists stable candidate IDs; pass `--stage-id` to

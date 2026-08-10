@@ -391,10 +391,15 @@ export class JenkinsClient {
       "list build history",
     );
     const rawBuilds = Array.isArray(payload.builds) ? payload.builds : [];
+    // A controller or proxy that ignores the {start,end} range spec returns
+    // the full list; an oversized response must be windowed client-side or
+    // every offset would show page one.
+    const windowed =
+      rawBuilds.length > limit + 1 ? rawBuilds.slice(offset) : rawBuilds;
     // Window and lookahead must be split before normalization: a malformed
     // entry dropped by the filter must not hide the next page or pull the
     // lookahead build into the current one.
-    const pageBuilds = rawBuilds
+    const pageBuilds = windowed
       .slice(0, limit)
       .map(normalizeBuildHistoryEntry)
       .filter((entry): entry is BuildHistoryEntry => Boolean(entry));
@@ -415,7 +420,7 @@ export class JenkinsClient {
       builds: enrichedBuilds,
       offset,
       limit,
-      hasNext: rawBuilds.length > limit,
+      hasNext: windowed.length > limit,
       hasPrevious: offset > 0,
     };
   }

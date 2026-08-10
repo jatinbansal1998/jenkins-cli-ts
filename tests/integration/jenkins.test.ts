@@ -1839,9 +1839,13 @@ describe.skipIf(!integrationEnabled)(
           ["history", "--job-url", historyJobUrl, "--offset", "5", "--json"],
           (result) => {
             const payload = JSON.parse(result.stdout) as {
-              data?: Array<{ result?: string }>;
+              data?: Array<{ number?: number; result?: string }>;
             };
-            return payload.data?.length === 5;
+            return (
+              payload.data?.length === 5 &&
+              payload.data[0]?.number === 6 &&
+              payload.data.every((build) => build.result === "SUCCESS")
+            );
           },
           30_000,
         );
