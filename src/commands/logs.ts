@@ -11,6 +11,7 @@ import {
   splitLogLines,
   tailLogLines,
   timestampCapabilityError,
+  transformLogLine,
 } from "../log-filters";
 import {
   resolvePipelineLogSelection,
@@ -59,6 +60,10 @@ type LogsOptions = {
   stage?: string;
   stageId?: string;
   failed?: boolean;
+  plain?: boolean;
+  noTimestamps?: boolean;
+  grep?: string;
+  context?: number;
   nonInteractive: boolean;
   jsonl?: boolean;
   write?: JsonWrite;
@@ -79,6 +84,10 @@ type EffectiveLogOptions = {
   stage?: string;
   stageId?: string;
   failed?: boolean;
+  plain: boolean;
+  noTimestamps: boolean;
+  grep?: RegExp;
+  context: number;
 };
 
 type LogEmitter = {
@@ -177,6 +186,7 @@ async function runLogsCore(
   if (!effective) {
     return { cancelled: true, buildUrl: target.buildUrl };
   }
+  const outputEmitter = createPostProcessingEmitter(emitter, effective);
   if (effective.follow) {
     markAnalyticsPollingCommand();
   }
@@ -202,7 +212,7 @@ async function runLogsCore(
         buildUrl: target.buildUrl,
         effective,
         pollMs,
-        emitter,
+        emitter: outputEmitter,
         cancelSignal,
         initialStatus: status,
       });
@@ -212,7 +222,7 @@ async function runLogsCore(
         buildUrl: target.buildUrl,
         effective,
         pollMs,
-        emitter,
+        emitter: outputEmitter,
         cancelSignal,
         initialStatus: status,
       });
@@ -315,13 +325,21 @@ async function resolveEffectiveOptions(
     stage: options.stage,
     stageId: options.stageId,
     failed: options.failed,
+    plain: options.plain === true,
+    noTimestamps: options.noTimestamps === true,
+    grep:
+      options.grep !== undefined ? compileLogRegex(options.grep) : undefined,
+    context: options.context ?? 0,
   };
   const hasExplicitMode = Boolean(
     effective.tail ||
     effective.since ||
     effective.stage ||
     effective.stageId ||
-    effective.failed,
+    effective.failed ||
+    effective.plain ||
+    effective.noTimestamps ||
+    effective.grep,
   );
   if (interactive && !hasExplicitMode) {
     const pipeline = await options.client.getPipelineDescription(
@@ -871,6 +889,33 @@ function validateLogOptions(options: LogsOptions): void {
       "Use a duration like 30m or an ISO-8601 timestamp.",
     ]);
   }
+  if (options.grep !== undefined) {
+    compileLogRegex(options.grep);
+  }
+  if (options.context !== undefined) {
+    if (!Number.isSafeInteger(options.context) || options.context < 0) {
+      throw new CliError("Invalid --context value.", [
+        "Provide a non-negative integer number of lines, for example --context 2.",
+      ]);
+    }
+    if (options.grep === undefined) {
+      throw new CliError("--context requires --grep.", [
+        "Provide a regular expression with --grep <regex>.",
+      ]);
+    }
+  }
+}
+
+function compileLogRegex(value: string): RegExp {
+  try {
+    return new RegExp(value);
+  } catch (error) {
+    throw new CliError(`Invalid --grep regular expression "${value}".`, [
+      error instanceof Error
+        ? error.message
+        : "Use a valid JavaScript regular expression.",
+    ]);
+  }
 }
 
 function parseTailValue(value: unknown): number {
@@ -923,6 +968,90 @@ function createTextEmitter(
       }
     },
     complete: () => undefined,
+  };
+}
+
+function createPostProcessingEmitter(
+  emitter: LogEmitter,
+  options: EffectiveLogOptions,
+): LogEmitter {
+  if (!options.plain && !options.noTimestamps && !options.grep) {
+    return emitter;
+  }
+
+  type ChunkEvent = Parameters<LogEmitter["chunk"]>[0];
+  type BufferedLine = { text: string; event: ChunkEvent };
+  let partial: BufferedLine | undefined;
+  let before: BufferedLine[] = [];
+  let after = 0;
+
+  const emitLine = (line: BufferedLine): void => {
+    emitter.chunk({ ...line.event, text: line.text });
+  };
+  const processLine = (line: BufferedLine): void => {
+    const transformed = transformLogLine(line.text, options);
+    if (transformed === null) {
+      return;
+    }
+    const candidate = { ...line, text: transformed };
+    if (!options.grep) {
+      emitLine(candidate);
+      return;
+    }
+
+    const matches = options.grep.test(
+      transformed.replace(/(?:\r\n|\n|\r)$/, ""),
+    );
+    if (matches) {
+      for (const previous of before) {
+        emitLine(previous);
+      }
+      before = [];
+      emitLine(candidate);
+      after = options.context;
+      return;
+    }
+    if (after > 0) {
+      emitLine(candidate);
+      after--;
+      return;
+    }
+    before.push(candidate);
+    if (before.length > options.context) {
+      before.shift();
+    }
+  };
+
+  return {
+    start: (event) => emitter.start(event),
+    chunk: (event) => {
+      const carried = partial;
+      const lines = splitLogLines(`${carried?.text ?? ""}${event.text}`);
+      partial = undefined;
+      for (const [index, text] of lines.entries()) {
+        const lineEvent =
+          index === 0 && carried
+            ? {
+                ...event,
+                offset: carried.event.offset,
+                identity: carried.event.identity ?? event.identity,
+              }
+            : event;
+        const line = { text, event: lineEvent };
+        if (/(?:\r\n|\n|\r)$/.test(text)) {
+          processLine(line);
+        } else {
+          partial = line;
+        }
+      }
+    },
+    complete: (event) => {
+      if (partial) {
+        processLine(partial);
+        partial = undefined;
+      }
+      emitter.complete(event);
+    },
   };
 }
 

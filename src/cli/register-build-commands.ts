@@ -177,6 +177,11 @@ export function registerBuildCommands(
               stage: optionalString(argv.stage),
               stageId: optionalString(argv.stageId),
               failed: Boolean(argv.failed),
+              plain: Boolean(argv.plain),
+              noTimestamps: Boolean(argv.noTimestamps),
+              grep: optionalString(argv.grep),
+              context:
+                typeof argv.context === "number" ? argv.context : undefined,
               nonInteractive: Boolean(argv.nonInteractive || argv.jsonl),
               jsonl: Boolean(argv.jsonl),
             });
@@ -298,6 +303,23 @@ function configureLogsOptions(yargsInstance: Argv): Argv {
       type: "boolean",
       describe: "Show the failed Pipeline stage and relevant error log",
     })
+    .option("plain", {
+      type: "boolean",
+      describe: "Strip ANSI, Jenkins metadata, and Pipeline framing",
+    })
+    .option("no-timestamps", {
+      type: "boolean",
+      describe: "Strip leading ISO-8601 timestamps",
+    })
+    .option("grep", {
+      type: "string",
+      describe: "Show lines matching a JavaScript regular expression",
+    })
+    .option("context", {
+      type: "number",
+      describe: "Show N lines around each --grep match",
+    })
+    .implies("context", "grep")
     .conflicts("stage", ["stage-id", "failed"])
     .conflicts("stage-id", ["failed"]);
 }

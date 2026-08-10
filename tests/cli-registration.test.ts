@@ -151,6 +151,10 @@ describe("structured output registration", () => {
       "--stage",
       "--stage-id",
       "--failed",
+      "--plain",
+      "--no-timestamps",
+      "--grep",
+      "--context",
     ]) {
       expect(logs.output).toContain(option);
     }

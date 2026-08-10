@@ -272,7 +272,9 @@ node {
     echo 'pipeline-failure-prepare'
   }
   stage('Deploy') {
+    echo 'pipeline-deploy-before'
     echo 'pipeline-deploy-context'
+    echo 'pipeline-deploy-after'
     error 'pipeline-deploy-failure'
   }
 }
@@ -285,6 +287,9 @@ timestamps {
   node {
     stage('Prepare') {
       echo 'pipeline-logs-prepare'
+      echo 'pipeline-logs-context-before'
+      echo "\u001B[8mha:////synthetic-metadata\u001B[0m\u001B[36mpipeline-logs-context-target\u001B[0m"
+      echo 'pipeline-logs-context-after'
     }
     stage('Test') {
       echo 'pipeline-logs-test-first'

@@ -5,6 +5,18 @@ type FilteredLog = {
   skippedBytes: number;
 };
 
+type LogLineTransformOptions = {
+  plain: boolean;
+  noTimestamps: boolean;
+};
+
+const CONCEALED_JENKINS_METADATA = /\x1b\[8mha:\/{4}.*?\x1b\[0m/g;
+const OSC_SEQUENCE = /\x1b\][^\x07]*(?:\x07|\x1b\\)/g;
+const CSI_SEQUENCE = /\x1b\[[0-?]*[ -/]*[@-~]/g;
+const ESC_SEQUENCE = /\x1b[@-_]/g;
+const LOG_TIMESTAMP_PREFIX =
+  /^\[\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})\]\s?/;
+
 export function parseSinceCutoff(value: string, nowMs: number): number {
   const input = value.trim();
   const duration = input.match(/^(\d+)(ms|s|m|h|d)$/i);
@@ -119,6 +131,32 @@ export function splitLogLines(text: string): string[] {
   return text.match(/[^\r\n]*(?:\r\n|\n|\r)|[^\r\n]+$/g) ?? [];
 }
 
+export function transformLogLine(
+  line: string,
+  options: LogLineTransformOptions,
+): string | null {
+  const body = line.replace(/(?:\r\n|\n|\r)$/, "");
+  const ending = line.slice(body.length);
+  let transformed = body;
+
+  if (options.plain) {
+    transformed = transformed
+      .replace(CONCEALED_JENKINS_METADATA, "")
+      .replace(OSC_SEQUENCE, "")
+      .replace(CSI_SEQUENCE, "")
+      .replace(ESC_SEQUENCE, "")
+      .replaceAll("\x1b", "");
+    if (/^\[Pipeline\](?:\s|$)/.test(stripLogTimestamp(transformed))) {
+      return null;
+    }
+  }
+  if (options.noTimestamps) {
+    transformed = stripLogTimestamp(transformed);
+  }
+
+  return `${transformed}${ending}`;
+}
+
 export function parseTimestampResponse(value: string | null): number | null {
   if (!value) {
     return null;
@@ -144,4 +182,8 @@ export function timestampCapabilityError(message: string): CliError {
 
 function countCompleteLines(lines: string[]): number {
   return lines.filter((line) => /(?:\r\n|\n|\r)$/.test(line)).length;
+}
+
+function stripLogTimestamp(line: string): string {
+  return line.replace(LOG_TIMESTAMP_PREFIX, "");
 }

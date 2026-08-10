@@ -6,6 +6,7 @@ import {
   parseSinceCutoff,
   splitLogLines,
   tailLogLines,
+  transformLogLine,
 } from "../src/log-filters";
 
 describe("log filters", () => {
@@ -81,5 +82,35 @@ describe("log filters", () => {
       "two\n",
       "partial",
     ]);
+  });
+
+  test("plain output removes Jenkins metadata, terminal sequences, and Pipeline framing", () => {
+    expect(
+      transformLogLine(
+        "[2026-08-10T12:34:56.789Z] \x1b[8mha:////metadata\x1b[0m\x1b[36mINFO\x1b[0m pushed\n",
+        { plain: true, noTimestamps: false },
+      ),
+    ).toBe("[2026-08-10T12:34:56.789Z] INFO pushed\n");
+    expect(
+      transformLogLine("[2026-08-10T12:34:56.789Z] [Pipeline] // stage\n", {
+        plain: true,
+        noTimestamps: false,
+      }),
+    ).toBeNull();
+  });
+
+  test("no-timestamps removes only a leading bracketed ISO-8601 prefix", () => {
+    expect(
+      transformLogLine("[2026-08-10T12:34:56.789+05:30] output\r\n", {
+        plain: false,
+        noTimestamps: true,
+      }),
+    ).toBe("output\r\n");
+    expect(
+      transformLogLine("prefix [2026-08-10T12:34:56.789Z] output\n", {
+        plain: false,
+        noTimestamps: true,
+      }),
+    ).toBe("prefix [2026-08-10T12:34:56.789Z] output\n");
   });
 });

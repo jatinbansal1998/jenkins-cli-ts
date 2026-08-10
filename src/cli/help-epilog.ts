@@ -128,6 +128,10 @@ Command-specific options:
     --stage <name>    Show one uniquely named Pipeline stage
     --stage-id <id>   Show one Pipeline stage or node by stable id
     --failed          Show the failed stage and relevant error log
+    --plain           Strip ANSI, Jenkins metadata, and Pipeline framing
+    --no-timestamps   Strip leading ISO-8601 timestamps
+    --grep <regex>    Show lines matching a JavaScript regular expression
+    --context <n>     Show N lines around each --grep match
     --jsonl           Stream one compact JSON event per line
 
   artifacts:

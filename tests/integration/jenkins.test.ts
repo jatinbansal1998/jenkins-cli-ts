@@ -1481,6 +1481,31 @@ describe.skipIf(!integrationEnabled)(
         expect(tail.stdout).not.toContain("HINT:");
         expect(tail.stderr).toContain("HINT: Reading logs");
 
+        const queried = await runCli(home, [
+          "logs",
+          "--build-url",
+          pipelineBuildUrl,
+          "--plain",
+          "--no-timestamps",
+          "--grep",
+          "pipeline-logs-context-target",
+          "--context",
+          "1",
+          "--no-follow",
+        ]);
+        expect(queried.stdout).toBe(
+          [
+            "pipeline-logs-context-before",
+            "pipeline-logs-context-target",
+            "pipeline-logs-context-after",
+            "",
+          ].join("\n"),
+        );
+        expect(queried.stdout).not.toContain("\x1b");
+        expect(queried.stdout).not.toContain("ha:////");
+        expect(queried.stdout).not.toContain("[Pipeline]");
+        expect(queried.stdout).not.toMatch(/^\[\d{4}-\d{2}-\d{2}T/m);
+
         const prepare = await runCli(home, [
           "logs",
           "--build-url",
@@ -1491,6 +1516,29 @@ describe.skipIf(!integrationEnabled)(
         ]);
         expect(prepare.stdout).toContain("pipeline-logs-prepare");
         expect(prepare.stdout).not.toContain("pipeline-logs-test-first");
+
+        const preparedContext = await runCli(home, [
+          "logs",
+          "--build-url",
+          pipelineBuildUrl,
+          "--stage",
+          "Prepare",
+          "--plain",
+          "--grep",
+          "pipeline-logs-context-target",
+          "--context",
+          "1",
+          "--no-follow",
+        ]);
+        expect(preparedContext.stdout).toContain(
+          "pipeline-logs-context-before",
+        );
+        expect(preparedContext.stdout).toContain(
+          "pipeline-logs-context-target",
+        );
+        expect(preparedContext.stdout).toContain("pipeline-logs-context-after");
+        expect(preparedContext.stdout).not.toContain("ha:////");
+        expect(preparedContext.stdout).not.toContain("\x1b");
 
         const parallel = await runCli(home, [
           "logs",
@@ -1562,6 +1610,20 @@ describe.skipIf(!integrationEnabled)(
         ]);
         expect(failed.stdout).toContain("pipeline-deploy-context");
         expect(failed.stderr).toContain("pipeline-deploy-failure");
+        const failedContext = await runCli(home, [
+          "logs",
+          "--job-url",
+          failureJobUrl,
+          "--failed",
+          "--grep",
+          "pipeline-deploy-context",
+          "--context",
+          "1",
+          "--no-follow",
+        ]);
+        expect(failedContext.stdout).toContain("pipeline-deploy-before");
+        expect(failedContext.stdout).toContain("pipeline-deploy-context");
+        expect(failedContext.stdout).toContain("pipeline-deploy-after");
         const unsupportedSince = await runCliExpectFailure(home, [
           "logs",
           "--job-url",

@@ -141,6 +141,76 @@ describe("logs command", () => {
     expect(output.join("")).toBe("raw-stage-output\n");
   });
 
+  test("composes plain, no-timestamps, grep, and context across chunks", async () => {
+    const output: string[] = [];
+    const first = [
+      "[2026-08-10T12:00:00.000Z] [Pipeline] echo\n",
+      "[2026-08-10T12:00:01.000Z] before\n",
+      "[2026-08-10T12:00:02.000Z] \x1b[8mha:////metadata\x1b[0m\x1b[36mtar",
+    ].join("");
+    const second = [
+      "get\x1b[0m\n",
+      "[2026-08-10T12:00:03.000Z] after\n",
+      "[2026-08-10T12:00:04.000Z] outside\n",
+    ].join("");
+    const getConsoleChunk = mock(async (_url: string, offset: number) =>
+      offset === 0
+        ? {
+            text: first,
+            nextStart: Buffer.byteLength(first),
+            hasMore: true,
+          }
+        : {
+            text: second,
+            nextStart: Buffer.byteLength(first + second),
+            hasMore: false,
+          },
+    );
+
+    await runLogs({
+      client: client({
+        getBuildStatus: mock(async () => ({
+          buildNumber: 9,
+          buildUrl,
+          building: false,
+          result: "SUCCESS",
+        })),
+        getConsoleChunk,
+      }),
+      env,
+      buildUrl,
+      follow: false,
+      plain: true,
+      noTimestamps: true,
+      grep: "target",
+      context: 1,
+      nonInteractive: true,
+      writeText: (value) => output.push(value),
+    });
+
+    expect(output.join("")).toBe("before\ntarget\nafter\n");
+  });
+
+  test("rejects invalid grep and context values before reading Jenkins", async () => {
+    for (const options of [
+      { grep: "[" },
+      { grep: "value", context: -1 },
+      { context: 2 },
+    ]) {
+      await expect(
+        runLogs({
+          client: client({}),
+          env,
+          buildUrl,
+          follow: false,
+          nonInteractive: true,
+          writeText: () => undefined,
+          ...options,
+        }),
+      ).rejects.toThrow(CliError);
+    }
+  });
+
   test("returns a stable ambiguity error for repeated stage names", async () => {
     const pipelineClient = client({
       getBuildStatus: mock(async () => ({ buildNumber: 9, buildUrl })),
