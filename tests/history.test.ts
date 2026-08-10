@@ -7,7 +7,7 @@ import {
   spyOn,
   test,
 } from "bun:test";
-import * as clack from "../src/clack";
+import type * as clack from "../src/clack";
 import type { EnvConfig } from "../src/env";
 import type { AutocompletePromptResult } from "../src/flows/types";
 import type { JenkinsClient } from "../src/jenkins/client";
@@ -30,8 +30,8 @@ const textMock = mock(async (): Promise<string> => "");
 const isCancelMock = mock((value: unknown) => value === CANCEL);
 const selectPrompt = ((options: Parameters<typeof clack.select>[0]) =>
   selectMock(options)) as typeof clack.select;
-const isCancelPrompt = ((value: unknown): value is symbol =>
-  Boolean(isCancelMock(value))) as typeof clack.isCancel;
+const isCancelPrompt = (value: unknown): value is symbol =>
+  Boolean(isCancelMock(value));
 const runCancelMock = mock(async () => undefined);
 const runLogsMock = mock(async () => undefined);
 const runWaitMock = mock(

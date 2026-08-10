@@ -28,7 +28,7 @@ function makeDeps(
     deps: {
       confirm: async (options: { message: string }) => {
         confirmMessages.push(options.message);
-        return confirmResult as boolean;
+        return confirmResult;
       },
       openInBrowser:
         openImpl ??

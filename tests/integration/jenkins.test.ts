@@ -1430,9 +1430,11 @@ describe.skipIf(!integrationEnabled)(
         }>(await runCli(home, ["wait", "--job-url", jobUrl, "--json"]));
         expect(wait.data.result).toBe("SUCCESS");
         expect(
-          wait.data.build.revisions.map((revision) => revision.sha).sort(),
+          wait.data.build.revisions.map((revision) => revision.sha).toSorted(),
         ).toEqual(
-          status.data.build.revisions.map((revision) => revision.sha).sort(),
+          status.data.build.revisions
+            .map((revision) => revision.sha)
+            .toSorted(),
         );
 
         const noScmJobUrl = `${jenkinsUrl}/job/cli-no-params/`;

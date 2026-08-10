@@ -29,7 +29,7 @@ const mkdirMock = mock(fs.promises.mkdir);
 const renameMock = mock(fs.promises.rename);
 const rmMock = mock(fs.promises.rm);
 
-mock.module("node:fs/promises", () => ({
+void mock.module("node:fs/promises", () => ({
   ...realFsPromises,
   mkdir: mkdirMock,
   rename: renameMock,

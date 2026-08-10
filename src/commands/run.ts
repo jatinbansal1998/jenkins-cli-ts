@@ -69,7 +69,7 @@ export async function runRunningBuilds(options: RunOptions): Promise<void> {
   }
 }
 
-export function formatRunningBuildLabel(build: RunningBuildSummary): string {
+function formatRunningBuildLabel(build: RunningBuildSummary): string {
   const jobName = build.fullJobName?.trim() || build.jobName;
   return `${jobName} #${build.buildNumber}`;
 }

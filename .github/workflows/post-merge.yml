@@ -45,6 +45,9 @@ jobs:
       - name: Typecheck
         run: bun run typecheck
 
+      - name: Knip (unused code and dependencies)
+        run: bun run knip
+
   test:
     name: Test (${{ matrix.os }})
     strategy:

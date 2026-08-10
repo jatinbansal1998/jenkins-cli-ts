@@ -12,10 +12,11 @@
     "dev": "bun run src/index.ts",
     "build": "bun scripts/build-local.ts",
     "install:global": "bun run build && bun link",
-    "lint": "oxlint --deny-warnings",
-    "lint:fix": "oxlint --fix",
+    "lint": "oxlint --deny-warnings --type-aware && bun scripts/lint-guards.ts",
+    "lint:fix": "oxlint --fix --type-aware",
+    "knip": "knip",
     "typecheck": "tsc --noEmit",
-    "check": "bun run lint:fix && bun run format && bun run typecheck",
+    "check": "bun run lint:fix && bun run format && bun run typecheck && bun run knip",
     "test": "bun test",
     "sentry:smoke": "bun scripts/verify-sentry.ts",
     "sentry:smoke:build": "bun scripts/build-sentry-smoke.ts",
@@ -28,8 +29,10 @@
     "@types/bun": "1.3.14",
     "@types/yargs": "^17.0.35",
     "husky": "^9.1.7",
+    "knip": "^6.32.0",
     "lint-staged": "^17.0.8",
     "oxlint": "^1.73.0",
+    "oxlint-tsgolint": "^7.0.2001",
     "prettier": "3.9.4",
     "typescript": "^7.0.2"
   },
@@ -38,7 +41,8 @@
     "@clack/prompts": "^1.7.0",
     "@sentry/bun": "^10.67.0",
     "cross-keychain": "^1.1.0",
-    "yargs": "^18.0.0"
+    "yargs": "^18.0.0",
+    "yargs-parser": "^22.0.0"
   },
   "lint-staged": {
     "**/*.{ts,tsx,js,jsx,json,css,md}": [

@@ -101,12 +101,10 @@ describe("pruneOldApiLogs", () => {
   let rmSpy: ReturnType<typeof spyOn<typeof fs, "rmSync">>;
 
   beforeEach(() => {
-    readdirSpy = spyOn(fs, "readdirSync").mockImplementation(
-      (() => []) as unknown as typeof fs.readdirSync,
-    );
-    statSpy = spyOn(fs, "statSync").mockImplementation((() => {
+    readdirSpy = spyOn(fs, "readdirSync").mockImplementation(() => []);
+    statSpy = spyOn(fs, "statSync").mockImplementation(() => {
       throw Object.assign(new Error("missing"), { code: "ENOENT" });
-    }) as unknown as typeof fs.statSync);
+    });
     rmSpy = spyOn(fs, "rmSync").mockImplementation(() => undefined);
   });
 
@@ -155,9 +153,9 @@ describe("pruneOldApiLogs", () => {
   });
 
   test("never throws when the config directory is unreadable", () => {
-    readdirSpy.mockImplementation((() => {
+    readdirSpy.mockImplementation(() => {
       throw new Error("EACCES");
-    }) as unknown as typeof fs.readdirSync);
+    });
 
     expect(() => pruneOldApiLogs(now)).not.toThrow();
   });

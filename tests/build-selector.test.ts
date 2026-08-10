@@ -88,7 +88,7 @@ describe("exact build selector", () => {
   test("rejects conflicting exact-build selector combinations", async () => {
     for (const selector of [
       { build: 1 },
-      { job: "api", jobUrl: `${nestedJobUrl}`, build: 1 },
+      { job: "api", jobUrl: nestedJobUrl, build: 1 },
       { job: "api", build: 1, buildUrl: `${nestedJobUrl}/1/` },
       { job: "api", build: 1, queueUrl: `${env.jenkinsUrl}/queue/item/1/` },
       {

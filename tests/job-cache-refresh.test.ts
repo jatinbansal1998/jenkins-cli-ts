@@ -31,14 +31,14 @@ const rmMock = mock(async (filePath: string) => {
   files.delete(filePath);
 });
 
-mock.module("node:fs/promises", () => ({
+void mock.module("node:fs/promises", () => ({
   ...realFsPromises,
   mkdir: mkdirMock,
   rename: renameMock,
   rm: rmMock,
 }));
 
-mock.module("node:os", () => ({
+void mock.module("node:os", () => ({
   ...realOs,
   homedir: () => tempHome,
 }));

@@ -53,7 +53,7 @@ type JenkinsApiGitRevision = {
   branch?: JenkinsApiGitBranch[];
 };
 
-export type JenkinsApiBuildCause = {
+type JenkinsApiBuildCause = {
   shortDescription?: string;
   userId?: string;
   userName?: string;

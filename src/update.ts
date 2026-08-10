@@ -127,7 +127,7 @@ export function setUpdateRuntimeDepsForTesting(
   };
 }
 
-export function isBunAvailable(): boolean {
+function isBunAvailable(): boolean {
   return updateRuntimeDeps.isBunAvailable();
 }
 
@@ -535,8 +535,8 @@ export function getReleaseInstallDecision(options: {
 }
 
 export function extractInstalledBinaryVersionOutput(
-  stdout: Uint8Array<ArrayBufferLike> | undefined,
-  stderr: Uint8Array<ArrayBufferLike> | undefined,
+  stdout: Uint8Array | undefined,
+  stderr: Uint8Array | undefined,
 ): string | null {
   const text =
     new TextDecoder().decode(stdout ?? undefined) +

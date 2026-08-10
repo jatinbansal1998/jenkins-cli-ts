@@ -85,7 +85,9 @@ export function getJobDisplayLabel(job: JenkinsJob): string {
 export function sortJobsByDisplayName(jobs: JenkinsJob[]): JenkinsJob[] {
   return jobs
     .slice()
-    .sort((a, b) => getJobDisplayName(a).localeCompare(getJobDisplayName(b)));
+    .toSorted((a, b) =>
+      getJobDisplayName(a).localeCompare(getJobDisplayName(b)),
+    );
 }
 
 export function getSuggestedJobs(

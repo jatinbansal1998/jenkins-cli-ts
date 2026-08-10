@@ -75,7 +75,7 @@ export async function resolvePipelineLogSelection(options: {
   }
 
   const sources: PipelineLogSource[] = [];
-  for (const node of sourceNodes.sort(compareNodes)) {
+  for (const node of sourceNodes.toSorted(compareNodes)) {
     const log = await options.client.getPipelineNodeLog(node.logUrl!);
     if (!log) {
       continue;
@@ -115,7 +115,7 @@ export async function resolvePipelineLogSelection(options: {
 
   const failedNode = graph
     .filter((node) => node.stageId === stage.id && isFailureStatus(node.status))
-    .sort(compareDepthDescending)[0];
+    .toSorted(compareDepthDescending)[0];
 
   return {
     stage,
@@ -249,13 +249,13 @@ function selectGraphNode(
         "FAILED_STAGE_UNAVAILABLE",
       );
     }
-    const stage = failedStages.sort(compareNodes)[0]!;
+    const stage = failedStages.toSorted(compareNodes)[0]!;
     return (
       graph
         .filter(
           (node) => node.stageId === stage.id && isFailureStatus(node.status),
         )
-        .sort(compareDepthDescending)[0] ?? stage
+        .toSorted(compareDepthDescending)[0] ?? stage
     );
   }
 
@@ -380,7 +380,7 @@ function isFailureStatus(status: string | undefined): boolean {
 
 function formatCandidates(nodes: PipelineGraphNode[]): string {
   const candidates = nodes
-    .sort(compareNodes)
+    .toSorted(compareNodes)
     .map((node) => `${node.path} (id ${node.id})`)
     .join(", ");
   return candidates

@@ -308,7 +308,7 @@ function resolveKnownTotalStages(options: {
 }
 
 function sanitizeInline(value: string): string {
-  return value.replace(/\s+/g, " ").trim();
+  return value.replaceAll(/\s+/g, " ").trim();
 }
 
 function chunkEntries(entries: string[], maxItems: number): string[][] {

@@ -120,7 +120,7 @@ export async function resolveAuthCredentials(
       controller: normalizeControllerIfValid(cliUrl),
       username: cliUser,
       tokenStorage: "Command line",
-      tokenPresent: cliToken ? true : false,
+      tokenPresent: Boolean(cliToken),
       problem: "incomplete-direct-credentials",
       problemMessage: "Incomplete direct Jenkins credentials.",
       problemHints: [

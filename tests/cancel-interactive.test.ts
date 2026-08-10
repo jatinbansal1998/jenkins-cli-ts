@@ -55,8 +55,8 @@ describe("interactive targetless cancel", () => {
     );
     setDeps({
       select: select as typeof cancelDeps.select,
-      confirm: mock(async () => true) as typeof cancelDeps.confirm,
-      waitForBuild: waitForBuild as unknown as typeof cancelDeps.waitForBuild,
+      confirm: mock(async () => true),
+      waitForBuild: waitForBuild,
     });
 
     await runCancel(
@@ -99,7 +99,7 @@ describe("interactive targetless cancel", () => {
       multiselect: mock(async () =>
         builds.map((build) => build.buildUrl),
       ) as typeof cancelDeps.multiselect,
-      confirm: mock(async () => true) as typeof cancelDeps.confirm,
+      confirm: mock(async () => true),
       waitForBuild: waitForBuild as unknown as typeof cancelDeps.waitForBuild,
     });
 
@@ -129,11 +129,11 @@ describe("interactive targetless cancel", () => {
     const stopBuild = mock(async () => undefined);
     setDeps({
       select: select as typeof cancelDeps.select,
-      multiselect: mock(async () => []) as typeof cancelDeps.multiselect,
-      confirm: mock(async () => true) as typeof cancelDeps.confirm,
+      multiselect: mock(async () => []),
+      confirm: mock(async () => true),
       waitForBuild: mock(async () => ({
         result: "ABORTED",
-      })) as unknown as typeof cancelDeps.waitForBuild,
+      })),
     });
 
     await runCancel(
@@ -158,10 +158,10 @@ describe("interactive targetless cancel", () => {
       select: mock(
         async () => "__jenkins_cli_cancel_all__",
       ) as typeof cancelDeps.select,
-      confirm: confirm as typeof cancelDeps.confirm,
+      confirm: confirm,
       waitForBuild: mock(async () => ({
         result: "ABORTED",
-      })) as unknown as typeof cancelDeps.waitForBuild,
+      })),
     });
 
     await runCancel(
@@ -188,11 +188,11 @@ describe("interactive targetless cancel", () => {
       select: mock(
         async () => "__jenkins_cli_cancel_search__",
       ) as typeof cancelDeps.select,
-      resolveJobTarget: resolveJobTarget as typeof cancelDeps.resolveJobTarget,
-      confirm: mock(async () => true) as typeof cancelDeps.confirm,
+      resolveJobTarget: resolveJobTarget,
+      confirm: mock(async () => true),
       waitForBuild: mock(async () => ({
         result: "ABORTED",
-      })) as unknown as typeof cancelDeps.waitForBuild,
+      })),
     });
 
     await runCancel(
@@ -227,10 +227,10 @@ describe("interactive targetless cancel", () => {
     setDeps({
       select: select as typeof cancelDeps.select,
       resolveJobTarget: resolveJobTarget as typeof cancelDeps.resolveJobTarget,
-      confirm: mock(async () => true) as typeof cancelDeps.confirm,
+      confirm: mock(async () => true),
       waitForBuild: mock(async () => ({
         result: "ABORTED",
-      })) as unknown as typeof cancelDeps.waitForBuild,
+      })),
     });
 
     await runCancel(
@@ -258,11 +258,11 @@ describe("interactive targetless cancel", () => {
     }));
     setDeps({
       select: select as typeof cancelDeps.select,
-      resolveJobTarget: resolveJobTarget as typeof cancelDeps.resolveJobTarget,
-      confirm: mock(async () => true) as typeof cancelDeps.confirm,
+      resolveJobTarget: resolveJobTarget,
+      confirm: mock(async () => true),
       waitForBuild: mock(async () => ({
         result: "ABORTED",
-      })) as unknown as typeof cancelDeps.waitForBuild,
+      })),
     });
     await runCancel(
       options(
@@ -287,11 +287,11 @@ describe("interactive targetless cancel", () => {
       jobLabel: "apps/api",
     }));
     setDeps({
-      resolveJobTarget: resolveJobTarget as typeof cancelDeps.resolveJobTarget,
-      confirm: mock(async () => true) as typeof cancelDeps.confirm,
+      resolveJobTarget: resolveJobTarget,
+      confirm: mock(async () => true),
       waitForBuild: mock(async () => ({
         result: "ABORTED",
-      })) as unknown as typeof cancelDeps.waitForBuild,
+      })),
     });
     try {
       await runCancel(
@@ -331,8 +331,8 @@ test("batch cancellation reports partial failure after attempting all builds", a
     select: mock(
       async () => "__jenkins_cli_cancel_all__",
     ) as typeof cancelDeps.select,
-    confirm: mock(async () => true) as typeof cancelDeps.confirm,
-    waitForBuild: waitForBuild as unknown as typeof cancelDeps.waitForBuild,
+    confirm: mock(async () => true),
+    waitForBuild: waitForBuild,
   });
   try {
     await expect(

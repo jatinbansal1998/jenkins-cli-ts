@@ -7,14 +7,14 @@ const realBranches = await import("../src/branches");
 const recordRecentJobMock = mock(async () => undefined);
 const recordBranchSelectionMock = mock(async () => undefined);
 
-mock.module("../src/recent-jobs", () => ({
+void mock.module("../src/recent-jobs", () => ({
   ...realRecentJobs,
   loadRecentJobs: mock(async () => []),
   loadPreferredJobs: mock(async () => []),
   recordRecentJob: recordRecentJobMock,
 }));
 
-mock.module("../src/branches", () => ({
+void mock.module("../src/branches", () => ({
   ...realBranches,
   loadCachedBranches: mock(async () => []),
   loadCachedBranchHistory: mock(async () => []),

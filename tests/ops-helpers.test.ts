@@ -10,7 +10,7 @@ const resolveJobMatchMock = mock(async (): Promise<JenkinsJob> => {
 });
 const realJobs = await import("../src/jobs");
 
-mock.module("../src/jobs", () => ({
+void mock.module("../src/jobs", () => ({
   ...realJobs,
   getJobDisplayName: (job: JenkinsJob) => job.fullName || job.name,
   loadJobs: loadJobsMock,

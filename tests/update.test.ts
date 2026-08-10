@@ -491,7 +491,7 @@ describe("GitHub headers", () => {
     expect(fetchMock.mock.calls[0]?.[0]).toBe(
       "https://api.github.com/repos/jatinbansal1998/jenkins-cli-ts/releases/latest",
     );
-    const requestInit = fetchMock.mock.calls[0]?.[1] as RequestInit | undefined;
+    const requestInit = fetchMock.mock.calls[0]?.[1];
     expect(readHeader(requestInit, "User-Agent")).toBe(
       `jenkins-cli/0.7.0 (+${GITHUB_REPO_URL}; platform=${process.platform}; arch=${process.arch})`,
     );
@@ -540,8 +540,7 @@ describe("GitHub headers", () => {
         await install;
         expect(fs.readFileSync(targetPath, "utf8")).toBe("binary");
       }
-      const requestInit = fetchMock.mock.calls[0]?.[1] as
-        RequestInit | undefined;
+      const requestInit = fetchMock.mock.calls[0]?.[1];
       expect(readHeader(requestInit, "User-Agent")).toBe(
         `jenkins-cli/0.7.0 (+${GITHUB_REPO_URL}; platform=${process.platform}; arch=${process.arch})`,
       );
@@ -571,7 +570,7 @@ function readHeader(
     const entry = entries.find(([key]) => key.toLowerCase() === lower);
     return entry?.[1];
   }
-  const objectHeaders = headers as Record<string, string | readonly string[]>;
+  const objectHeaders = headers;
   const lower = name.toLowerCase();
   for (const [key, value] of Object.entries(objectHeaders)) {
     if (key.toLowerCase() === lower) {

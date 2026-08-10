@@ -97,7 +97,7 @@ export async function observeInteractiveCli(
   const endStdin = () => {
     if (stdinEnded) return;
     stdinEnded = true;
-    subprocess.stdin.end();
+    void subprocess.stdin.end();
   };
 
   try {
@@ -113,8 +113,8 @@ export async function observeInteractiveCli(
           subprocess,
           scannedUpTo,
         );
-        subprocess.stdin.write(step.input);
-        subprocess.stdin.flush();
+        await subprocess.stdin.write(step.input);
+        await subprocess.stdin.flush();
       }
     }
     if (useMacOsExpect) {
@@ -368,7 +368,7 @@ export function stripTerminalCodes(value: string): string {
   return value
     .replace(OSC_TERMINAL_SEQUENCE, "")
     .replace(CSI_TERMINAL_SEQUENCE, "")
-    .replace(/\r/g, "");
+    .replaceAll("\r", "");
 }
 
 export function macOsExpectScript(
