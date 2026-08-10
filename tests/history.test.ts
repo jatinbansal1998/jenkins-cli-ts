@@ -148,7 +148,6 @@ describe("runHistory", () => {
             },
           },
         ],
-        total: 1,
         offset: 0,
         limit: 5,
         hasNext: false,
@@ -164,7 +163,7 @@ describe("runHistory", () => {
     });
 
     const output = logSpy.mock.calls.map((call) => String(call[0])).join("\n");
-    expect(output).toContain("OK: Showing builds 1-1 of 1");
+    expect(output).toContain("OK: Showing builds 1-1 for");
     expect(output).toContain("Failed Step");
     expect(output).toContain("Deploy to ECS");
     expect(output).toContain("task definition validation failed");
@@ -181,7 +180,6 @@ describe("runHistory", () => {
             result: "SUCCESS",
           },
         ],
-        total: 10,
         offset: options?.offset ?? 0,
         limit: 5,
         hasNext: (options?.offset ?? 0) === 0,
@@ -234,7 +232,6 @@ describe("runHistory", () => {
           ],
         },
       ],
-      total: 1,
       offset: 0,
       limit: 5,
       hasNext: false,
@@ -284,7 +281,6 @@ describe("runHistory", () => {
           parameters: [{ name: "BRANCH", value: "release/42" }],
         },
       ],
-      total: 1,
       offset: 0,
       limit: 5,
       hasNext: false,
@@ -346,7 +342,6 @@ describe("runHistory", () => {
           ],
         },
       ],
-      total: 1,
       offset: 0,
       limit: 5,
       hasNext: false,
@@ -399,7 +394,6 @@ describe("runHistory", () => {
           ],
         },
       ],
-      total: 1,
       offset: 0,
       limit: 5,
       hasNext: false,
@@ -475,7 +469,6 @@ describe("runHistory", () => {
           parameters: [{ name: "BRANCH", value: "release/42" }],
         },
       ],
-      total: 1,
       offset: 0,
       limit: 5,
       hasNext: false,

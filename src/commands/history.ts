@@ -480,9 +480,7 @@ function renderBuildHistory(page: BuildHistoryPage, jobLabel: string): void {
 
   const rangeStart = page.offset + 1;
   const rangeEnd = page.offset + page.builds.length;
-  printOk(
-    `Showing builds ${rangeStart}-${rangeEnd} of ${page.total} for ${jobLabel}.`,
-  );
+  printOk(`Showing builds ${rangeStart}-${rangeEnd} for ${jobLabel}.`);
   console.log(formatBuildHistoryTable(page.builds));
   const failureDetails = formatFailureDetails(page.builds);
   if (failureDetails) {

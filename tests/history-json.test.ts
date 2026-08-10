@@ -106,7 +106,6 @@ describe("history --json", () => {
           revisions: [],
         },
       ],
-      total: 2,
       offset: 0,
       limit: 5,
       hasNext: false,

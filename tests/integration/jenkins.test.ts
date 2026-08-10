@@ -1795,7 +1795,7 @@ describe.skipIf(!integrationEnabled)(
     test("uses CSRF crumbs, history offsets, and exact artifact targets", async () => {
       await withCliHome(async (home) => {
         const historyJobUrl = `${jenkinsUrl}/job/cli-history/`;
-        for (let index = 0; index < 6; index++) {
+        for (let index = 0; index < 11; index++) {
           await runCli(
             home,
             [
@@ -1816,17 +1816,20 @@ describe.skipIf(!integrationEnabled)(
             const payload = JSON.parse(result.stdout) as {
               data?: Array<{ result?: string }>;
             };
-            return (
-              payload.data?.length === 1 &&
-              payload.data[0]?.result === "SUCCESS"
-            );
+            return payload.data?.length === 5;
           },
           30_000,
         );
+        const secondPageBuilds = parseJson<{
+          data: Array<{ number: number; result: string }>;
+        }>(secondPage).data;
+        expect(secondPageBuilds.map((build) => build.number)).toEqual([
+          6, 5, 4, 3, 2,
+        ]);
         expect(
-          parseJson<{ data: Array<{ result: string }> }>(secondPage).data,
-        ).toHaveLength(1);
-        const firstPage = parseJson<{ data: Array<unknown> }>(
+          secondPageBuilds.every((build) => build.result === "SUCCESS"),
+        ).toBe(true);
+        const firstPage = parseJson<{ data: Array<{ number: number }> }>(
           await runCli(home, [
             "history",
             "--job-url",
@@ -1837,6 +1840,20 @@ describe.skipIf(!integrationEnabled)(
           ]),
         );
         expect(firstPage.data).toHaveLength(5);
+        expect(firstPage.data.map((build) => build.number)).toEqual([
+          11, 10, 9, 8, 7,
+        ]);
+        const finalPage = parseJson<{ data: Array<{ number: number }> }>(
+          await runCli(home, [
+            "history",
+            "--job-url",
+            historyJobUrl,
+            "--offset",
+            "10",
+            "--json",
+          ]),
+        );
+        expect(finalPage.data.map((build) => build.number)).toEqual([1]);
 
         const smokeUrl = `${jenkinsUrl}/job/cli-smoke/`;
         await runCli(home, [
