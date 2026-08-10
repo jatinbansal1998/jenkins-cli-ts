@@ -12,12 +12,10 @@
 import { CliError } from "./cli";
 import type {
   ArtifactEntry,
-  BuildHistoryEntry,
   BuildStatus,
   JenkinsBuildParameter,
   JenkinsPipelineStage,
   JenkinsRevision,
-  JobStatus,
   NodeSummary,
   NodesSummary,
   QueueItemSummary,
@@ -57,6 +55,7 @@ export type JsonBuild = {
   revisions?: JenkinsRevision[];
   parameters?: JenkinsBuildParameter[];
   stages?: JsonStage[];
+  triggeredBy?: string;
 };
 
 type JsonSuccess<T> = {
@@ -261,21 +260,6 @@ export async function runJsonCommand<T>(
   }
 }
 
-type MapBuildInput = {
-  number?: number;
-  url?: string;
-  result?: string | null;
-  building?: boolean;
-  timestampMs?: number;
-  durationMs?: number;
-  estimatedDurationMs?: number;
-  queueTimeMs?: number;
-  branch?: string;
-  revisions?: JenkinsRevision[];
-  parameters?: JenkinsBuildParameter[];
-  stages?: JenkinsPipelineStage[];
-};
-
 function mapStages(
   stages: JenkinsPipelineStage[] | undefined,
 ): JsonStage[] | undefined {
@@ -293,71 +277,22 @@ function mapStages(
  * Single source of truth for serializing a Jenkins build to JSON. Undefined
  * fields are dropped by `JSON.stringify`, keeping the document compact.
  */
-export function mapBuild(input: MapBuildInput): JsonBuild {
+export function jsonBuild(build: BuildStatus): JsonBuild {
   return {
-    number: input.number,
-    url: input.url,
-    result: input.result ?? null,
-    building: input.building ?? false,
-    durationMs: input.durationMs,
-    timestampMs: input.timestampMs,
-    estimatedDurationMs: input.estimatedDurationMs,
-    queueTimeMs: input.queueTimeMs,
-    branch: input.branch,
-    revisions: input.revisions,
-    parameters: input.parameters,
-    stages: mapStages(input.stages),
+    number: build.buildNumber,
+    url: build.buildUrl,
+    result: build.result ?? null,
+    building: build.building ?? false,
+    durationMs: build.durationMs,
+    timestampMs: build.timestampMs,
+    estimatedDurationMs: build.estimatedDurationMs,
+    queueTimeMs: build.queueTimeMs,
+    branch: build.branch,
+    revisions: build.revisions,
+    parameters: build.parameters,
+    stages: mapStages(build.stages),
+    triggeredBy: build.triggeredBy,
   };
-}
-
-export function jsonBuildFromJobStatus(status: JobStatus): JsonBuild {
-  return mapBuild({
-    number: status.lastBuildNumber,
-    url: status.lastBuildUrl,
-    result: status.result,
-    building: status.building,
-    timestampMs: status.lastBuildTimestamp,
-    durationMs: status.lastBuildDurationMs,
-    estimatedDurationMs: status.lastBuildEstimatedDurationMs,
-    queueTimeMs: status.queueTimeMs,
-    branch: status.branch,
-    revisions: status.revisions,
-    parameters: status.parameters,
-    stages: status.stages,
-  });
-}
-
-export function jsonBuildFromBuildStatus(status: BuildStatus): JsonBuild {
-  return mapBuild({
-    number: status.buildNumber,
-    url: status.buildUrl,
-    result: status.result,
-    building: status.building,
-    timestampMs: status.timestampMs,
-    durationMs: status.durationMs,
-    estimatedDurationMs: status.estimatedDurationMs,
-    queueTimeMs: status.queueTimeMs,
-    branch: status.branch,
-    revisions: status.revisions,
-    parameters: status.parameters,
-    stages: status.stages,
-  });
-}
-
-export function jsonBuildFromHistoryEntry(entry: BuildHistoryEntry): JsonBuild {
-  return mapBuild({
-    number: entry.buildNumber,
-    url: entry.buildUrl,
-    result: entry.result,
-    building: entry.building,
-    timestampMs: entry.timestampMs,
-    durationMs: entry.durationMs,
-    estimatedDurationMs: entry.estimatedDurationMs,
-    branch: entry.branch,
-    revisions: entry.revisions,
-    parameters: entry.parameters,
-    stages: entry.stages,
-  });
 }
 
 export function jsonQueueItem(item: QueueItemSummary): JsonQueueItem {

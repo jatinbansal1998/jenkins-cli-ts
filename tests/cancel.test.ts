@@ -246,8 +246,8 @@ describe("runCancel job target resolution", () => {
       const stopBuild = mock(async () => undefined);
       const getJobStatus = mock(async () => ({
         building: true,
-        lastBuildUrl: "https://jenkins.example.com/job/api/14/",
-        lastBuildNumber: 14,
+        buildUrl: "https://jenkins.example.com/job/api/14/",
+        buildNumber: 14,
       }));
       const getBuildStatus = mock(async () => ({
         buildUrl: "https://jenkins.example.com/job/api/14/",

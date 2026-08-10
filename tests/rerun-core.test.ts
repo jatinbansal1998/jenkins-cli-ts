@@ -38,8 +38,8 @@ describe("rerun-core", () => {
 
   test("rerunLastBuildForJob retriggers the latest build parameters", async () => {
     const getJobStatus = mock(async () => ({
-      lastBuildNumber: 42,
-      lastBuildUrl: `${JOB_URL}42/`,
+      buildNumber: 42,
+      buildUrl: `${JOB_URL}42/`,
       parameters: [
         { name: "BRANCH", value: "release/42" },
         { name: "DEPLOY_ENV", value: "staging" },

@@ -201,7 +201,7 @@ describe("interactive targetless cancel", () => {
           listRunningBuilds: mock(async () => builds),
           getJobStatus: mock(async () => ({
             building: true,
-            lastBuildUrl: builds[0]!.buildUrl,
+            buildUrl: builds[0]!.buildUrl,
           })),
           stopBuild,
         }),
@@ -239,7 +239,7 @@ describe("interactive targetless cancel", () => {
           listRunningBuilds: mock(async () => builds),
           getJobStatus: mock(async () => ({
             building: true,
-            lastBuildUrl: builds[0]!.buildUrl,
+            buildUrl: builds[0]!.buildUrl,
           })),
           stopBuild: mock(async () => undefined),
         }),
@@ -270,7 +270,7 @@ describe("interactive targetless cancel", () => {
           listRunningBuilds: mock(async () => []),
           getJobStatus: mock(async () => ({
             building: true,
-            lastBuildUrl: builds[0]!.buildUrl,
+            buildUrl: builds[0]!.buildUrl,
           })),
           stopBuild: mock(async () => undefined),
         }),
@@ -302,7 +302,7 @@ describe("interactive targetless cancel", () => {
             }),
             getJobStatus: mock(async () => ({
               building: true,
-              lastBuildUrl: builds[0]!.buildUrl,
+              buildUrl: builds[0]!.buildUrl,
             })),
             stopBuild: mock(async () => undefined),
           }),

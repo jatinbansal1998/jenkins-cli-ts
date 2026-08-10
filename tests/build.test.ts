@@ -115,7 +115,7 @@ describe("build command", () => {
   });
 
   test("cancel action passes only build URL when build and queue URLs are both present", async () => {
-    const getJobStatus = mock(async () => ({ lastBuildNumber: 380 }));
+    const getJobStatus = mock(async () => ({ buildNumber: 380 }));
     const triggerBuild = mock(async () => ({
       buildUrl: BUILD_URL,
       buildNumber: 381,
@@ -152,7 +152,7 @@ describe("build command", () => {
   });
 
   test("history rebuild updates the active build used by follow-up log actions", async () => {
-    const getJobStatus = mock(async () => ({ lastBuildNumber: 380 }));
+    const getJobStatus = mock(async () => ({ buildNumber: 380 }));
     const triggerBuild = mock(async () => ({
       buildUrl: BUILD_URL,
       buildNumber: 381,
@@ -199,7 +199,7 @@ describe("build command", () => {
   });
 
   test("prints non-interactive command when build is triggered in return-to-caller flow", async () => {
-    const getJobStatus = mock(async () => ({ lastBuildNumber: 380 }));
+    const getJobStatus = mock(async () => ({ buildNumber: 380 }));
     const triggerBuild = mock(async () => ({
       buildUrl: BUILD_URL,
       buildNumber: 381,
@@ -238,7 +238,7 @@ describe("build command", () => {
   });
 
   test("watch cancellation still opens post-build action menu", async () => {
-    const getJobStatus = mock(async () => ({ lastBuildNumber: 380 }));
+    const getJobStatus = mock(async () => ({ buildNumber: 380 }));
     const triggerBuild = mock(async () => ({
       buildUrl: BUILD_URL,
       buildNumber: 381,
@@ -312,7 +312,7 @@ describe("build command", () => {
   });
 
   test("tip command keeps --watch for without-params builds", async () => {
-    const getJobStatus = mock(async () => ({ lastBuildNumber: 380 }));
+    const getJobStatus = mock(async () => ({ buildNumber: 380 }));
     const triggerBuild = mock(async () => ({
       buildUrl: BUILD_URL,
       buildNumber: 381,
@@ -358,7 +358,7 @@ describe("build command", () => {
   });
 
   test("tip command prints repeatable --param flags for custom parameters", async () => {
-    const getJobStatus = mock(async () => ({ lastBuildNumber: 380 }));
+    const getJobStatus = mock(async () => ({ buildNumber: 380 }));
     const triggerBuild = mock(async () => ({
       buildUrl: BUILD_URL,
       buildNumber: 381,
@@ -400,7 +400,7 @@ describe("build command", () => {
   });
 
   test("non-interactive build without branch triggers without parameters", async () => {
-    const getJobStatus = mock(async () => ({ lastBuildNumber: 380 }));
+    const getJobStatus = mock(async () => ({ buildNumber: 380 }));
     const triggerBuild = mock(async () => ({
       queueUrl: QUEUE_URL,
       jobUrl: JOB_URL,
@@ -426,7 +426,7 @@ describe("build command", () => {
   });
 
   test("non-interactive build with blank branch triggers without parameters", async () => {
-    const getJobStatus = mock(async () => ({ lastBuildNumber: 380 }));
+    const getJobStatus = mock(async () => ({ buildNumber: 380 }));
     const triggerBuild = mock(async () => ({
       queueUrl: QUEUE_URL,
       jobUrl: JOB_URL,
@@ -452,7 +452,7 @@ describe("build command", () => {
   });
 
   test("non-interactive build with custom params triggers parameterized build", async () => {
-    const getJobStatus = mock(async () => ({ lastBuildNumber: 380 }));
+    const getJobStatus = mock(async () => ({ buildNumber: 380 }));
     const triggerBuild = mock(async () => ({
       queueUrl: QUEUE_URL,
       jobUrl: JOB_URL,
@@ -484,7 +484,7 @@ describe("build command", () => {
   });
 
   test("non-interactive build merges branch and custom params", async () => {
-    const getJobStatus = mock(async () => ({ lastBuildNumber: 380 }));
+    const getJobStatus = mock(async () => ({ buildNumber: 380 }));
     const triggerBuild = mock(async () => ({
       queueUrl: QUEUE_URL,
       jobUrl: JOB_URL,
@@ -516,7 +516,7 @@ describe("build command", () => {
   });
 
   test("non-interactive build fails when branch param key conflicts with custom params", async () => {
-    const getJobStatus = mock(async () => ({ lastBuildNumber: 380 }));
+    const getJobStatus = mock(async () => ({ buildNumber: 380 }));
     const triggerBuild = mock(async () => ({
       queueUrl: QUEUE_URL,
       jobUrl: JOB_URL,
@@ -542,7 +542,7 @@ describe("build command", () => {
   });
 
   test("watch cancellation still reaches trigger-another-build confirmation", async () => {
-    const getJobStatus = mock(async () => ({ lastBuildNumber: 380 }));
+    const getJobStatus = mock(async () => ({ buildNumber: 380 }));
     const triggerBuild = mock(async () => ({
       buildUrl: BUILD_URL,
       buildNumber: 381,
@@ -618,7 +618,7 @@ describe("build command", () => {
     const originalExitCode = process.exitCode;
     process.exitCode = 0;
 
-    const getJobStatus = mock(async () => ({ lastBuildNumber: 380 }));
+    const getJobStatus = mock(async () => ({ buildNumber: 380 }));
     const triggerBuild = mock(async () => ({
       buildUrl: BUILD_URL,
       buildNumber: 381,
@@ -700,7 +700,7 @@ describe("build command", () => {
     const originalExitCode = process.exitCode;
     process.exitCode = 0;
 
-    const getJobStatus = mock(async () => ({ lastBuildNumber: 380 }));
+    const getJobStatus = mock(async () => ({ buildNumber: 380 }));
     const triggerBuild = mock(async () => ({
       buildUrl: BUILD_URL,
       buildNumber: 381,
@@ -842,7 +842,7 @@ describe("build command", () => {
   });
 
   test("non-interactive --without-params triggers with an empty parameter map", async () => {
-    const getJobStatus = mock(async () => ({ lastBuildNumber: 380 }));
+    const getJobStatus = mock(async () => ({ buildNumber: 380 }));
     const triggerBuild = mock(async () => ({
       queueUrl: QUEUE_URL,
       jobUrl: JOB_URL,
@@ -869,7 +869,7 @@ describe("build command", () => {
   });
 
   test("non-interactive build honors a custom --branch-param name", async () => {
-    const getJobStatus = mock(async () => ({ lastBuildNumber: 380 }));
+    const getJobStatus = mock(async () => ({ buildNumber: 380 }));
     const triggerBuild = mock(async () => ({
       queueUrl: QUEUE_URL,
       jobUrl: JOB_URL,
@@ -907,7 +907,7 @@ describe("build command", () => {
     const loadJobs = mock(async () => [cachedJob]);
     const resolveJobMatch = mock(async () => cachedJob);
     const recordRecentJob = mock(async () => undefined);
-    const getJobStatus = mock(async () => ({ lastBuildNumber: 5 }));
+    const getJobStatus = mock(async () => ({ buildNumber: 5 }));
     const triggerBuild = mock(async () => ({
       buildUrl: `${cachedJob.url}/6/`,
       buildNumber: 6,
@@ -987,7 +987,7 @@ describe("build command", () => {
     const originalExitCode = process.exitCode;
     process.exitCode = 0;
 
-    const getJobStatus = mock(async () => ({ lastBuildNumber: 380 }));
+    const getJobStatus = mock(async () => ({ buildNumber: 380 }));
     const triggerBuild = mock(async () => ({
       buildUrl: BUILD_URL,
       buildNumber: 381,
@@ -1025,7 +1025,7 @@ describe("build command", () => {
     const originalExitCode = process.exitCode;
     process.exitCode = 0;
 
-    const getJobStatus = mock(async () => ({ lastBuildNumber: 380 }));
+    const getJobStatus = mock(async () => ({ buildNumber: 380 }));
     const triggerBuild = mock(async () => ({
       queueUrl: QUEUE_URL,
       jobUrl: JOB_URL,

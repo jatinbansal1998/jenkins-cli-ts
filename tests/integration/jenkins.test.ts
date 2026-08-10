@@ -12,6 +12,7 @@ import {
   runCli,
   runCliExpectFailure,
   observeInteractiveCli,
+  stripTerminalCodes,
   waitForNewBuild,
   withCliHome,
 } from "./jenkins/harness";
@@ -418,10 +419,22 @@ describe.skipIf(!integrationEnabled)(
               build: {
                 number: first.data.buildNumber,
                 url: first.data.buildUrl,
+                triggeredBy: "integration-test",
               },
             },
           });
         }
+
+        const humanStatus = await runCli(home, [
+          "status",
+          "--job-url",
+          exactUrl,
+          "--build",
+          String(first.data.buildNumber),
+        ]);
+        const plainStatus = stripTerminalCodes(humanStatus.output);
+        expect(plainStatus).toMatch(/Started: \d{1,2} [A-Z][a-z]+ \d{4},/);
+        expect(plainStatus).toContain("By: integration-test");
 
         expect(
           parseJson(

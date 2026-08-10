@@ -119,7 +119,7 @@ describe("assertProtectedMutationAllowed", () => {
 describe("direct mutation commands on a protected profile", () => {
   test("build rejects before any Jenkins call", async () => {
     const spies = mutationSpies();
-    const getJobStatus = mock(async () => ({ lastBuildNumber: 1 }));
+    const getJobStatus = mock(async () => ({ buildNumber: 1 }));
 
     await expect(
       runBuild({
@@ -158,7 +158,7 @@ describe("direct mutation commands on a protected profile", () => {
   test("rerun and rerun-last reject before their mutating client methods", async () => {
     const spies = mutationSpies();
     const getLastFailedBuild = mock(async () => null);
-    const getJobStatus = mock(async () => ({ lastBuildNumber: 1 }));
+    const getJobStatus = mock(async () => ({ buildNumber: 1 }));
 
     await expect(
       runRerun({
@@ -187,8 +187,8 @@ describe("direct mutation commands on a protected profile", () => {
     const env = protectedEnv({ confirmProtected: true });
     const spies = mutationSpies();
     const getJobStatus = mock(async () => ({
-      lastBuildNumber: 7,
-      lastBuildUrl: `${JOB_URL}7/`,
+      buildNumber: 7,
+      buildUrl: `${JOB_URL}7/`,
       parameters: [{ name: "BRANCH", value: "main" }],
     }));
     const getJobParameterDefinitions = mock(async () => []);

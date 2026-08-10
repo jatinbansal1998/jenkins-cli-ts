@@ -149,13 +149,13 @@ export async function requestCancellationForWatchTarget(options: {
   const jobUrl = normalizeOptionalJobUrl(options.jobUrl);
   if (jobUrl) {
     const jobStatus = await options.client.getJobStatus(jobUrl);
-    if (jobStatus.building && jobStatus.lastBuildUrl) {
-      await options.client.stopBuild(jobStatus.lastBuildUrl);
+    if (jobStatus.building && jobStatus.buildUrl) {
+      await options.client.stopBuild(jobStatus.buildUrl);
       return {
         kind: "build",
-        buildUrl: jobStatus.lastBuildUrl,
-        buildNumber: jobStatus.lastBuildNumber,
-        message: `Cancellation requested for build: ${jobStatus.lastBuildUrl}`,
+        buildUrl: jobStatus.buildUrl,
+        buildNumber: jobStatus.buildNumber,
+        message: `Cancellation requested for build: ${jobStatus.buildUrl}`,
       };
     }
 

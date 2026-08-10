@@ -364,7 +364,7 @@ async function waitForExpectExit(
   return subprocess.exited;
 }
 
-function stripTerminalCodes(value: string): string {
+export function stripTerminalCodes(value: string): string {
   return value
     .replace(OSC_TERMINAL_SEQUENCE, "")
     .replace(CSI_TERMINAL_SEQUENCE, "")
