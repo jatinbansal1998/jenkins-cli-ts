@@ -15,13 +15,16 @@ manual — post-merge CI only tests; it does not bump versions or open PRs.
 
 ## Hard rules
 
-1. **Always stable.** `.github/workflows/release.yml` publishes with
-   `prerelease: false` and `make_latest: true`. Do not publish prereleases: the
-   curl installer downloads from `releases/latest/download` and the Homebrew tap
-   formula is synced on every tag, so a prerelease leaves installer users on an
-   older binary than the formula points at.
+1. **Stable by default.** The tag shape decides the channel in
+   `.github/workflows/release.yml`: a plain tag (`v0.8.13`) publishes as
+   latest/stable and syncs the Homebrew tap; a semver prerelease tag
+   (`v0.9.0-rc.1`) publishes as a prerelease and skips the tap sync. Only cut a
+   prerelease when the user asks for one — the curl installer downloads from
+   `releases/latest/download`, so prereleases are invisible to it by design.
 2. **Version:** patch-bump `package.json` version unless the user names the next
    version (e.g. `0.9.0`). Tag is always `v` + that version (`v0.8.13`).
+   `scripts/build.ts` fails the build unless the tag matches `package.json`
+   exactly, so an `-rc.1` tag needs `"version": "0.9.0-rc.1"` in `package.json`.
 3. **Changelog:** write notes covering everything since the previous release (see
    `references/release-notes-format.md`), plus a compare link.
 4. **Publishing path:** commit version → tag → push → wait for Release workflow
@@ -89,9 +92,12 @@ Pushing `v*` triggers `.github/workflows/release.yml`, which:
 
 - runs tests
 - builds multi-platform binaries (`bun scripts/build.ts --release`)
-- creates/updates the release via `softprops/action-gh-release` as latest/stable
+- creates/updates the release via `softprops/action-gh-release`, latest/stable for
+  a plain tag and `prerelease: true` for a `-rc.N` tag
 - uploads artifacts and syncs the Homebrew tap when `HOMEBREW_TAP_TOKEN` is set
-- validates the published assets on Linux, macOS, and Windows against a real Jenkins
+  (skipped for prereleases, so the tap stays on the latest stable)
+- validates the published assets on Linux, macOS, and Windows against a real
+  Jenkins — this runs for prereleases too
 
 Workflow auto-notes (`generate_release_notes: true`) are a placeholder — **replace** them in the next step.
 
@@ -161,9 +167,26 @@ Tell the user:
 - Homebrew tap sync status if the workflow summary mentions it
 - Anything skipped or failed
 
+## Prerelease (soak) lane
+
+Only when the user asks to soak a build before shipping it:
+
+```bash
+# package.json -> "version": "0.9.0-rc.1"
+git commit -am "chore: release v0.9.0-rc.1"
+git tag v0.9.0-rc.1 && git push origin main && git push origin v0.9.0-rc.1
+```
+
+Same workflow, same tests and asset validation; the release lands as a
+prerelease, stays off `releases/latest`, and leaves the Homebrew tap untouched.
+Testers opt in with `jenkins-cli update --channel prerelease`.
+
+To ship it, cut the plain tag (`0.9.0` / `v0.9.0`) — do not flip the rc release's
+prerelease flag, since the tap only syncs on a real tag build.
+
 ## Out of scope (unless user explicitly asks)
 
-- Publishing a prerelease or unsetting latest
+- Flipping an existing release's prerelease/latest flags by hand
 - Changing `version-policy.json` minVersion
 - Releasing from a non-`main` commit
 - Force-pushing tags
@@ -176,4 +199,4 @@ Tell the user:
 - [ ] Tag `v${NEXT}` pushed
 - [ ] Release workflow green (including asset validation)
 - [ ] Custom release notes applied
-- [ ] Release is latest, `prerelease: false`
+- [ ] Release channel matches the tag shape (plain → latest/stable, `-rc.N` → prerelease)

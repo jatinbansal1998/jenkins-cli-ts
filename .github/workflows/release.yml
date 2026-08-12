@@ -35,6 +35,15 @@ jobs:
           echo "TAG_NAME=$TAG_NAME" >> "$GITHUB_ENV"
           echo "tag_name=$TAG_NAME" >> "$GITHUB_OUTPUT"
 
+          # Semver prerelease tags (v0.9.0-rc.1) publish as prereleases and skip
+          # the Homebrew tap sync; plain tags (v0.9.0) publish as latest/stable.
+          case "$TAG_NAME" in
+            *-*) IS_PRERELEASE=true ;;
+            *) IS_PRERELEASE=false ;;
+          esac
+          echo "IS_PRERELEASE=$IS_PRERELEASE" >> "$GITHUB_ENV"
+          echo "is_prerelease=$IS_PRERELEASE" >> "$GITHUB_OUTPUT"
+
       - uses: actions/checkout@v7
         with:
           ref: refs/tags/${{ env.TAG_NAME }}
@@ -98,8 +107,8 @@ jobs:
           tag_name: ${{ env.TAG_NAME }}
           generate_release_notes: true
           overwrite_files: true
-          prerelease: false
-          make_latest: true
+          prerelease: ${{ env.IS_PRERELEASE == 'true' }}
+          make_latest: ${{ env.IS_PRERELEASE != 'true' }}
           files: |
             dist/jenkins-cli-linux-x64
             dist/jenkins-cli-linux-x64-musl
@@ -119,7 +128,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Sync Homebrew tap
-        if: ${{ env.HOMEBREW_TAP_TOKEN != '' }}
+        if: ${{ env.HOMEBREW_TAP_TOKEN != '' && env.IS_PRERELEASE != 'true' }}
         id: sync_tap
         shell: bash
         env:
@@ -155,7 +164,9 @@ jobs:
           {
             echo "## Homebrew tap sync"
             echo ""
-            if [ -z "${HOMEBREW_TAP_TOKEN:-}" ]; then
+            if [ "${IS_PRERELEASE:-false}" = "true" ]; then
+              echo "Skipped: \`$TAG_NAME\` is a prerelease; the tap stays on the latest stable release."
+            elif [ -z "${HOMEBREW_TAP_TOKEN:-}" ]; then
               echo "Skipped: \`HOMEBREW_TAP_TOKEN\` is not set."
             elif [ "$TAP_SYNC_OUTCOME" = "success" ]; then
               echo "Success: \`Formula/jenkins-cli.rb\` synced to \`jatinbansal1998/homebrew-tap\`."
