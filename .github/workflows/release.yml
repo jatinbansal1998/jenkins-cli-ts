@@ -98,7 +98,8 @@ jobs:
           tag_name: ${{ env.TAG_NAME }}
           generate_release_notes: true
           overwrite_files: true
-          prerelease: true
+          prerelease: false
+          make_latest: true
           files: |
             dist/jenkins-cli-linux-x64
             dist/jenkins-cli-linux-x64-musl

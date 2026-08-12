@@ -1,24 +1,20 @@
-# Release notes format (prerelease)
+# Release notes format
 
-Match the style of recent prereleases (e.g. `v0.7.26`). Always write custom notes;
-do not leave only GitHub auto-generated "What's Changed" lists.
+Always write custom notes; do not leave only GitHub auto-generated
+"What's Changed" lists.
 
 ## Skeleton
 
 Replace placeholders:
 
-- `NEW` — this release without `v` (e.g. `0.7.27`)
-- `PREV` — previous prerelease without `v` (e.g. `0.7.26`)
-- `STABLE` — latest stable without `v` (e.g. `0.7.17`)
-- `FIRST_PRE` — first prerelease after stable without `v` (e.g. `0.7.18`)
+- `NEW` — this release without `v` (e.g. `0.8.13`)
+- `PREV` — previous release without `v` (e.g. `0.8.12`)
 - `REPO` — `jatinbansal1998/jenkins-cli-ts` (or current origin owner/name)
 
 ```markdown
 ## vNEW
 
-`vNEW` is a prerelease that brings together all changes since the latest stable release, `vSTABLE`, including the work previously published in the `vFIRST_PRE` through `vPREV` prereleases.
-
-### New Since vPREV
+`vNEW` is the latest stable release, covering everything that landed since `vPREV`.
 
 #### Short Theme Title
 
@@ -29,95 +25,44 @@ Replace placeholders:
 
 - …
 
-### Included from vFIRST_PRE to vPREV
+### Full Changelog
 
-#### Theme From Earlier Prereleases
-
-- Condensed bullets rolled forward from prior prerelease notes (not a full dump of every commit).
-
-#### Another Prior Theme
-
-- …
-
-### Full Changelogs
-
-- [Changes since the previous prerelease (`vPREV...vNEW`)](https://github.com/REPO/compare/vPREV...vNEW)
-- [All changes since the latest stable release (`vSTABLE...vNEW`)](https://github.com/REPO/compare/vSTABLE...vNEW)
+- [All changes since `vPREV`](https://github.com/REPO/compare/vPREV...vNEW)
 ```
-
-## Intro sentence variants
-
-**Multiple intermediate prereleases** (common):
-
-> `v0.7.26` is a prerelease that brings together all changes since the latest stable release, `v0.7.17`, including the work previously published in the `v0.7.18` through `v0.7.25` prereleases.
-
-**List a few intermediates by name** when the range is short:
-
-> … including the work previously published in the `v0.7.18`, `v0.7.19`, and `v0.7.20` prereleases.
-
-**First prerelease after stable** (no intermediate section):
-
-> `v0.7.18` is a prerelease that brings together all changes since the latest stable release, `v0.7.17`.
-
-Omit `### Included from …` when there are no intermediate prereleases.
 
 ## Section guidance
 
-### New Since vPREV
-
 - Only work that landed between `vPREV` and `vNEW`.
 - Prefer product language over commit subjects.
-- Group into `####` themes (auth, watch UI, builds, etc.).
+- Group into `####` themes (auth, watch UI, builds, logs, etc.).
 - Skip pure version-bump / lint-only noise.
+- If a release carries no user-facing change (e.g. a re-cut after a bad tag), say
+  so in one line instead of padding the notes.
 
-### Included from vFIRST_PRE to vPREV
-
-- Roll forward the important themes from earlier prerelease notes so a reader of **only** this prerelease still sees the full story since stable.
-- Keep this section denser than "New Since"; merge related themes over time.
-- Source material: previous release bodies via `gh release view vPREV --json body`.
-
-### Full Changelogs
-
-Always include **both** compare links when a previous prerelease and a stable baseline exist.
-
-## Example excerpt (real shape from v0.7.26)
+## Example excerpt (real shape from v0.8.11)
 
 ```markdown
-## v0.7.26
+## v0.8.11
 
-`v0.7.26` is a prerelease that brings together all changes since the latest stable release, `v0.7.17`, including the work previously published in the `v0.7.18` through `v0.7.25` prereleases.
+`v0.8.11` is the latest stable release, covering everything that landed since `v0.8.10`.
 
-### New Since v0.7.25
+#### Cleaner, Searchable Build Logs
 
-#### Dual Browser Prompts During Auth Login
+- `logs --plain` strips ANSI sequences, concealed Jenkins metadata, and Pipeline framing while preserving visible text such as OSC hyperlink labels.
+- `--no-timestamps` recognizes both ISO-8601 and `[HH:mm:ss]` prefixes; `--grep` accepts JavaScript regular expressions, and `--context` includes surrounding lines.
 
-- Interactive login now offers to open the browser at two points in the flow.
-- …
+#### Reliable Build History Pagination
 
-### Included from v0.7.18 to v0.7.25
+- History pages use Jenkins offset ranges with a lookahead entry, while still recovering when a controller or proxy ignores the requested range.
 
-#### Private, Uniform Secure-Store Accounts
+### Full Changelog
 
-- …
-
-### Full Changelogs
-
-- [Changes since the previous prerelease (`v0.7.25...v0.7.26`)](https://github.com/jatinbansal1998/jenkins-cli-ts/compare/v0.7.25...v0.7.26)
-- [All changes since the latest stable release (`v0.7.17...v0.7.26`)](https://github.com/jatinbansal1998/jenkins-cli-ts/compare/v0.7.17...v0.7.26)
+- [All changes since `v0.8.10`](https://github.com/jatinbansal1998/jenkins-cli-ts/compare/v0.8.10...v0.8.11)
 ```
 
-## Finding STABLE and PREV
+## Finding PREV
 
 ```bash
-# Latest releases (note Pre-release vs Latest)
-gh release list --limit 30
-
-# Explicit: latest non-prerelease
-gh release list --limit 50 --json tagName,isPrerelease,isLatest \
-  --jq '.[] | select(.isPrerelease == false) | .tagName' | head -1
-
-# Previous tag for this line of work
+gh release list --limit 20
 git describe --tags --abbrev=0
 ```
-
-When in doubt, open the last few prerelease bodies and copy structure, not prose.
