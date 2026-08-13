@@ -9,6 +9,7 @@ import { runQueue } from "../src/commands/queue";
 import { runRunningBuilds } from "../src/commands/run";
 import {
   jsonArtifact,
+  jsonBuild,
   jsonNodes,
   jsonQueueItem,
   jsonRunningBuild,
@@ -56,6 +57,37 @@ afterEach(() => {
 });
 
 describe("expanded JSON normalization", () => {
+  test("reports build time not attributed to Pipeline stages", () => {
+    expect(
+      jsonBuild({
+        durationMs: 12_000,
+        stages: [
+          { name: "Build", durationMillis: 8_000 },
+          { name: "Deploy", durationMillis: 1_000 },
+        ],
+      }),
+    ).toMatchObject({
+      durationMs: 12_000,
+      overheadMs: 3_000,
+      stages: [
+        { name: "Build", durationMs: 8_000 },
+        { name: "Deploy", durationMs: 1_000 },
+      ],
+    });
+  });
+
+  test("clamps Pipeline overhead to zero when parallel stages overlap", () => {
+    expect(
+      jsonBuild({
+        durationMs: 10_000,
+        stages: [
+          { name: "Linux", durationMillis: 8_000 },
+          { name: "Windows", durationMillis: 7_000 },
+        ],
+      }).overheadMs,
+    ).toBe(0);
+  });
+
   test("normalizes every new Jenkins collection and mutation target", () => {
     expect(
       jsonQueueItem({

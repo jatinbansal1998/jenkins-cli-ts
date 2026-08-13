@@ -46,6 +46,7 @@ export type JsonBuild = {
   result: string | null;
   building: boolean;
   durationMs?: number;
+  overheadMs?: number;
   timestampMs?: number;
   estimatedDurationMs?: number;
   queueTimeMs?: number;
@@ -278,19 +279,29 @@ function mapStages(
  * fields are dropped by `JSON.stringify`, keeping the document compact.
  */
 export function jsonBuild(build: BuildStatus): JsonBuild {
+  const stages = mapStages(build.stages);
+  const stageDurationMs = stages?.reduce(
+    (total, stage) => total + (stage.durationMs ?? 0),
+    0,
+  );
+
   return {
     number: build.buildNumber,
     url: build.buildUrl,
     result: build.result ?? null,
     building: build.building ?? false,
     durationMs: build.durationMs,
+    overheadMs:
+      stageDurationMs === undefined
+        ? undefined
+        : Math.max(0, (build.durationMs ?? 0) - stageDurationMs),
     timestampMs: build.timestampMs,
     estimatedDurationMs: build.estimatedDurationMs,
     queueTimeMs: build.queueTimeMs,
     branch: build.branch,
     revisions: build.revisions,
     parameters: build.parameters,
-    stages: mapStages(build.stages),
+    stages,
     triggeredBy: build.triggeredBy,
   };
 }

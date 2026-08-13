@@ -484,6 +484,7 @@ and `wait`:
   "result": "SUCCESS",
   "building": false,
   "durationMs": 12000,
+  "overheadMs": 4000,
   "timestampMs": 1700000000000,
   "estimatedDurationMs": 11000,
   "queueTimeMs": 250,
@@ -502,6 +503,12 @@ and `wait`:
   "triggeredBy": "Jane Doe"
 }
 ```
+
+`overheadMs` is time inside the build not attributed to any stage, typically
+agent startup and post-build actions. It is present whenever `stages[]` is
+present and equals `durationMs - sum(stages[].durationMs)`, clamped to zero
+because overlapping parallel stages can make the naive sum exceed the build
+duration.
 
 `triggeredBy` comes from the build's cause action: the triggering user's
 display name, or Jenkins' cause description (minus the "Started by" prefix)
