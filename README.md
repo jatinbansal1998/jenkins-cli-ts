@@ -997,6 +997,10 @@ jenkins-cli logs --job "api-prod" --plain --no-timestamps --no-follow
 jenkins-cli logs --job "api-prod" --grep 'ERROR|WARN' --context 2 --no-follow
 ```
 
+Logs follow by default when stdout is a terminal and return after one read when
+stdout is piped or redirected. Pass `--follow` or `--no-follow` to override the
+inferred default.
+
 `--tail` prints only the last N existing lines. Combined with `--follow`, it
 then streams new output from the exact Jenkins byte offset without repeating
 the tail. `--since` accepts a duration (`30m`, `2h`, `1d`) or an ISO-8601

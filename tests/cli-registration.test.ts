@@ -145,6 +145,7 @@ describe("structured output registration", () => {
     const logs = runCli(["logs", "--help"]);
     expect(logs.exitCode).toBe(0);
     expect(logs.output).toContain("--jsonl");
+    expect(logs.output).toContain("[default: stdout is a TTY]");
     for (const option of [
       "--tail",
       "--since",

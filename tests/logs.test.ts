@@ -67,6 +67,7 @@ describe("logs command", () => {
       client: client({ getBuildStatus, getConsoleChunk }),
       env,
       buildUrl,
+      follow: true,
       tail: 2,
       poll: "1ms",
       nonInteractive: true,
@@ -78,6 +79,61 @@ describe("logs command", () => {
       0,
       Buffer.byteLength(existing),
     ]);
+  });
+
+  test("defaults to a one-shot read when stdout is not a TTY", async () => {
+    const stdoutDescriptor = Object.getOwnPropertyDescriptor(
+      process.stdout,
+      "isTTY",
+    );
+    const output: string[] = [];
+    const first = "existing\n";
+    const next = "later\n";
+    const getBuildStatus = mock()
+      .mockResolvedValueOnce({ buildNumber: 9, buildUrl, building: true })
+      .mockResolvedValueOnce({ buildNumber: 9, buildUrl, building: true })
+      .mockResolvedValueOnce({
+        buildNumber: 9,
+        buildUrl,
+        building: false,
+        result: "SUCCESS",
+      });
+    const getConsoleChunk = mock(async (_url: string, offset: number) =>
+      offset === 0
+        ? {
+            text: first,
+            nextStart: Buffer.byteLength(first),
+            hasMore: false,
+          }
+        : {
+            text: next,
+            nextStart: Buffer.byteLength(first + next),
+            hasMore: false,
+          },
+    );
+    Object.defineProperty(process.stdout, "isTTY", {
+      configurable: true,
+      value: false,
+    });
+
+    try {
+      await runLogs({
+        client: client({ getBuildStatus, getConsoleChunk }),
+        env,
+        buildUrl,
+        poll: "1ms",
+        nonInteractive: true,
+        writeText: (value) => output.push(value),
+      });
+    } finally {
+      if (stdoutDescriptor) {
+        Object.defineProperty(process.stdout, "isTTY", stdoutDescriptor);
+      }
+    }
+
+    expect(output.join("")).toBe(first);
+    expect(getBuildStatus).toHaveBeenCalledTimes(2);
+    expect(getConsoleChunk).toHaveBeenCalledTimes(1);
   });
 
   test("keeps stage diagnostics off stdout and streams raw node text", async () => {
@@ -430,6 +486,7 @@ describe("logs command", () => {
       }),
       env,
       buildUrl,
+      follow: true,
       nonInteractive: true,
       cancelSignal: signal,
       writeText: () => undefined,
