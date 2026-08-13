@@ -181,7 +181,6 @@ const formula = [
   "class JenkinsCli < Formula",
   `  desc "Minimal Jenkins CLI for listing jobs, triggering builds, and checking status"`,
   `  homepage "https://github.com/${REPO_SLUG}"`,
-  `  version "${tagVersion}"`,
   "",
   "  on_macos do",
   "    on_arm do",
