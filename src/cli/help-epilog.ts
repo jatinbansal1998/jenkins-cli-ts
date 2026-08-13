@@ -32,19 +32,21 @@ export function getRootHelpEpilog(): string {
       Print the last 50 existing lines, then follow new output.
   $0 logs --build-url https://jenkins.example.com/job/api/128/ --stage Test
       Stream the uniquely named Pipeline stage.
+  $0 tests --job api --failed
+      Summarize the latest completed build's tests and show failures.
   $0 artifacts --job api --download --dest ./out --non-interactive
       Download the last build's artifacts.
   $0 auth logout --all --non-interactive
       Remove all locally stored credentials.
 
-Job selection (build, status, history, wait, logs, artifacts, cancel, rerun, params):
+Job selection (build, status, history, wait, logs, tests, artifacts, cancel, rerun, params):
   [job-name]        Fuzzy match on job name or description (positional form)
   --job <text>      Fuzzy match on job name or description (uses the local job cache)
   --job-url <url>   Exact Jenkins job URL (skips the cache and search)
   The positional form and --job are equivalent; if both are passed, they must match.
   With no job argument or flag, an interactive job picker opens (requires a TTY).
 
-Exact build selection (status, wait, logs, artifacts, cancel, rerun):
+Exact build selection (status, wait, logs, tests, artifacts, cancel, rerun):
   --build <n>       Positive integer build number; requires --job or --job-url
   --build-url <url> Complete numeric Jenkins build URL; cannot be combined with
                     --build, --job, --job-url, or --queue-url
@@ -55,8 +57,8 @@ ${BUILD_METADATA_HELP}
 
 Scripting and AI agents:
   Pass --non-interactive to disable every prompt and fail fast; --json/--jsonl imply it.
-  --json: list, params, build, status, history, wait, artifacts, run, cancel,
-          queue, nodes, rerun, auth status/list/current, and update --check.
+  --json: list, params, build, status, history, wait, tests, artifacts,
+          run, cancel, queue, nodes, rerun, auth status/list/current, and update --check.
   --jsonl: logs.
   Output lines are prefixed OK: (success), ERROR: (failure), HINT: (guidance).
   Exit code is 0 on success and 1 on any error.
@@ -134,6 +136,15 @@ Command-specific options:
     --context <n>     Show N lines around each --grep match
     --jsonl           Stream one compact JSON event per line (raw text only;
                       not combinable with --plain/--no-timestamps/--grep)
+
+  tests:
+    [job-name]        Job name or description
+    --job <text>      Job name or description
+    --job-url <url>   Full Jenkins job URL
+    --build <n>       Target a specific build number (with --job/--job-url)
+    --build-url <url> Full Jenkins build URL
+    --failed          Show failing cases, messages, and stack traces
+    --json            Output a single JSON document (implies non-interactive)
 
   artifacts:
     [job-name]        Job name or description
@@ -226,9 +237,9 @@ Command-specific options:
     asks and defaults to no) or by setting "protected": true in the config file.
     Blocked without the flag: build/deploy, cancel, rerun, rerun last build,
     and the same actions reached from list/build/status/history menus.
-    Everything that only reads (list, params, status, wait, logs, history,
-    queue, nodes, artifacts, auth) still works. A direct --url pointing at a
-    read-only profile's controller is read-only too. Blocked runs exit
+    Everything that only reads (list, params, status, wait, logs, tests,
+    history, queue, nodes, artifacts, auth) still works. A direct --url pointing
+    at a read-only profile's controller is read-only too. Blocked runs exit
     non-zero; with --json they emit one document with code PROFILE_PROTECTED.
 
   config/env:

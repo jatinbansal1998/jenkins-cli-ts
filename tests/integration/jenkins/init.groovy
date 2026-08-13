@@ -16,6 +16,7 @@ import hudson.slaves.DumbSlave
 import hudson.slaves.JNLPLauncher
 import hudson.tasks.ArtifactArchiver
 import hudson.tasks.Shell
+import hudson.tasks.junit.JUnitResultArchiver
 import jenkins.install.InstallState
 import jenkins.model.Jenkins
 import jenkins.security.ApiTokenProperty
@@ -98,6 +99,35 @@ printf 'exact-artifact:%s\n' "$MESSAGE" > exact-artifact.txt
 '''))
 exactJob.getPublishersList().add(new ArtifactArchiver("exact-artifact.txt"))
 exactJob.save()
+
+def testResultsJob = jenkins.createProject(FreeStyleProject.class, "cli-test-results")
+testResultsJob.getBuildersList().add(new Shell('''set -eu
+cat > test-results.xml <<'XML'
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="checkout" tests="3" failures="1" skipped="1" time="1.5">
+  <testcase classname="CartTest" name="accepts valid card" time="0.1"/>
+  <testcase classname="CartTest" name="rejects expired card é" time="0.12">
+    <failure message="expected true but got false">java.lang.AssertionError: expected true
+  at CartTest.rejectsExpiredCard(CartTest.java:42)</failure>
+  </testcase>
+  <testcase classname="CartTest" name="pending fraud check" time="0.0"><skipped/></testcase>
+</testsuite>
+XML
+'''))
+testResultsJob.getPublishersList().add(new JUnitResultArchiver("test-results.xml"))
+testResultsJob.save()
+
+def successfulTestResultsJob = jenkins.createProject(FreeStyleProject.class, "cli-test-results-success")
+successfulTestResultsJob.getBuildersList().add(new Shell('''set -eu
+cat > test-results.xml <<'XML'
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="health" tests="1" failures="0" skipped="0" time="0.05">
+  <testcase classname="HealthTest" name="reports healthy" time="0.05"/>
+</testsuite>
+XML
+'''))
+successfulTestResultsJob.getPublishersList().add(new JUnitResultArchiver("test-results.xml"))
+successfulTestResultsJob.save()
 
 def failingJob = jenkins.createProject(FreeStyleProject.class, "cli-failure")
 failingJob.addProperty(new ParametersDefinitionProperty([
@@ -212,6 +242,19 @@ node {
 }
 ''', true))
 pipelineJob.save()
+
+def pipelineTestResultsJob = jenkins.createProject(WorkflowJob.class, "cli-pipeline-test-results")
+pipelineTestResultsJob.setDefinition(new CpsFlowDefinition('''
+node {
+  writeFile file: 'pipeline-results.xml', text: """<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="pipeline" tests="1" failures="0" skipped="0" time="0.02">
+  <testcase classname="PipelineTest" name="publishes results" time="0.02"/>
+</testsuite>
+"""
+  junit testResults: 'pipeline-results.xml'
+}
+''', true))
+pipelineTestResultsJob.save()
 
 def revisionPipelineRepository = new File(runtimeDir, "pipeline-definitions.git").getAbsolutePath()
 def revisionApplicationRepository = new File(runtimeDir, "backend-api.git").getAbsolutePath()

@@ -645,6 +645,210 @@ describe.skipIf(!integrationEnabled)(
       });
     }, 180_000);
 
+    test("inspects published freestyle and Pipeline test results", async () => {
+      await withCliHome(async (home) => {
+        const mixedJobUrl = `${jenkinsUrl}/job/cli-test-results/`;
+        const mixedRun = await invokeCli(home, [
+          "build",
+          "--job-url",
+          mixedJobUrl,
+          "--without-params",
+          "--watch",
+          "--json",
+        ]);
+        expect(mixedRun.exitCode, mixedRun.output).toBe(1);
+        const mixedBuild = parseJson<{
+          data: { buildNumber: number; buildUrl: string; result: string };
+        }>(mixedRun);
+        expect(mixedBuild.data.result).toBe("UNSTABLE");
+
+        const summary = parseJson<{
+          data: {
+            build: { number: number; url: string; result: string };
+            summary: {
+              total: number;
+              passed: number;
+              failed: number;
+              skipped: number;
+              durationMs: number;
+            };
+            failures?: unknown[];
+            reportUrl: string;
+          };
+        }>(await runCli(home, ["tests", "--job-url", mixedJobUrl, "--json"]));
+        expect(summary).toMatchObject({
+          ok: true,
+          command: "tests",
+          data: {
+            build: {
+              number: mixedBuild.data.buildNumber,
+              url: mixedBuild.data.buildUrl,
+              result: "UNSTABLE",
+            },
+            summary: { total: 3, passed: 1, failed: 1, skipped: 1 },
+          },
+        });
+        expect(summary.data.summary.durationMs).toBeGreaterThan(0);
+        expect(summary.data.failures).toBeUndefined();
+        expect(summary.data.reportUrl).toBe(
+          `${mixedBuild.data.buildUrl}testReport/`,
+        );
+
+        const failures = parseJson<{
+          data: {
+            failures: Array<{
+              suite: string;
+              className: string;
+              name: string;
+              message: string;
+              stackTrace: string;
+            }>;
+          };
+        }>(
+          await runCli(home, [
+            "tests",
+            "--build-url",
+            mixedBuild.data.buildUrl,
+            "--failed",
+            "--json",
+          ]),
+        );
+        expect(failures.data.failures).toEqual([
+          expect.objectContaining({
+            suite: "checkout",
+            className: "CartTest",
+            name: "rejects expired card é",
+            message: "expected true but got false",
+            stackTrace: expect.stringContaining(
+              "at CartTest.rejectsExpiredCard(CartTest.java:42)",
+            ),
+          }),
+        ]);
+
+        const human = await runCli(home, [
+          "tests",
+          "--build-url",
+          mixedBuild.data.buildUrl,
+          "--failed",
+        ]);
+        expect(human.output).toContain("Build: #");
+        expect(human.output).toContain(
+          "3 total | 1 passed | 1 failed | 1 skipped",
+        );
+        expect(human.output).toContain("rejects expired card é");
+        expect(human.output).toContain("expected true but got false");
+        expect(human.output).toContain(
+          "at CartTest.rejectsExpiredCard(CartTest.java:42)",
+        );
+
+        const successfulJobUrl = `${jenkinsUrl}/job/cli-test-results-success/`;
+        const successfulBuild = parseJson<{
+          data: { buildUrl: string };
+        }>(
+          await runCli(home, [
+            "build",
+            "--job-url",
+            successfulJobUrl,
+            "--without-params",
+            "--watch",
+            "--json",
+          ]),
+        );
+        expect(
+          parseJson(
+            await runCli(home, [
+              "tests",
+              "--build-url",
+              successfulBuild.data.buildUrl,
+              "--failed",
+              "--json",
+            ]),
+          ),
+        ).toMatchObject({
+          ok: true,
+          data: {
+            summary: { total: 1, passed: 1, failed: 0, skipped: 0 },
+            failures: [],
+          },
+        });
+
+        const pipelineJobUrl = `${jenkinsUrl}/job/cli-pipeline-test-results/`;
+        const pipelineBuild = parseJson<{
+          data: { buildUrl: string };
+        }>(
+          await runCli(home, [
+            "build",
+            "--job-url",
+            pipelineJobUrl,
+            "--without-params",
+            "--watch",
+            "--json",
+          ]),
+        );
+        expect(
+          parseJson(
+            await runCli(home, [
+              "tests",
+              "--build-url",
+              pipelineBuild.data.buildUrl,
+              "--json",
+            ]),
+          ),
+        ).toMatchObject({
+          ok: true,
+          data: {
+            summary: { total: 1, passed: 1, failed: 0, skipped: 0 },
+          },
+        });
+
+        const noReportJobUrl = `${jenkinsUrl}/job/cli-no-params/`;
+        const noReportBuild = parseJson<{
+          data: { buildUrl: string };
+        }>(
+          await runCli(home, [
+            "build",
+            "--job-url",
+            noReportJobUrl,
+            "--without-params",
+            "--watch",
+            "--json",
+          ]),
+        );
+        expect(
+          parseJson(
+            await runCliExpectFailure(home, [
+              "tests",
+              "--build-url",
+              noReportBuild.data.buildUrl,
+              "--json",
+            ]),
+          ),
+        ).toMatchObject({
+          ok: false,
+          error: { code: "TEST_REPORT_NOT_FOUND" },
+        });
+
+        expect(
+          parseJson(
+            await runCli(
+              home,
+              ["tests", "--build-url", successfulBuild.data.buildUrl, "--json"],
+              {
+                JENKINS_USER:
+                  process.env.JENKINS_INTEGRATION_READER_USER ??
+                  "integration-reader",
+                JENKINS_API_TOKEN:
+                  process.env.JENKINS_INTEGRATION_READER_TOKEN ?? "",
+              },
+            ),
+          ),
+        ).toMatchObject({
+          ok: true,
+          data: { summary: { total: 1, passed: 1 } },
+        });
+      });
+    }, 180_000);
+
     test("validates typed parameters and preserves complex values through artifacts", async () => {
       await withCliHome(async (home) => {
         const artifactDir = join(home, "artifacts");

@@ -17,6 +17,7 @@ export const FULL_HELP_COMMANDS: string[][] = [
   ["history"],
   ["wait"],
   ["logs"],
+  ["tests"],
   ["artifacts"],
   ["run"],
   ["cancel"],

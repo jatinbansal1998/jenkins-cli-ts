@@ -1,6 +1,7 @@
 export type {
   ArtifactEntry,
   BuildArtifacts,
+  BuildTestReport,
   BuildHistoryEntry,
   BuildHistoryPage,
   BuildStatus,
@@ -24,6 +25,7 @@ export type {
   QueueItemSummary,
   RunningBuildSummary,
   TriggerBuildResult,
+  TestFailure,
 } from "./models";
 
 export type {
@@ -44,6 +46,7 @@ export type {
   JenkinsJobsResponse,
   JenkinsApiParameterDefinition,
   JenkinsJobParametersResponse,
+  JenkinsTestReportResponse,
   JenkinsLastFailedBuildResponse,
   JenkinsPipelineDescribeResponse,
   JenkinsQueueItemsResponse,
