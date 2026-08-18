@@ -121,7 +121,7 @@ Command-specific options:
     --build <n>       Target a specific build number (with --job/--job-url)
     --build-url <url> Full Jenkins build URL
     --queue-url <url> Full Jenkins queue item URL
-    --follow          Keep streaming logs until build completes [default: true]
+    --follow          Keep streaming logs until build completes [default: stdout is a TTY]
     --poll <dur>      Polling interval when following [default: ${DEFAULT_LOG_POLL_MS / 1000}s]
     --tail <n>        Show only the last N existing lines
     --since <value>   Show logs after a duration or ISO-8601 timestamp

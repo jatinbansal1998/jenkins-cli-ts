@@ -279,7 +279,7 @@ function configureLogsOptions(yargsInstance: Argv): Argv {
         type: "boolean",
         describe: "Keep streaming logs until build completes",
       })
-      .default("follow", undefined, "true")
+      .default("follow", undefined, "stdout is a TTY")
       .option("poll", {
         type: "string",
         describe: `Polling interval when following (e.g. ${DEFAULT_LOG_POLL_MS / 1000}s)`,

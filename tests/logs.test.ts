@@ -67,6 +67,7 @@ describe("logs command", () => {
       client: client({ getBuildStatus, getConsoleChunk }),
       env,
       buildUrl,
+      follow: true,
       tail: 2,
       poll: "1ms",
       nonInteractive: true,
@@ -78,6 +79,100 @@ describe("logs command", () => {
       0,
       Buffer.byteLength(existing),
     ]);
+  });
+
+  test("defaults redirected output to one snapshot", async () => {
+    const stdoutDescriptor = Object.getOwnPropertyDescriptor(
+      process.stdout,
+      "isTTY",
+    );
+    const existing = "existing\n";
+    const next = "new\n";
+    const output: string[] = [];
+    const getBuildStatus = mock()
+      .mockResolvedValueOnce({ buildNumber: 9, buildUrl, building: true })
+      .mockResolvedValueOnce({ buildNumber: 9, buildUrl, building: true })
+      .mockResolvedValueOnce({
+        buildNumber: 9,
+        buildUrl,
+        building: false,
+        result: "SUCCESS",
+      });
+    const getConsoleChunk = mock(async (_url: string, offset: number) =>
+      offset === 0
+        ? {
+            text: existing,
+            nextStart: Buffer.byteLength(existing),
+            hasMore: false,
+          }
+        : {
+            text: next,
+            nextStart: Buffer.byteLength(existing + next),
+            hasMore: false,
+          },
+    );
+    Object.defineProperty(process.stdout, "isTTY", {
+      configurable: true,
+      value: false,
+    });
+
+    try {
+      await runLogs({
+        client: client({ getBuildStatus, getConsoleChunk }),
+        env,
+        buildUrl,
+        poll: "1ms",
+        nonInteractive: true,
+        writeText: (value) => output.push(value),
+      });
+    } finally {
+      if (stdoutDescriptor) {
+        Object.defineProperty(process.stdout, "isTTY", stdoutDescriptor);
+      }
+    }
+
+    expect(output.join("")).toBe(existing);
+    expect(getConsoleChunk.mock.calls.map((call) => call[1])).toEqual([0]);
+    expect(getBuildStatus).toHaveBeenCalledTimes(2);
+  });
+
+  test("keeps explicit no-follow authoritative on a terminal", async () => {
+    const stdoutDescriptor = Object.getOwnPropertyDescriptor(
+      process.stdout,
+      "isTTY",
+    );
+    const getBuildStatus = mock(async () => ({
+      buildNumber: 9,
+      buildUrl,
+      building: true,
+    }));
+    const getConsoleChunk = mock(async () => ({
+      text: "existing\n",
+      nextStart: 9,
+      hasMore: false,
+    }));
+    Object.defineProperty(process.stdout, "isTTY", {
+      configurable: true,
+      value: true,
+    });
+
+    try {
+      await runLogs({
+        client: client({ getBuildStatus, getConsoleChunk }),
+        env,
+        buildUrl,
+        follow: false,
+        nonInteractive: true,
+        writeText: () => undefined,
+      });
+    } finally {
+      if (stdoutDescriptor) {
+        Object.defineProperty(process.stdout, "isTTY", stdoutDescriptor);
+      }
+    }
+
+    expect(getConsoleChunk).toHaveBeenCalledTimes(1);
+    expect(getBuildStatus).toHaveBeenCalledTimes(2);
   });
 
   test("keeps stage diagnostics off stdout and streams raw node text", async () => {
@@ -430,6 +525,7 @@ describe("logs command", () => {
       }),
       env,
       buildUrl,
+      follow: true,
       nonInteractive: true,
       cancelSignal: signal,
       writeText: () => undefined,
