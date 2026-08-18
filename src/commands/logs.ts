@@ -326,7 +326,7 @@ async function resolveEffectiveOptions(
   grepRegex: RegExp | undefined,
 ): Promise<EffectiveLogOptions | null> {
   const effective: EffectiveLogOptions = {
-    follow: options.follow !== false,
+    follow: options.follow ?? Boolean(process.stdout.isTTY),
     tail: options.tail,
     since: options.since,
     stage: options.stage,

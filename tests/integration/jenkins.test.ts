@@ -1690,8 +1690,8 @@ describe.skipIf(!integrationEnabled)(
       });
     }, 180_000);
 
-    test.skipIf(process.platform === "win32")(
-      "stops tail following locally on Ctrl+C without cancelling Jenkins",
+    test(
+      "defaults redirected logs to a one-shot read while a build is running",
       async () => {
         await withCliHome(async (home) => {
           const jobUrl = `${jenkinsUrl}/job/cli-log-follow/`;
@@ -1716,6 +1716,92 @@ describe.skipIf(!integrationEnabled)(
               data: { build: { url: string } };
             }
           ).data.build.url;
+
+          const logs = await runCli(home, [
+            "logs",
+            "--build-url",
+            runningBuildUrl,
+            "--tail",
+            "1",
+          ]);
+          expect(logs.stdout).toContain("tail-follow-bootstrap-2");
+          expect(logs.stdout).not.toContain("tail-follow-finished");
+
+          const stillRunning = JSON.parse(
+            (
+              await runCli(home, [
+                "status",
+                "--build-url",
+                runningBuildUrl,
+                "--json",
+              ])
+            ).stdout,
+          ) as { data: { build: { building: boolean } } };
+          expect(stillRunning.data.build.building).toBe(true);
+
+          await runCli(home, [
+            "wait",
+            "--build-url",
+            runningBuildUrl,
+            "--timeout",
+            "30s",
+            "--interval",
+            "250ms",
+            "--json",
+          ]);
+        });
+      },
+      90_000,
+    );
+
+    test.skipIf(process.platform === "win32")(
+      "defaults redirected logs to one shot while explicit follow keeps streaming",
+      async () => {
+        await withCliHome(async (home) => {
+          const jobUrl = `${jenkinsUrl}/job/cli-log-follow/`;
+          await runCli(home, [
+            "build",
+            "--job-url",
+            jobUrl,
+            "--without-params",
+          ]);
+          const running = await pollCli(
+            home,
+            ["status", "--job-url", jobUrl, "--json"],
+            (result) => {
+              const payload = JSON.parse(result.stdout) as {
+                data?: { build?: { building?: boolean; url?: string } };
+              };
+              return payload.data?.build?.building === true;
+            },
+          );
+          const runningBuildUrl = (
+            JSON.parse(running.stdout) as {
+              data: { build: { url: string } };
+            }
+          ).data.build.url;
+          const redirected = await runCli(home, [
+            "logs",
+            "--build-url",
+            runningBuildUrl,
+            "--tail",
+            "1",
+            "--poll",
+            "100ms",
+          ]);
+          expect(redirected.stdout).toContain("tail-follow-bootstrap");
+          const stillRunning = parseJson<{
+            data: { build: { building: boolean } };
+          }>(
+            await runCli(home, [
+              "status",
+              "--build-url",
+              runningBuildUrl,
+              "--json",
+            ]),
+          );
+          expect(stillRunning.data.build.building).toBe(true);
+
           const interrupted = await invokeCliAndInterrupt(
             home,
             [
@@ -1800,6 +1886,7 @@ describe.skipIf(!integrationEnabled)(
           "logs",
           "--queue-url",
           queueUrl,
+          "--follow",
           "--poll",
           "100ms",
         ]);

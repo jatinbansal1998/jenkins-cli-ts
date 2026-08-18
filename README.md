@@ -997,12 +997,18 @@ jenkins-cli logs --job "api-prod" --plain --no-timestamps --no-follow
 jenkins-cli logs --job "api-prod" --grep 'ERROR|WARN' --context 2 --no-follow
 ```
 
+Logs follow by default when stdout is a terminal and return after one read when
+stdout is piped or redirected. Pass `--follow` or `--no-follow` to override the
+inferred default.
+
 `--tail` prints only the last N existing lines. Combined with `--follow`, it
 then streams new output from the exact Jenkins byte offset without repeating
-the tail. `--since` accepts a duration (`30m`, `2h`, `1d`) or an ISO-8601
-timestamp and requires timestamp metadata from the Jenkins Timestamper plugin.
-If timestamp metadata is unavailable, the command reports that capability
-instead of guessing from the visible text.
+the tail. Without an explicit follow flag, logs follow when stdout is a terminal
+and read once when stdout is piped or redirected. Use `--follow` to keep a pipe
+streaming; `--no-follow` always reads once. `--since` accepts a duration (`30m`,
+`2h`, `1d`) or an ISO-8601 timestamp. It requires timestamp metadata from the
+Jenkins Timestamper plugin. If timestamp metadata is unavailable, the command
+reports that capability instead of guessing from the visible text.
 
 `--plain` strips ANSI escape sequences and Jenkins concealed metadata, and
 drops `[Pipeline]` framing lines entirely. `--no-timestamps` removes the
