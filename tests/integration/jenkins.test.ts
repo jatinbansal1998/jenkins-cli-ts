@@ -1336,7 +1336,13 @@ describe.skipIf(!integrationEnabled)(
           data: {
             build: {
               branch: string;
-              stages: Array<{ name: string; status: string }>;
+              durationMs: number;
+              overheadMs: number;
+              stages: Array<{
+                name: string;
+                status: string;
+                durationMs: number;
+              }>;
             };
           };
         }>(await runCli(home, ["status", "--job-url", pipelineUrl, "--json"]));
@@ -1346,6 +1352,13 @@ describe.skipIf(!integrationEnabled)(
             expect.objectContaining({ name: "Prepare", status: "SUCCESS" }),
             expect.objectContaining({ name: "Verify", status: "SUCCESS" }),
           ]),
+        );
+        const stageDurationMs = status.data.build.stages.reduce(
+          (total, stage) => total + stage.durationMs,
+          0,
+        );
+        expect(status.data.build.overheadMs).toBe(
+          Math.max(0, status.data.build.durationMs - stageDurationMs),
         );
 
         const failureUrl = `${jenkinsUrl}/job/cli-pipeline-failure/`;
