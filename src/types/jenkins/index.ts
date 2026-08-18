@@ -47,6 +47,7 @@ export type {
   JenkinsApiParameterDefinition,
   JenkinsJobParametersResponse,
   JenkinsTestReportResponse,
+  JenkinsApiTestSuite,
   JenkinsLastFailedBuildResponse,
   JenkinsPipelineDescribeResponse,
   JenkinsQueueItemsResponse,

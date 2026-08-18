@@ -801,6 +801,45 @@ describe.skipIf(!integrationEnabled)(
           },
         });
 
+        const matrixJobUrl = `${jenkinsUrl}/job/cli-matrix-test-results/`;
+        const matrixRun = await invokeCli(home, [
+          "build",
+          "--job-url",
+          matrixJobUrl,
+          "--without-params",
+          "--watch",
+          "--json",
+        ]);
+        expect(matrixRun.exitCode, matrixRun.output).toBe(1);
+        const matrixBuild = parseJson<{
+          data: { buildUrl: string; result: string };
+        }>(matrixRun);
+        expect(matrixBuild.data.result).toBe("UNSTABLE");
+        expect(
+          parseJson(
+            await runCli(home, [
+              "tests",
+              "--build-url",
+              matrixBuild.data.buildUrl,
+              "--failed",
+              "--json",
+            ]),
+          ),
+        ).toMatchObject({
+          ok: true,
+          data: {
+            summary: { total: 2, passed: 1, failed: 1, skipped: 0 },
+            failures: [
+              expect.objectContaining({
+                suite: "matrix",
+                className: "MatrixTest",
+                name: "fails on linux",
+                message: "matrix expected true",
+              }),
+            ],
+          },
+        });
+
         const noReportJobUrl = `${jenkinsUrl}/job/cli-no-params/`;
         const noReportBuild = parseJson<{
           data: { buildUrl: string };
@@ -1907,69 +1946,60 @@ describe.skipIf(!integrationEnabled)(
       });
     }, 180_000);
 
-    test(
-      "defaults redirected logs to a one-shot read while a build is running",
-      async () => {
-        await withCliHome(async (home) => {
-          const jobUrl = `${jenkinsUrl}/job/cli-log-follow/`;
-          await runCli(home, [
-            "build",
-            "--job-url",
-            jobUrl,
-            "--without-params",
-          ]);
-          const running = await pollCli(
-            home,
-            ["status", "--job-url", jobUrl, "--json"],
-            (result) => {
-              const payload = JSON.parse(result.stdout) as {
-                data?: { build?: { building?: boolean; url?: string } };
-              };
-              return payload.data?.build?.building === true;
-            },
-          );
-          const runningBuildUrl = (
-            JSON.parse(running.stdout) as {
-              data: { build: { url: string } };
-            }
-          ).data.build.url;
+    test("defaults redirected logs to a one-shot read while a build is running", async () => {
+      await withCliHome(async (home) => {
+        const jobUrl = `${jenkinsUrl}/job/cli-log-follow/`;
+        await runCli(home, ["build", "--job-url", jobUrl, "--without-params"]);
+        const running = await pollCli(
+          home,
+          ["status", "--job-url", jobUrl, "--json"],
+          (result) => {
+            const payload = JSON.parse(result.stdout) as {
+              data?: { build?: { building?: boolean; url?: string } };
+            };
+            return payload.data?.build?.building === true;
+          },
+        );
+        const runningBuildUrl = (
+          JSON.parse(running.stdout) as {
+            data: { build: { url: string } };
+          }
+        ).data.build.url;
 
-          const logs = await runCli(home, [
-            "logs",
-            "--build-url",
-            runningBuildUrl,
-            "--tail",
-            "1",
-          ]);
-          expect(logs.stdout).toContain("tail-follow-bootstrap-2");
-          expect(logs.stdout).not.toContain("tail-follow-finished");
+        const logs = await runCli(home, [
+          "logs",
+          "--build-url",
+          runningBuildUrl,
+          "--tail",
+          "1",
+        ]);
+        expect(logs.stdout).toContain("tail-follow-bootstrap-2");
+        expect(logs.stdout).not.toContain("tail-follow-finished");
 
-          const stillRunning = JSON.parse(
-            (
-              await runCli(home, [
-                "status",
-                "--build-url",
-                runningBuildUrl,
-                "--json",
-              ])
-            ).stdout,
-          ) as { data: { build: { building: boolean } } };
-          expect(stillRunning.data.build.building).toBe(true);
+        const stillRunning = JSON.parse(
+          (
+            await runCli(home, [
+              "status",
+              "--build-url",
+              runningBuildUrl,
+              "--json",
+            ])
+          ).stdout,
+        ) as { data: { build: { building: boolean } } };
+        expect(stillRunning.data.build.building).toBe(true);
 
-          await runCli(home, [
-            "wait",
-            "--build-url",
-            runningBuildUrl,
-            "--timeout",
-            "30s",
-            "--interval",
-            "250ms",
-            "--json",
-          ]);
-        });
-      },
-      90_000,
-    );
+        await runCli(home, [
+          "wait",
+          "--build-url",
+          runningBuildUrl,
+          "--timeout",
+          "30s",
+          "--interval",
+          "250ms",
+          "--json",
+        ]);
+      });
+    }, 90_000);
 
     test.skipIf(process.platform === "win32")(
       "defaults redirected logs to one shot while explicit follow keeps streaming",

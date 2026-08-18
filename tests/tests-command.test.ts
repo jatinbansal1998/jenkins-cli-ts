@@ -154,6 +154,52 @@ describe("JenkinsClient.getTestReport", () => {
     expect(String(fetchMock.mock.calls[0]?.[0])).toContain("suites%5B");
   });
 
+  test("collects failing cases from matrix child reports", async () => {
+    const fetchMock = installResponse({
+      failCount: 1,
+      skipCount: 0,
+      totalCount: 2,
+      duration: 1.5,
+      childReports: [
+        {
+          result: {
+            suites: [
+              {
+                name: "linux",
+                cases: [
+                  { name: "passes", status: "PASSED", duration: 0.1 },
+                  {
+                    className: "CartTest",
+                    name: "rejects expired card",
+                    status: "FAILED",
+                    duration: 0.12,
+                    errorDetails: "expected true",
+                  },
+                ],
+              },
+            ],
+          },
+        },
+      ],
+    });
+
+    const report = await client().getTestReport(BUILD_URL, {
+      includeFailures: true,
+    });
+
+    expect(report.failures).toEqual([
+      {
+        suite: "linux",
+        className: "CartTest",
+        name: "rejects expired card",
+        durationMs: 120,
+        message: "expected true",
+        stackTrace: undefined,
+      },
+    ]);
+    expect(String(fetchMock.mock.calls[0]?.[0])).toContain("childReports%5B");
+  });
+
   test.each([
     [404, "TEST_REPORT_NOT_FOUND"],
     [403, "TEST_REPORT_PERMISSION_DENIED"],

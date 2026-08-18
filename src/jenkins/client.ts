@@ -50,6 +50,7 @@ import type {
   JenkinsJobsResponse,
   JenkinsJobStatusResponse,
   JenkinsTestReportResponse,
+  JenkinsApiTestSuite,
   JenkinsLastFailedBuildResponse,
   JenkinsPipelineDescribeResponse,
   JenkinsQueueItemsResponse,
@@ -487,8 +488,10 @@ export class JenkinsClient {
     } = {},
   ): Promise<BuildTestReport> {
     const reportUrl = this.withJob(buildUrl, "testReport/");
+    const suiteFields =
+      "suites[name,cases[className,name,status,duration,errorDetails,errorStackTrace]]";
     const fields = options.includeFailures
-      ? "failCount,passCount,skipCount,totalCount,duration,suites[name,cases[className,name,status,duration,errorDetails,errorStackTrace]]"
+      ? `failCount,passCount,skipCount,totalCount,duration,${suiteFields},childReports[result[${suiteFields}]]`
       : "failCount,passCount,skipCount,totalCount,duration";
     const url = new URL("api/json", reportUrl);
     url.searchParams.set("tree", fields);
@@ -1578,11 +1581,8 @@ function normalizeTestReport(
     return report;
   }
 
-  if (payload.suites !== undefined && !Array.isArray(payload.suites)) {
-    throw malformedTestReport();
-  }
   const failures: TestFailure[] = [];
-  for (const suite of payload.suites ?? []) {
+  for (const suite of collectTestSuites(payload)) {
     if (!suite || typeof suite !== "object") {
       throw malformedTestReport();
     }
@@ -1619,6 +1619,32 @@ function normalizeTestReport(
     throw malformedTestReport();
   }
   return { ...report, failures };
+}
+
+function collectTestSuites(
+  payload: JenkinsTestReportResponse,
+): JenkinsApiTestSuite[] {
+  if (payload.suites !== undefined && !Array.isArray(payload.suites)) {
+    throw malformedTestReport();
+  }
+  if (
+    payload.childReports !== undefined &&
+    !Array.isArray(payload.childReports)
+  ) {
+    throw malformedTestReport();
+  }
+  const suites = [...(payload.suites ?? [])];
+  for (const childReport of payload.childReports ?? []) {
+    if (!childReport || typeof childReport !== "object") {
+      throw malformedTestReport();
+    }
+    const childSuites = childReport.result?.suites;
+    if (childSuites !== undefined && !Array.isArray(childSuites)) {
+      throw malformedTestReport();
+    }
+    suites.push(...(childSuites ?? []));
+  }
+  return suites;
 }
 
 function normalizedTestCount(value: unknown): number | undefined {

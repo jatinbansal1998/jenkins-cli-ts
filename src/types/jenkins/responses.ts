@@ -105,7 +105,7 @@ type JenkinsApiTestCase = {
   errorStackTrace?: string | null;
 };
 
-type JenkinsApiTestSuite = {
+export type JenkinsApiTestSuite = {
   name?: string;
   cases?: JenkinsApiTestCase[];
 };
@@ -117,6 +117,13 @@ export type JenkinsTestReportResponse = {
   totalCount?: number;
   duration?: number | null;
   suites?: JenkinsApiTestSuite[];
+  childReports?: JenkinsApiChildTestReport[];
+};
+
+type JenkinsApiChildTestReport = {
+  result?: {
+    suites?: JenkinsApiTestSuite[];
+  };
 };
 
 export type JenkinsLastCompletedBuildResponse = {
