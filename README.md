@@ -346,7 +346,7 @@ jenkins-cli --confirm-protected            # interactive session allowed to writ
 | `cancel` (queued item or running build, including the watch `c` key) | Blocked                                         |
 | `rerun`, rerun last build, rerun with the same inputs                | Blocked                                         |
 | The same actions in `list`, `build`, `status`, `history` menus       | Blocked                                         |
-| `list`, `params`, `status`, `wait`, `logs`, `history`                | Allowed                                         |
+| `list`, `params`, `status`, `wait`, `logs`, `tests`, `history`       | Allowed                                         |
 | `queue`, `nodes`, `run`, `artifacts` (including download)            | Allowed                                         |
 | `auth` / profile management and browser navigation                   | Allowed                                         |
 
@@ -450,14 +450,14 @@ Automation-relevant read and mutation commands accept `--json`:
 - `build --json --watch` waits and returns the final result in the same
   one-document receipt. Other streaming output uses `logs --jsonl`.
 
-| Command                                       | Structured mode | `data` summary                                          |
-| --------------------------------------------- | --------------- | ------------------------------------------------------- |
-| `list`, `params`, `status`, `history`, `wait` | `--json`        | Existing compatible read contracts                      |
-| `queue`, `nodes`, `run`, `artifacts`          | `--json`        | Normalized collections; empty results are `[]`          |
-| `auth status`, `auth list`, `auth current`    | `--json`        | Credential diagnostics without tokens                   |
-| `update --check`                              | `--json`        | Current/latest version and update decision              |
-| `build`, `cancel`, `rerun`                    | `--json`        | Canonical queue/build/source/target receipts            |
-| `logs`                                        | `--jsonl`       | Ordered `start`, `chunk`, `complete`, or `error` events |
+| Command                                                | Structured mode | `data` summary                                          |
+| ------------------------------------------------------ | --------------- | ------------------------------------------------------- |
+| `list`, `params`, `status`, `history`, `wait`, `tests` | `--json`        | Existing compatible read contracts and test summaries   |
+| `queue`, `nodes`, `run`, `artifacts`                   | `--json`        | Normalized collections; empty results are `[]`          |
+| `auth status`, `auth list`, `auth current`             | `--json`        | Credential diagnostics without tokens                   |
+| `update --check`                                       | `--json`        | Current/latest version and update decision              |
+| `build`, `cancel`, `rerun`                             | `--json`        | Canonical queue/build/source/target receipts            |
+| `logs`                                                 | `--jsonl`       | Ordered `start`, `chunk`, `complete`, or `error` events |
 
 Commands without a structured contract still recognize `--json` and return a
 clear unsupported-output error instead of treating the flag as unknown.
@@ -1042,6 +1042,27 @@ With a TTY and no exact build, the Logs action lets you select the latest,
 running, or a recent build, then choose full logs, last N lines, a failed
 section, or a Pipeline stage. Running builds ask whether new output should be
 followed.
+
+### Test Results
+
+Summarize test results published by a compatible Jenkins test-report plugin.
+Without an exact selector, `tests` uses the selected job's latest completed
+build:
+
+```bash
+jenkins-cli tests --job "api-prod"
+jenkins-cli tests --job "api-prod" --build 184
+jenkins-cli tests --build-url "https://jenkins.example.com/job/api-prod/184/"
+jenkins-cli tests --build-url "https://jenkins.example.com/job/api-prod/184/" --failed
+jenkins-cli tests --job "api-prod" --json
+```
+
+The default request fetches summary counts only. `--failed` additionally prints
+each failing suite, class, case, duration, message, and complete multiline stack
+trace. JSON uses the standard success/error envelope and includes `failures`
+only when `--failed` is requested. A missing report, unavailable report
+capability, denied report, malformed response, and transport failure have
+distinct stable error codes.
 
 ### Artifacts
 

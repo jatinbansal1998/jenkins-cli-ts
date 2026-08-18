@@ -96,6 +96,36 @@ export type JenkinsBuildArtifactsResponse = {
   artifacts?: JenkinsApiArtifact[];
 };
 
+type JenkinsApiTestCase = {
+  className?: string;
+  name?: string;
+  status?: string;
+  duration?: number | null;
+  errorDetails?: string | null;
+  errorStackTrace?: string | null;
+};
+
+export type JenkinsApiTestSuite = {
+  name?: string;
+  cases?: JenkinsApiTestCase[];
+};
+
+export type JenkinsTestReportResponse = {
+  failCount?: number;
+  passCount?: number;
+  skipCount?: number;
+  totalCount?: number;
+  duration?: number | null;
+  suites?: JenkinsApiTestSuite[];
+  childReports?: JenkinsApiChildTestReport[];
+};
+
+type JenkinsApiChildTestReport = {
+  result?: {
+    suites?: JenkinsApiTestSuite[];
+  };
+};
+
 export type JenkinsLastCompletedBuildResponse = {
   lastCompletedBuild?: {
     number?: number;

@@ -4,6 +4,7 @@ import { runBuild } from "../commands/build";
 import { runHistory } from "../commands/history";
 import { DEFAULT_LOG_POLL_MS, runLogs } from "../commands/logs";
 import { runStatus } from "../commands/status";
+import { runTests } from "../commands/tests";
 import { runWait } from "../commands/wait";
 import { DEFAULT_WATCH_INTERVAL_MS } from "../commands/watch-utils";
 import {
@@ -184,6 +185,37 @@ export function registerBuildCommands(
                 typeof argv.context === "number" ? argv.context : undefined,
               nonInteractive: Boolean(argv.nonInteractive || argv.jsonl),
               jsonl: Boolean(argv.jsonl),
+            });
+          },
+        );
+      },
+    )
+    .command(
+      "tests [job-name]",
+      "Inspect published test results for a build",
+      (yargsInstance) =>
+        addJsonOption(
+          addBuildUrlOption(addBuildOption(addJobOptions(yargsInstance))),
+        ).option("failed", {
+          type: "boolean",
+          default: false,
+          describe: "Show failing test cases, messages, and stack traces",
+        }),
+      async (argv) => {
+        await runTrackedCommandWithContext(
+          "tests",
+          argv,
+          async ({ env, client }) => {
+            await runTests({
+              client,
+              env,
+              job: optionalString(argv.job),
+              jobUrl: optionalString(argv.jobUrl),
+              build: typeof argv.build === "number" ? argv.build : undefined,
+              buildUrl: optionalString(argv.buildUrl),
+              failed: Boolean(argv.failed),
+              nonInteractive: Boolean(argv.nonInteractive || argv.json),
+              json: Boolean(argv.json),
             });
           },
         );

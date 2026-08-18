@@ -46,7 +46,7 @@ describe("root help for agents", () => {
     expect(result.output).toContain("Fuzzy match on job name or description");
     expect(result.output).toContain("Scripting and AI agents:");
     expect(result.output).toContain(
-      "--json: list, params, build, status, history, wait, artifacts",
+      "--json: list, params, build, status, history, wait, tests, artifacts",
     );
     expect(result.output).toContain("--jsonl: logs.");
     expect(result.output).toContain(

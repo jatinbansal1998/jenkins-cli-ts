@@ -168,6 +168,13 @@ describe("structured output registration", () => {
     expect(logs.output).toContain("[default: stdout is a TTY]");
   });
 
+  test("documents JSON on the tests command", () => {
+    const result = runCli(["tests", "--help"]);
+
+    expect(result.exitCode).toBe(0);
+    expect(result.output).toContain("--json");
+  });
+
   test("rejects conflicting Pipeline log selectors at registration", () => {
     for (const args of [
       ["--stage", "Test", "--failed"],
@@ -235,6 +242,7 @@ describe("command help and global options", () => {
       "wait",
       "logs",
       "artifacts",
+      "tests",
       "cancel",
       "rerun",
     ]) {

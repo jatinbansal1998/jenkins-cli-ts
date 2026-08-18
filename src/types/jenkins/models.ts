@@ -124,6 +124,28 @@ export type BuildArtifacts = {
   artifacts: ArtifactEntry[];
 };
 
+export type TestFailure = {
+  suite?: string;
+  className?: string;
+  name: string;
+  durationMs?: number;
+  message?: string;
+  stackTrace?: string;
+};
+
+export type BuildTestReport = {
+  buildNumber?: number;
+  buildUrl: string;
+  buildResult?: string | null;
+  total: number;
+  passed: number;
+  failed: number;
+  skipped: number;
+  durationMs?: number;
+  reportUrl: string;
+  failures?: TestFailure[];
+};
+
 export type BuildHistoryEntry = BuildStatus & {
   buildUrl: string;
   failure?: JenkinsBuildFailure;

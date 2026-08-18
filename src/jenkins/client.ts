@@ -23,6 +23,7 @@ import type {
   BuildHistoryEntry,
   BuildHistoryPage,
   BuildStatus,
+  BuildTestReport,
   ConsoleChunk,
   Crumb,
   JenkinsApiArtifact,
@@ -48,6 +49,8 @@ import type {
   JobParameterDefinition,
   JenkinsJobsResponse,
   JenkinsJobStatusResponse,
+  JenkinsTestReportResponse,
+  JenkinsApiTestSuite,
   JenkinsLastFailedBuildResponse,
   JenkinsPipelineDescribeResponse,
   JenkinsQueueItemsResponse,
@@ -62,12 +65,14 @@ import type {
   RunningBuildSummary,
   TriggerBuildParams,
   TriggerBuildResult,
+  TestFailure,
 } from "../types/jenkins";
 
 export type {
   BuildArtifacts,
   BuildHistoryPage,
   BuildStatus,
+  BuildTestReport,
   ConsoleChunk,
   JenkinsClientOptions,
   JenkinsJob,
@@ -472,6 +477,117 @@ export class JenkinsClient {
       buildUrl: data.url ?? buildUrl,
       artifacts,
     };
+  }
+
+  async getTestReport(
+    buildUrl: string,
+    options: {
+      includeFailures?: boolean;
+      buildNumber?: number;
+      buildResult?: string | null;
+    } = {},
+  ): Promise<BuildTestReport> {
+    const reportUrl = this.withJob(buildUrl, "testReport/");
+    const suiteFields =
+      "suites[name,cases[className,name,status,duration,errorDetails,errorStackTrace]]";
+    const fields = options.includeFailures
+      ? `failCount,passCount,skipCount,totalCount,duration,${suiteFields},childReports[result[${suiteFields}]]`
+      : "failCount,passCount,skipCount,totalCount,duration";
+    const url = new URL("api/json", reportUrl);
+    url.searchParams.set("tree", fields);
+
+    let response: Response;
+    try {
+      response = await this.fetchWithTimeout(
+        url.toString(),
+        { method: "GET", headers: this.authHeaders() },
+        1,
+        "fetch test report",
+      );
+    } catch (error) {
+      if (error instanceof CliError) {
+        throw new CliError(
+          error.message,
+          error.hints,
+          "TEST_REPORT_TRANSPORT_ERROR",
+        );
+      }
+      throw error;
+    }
+
+    if (response.status === 401 || response.status === 403) {
+      throw new CliError(
+        "Jenkins denied access to this build's test report.",
+        [
+          "Ask a Jenkins administrator for permission to read the build and its test results.",
+        ],
+        "TEST_REPORT_PERMISSION_DENIED",
+      );
+    }
+    if (response.status === 404 || response.status === 410) {
+      if (await this.isTestReportCapabilityUnavailable()) {
+        throw testReportUnavailable();
+      }
+      throw new CliError(
+        "No test report was published for this build.",
+        [
+          "Confirm the build completed and a compatible Jenkins test publisher archived its results.",
+        ],
+        "TEST_REPORT_NOT_FOUND",
+      );
+    }
+    if (response.status === 405 || response.status === 501) {
+      throw testReportUnavailable();
+    }
+    if (!response.ok) {
+      throw new CliError(
+        `Jenkins returned HTTP ${response.status} while trying to fetch the test report.`,
+        ["Try again, or check the Jenkins server logs."],
+        "TEST_REPORT_TRANSPORT_ERROR",
+      );
+    }
+
+    let payload: JenkinsTestReportResponse;
+    try {
+      payload = (await response.json()) as JenkinsTestReportResponse;
+    } catch {
+      throw malformedTestReport();
+    }
+    return normalizeTestReport(payload, {
+      buildUrl,
+      buildNumber: options.buildNumber,
+      buildResult: options.buildResult,
+      reportUrl,
+      includeFailures: Boolean(options.includeFailures),
+    });
+  }
+
+  private async isTestReportCapabilityUnavailable(): Promise<boolean> {
+    const url = this.withBase(
+      "pluginManager/api/json?tree=plugins[shortName,active]",
+    );
+    try {
+      const response = await this.fetchWithTimeout(
+        url,
+        { method: "GET", headers: this.authHeaders() },
+        0,
+        "check test report capability",
+      );
+      if (!response.ok) {
+        return false;
+      }
+      const payload = (await response.json()) as {
+        plugins?: Array<{ shortName?: string; active?: boolean }>;
+      };
+      if (!Array.isArray(payload.plugins)) {
+        return false;
+      }
+      return !payload.plugins.some(
+        (plugin) => plugin.shortName === "junit" && plugin.active === true,
+      );
+    } catch {
+      return false;
+    }
   }
 
   /**
@@ -1406,6 +1522,188 @@ function runningBuildDisplayName(build: RunningBuildSummary): string {
 
 function toAnalyticsOperation(context: string): string {
   return context.trim().replaceAll(/\s+/g, "_");
+}
+
+function normalizeTestReport(
+  payload: JenkinsTestReportResponse,
+  options: {
+    buildUrl: string;
+    buildNumber?: number;
+    buildResult?: string | null;
+    reportUrl: string;
+    includeFailures: boolean;
+  },
+): BuildTestReport {
+  if (!payload || typeof payload !== "object") {
+    throw malformedTestReport();
+  }
+  const reportedTotal = normalizedTestCount(payload.totalCount);
+  const reportedPassed = normalizedTestCount(payload.passCount);
+  const failed = normalizedTestCount(payload.failCount);
+  const skipped = normalizedTestCount(payload.skipCount);
+  if (failed === undefined || skipped === undefined) {
+    throw malformedTestReport();
+  }
+  const total =
+    reportedTotal ??
+    (reportedPassed === undefined
+      ? undefined
+      : reportedPassed + failed + skipped);
+  if (total === undefined || failed + skipped > total) {
+    throw malformedTestReport();
+  }
+  const passed = total - failed - skipped;
+  if (reportedPassed !== undefined && reportedPassed !== passed) {
+    throw malformedTestReport();
+  }
+
+  const durationMs = normalizedTestDuration(payload.duration);
+  if (
+    payload.duration !== undefined &&
+    payload.duration !== null &&
+    durationMs === undefined
+  ) {
+    throw malformedTestReport();
+  }
+
+  const report: BuildTestReport = {
+    buildNumber: options.buildNumber,
+    buildUrl: options.buildUrl,
+    buildResult: options.buildResult,
+    total,
+    passed,
+    failed,
+    skipped,
+    durationMs,
+    reportUrl: options.reportUrl,
+  };
+  if (!options.includeFailures) {
+    return report;
+  }
+
+  const failures: TestFailure[] = [];
+  for (const suite of collectTestSuites(payload)) {
+    if (!suite || typeof suite !== "object") {
+      throw malformedTestReport();
+    }
+    if (suite.cases !== undefined && !Array.isArray(suite.cases)) {
+      throw malformedTestReport();
+    }
+    for (const testCase of suite.cases ?? []) {
+      if (!isFailedTestCase(testCase)) {
+        continue;
+      }
+      const name = normalizedOptionalText(testCase.name);
+      if (!name) {
+        throw malformedTestReport();
+      }
+      const caseDurationMs = normalizedTestDuration(testCase.duration);
+      if (
+        testCase.duration !== undefined &&
+        testCase.duration !== null &&
+        caseDurationMs === undefined
+      ) {
+        throw malformedTestReport();
+      }
+      failures.push({
+        suite: normalizedOptionalText(suite.name),
+        className: normalizedOptionalText(testCase.className),
+        name,
+        durationMs: caseDurationMs,
+        message: normalizedOptionalText(testCase.errorDetails),
+        stackTrace: normalizedOptionalText(testCase.errorStackTrace),
+      });
+    }
+  }
+  if (failures.length < failed) {
+    throw malformedTestReport();
+  }
+  return { ...report, failures };
+}
+
+function collectTestSuites(
+  payload: JenkinsTestReportResponse,
+): JenkinsApiTestSuite[] {
+  if (payload.suites !== undefined && !Array.isArray(payload.suites)) {
+    throw malformedTestReport();
+  }
+  if (
+    payload.childReports !== undefined &&
+    !Array.isArray(payload.childReports)
+  ) {
+    throw malformedTestReport();
+  }
+  const suites = [...(payload.suites ?? [])];
+  for (const childReport of payload.childReports ?? []) {
+    if (!childReport || typeof childReport !== "object") {
+      throw malformedTestReport();
+    }
+    const childSuites = childReport.result?.suites;
+    if (childSuites !== undefined && !Array.isArray(childSuites)) {
+      throw malformedTestReport();
+    }
+    suites.push(...(childSuites ?? []));
+  }
+  return suites;
+}
+
+function normalizedTestCount(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0
+    ? value
+    : undefined;
+}
+
+function normalizedTestDuration(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0
+    ? Math.round(value * 1_000)
+    : undefined;
+}
+
+function normalizedOptionalText(value: unknown): string | undefined {
+  return typeof value === "string" && value.length > 0 ? value : undefined;
+}
+
+function isFailedTestCase(value: unknown): value is {
+  className?: string;
+  name?: string;
+  status?: string;
+  duration?: number;
+  errorDetails?: string | null;
+  errorStackTrace?: string | null;
+} {
+  if (!value || typeof value !== "object") {
+    throw malformedTestReport();
+  }
+  const testCase = value as {
+    status?: unknown;
+    errorDetails?: unknown;
+    errorStackTrace?: unknown;
+  };
+  const status = normalizedOptionalText(testCase.status)?.toUpperCase();
+  return (
+    status === "FAILED" ||
+    status === "REGRESSION" ||
+    normalizedOptionalText(testCase.errorDetails) !== undefined ||
+    normalizedOptionalText(testCase.errorStackTrace) !== undefined
+  );
+}
+
+function malformedTestReport(): CliError {
+  return new CliError(
+    "Jenkins returned a malformed or incomplete test report.",
+    [
+      "Check the configured test-report publisher and try the report in Jenkins.",
+    ],
+    "TEST_REPORT_MALFORMED",
+  );
+}
+
+function testReportUnavailable(): CliError {
+  return new CliError(
+    "Test-result reporting is unavailable on this Jenkins controller.",
+    ["Install or enable a compatible test-report publisher, then try again."],
+    "TEST_REPORT_UNAVAILABLE",
+  );
 }
 
 function extractBuildParameters(
