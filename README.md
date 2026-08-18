@@ -415,7 +415,7 @@ Single-account fallback only:
 - Sentry captures uncaught exceptions and unhandled promise rejections in addition to errors propagated through the CLI's main execution path. Unhandled rejections retain a nonzero exit status.
 - Error reporting is best-effort. Transport failures stay silent and do not replace the original error or turn a failed command into a successful exit.
 - Run `SENTRY_ENVIRONMENT=local-smoke bun run sentry:smoke` for an intentional live verification event. The command refuses to run against the `production` environment.
-- The manually dispatched `Sentry Smoke Test` workflow builds a standalone Bun smoke binary, sends manual and globally uncaught failures, then verifies both through Sentry CLI. It requires a `SENTRY_AUTH_TOKEN` GitHub secret with event read access.
+- The manually dispatched `Sentry Smoke Test` workflow builds a standalone Bun smoke binary, sends manual and globally uncaught failures, then verifies both through Sentry CLI. Its `SENTRY_AUTH_TOKEN` GitHub secret is available only to the verification step. Restrict the token to the `jenkins-cli` project with only the read-only `project:read` scope required by Sentry's project event-list endpoint; do not grant write, admin, release, or organization scopes.
 
 ### Privacy Guardrails
 

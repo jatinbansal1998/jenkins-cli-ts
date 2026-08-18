@@ -10,7 +10,6 @@ jobs:
   smoke:
     runs-on: ubuntu-latest
     env:
-      SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
       SENTRY_ENVIRONMENT: github-actions-smoke
       SENTRY_ORG: jatin-bansal
       SENTRY_PROJECT: jenkins-cli
@@ -44,6 +43,8 @@ jobs:
           fi
 
       - name: Verify events with Sentry CLI
+        env:
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
         shell: bash
         run: |
           test -n "$SENTRY_AUTH_TOKEN"
@@ -51,7 +52,11 @@ jobs:
           GLOBAL_EVENT_ID="$(bun -e 'const lines = (await Bun.file("sentry-global.log").text()).trim().split("\n").filter((line) => line.startsWith("{")); console.log(JSON.parse(lines.at(-1)).eventId)')"
 
           for ATTEMPT in 1 2 3 4 5 6; do
-            EVENTS="$(bunx @sentry/cli events list --max-rows 100 --pages 2)"
+            if ! EVENTS="$(bun run sentry-cli events list --max-rows 200 --pages 2)"; then
+              echo "Sentry event query failed on attempt $ATTEMPT; retrying." >&2
+              sleep 5
+              continue
+            fi
             NORMALIZED_EVENTS="${EVENTS//-/}"
             if grep -Fq "$MANUAL_EVENT_ID" <<< "$NORMALIZED_EVENTS" && grep -Fq "$GLOBAL_EVENT_ID" <<< "$NORMALIZED_EVENTS"; then
               echo "Verified Sentry events $MANUAL_EVENT_ID and $GLOBAL_EVENT_ID."
