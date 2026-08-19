@@ -1,3 +1,5 @@
+<img src="docs/media/icon.svg" alt="" width="96" align="right">
+
 # Jenkins CLI
 
 [![CI](https://github.com/jatinbansal1998/jenkins-cli-ts/actions/workflows/post-merge.yml/badge.svg?branch=main)](https://github.com/jatinbansal1998/jenkins-cli-ts/actions/workflows/post-merge.yml?query=branch%3Amain)
