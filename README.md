@@ -8,11 +8,11 @@
 [![built with Bun](https://img.shields.io/badge/built%20with-Bun-F9F1E5?logo=bun&logoColor=000)](https://bun.sh)
 [![License: MIT](https://img.shields.io/github/license/jatinbansal1998/jenkins-cli-ts?color=green)](LICENSE)
 
-A fast, single-binary Jenkins CLI for triggering builds, streaming logs, and
-managing multiple profiles from the terminal — **no Java required**. Built for
-both interactive use (fuzzy job search, watch mode, macOS notifications) and
-automation (parseable `OK:`/`HINT:` output and `--json` receipts), with
-OS-keychain token storage and multi-profile support.
+Single-binary Jenkins CLI for triggering builds, streaming logs, and managing
+multiple profiles from the terminal. No Java needed. Works interactively with
+fuzzy job search, watch mode, and macOS notifications, and in scripts through
+parseable `OK:`/`HINT:` output and `--json` receipts. Tokens live in your OS
+keychain.
 
 ## Table of Contents
 
