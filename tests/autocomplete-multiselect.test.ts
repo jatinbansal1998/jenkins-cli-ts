@@ -3,6 +3,9 @@ import { S_CHECKBOX_INACTIVE, S_CHECKBOX_SELECTED } from "@clack/prompts";
 import { stripVTControlCharacters } from "node:util";
 import { formatAutocompleteMultiselectOption } from "../src/prompts/autocomplete-multiselect";
 import { formatFocusedOption } from "../src/prompts/focused-option";
+import { forceColorForFile } from "./helpers.force-color";
+
+forceColorForFile();
 
 const option = {
   value: "api",

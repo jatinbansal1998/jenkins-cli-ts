@@ -69,11 +69,11 @@ jobs:
           mkdir -p test-artifacts
 
           set +e
-          bun scripts/run-with-linux-keyring.ts -- bun test --only-failures 2>&1 | tee test-artifacts/bun-test.log
+          bun scripts/run-with-linux-keyring.ts -- bun test --isolate --only-failures 2>&1 | tee test-artifacts/bun-test.log
           TEST_EXIT=${PIPESTATUS[0]}
           set -e
 
-          bun scripts/run-with-linux-keyring.ts -- bun test --reporter=junit --reporter-outfile test-artifacts/bun-junit.xml >/dev/null 2>&1 || true
+          bun scripts/run-with-linux-keyring.ts -- bun test --isolate --reporter=junit --reporter-outfile test-artifacts/bun-junit.xml >/dev/null 2>&1 || true
           exit "$TEST_EXIT"
 
       - name: Summarize test output

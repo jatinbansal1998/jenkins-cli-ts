@@ -7,6 +7,9 @@ import {
 import { stripVTControlCharacters } from "node:util";
 import { formatFocusedOption } from "../src/prompts/focused-option";
 import { formatMultiselectOption } from "../src/prompts/multiselect";
+import { forceColorForFile } from "./helpers.force-color";
+
+forceColorForFile();
 
 const option = { value: "api", label: "api-deploy" };
 

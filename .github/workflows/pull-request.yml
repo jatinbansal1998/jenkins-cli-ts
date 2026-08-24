@@ -159,11 +159,11 @@ jobs:
           mkdir -p test-artifacts
 
           set +e
-          bun scripts/run-with-linux-keyring.ts -- bun test --only-failures 2>&1 | tee test-artifacts/bun-test.log
+          bun scripts/run-with-linux-keyring.ts -- bun test --isolate --only-failures 2>&1 | tee test-artifacts/bun-test.log
           TEST_EXIT=${PIPESTATUS[0]}
           set -e
 
-          bun scripts/run-with-linux-keyring.ts -- bun test --reporter=junit --reporter-outfile test-artifacts/bun-junit.xml >/dev/null 2>&1 || true
+          bun scripts/run-with-linux-keyring.ts -- bun test --isolate --reporter=junit --reporter-outfile test-artifacts/bun-junit.xml >/dev/null 2>&1 || true
           exit "$TEST_EXIT"
 
       - name: Run tests with macOS Keychain (capture failures)
@@ -177,11 +177,11 @@ jobs:
           mkdir -p test-artifacts
 
           set +e
-          bun test --only-failures 2>&1 | tee test-artifacts/bun-test.log
+          bun test --isolate --only-failures 2>&1 | tee test-artifacts/bun-test.log
           TEST_EXIT=${PIPESTATUS[0]}
           set -e
 
-          bun test --reporter=junit --reporter-outfile test-artifacts/bun-junit.xml >/dev/null 2>&1 || true
+          bun test --isolate --reporter=junit --reporter-outfile test-artifacts/bun-junit.xml >/dev/null 2>&1 || true
           exit "$TEST_EXIT"
 
       - name: Run tests with Windows Credential Manager (capture failures)
@@ -194,6 +194,7 @@ jobs:
           New-Item -ItemType Directory -Force -Path test-artifacts | Out-Null
 
           bun test `
+            --isolate `
             --only-failures `
             --timeout 10000 `
             --path-ignore-patterns="**/compiled-cli.test.ts" 2>&1 |
@@ -201,6 +202,7 @@ jobs:
           $testExit = $LASTEXITCODE
 
           bun test `
+            --isolate `
             --timeout 10000 `
             --path-ignore-patterns="**/compiled-cli.test.ts" `
             --reporter=junit `

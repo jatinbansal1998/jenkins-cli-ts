@@ -66,22 +66,26 @@ configuration is needed, `tests/integration/jenkins/init.groovy`.
 
 ## Test isolation (Bun-specific)
 
-Bun runs all test files in the **same process**. Mocks and spies are global.
+Run the suite with `bun run test`, which passes `--isolate` so every file gets a
+fresh global object and module registry. CI passes the same flag. A bare
+`bun test` shares one process across every file, so mocks leak between them
+and results diverge from CI. `bunfig.toml` cannot set this; it is a flag only.
 
-**`mock.module` mutates the shared module object in place. `mock.restore()` does not revert the mutation.**
+**Within a file, mocks and spies are still shared across tests.**
 
-- Never call `mock.restore()` in `afterEach` — it is global and destroys spies and module mocks from every other running test file.
-- Use `afterAll` if cleanup is needed at all.
-- If a module under test may be contaminated by another file's `mock.module`, import it fresh per test: `import(\`../src/foo?t=${crypto.randomUUID()}\`)`.
-
-**`spyOn` on globals is global.**
-
-- Recreate spies in `beforeEach`, not at module level. Call `mockRestore()` in `afterEach`.
+- `mock.module` mutates the module object in place and `mock.restore()` does not
+  revert it, so avoid `mock.restore()` in `afterEach`; it wipes every other mock
+  and spy registered in the same file. Use `afterAll` if cleanup is needed.
+- Recreate `spyOn` spies in `beforeEach`, not at module level, and call
+  `mockRestore()` in `afterEach`.
 
 **Live namespace references become mocks after `mock.module` runs.**
 
-- Capture real functions with `.bind()` before calling `mock.module`, e.g. `const realRm = realFsPromises.rm.bind(realFsPromises)`.
+- Capture real functions with `.bind()` before calling `mock.module`, e.g.
+  `const realRm = realFsPromises.rm.bind(realFsPromises)`.
 
-**`spyOn` on native streams (`process.stderr`, `process.stdout`) fails on Linux.**
+**Tests that assert on ANSI escape codes must force color.**
 
-- Make functions accept an optional write callback instead of spying on the stream directly.
+- `util.styleText` strips styling when stdout is not a TTY, which it never is
+  under the test runner. Call `forceColorForFile()` from
+  `tests/helpers.force-color.ts`.
