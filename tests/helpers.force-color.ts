@@ -11,17 +11,25 @@ import { afterAll, beforeAll } from "bun:test";
  */
 export function forceColorForFile(): void {
   let previousNoColor: string | undefined;
+  let previousForceColor: string | undefined;
 
   beforeAll(() => {
     previousNoColor = process.env.NO_COLOR;
+    previousForceColor = process.env.FORCE_COLOR;
     delete process.env.NO_COLOR;
     process.env.FORCE_COLOR = "1";
   });
 
   afterAll(() => {
-    delete process.env.FORCE_COLOR;
-    if (previousNoColor !== undefined) {
-      process.env.NO_COLOR = previousNoColor;
-    }
+    restore("NO_COLOR", previousNoColor);
+    restore("FORCE_COLOR", previousForceColor);
   });
+}
+
+function restore(key: string, value: string | undefined): void {
+  if (value === undefined) {
+    delete process.env[key];
+    return;
+  }
+  process.env[key] = value;
 }
