@@ -10,9 +10,12 @@ import {
 
 type InitOptions = Parameters<typeof Sentry.init>[0];
 
+const FIXTURE_HOME = "/fixture-home";
+
 const originalSentryDsn = process.env.SENTRY_DSN;
 const originalSentryEnvironment = process.env.SENTRY_ENVIRONMENT;
 const originalReportingDisabled = process.env.JENKINS_ERROR_REPORTING_DISABLED;
+const originalHome = process.env.HOME;
 
 beforeEach(() => {
   delete process.env.JENKINS_ERROR_REPORTING_DISABLED;
@@ -22,6 +25,7 @@ afterEach(() => {
   restoreEnv("SENTRY_DSN", originalSentryDsn);
   restoreEnv("SENTRY_ENVIRONMENT", originalSentryEnvironment);
   restoreEnv("JENKINS_ERROR_REPORTING_DISABLED", originalReportingDisabled);
+  restoreEnv("HOME", originalHome);
 });
 
 describe("error reporting configuration", () => {
@@ -70,6 +74,9 @@ describe("error reporting configuration", () => {
     process.env.SENTRY_DSN = "https://public@example.ingest.sentry.io/42";
     process.env.SENTRY_ENVIRONMENT = "test";
     delete process.env.JENKINS_ERROR_REPORTING_DISABLED;
+    // Windows leaves HOME unset, so the redaction fixture supplies its own home
+    // instead of reading one the ambient environment may not have.
+    process.env.HOME = FIXTURE_HOME;
     let options: InitOptions;
     const adapter = createAdapter({
       init: (value) => {
@@ -140,7 +147,7 @@ describe("error reporting configuration", () => {
               stacktrace: {
                 frames: [
                   {
-                    filename: `${process.env.HOME}/project/src/index.ts`,
+                    filename: `${FIXTURE_HOME}/project/src/index.ts`,
                     vars: { token: "secret" },
                     pre_context: ["private before"],
                     context_line: "private current",

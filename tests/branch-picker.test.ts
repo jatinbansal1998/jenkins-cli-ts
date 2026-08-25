@@ -7,6 +7,9 @@ import {
   formatBranchInputRow,
   formatBranchPickerOption,
 } from "../src/prompts/branch-picker";
+import { forceColorForFile } from "./helpers.force-color";
+
+forceColorForFile();
 
 const KEY_UP = "\u001b[A";
 const KEY_DOWN = "\u001b[B";
