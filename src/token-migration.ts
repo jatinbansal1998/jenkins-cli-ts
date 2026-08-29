@@ -78,10 +78,14 @@ export async function maybeMigrateToken(params: {
   const log = params.report ? (deps.log ?? printOk) : () => undefined;
   const hint = params.report ? (deps.hint ?? printHint) : () => undefined;
 
-  const available = await isAvailable(deps.secureStore);
   const profileName = params.env.profileName;
-
-  if (!available || !profileName || params.env.tokenStorage === "keychain") {
+  if (!profileName || params.env.tokenStorage === "keychain") {
+    return;
+  }
+  // Probing the keyring costs a subprocess or D-Bus round trip; only pay it
+  // when a plaintext profile could actually be migrated.
+  const available = await isAvailable(deps.secureStore);
+  if (!available) {
     return;
   }
 

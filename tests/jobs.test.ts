@@ -1,8 +1,10 @@
 import { describe, expect, test } from "bun:test";
+import { CliError } from "../src/cli";
 import {
   getJobDisplayLabel,
   getJobDisplayName,
   rankJobs,
+  resolveJobCandidates,
   sortJobsByDisplayName,
 } from "../src/jobs";
 import { MIN_SCORE } from "../src/config/fuzzy";
@@ -583,5 +585,34 @@ describe("job display labels", () => {
     ).toEqual(["alpha", "team/deploy"]);
     expect(rankJobs("disabled", [disabledJob])).toEqual([]);
     expect(rankJobs("team deploy", [disabledJob])[0]?.job).toBe(disabledJob);
+  });
+});
+
+describe("resolveJobCandidates no-match hint", () => {
+  function noMatchHints(query: string): string[] {
+    try {
+      resolveJobCandidates(query, jobs);
+    } catch (error) {
+      expect(error).toBeInstanceOf(CliError);
+      expect((error as CliError).message).toBe(`No jobs match "${query}".`);
+      return (error as CliError).hints;
+    }
+    throw new Error("expected resolveJobCandidates to throw");
+  }
+
+  test("lists jobs sharing the most query tokens when one token is wrong", () => {
+    const hints = noMatchHints("usr service prod");
+    expect(hints[0]).toStartWith("Closest: ");
+    expect(hints[0]).toContain("user-service-prod");
+    expect(hints[0]).toContain("order-service-prod");
+    expect(hints[0]).toContain("payment-service-prod");
+    // Capped so the hint stays readable.
+    expect(hints[0]?.split(", ").length).toBeLessThanOrEqual(5);
+  });
+
+  test("omits the closest line when nothing overlaps", () => {
+    const hints = noMatchHints("zzzz qqqq");
+    expect(hints.some((hint) => hint.startsWith("Closest:"))).toBe(false);
+    expect(hints[0]).toContain("list --refresh");
   });
 });

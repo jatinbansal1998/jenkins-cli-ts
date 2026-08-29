@@ -57,7 +57,6 @@ export async function resolveJobTargets(options: {
   const jobs = await loadJobs({
     client: options.client,
     env: options.env,
-    nonInteractive: options.nonInteractive,
   });
   if (jobs.length === 0) {
     throw new CliError("No jobs found in cache.", [

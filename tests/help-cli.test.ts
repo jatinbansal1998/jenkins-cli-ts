@@ -53,6 +53,8 @@ describe("root help for agents", () => {
       "OK: (success), ERROR: (failure), HINT: (guidance)",
     );
     expect(result.output).toContain("Exit code is 0 on success and 1 on any");
+    // Internal worker command spawned for background cache refreshes.
+    expect(result.output).not.toContain("refresh-job-cache");
   });
 
   test("epilog covers params, run, and value hints with defaults", () => {

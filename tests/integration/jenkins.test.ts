@@ -254,6 +254,65 @@ describe.skipIf(!integrationEnabled)(
       });
     }, 90_000);
 
+    test("fetches a missing job cache itself and refreshes a stale one in the background", async () => {
+      await withCliHome(async (home) => {
+        // No `list --refresh` first: a job-scoped command builds the cache.
+        const params = parseJson(
+          await runCli(home, ["params", "--job", "cli-smoke", "--json"]),
+        );
+        expect(params).toMatchObject({ ok: true, command: "params" });
+
+        const cachePath = await findJobCachePath(home);
+        const lockPath = `${cachePath}.refreshing`;
+        const cache = JSON.parse(await Bun.file(cachePath).text()) as {
+          fetchedAt: string;
+          jobs: Array<{ name: string }>;
+        };
+        expect(cache.jobs.map((job) => job.name)).toContain("cli-failure");
+
+        // Age the cache past its TTL and hide a job so the refresh is visible.
+        const staleFetchedAt = "2020-01-01T00:00:00.000Z";
+        await Bun.write(
+          cachePath,
+          JSON.stringify({
+            ...cache,
+            fetchedAt: staleFetchedAt,
+            jobs: cache.jobs.filter((job) => job.name !== "cli-failure"),
+          }),
+        );
+
+        const stale = await runCli(home, ["list", "--json"]);
+        expect(stale.stderr).toContain("refreshing it in the background");
+        const staleNames = (
+          JSON.parse(stale.stdout) as { data: Array<{ name: string }> }
+        ).data.map((job) => job.name);
+        expect(staleNames).toContain("cli-smoke");
+        expect(staleNames).not.toContain("cli-failure");
+
+        // The detached worker completes after the command already returned.
+        const deadline = Date.now() + 30_000;
+        let refreshed = cache;
+        while (Date.now() < deadline) {
+          refreshed = JSON.parse(await Bun.file(cachePath).text());
+          if (
+            refreshed.fetchedAt !== staleFetchedAt &&
+            !(await Bun.file(lockPath).exists())
+          ) {
+            break;
+          }
+          await Bun.sleep(250);
+        }
+        expect(refreshed.fetchedAt).not.toBe(staleFetchedAt);
+        expect(refreshed.jobs.map((job) => job.name)).toContain("cli-failure");
+        expect(await Bun.file(lockPath).exists()).toBe(false);
+
+        const fresh = parseJson<{ data: Array<{ name: string }> }>(
+          await runCli(home, ["list", "--json"]),
+        );
+        expect(fresh.data.map((job) => job.name)).toContain("cli-failure");
+      });
+    }, 90_000);
+
     test("uses positional job names through real Jenkins operations", async () => {
       await withCliHome(async (home) => {
         await runCli(home, ["list", "--refresh", "--json"]);
@@ -2384,4 +2443,12 @@ async function writeProtectedProfile(home: string): Promise<void> {
       2,
     )}\n`,
   );
+}
+
+async function findJobCachePath(home: string): Promise<string> {
+  const glob = new Bun.Glob("**/jenkins-cli/jobs-*.json");
+  for await (const match of glob.scan({ cwd: home, dot: true })) {
+    return join(home, match);
+  }
+  throw new Error(`No job cache written under ${home}`);
 }

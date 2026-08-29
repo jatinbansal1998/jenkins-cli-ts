@@ -810,7 +810,11 @@ In interactive mode, `list` acts as a launcher:
 - Search and select a job
 - Run `Build`, `Status`, `Build history`, `Watch`, `Logs`, `Cancel`, or `Rerun`
 
-Refresh the cache from Jenkins:
+The cache is fetched automatically on first use and served instantly after
+that. Once it is older than 24 hours, commands keep using it and a detached
+`jenkins-cli` process refreshes it in the background (a `HINT:` on stderr says
+so), so the next command sees the new jobs. Force a blocking refresh when you
+need the current job list right now:
 
 ```bash
 jenkins-cli list --refresh
@@ -1331,7 +1335,8 @@ Commands print `OK:` on success.
 ## Notes
 
 - Job lists are cached in the OS cache directory and separated by Jenkins URL
-  (for example `jobs-<host>-<hash>.json`). Use `--refresh` to update.
+  (for example `jobs-<host>-<hash>.json`). A stale cache (over 24h) is
+  refreshed in the background; use `list --refresh` to refresh synchronously.
   macOS: `~/Library/Caches/jenkins-cli/`, Linux:
   `${XDG_CACHE_HOME:-~/.cache}/jenkins-cli/`, Windows:
   `%LOCALAPPDATA%\jenkins-cli\`.

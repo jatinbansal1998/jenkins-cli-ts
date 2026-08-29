@@ -1,6 +1,8 @@
 import type { Argv } from "yargs";
 import { runList } from "../commands/list";
 import { runParams } from "../commands/params";
+import { runJobCacheRefresh } from "../commands/refresh-job-cache";
+import { JOB_CACHE_REFRESH_COMMAND } from "../jobs";
 import { addJobOptions, addJsonOption, optionalString } from "./options";
 import type {
   CommandRegistrationDependencies,
@@ -14,6 +16,11 @@ export function registerJobCommands(
   const listHandler = createListHandler(
     dependencies.runTrackedCommandWithContext,
   );
+
+  // Internal: the detached worker `loadJobs` spawns for a stale cache.
+  parser.command(JOB_CACHE_REFRESH_COMMAND, false, {}, async () => {
+    await runJobCacheRefresh();
+  });
 
   return parser
     .command("list", "List Jenkins jobs", configureListOptions, listHandler)

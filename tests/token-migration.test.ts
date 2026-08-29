@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, mock, test } from "bun:test";
 import {
   type JenkinsConfig,
   type JenkinsProfileConfig,
@@ -260,6 +260,23 @@ describe("maybeMigrateToken", () => {
     });
 
     expect(h.saved).toHaveLength(0);
+  });
+
+  test("skips the keyring probe when nothing could be migrated", async () => {
+    const probe = mock(async () => true);
+    for (const config of [
+      env({ tokenStorage: "keychain" }),
+      env({ profileName: undefined }),
+    ]) {
+      const h = harness({ config: configWith(plaintextProfile()) });
+      await maybeMigrateToken({
+        env: config,
+        report: false,
+        deps: { ...h.deps, isAvailable: probe },
+      });
+      expect(h.saved).toHaveLength(0);
+    }
+    expect(probe).not.toHaveBeenCalled();
   });
 
   test("env/one-off credentials (no profile): never migrates", async () => {

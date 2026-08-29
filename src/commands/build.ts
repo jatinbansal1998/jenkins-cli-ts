@@ -1455,7 +1455,6 @@ async function resolveInteractiveBuildSelection(options: {
     jobs = await deps.loadJobs({
       client: options.client,
       env: options.env,
-      nonInteractive: false,
     });
 
     if (jobs.length === 0) {
@@ -1611,7 +1610,6 @@ async function resolveJobTarget(options: {
   const jobs = await deps.loadJobs({
     client: options.client,
     env: options.env,
-    nonInteractive: options.nonInteractive,
   });
 
   if (jobs.length === 0) {

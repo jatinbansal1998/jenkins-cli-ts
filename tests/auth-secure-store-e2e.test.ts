@@ -251,10 +251,13 @@ describe("secure-store CLI lifecycle (real OS keychain)", () => {
         home,
       );
 
-      // The command reaches its normal cache error after migration; migration
-      // itself stays silent because this is a non-interactive invocation.
+      // With no cache the command fetches jobs from the unreachable controller
+      // after migration; migration itself stays silent because this is a
+      // non-interactive invocation.
       expect(result.exitCode).toBe(1);
-      expect(result.output).toContain("Job cache is missing");
+      expect(result.output).toContain(
+        "Network error while trying to list jobs.",
+      );
       expect(result.output).not.toContain("Migrated");
       expect(result.output).not.toContain(identity.token);
 
@@ -359,7 +362,7 @@ describe("secure-store CLI fallback", () => {
     );
 
     expect(result.exitCode).toBe(1);
-    expect(result.output).toContain("Job cache is missing");
+    expect(result.output).toContain("Network error while trying to list jobs.");
     expect(result.output).not.toContain(identity.token);
     const profile = readStoredConfig(home).profiles[identity.profileName];
     expect(profile?.jenkinsApiToken).toBe(identity.token);
