@@ -25,17 +25,20 @@ describe("cli intro", () => {
     expect(message).toBe("Jenkins CLI\nv0.7.4");
   });
 
-  test("prints nothing when the banner is disabled", () => {
+  test("prints compact metadata when the ASCII banner is disabled", () => {
     const calls: string[] = [];
     printCliIntro(
       {
         showAsciiBanner: false,
         version: "0.7.4",
+        target: "host: jenkins.example.com | profile: work",
       },
       (text) => calls.push(text),
     );
 
-    expect(calls).toHaveLength(0);
+    expect(calls).toEqual([
+      "Jenkins CLI\nv0.7.4 | host: jenkins.example.com | profile: work\n",
+    ]);
   });
 
   test("prints banner when enabled", () => {

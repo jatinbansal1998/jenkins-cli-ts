@@ -436,15 +436,15 @@ If you have not installed the global CLI, replace `jenkins-cli` with
 
 - Commands return parseable output prefixed with `OK:` and `HINT:` where relevant.
 - Running `jenkins-cli` with no command defaults to `list`.
-- Interactive commands show an ASCII intro banner by default. Use `--no-banner`
-  to disable it for a single run.
+- Interactive commands show a compact intro with the CLI version and effective
+  Jenkins target. Use `--banner` to add the ASCII banner for a single run.
 
 #### JSON Output (`--json`)
 
 Automation-relevant read and mutation commands accept `--json`:
 
 - `--json` prints **exactly one JSON document** to stdout and nothing else — no
-  banner, no `OK:`/`HINT:` lines, no prompts, no spinner. Hints and warnings, if
+  intro, no `OK:`/`HINT:` lines, no prompts, no spinner. Hints and warnings, if
   any, go to stderr.
 - `--json` implies `--non-interactive`: the command never prompts and fails fast.
 - `build --json --watch` waits and returns the final result in the same

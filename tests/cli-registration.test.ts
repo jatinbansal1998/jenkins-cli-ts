@@ -288,6 +288,16 @@ describe("command help and global options", () => {
 });
 
 describe("hidden defaults and explicit flags", () => {
+  test("keeps the ASCII banner opt-in", () => {
+    const result = runCli(["--help"]);
+    const bannerStart = result.output.indexOf("--banner");
+    const jsonStart = result.output.indexOf("--json", bannerStart);
+    const bannerHelp = result.output.slice(bannerStart, jsonStart);
+
+    expect(result.exitCode).toBe(0);
+    expect(bannerHelp).toContain("[default: false]");
+  });
+
   test("keeps default-branch hidden while preserving visible build defaults", () => {
     const result = runCli(["build", "--help"]);
 
