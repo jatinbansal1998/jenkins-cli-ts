@@ -261,7 +261,7 @@ Command-specific options:
 Cache directory: ${getJobCacheDir()}
 Cache files are separated by Jenkins URL. A missing cache is fetched on first
 use; a cache older than 24h is served immediately and refreshed in the
-background, so only \`list --refresh\` ever waits on Jenkins.
+background; only a missing cache and \`list --refresh\` wait on Jenkins.
 
 Run "$0 <command> --help" for full details.`;
 }

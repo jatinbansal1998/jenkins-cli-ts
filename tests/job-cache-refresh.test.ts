@@ -30,10 +30,28 @@ const renameMock = mock(async (fromPath: string, toPath: string) => {
 const rmMock = mock(async (filePath: string) => {
   files.delete(filePath);
 });
+const openMock = mock(exclusiveCreateOpen);
+
+async function exclusiveCreateOpen(filePath: string, flags?: string) {
+  if (flags !== "wx") {
+    throw new Error(`unexpected open flags ${String(flags)}`);
+  }
+  if (files.has(filePath)) {
+    throw createErrno("EEXIST");
+  }
+  files.set(filePath, "");
+  return {
+    writeFile: async (data: string) => {
+      files.set(filePath, data);
+    },
+    close: async () => undefined,
+  } as unknown as fs.promises.FileHandle;
+}
 
 void mock.module("node:fs/promises", () => ({
   ...realFsPromises,
   mkdir: mkdirMock,
+  open: openMock,
   rename: renameMock,
   rm: rmMock,
 }));
@@ -101,6 +119,7 @@ describe("job cache refresh", () => {
     rmMock.mockImplementation(async (filePath: string) => {
       files.delete(filePath);
     });
+    openMock.mockImplementation(exclusiveCreateOpen);
   });
 
   afterEach(() => {
@@ -111,6 +130,7 @@ describe("job cache refresh", () => {
     mkdirMock.mockImplementation(fs.promises.mkdir);
     renameMock.mockImplementation(fs.promises.rename);
     rmMock.mockImplementation(fs.promises.rm);
+    openMock.mockImplementation(fs.promises.open);
     files.clear();
   });
 
@@ -160,6 +180,8 @@ describe("job cache refresh", () => {
         folderDepth: 3,
       });
       expect(files.has(lockPath)).toBe(true);
+      // The claim must be an exclusive create, not check-then-write.
+      expect(openMock).toHaveBeenCalledWith(lockPath, "wx");
 
       // A live lock means a worker is already running: no second spawn.
       expect(await load()).toEqual(cachedJobs);

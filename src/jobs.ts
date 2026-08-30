@@ -3,7 +3,7 @@
  * Caches jobs locally in an OS-specific cache directory and provides
  * natural language search with scoring for job lookups.
  */
-import { mkdir, rename, rm } from "node:fs/promises";
+import { mkdir, open, rename, rm } from "node:fs/promises";
 import { createHash, randomUUID } from "node:crypto";
 import path from "node:path";
 import { CliError, printHint } from "./cli";
@@ -219,13 +219,11 @@ async function fetchAndCacheJobs(
  * own refresh. Failures are swallowed: the stale cache is still usable.
  */
 async function scheduleBackgroundRefresh(env: JobCacheEnv): Promise<void> {
-  const lockPath = getRefreshLockPath(env.jenkinsUrl);
   try {
-    if (await isRefreshInProgress(lockPath)) {
+    await mkdir(CACHE_DIR, { recursive: true });
+    if (!(await acquireRefreshLock(getRefreshLockPath(env.jenkinsUrl)))) {
       return;
     }
-    await mkdir(CACHE_DIR, { recursive: true });
-    await Bun.file(lockPath).write(new Date().toISOString());
     const payload: JobCacheEnv = {
       jenkinsUrl: env.jenkinsUrl,
       jenkinsUser: env.jenkinsUser,
@@ -250,6 +248,34 @@ export async function clearJobCacheRefreshLock(
 
 function getRefreshLockPath(jenkinsUrl: string): string {
   return `${getJobCachePath(jenkinsUrl)}.refreshing`;
+}
+
+/**
+ * Exclusive create makes the check and the claim one operation, so parallel
+ * commands cannot both win. A lock older than its TTL belongs to a worker
+ * that died and is removed before one retry.
+ */
+async function acquireRefreshLock(lockPath: string): Promise<boolean> {
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    try {
+      const handle = await open(lockPath, "wx");
+      try {
+        await handle.writeFile(new Date().toISOString());
+      } finally {
+        await handle.close();
+      }
+      return true;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "EEXIST") {
+        throw error;
+      }
+      if (await isRefreshInProgress(lockPath)) {
+        return false;
+      }
+      await rm(lockPath, { force: true });
+    }
+  }
+  return false;
 }
 
 async function isRefreshInProgress(lockPath: string): Promise<boolean> {

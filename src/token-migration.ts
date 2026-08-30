@@ -38,14 +38,10 @@ export type TokenMigrationDeps = {
  * Decides whether a selected profile is eligible for automatic migration.
  */
 export function shouldMigrateToken(input: {
-  available: boolean;
   env: Pick<EnvConfig, "profileName" | "tokenStorage">;
   profile: JenkinsProfileConfig | undefined;
 }): boolean {
-  const { available, env, profile } = input;
-  if (!available) {
-    return false;
-  }
+  const { env, profile } = input;
   // Only profiles resolved from the config file are eligible; env-var and
   // one-off (--url/--user/--token) credentials have no profile name.
   if (!env.profileName || !profile) {
@@ -78,28 +74,24 @@ export async function maybeMigrateToken(params: {
   const log = params.report ? (deps.log ?? printOk) : () => undefined;
   const hint = params.report ? (deps.hint ?? printHint) : () => undefined;
 
+  // Cheapest checks first: env alone rules out keychain-backed and
+  // profile-less runs without even reading the config file.
   const profileName = params.env.profileName;
   if (!profileName || params.env.tokenStorage === "keychain") {
     return;
   }
-  // Probing the keyring costs a subprocess or D-Bus round trip; only pay it
-  // when a plaintext profile could actually be migrated.
-  const available = await isAvailable(deps.secureStore);
-  if (!available) {
-    return;
-  }
-
   const config = await loadConfig();
   const profile = config?.profiles[profileName];
   if (
     !config ||
-    !shouldMigrateToken({
-      available,
-      env: params.env,
-      profile,
-    }) ||
-    !profile
+    !profile ||
+    !shouldMigrateToken({ env: params.env, profile })
   ) {
+    return;
+  }
+  // Probing the keyring costs a subprocess or D-Bus round trip; only pay it
+  // for a profile that can actually migrate.
+  if (!(await isAvailable(deps.secureStore))) {
     return;
   }
 
