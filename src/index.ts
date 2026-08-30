@@ -109,7 +109,7 @@ async function main(): Promise<void> {
     })
     .option("banner", {
       type: "boolean",
-      default: true,
+      default: false,
       describe: "Show the interactive ASCII intro banner",
     })
     .option("json", {
@@ -310,12 +310,12 @@ async function runTrackedCommand(
   }
   let introShown = false;
   const showIntro = (target?: string): void => {
-    if (introShown || !interactive || argv?.banner === false) {
+    if (introShown || !interactive) {
       return;
     }
     introShown = true;
     printCliIntro({
-      showAsciiBanner: true,
+      showAsciiBanner: argv?.banner === true,
       version: VERSION,
       target,
       pendingUpdateVersion: pendingPromptIntroVersion,

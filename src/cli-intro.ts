@@ -53,9 +53,6 @@ export function printCliIntro(
   options: CliIntroOptions,
   write: (text: string) => void = (text) => process.stderr.write(text),
 ): void {
-  if (!options.showAsciiBanner) {
-    return;
-  }
   write(`${formatCliIntro(options)}\n`);
 }
 
