@@ -259,7 +259,9 @@ Command-specific options:
     --json                  Output update check data (requires --check)
 
 Cache directory: ${getJobCacheDir()}
-Cache files are separated by Jenkins URL.
+Cache files are separated by Jenkins URL. A missing cache is fetched on first
+use; a cache older than 24h is served immediately and refreshed in the
+background; only a missing cache and \`list --refresh\` wait on Jenkins.
 
 Run "$0 <command> --help" for full details.`;
 }

@@ -63,7 +63,6 @@ export async function runList(options: ListOptions): Promise<void> {
       client: options.client,
       env: options.env,
       refresh: options.refresh,
-      nonInteractive: options.nonInteractive,
     }),
     options.activeOnly,
   );
@@ -96,7 +95,6 @@ async function runListJson(options: ListOptions): Promise<void> {
           client: options.client,
           env: options.env,
           refresh: options.refresh,
-          nonInteractive: true,
         }),
         options.activeOnly,
       );

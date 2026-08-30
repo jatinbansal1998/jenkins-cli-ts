@@ -16,7 +16,7 @@ describe("cli default command", () => {
         env: {
           ...process.env,
           HOME: tempHome,
-          JENKINS_URL: "https://jenkins.example.com",
+          JENKINS_URL: "http://127.0.0.1:9",
           JENKINS_USER: "ci-user",
           JENKINS_API_TOKEN: "ci-token",
         },
@@ -29,7 +29,7 @@ describe("cli default command", () => {
         new TextDecoder().decode(result.stderr);
 
       expect(result.exitCode).toBe(1);
-      expect(output).toContain("Job cache is missing.");
+      expect(output).toContain("Network error while trying to list jobs.");
       expect(output).not.toContain("Missing command. Use --help to see usage.");
     } finally {
       fs.rmSync(tempHome, { recursive: true, force: true });
@@ -47,7 +47,7 @@ describe("cli default command", () => {
         configPath,
         JSON.stringify(
           {
-            jenkinsUrl: "https://legacy.example.com",
+            jenkinsUrl: "http://127.0.0.1:9",
             jenkinsUser: "legacy-user",
             jenkinsApiToken: "legacy-token",
             branchParam: "BRANCH",
@@ -74,7 +74,7 @@ describe("cli default command", () => {
         new TextDecoder().decode(result.stderr);
 
       expect(result.exitCode).toBe(1);
-      expect(output).toContain("Job cache is missing.");
+      expect(output).toContain("Network error while trying to list jobs.");
 
       const migratedConfig = JSON.parse(
         fs.readFileSync(configPath, "utf8"),
@@ -102,13 +102,13 @@ describe("cli default command", () => {
         legacyCachePath,
         JSON.stringify(
           {
-            jenkinsUrl: "https://jenkins.example.com",
+            jenkinsUrl: "http://127.0.0.1:9",
             user: "ci-user",
             fetchedAt: new Date().toISOString(),
             jobs: [
               {
                 name: "api-prod",
-                url: "https://jenkins.example.com/job/api-prod/",
+                url: "http://127.0.0.1:9/job/api-prod/",
               },
             ],
           },
@@ -123,7 +123,7 @@ describe("cli default command", () => {
         env: {
           ...process.env,
           HOME: tempHome,
-          JENKINS_URL: "https://jenkins.example.com",
+          JENKINS_URL: "http://127.0.0.1:9",
           JENKINS_USER: "ci-user",
           JENKINS_API_TOKEN: "ci-token",
         },
@@ -136,7 +136,7 @@ describe("cli default command", () => {
         new TextDecoder().decode(result.stderr);
 
       expect(result.exitCode).toBe(1);
-      expect(output).toContain("Job cache is missing.");
+      expect(output).toContain("Network error while trying to list jobs.");
       expect(output).not.toContain("api-prod");
     } finally {
       fs.rmSync(tempHome, { recursive: true, force: true });
@@ -164,7 +164,7 @@ describe("cli default command", () => {
         env: {
           ...process.env,
           HOME: tempHome,
-          JENKINS_URL: "https://jenkins.example.com",
+          JENKINS_URL: "http://127.0.0.1:9",
           JENKINS_USER: "ci-user",
           JENKINS_API_TOKEN: "ci-token",
         },
@@ -197,7 +197,7 @@ describe("cli default command", () => {
         env: {
           ...process.env,
           HOME: tempHome,
-          JENKINS_URL: "https://jenkins.example.com",
+          JENKINS_URL: "http://127.0.0.1:9",
           JENKINS_USER: "ci-user",
           JENKINS_API_TOKEN: "ci-token",
         },
@@ -210,7 +210,7 @@ describe("cli default command", () => {
         new TextDecoder().decode(result.stderr);
 
       expect(result.exitCode).toBe(1);
-      expect(output).toContain("Job cache is missing.");
+      expect(output).toContain("Network error while trying to list jobs.");
       expect(output).not.toContain("Minimum required version:");
     } finally {
       fs.rmSync(tempHome, { recursive: true, force: true });
@@ -230,7 +230,7 @@ function runCli(args: string[]): {
       env: {
         ...process.env,
         HOME: tempHome,
-        JENKINS_URL: "https://jenkins.example.com",
+        JENKINS_URL: "http://127.0.0.1:9",
         JENKINS_USER: "ci-user",
         JENKINS_API_TOKEN: "ci-token",
       },
@@ -279,7 +279,7 @@ describe("cli argument routing", () => {
       "--job",
       "api",
       "--job-url",
-      "https://jenkins.example.com/job/api",
+      "http://127.0.0.1:9/job/api",
     ]);
     expect(result.exitCode).toBe(1);
     expect(result.output).toContain(
@@ -294,7 +294,7 @@ describe("cli argument routing", () => {
       "--job",
       "api",
       "--job-url",
-      "https://jenkins.example.com/job/api",
+      "http://127.0.0.1:9/job/api",
     ]);
     expect(result.exitCode).toBe(1);
     expect(result.output).toContain(
@@ -307,7 +307,7 @@ describe("cli argument routing", () => {
       "build",
       "--non-interactive",
       "--job-url",
-      "https://jenkins.example.com/job/api",
+      "http://127.0.0.1:9/job/api",
       "--branch",
       "staging",
       "--without-params",
@@ -323,7 +323,7 @@ describe("cli argument routing", () => {
       "build",
       "--non-interactive",
       "--job-url",
-      "https://jenkins.example.com/job/api",
+      "http://127.0.0.1:9/job/api",
       "--param",
       "NO_EQUALS_SIGN",
     ]);
@@ -337,7 +337,7 @@ describe("cli argument routing", () => {
       "build",
       "--non-interactive",
       "--job-url",
-      "https://jenkins.example.com/job/api",
+      "http://127.0.0.1:9/job/api",
       "--param",
       "KEY=a",
       "--param",

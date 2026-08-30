@@ -30,10 +30,28 @@ const renameMock = mock(async (fromPath: string, toPath: string) => {
 const rmMock = mock(async (filePath: string) => {
   files.delete(filePath);
 });
+const openMock = mock(exclusiveCreateOpen);
+
+async function exclusiveCreateOpen(filePath: string, flags?: string) {
+  if (flags !== "wx") {
+    throw new Error(`unexpected open flags ${String(flags)}`);
+  }
+  if (files.has(filePath)) {
+    throw createErrno("EEXIST");
+  }
+  files.set(filePath, "");
+  return {
+    writeFile: async (data: string) => {
+      files.set(filePath, data);
+    },
+    close: async () => undefined,
+  } as unknown as fs.promises.FileHandle;
+}
 
 void mock.module("node:fs/promises", () => ({
   ...realFsPromises,
   mkdir: mkdirMock,
+  open: openMock,
   rename: renameMock,
   rm: rmMock,
 }));
@@ -101,6 +119,7 @@ describe("job cache refresh", () => {
     rmMock.mockImplementation(async (filePath: string) => {
       files.delete(filePath);
     });
+    openMock.mockImplementation(exclusiveCreateOpen);
   });
 
   afterEach(() => {
@@ -111,7 +130,113 @@ describe("job cache refresh", () => {
     mkdirMock.mockImplementation(fs.promises.mkdir);
     renameMock.mockImplementation(fs.promises.rename);
     rmMock.mockImplementation(fs.promises.rm);
+    openMock.mockImplementation(fs.promises.open);
     files.clear();
+  });
+
+  test("stale cache is served immediately while a detached worker refreshes it", async () => {
+    const cachePath = jobsModule.getJobCachePath(env.jenkinsUrl);
+    const lockPath = `${cachePath}.refreshing`;
+    const cachedJobs: JenkinsJob[] = [
+      { name: "keep", url: "https://jenkins.example.com/job/keep" },
+    ];
+    files.set(
+      cachePath,
+      JSON.stringify({
+        jenkinsUrl: env.jenkinsUrl,
+        user: env.jenkinsUser,
+        folderDepth: loadEnv.folderDepth,
+        fetchedAt: "2026-02-12T00:00:00.000Z",
+        jobs: cachedJobs,
+      }),
+    );
+    const listJobs = mock(async () => [] as JenkinsJob[]);
+    const spawnDetached = mock(
+      (_command: string[], _childEnv: Record<string, string>) => undefined,
+    );
+    const restore = jobsModule.setJobsDepsForTesting({ spawnDetached });
+    const load = () =>
+      jobsModule.loadJobs({
+        client: { listJobs } as unknown as JenkinsClient,
+        env: loadEnv,
+      });
+
+    try {
+      expect(await load()).toEqual(cachedJobs);
+      expect(listJobs).not.toHaveBeenCalled();
+      expect(spawnDetached).toHaveBeenCalledTimes(1);
+      const [command, childEnv] = spawnDetached.mock.calls[0] ?? [];
+      expect(command?.slice(-2)).toEqual([
+        "refresh-job-cache",
+        "--non-interactive",
+      ]);
+      expect(
+        JSON.parse(childEnv?.[jobsModule.JOB_CACHE_REFRESH_ENV] ?? ""),
+      ).toEqual({
+        jenkinsUrl: env.jenkinsUrl,
+        jenkinsUser: env.jenkinsUser,
+        jenkinsApiToken: "test-token",
+        useCrumb: false,
+        folderDepth: 3,
+      });
+      expect(files.has(lockPath)).toBe(true);
+      // The claim must be an exclusive create, not check-then-write.
+      expect(openMock).toHaveBeenCalledWith(lockPath, "wx");
+
+      // A live lock means a worker is already running: no second spawn.
+      expect(await load()).toEqual(cachedJobs);
+      expect(spawnDetached).toHaveBeenCalledTimes(1);
+
+      // An abandoned lock (worker died) must not block refreshes forever.
+      files.set(lockPath, "2026-02-12T00:00:00.000Z");
+      await load();
+      expect(spawnDetached).toHaveBeenCalledTimes(2);
+
+      await jobsModule.clearJobCacheRefreshLock(env.jenkinsUrl);
+      expect(files.has(lockPath)).toBe(false);
+    } finally {
+      restore();
+    }
+  });
+
+  test("missing or mismatched cache is fetched synchronously without spawning", async () => {
+    const cachePath = jobsModule.getJobCachePath(env.jenkinsUrl);
+    const liveJobs: JenkinsJob[] = [
+      { name: "live", url: "https://jenkins.example.com/job/live" },
+    ];
+    const listJobs = mock(async () => liveJobs);
+    const spawnDetached = mock(
+      (_command: string[], _childEnv: Record<string, string>) => undefined,
+    );
+    const restore = jobsModule.setJobsDepsForTesting({ spawnDetached });
+    const load = () =>
+      jobsModule.loadJobs({
+        client: { listJobs } as unknown as JenkinsClient,
+        env: loadEnv,
+      });
+
+    try {
+      expect(await load()).toEqual(liveJobs);
+      expect(listJobs).toHaveBeenCalledTimes(1);
+      expect((await jobsModule.readJobCache(env))?.jobs).toEqual(liveJobs);
+
+      // Same URL and user but a different folder depth is not reusable.
+      files.set(
+        cachePath,
+        JSON.stringify({
+          jenkinsUrl: env.jenkinsUrl,
+          user: env.jenkinsUser,
+          folderDepth: 1,
+          fetchedAt: new Date().toISOString(),
+          jobs: [{ name: "shallow", url: "https://jenkins.example.com/job/s" }],
+        }),
+      );
+      expect(await load()).toEqual(liveJobs);
+      expect(listJobs).toHaveBeenCalledTimes(2);
+      expect(spawnDetached).not.toHaveBeenCalled();
+    } finally {
+      restore();
+    }
   });
 
   test("refresh replaces removed jobs and trims stale recent entries", async () => {

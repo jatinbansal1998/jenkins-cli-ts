@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, mock, test } from "bun:test";
 import {
   type JenkinsConfig,
   type JenkinsProfileConfig,
@@ -106,17 +106,12 @@ function harness(options: {
 
 describe("shouldMigrateToken", () => {
   const base = {
-    available: true,
     env: { profileName: "work", tokenStorage: undefined },
     profile: plaintextProfile(),
   };
 
   test("true for an eligible plaintext profile", () => {
     expect(shouldMigrateToken(base)).toBeTrue();
-  });
-
-  test("false when secure store unavailable", () => {
-    expect(shouldMigrateToken({ ...base, available: false })).toBeFalse();
   });
 
   test("false without a profile name (env/one-off credentials)", () => {
@@ -260,6 +255,43 @@ describe("maybeMigrateToken", () => {
     });
 
     expect(h.saved).toHaveLength(0);
+  });
+
+  test("skips the keyring probe when nothing could be migrated", async () => {
+    const probe = mock(async () => true);
+    const cases: Array<{ env: EnvConfig; config: JenkinsConfig | null }> = [
+      {
+        env: env({ tokenStorage: "keychain" }),
+        config: configWith(plaintextProfile()),
+      },
+      {
+        env: env({ profileName: undefined }),
+        config: configWith(plaintextProfile()),
+      },
+      {
+        env: env(),
+        config: configWith(plaintextProfile({ secureStorageOptOut: true })),
+      },
+      {
+        env: env(),
+        config: configWith(plaintextProfile({ tokenStorage: "keychain" })),
+      },
+      {
+        env: env({ profileName: "missing" }),
+        config: configWith(plaintextProfile()),
+      },
+      { env: env(), config: null },
+    ];
+    for (const testCase of cases) {
+      const h = harness({ config: testCase.config });
+      await maybeMigrateToken({
+        env: testCase.env,
+        report: false,
+        deps: { ...h.deps, isAvailable: probe },
+      });
+      expect(h.saved).toHaveLength(0);
+    }
+    expect(probe).not.toHaveBeenCalled();
   });
 
   test("env/one-off credentials (no profile): never migrates", async () => {

@@ -3,15 +3,16 @@
  * Caches jobs locally in an OS-specific cache directory and provides
  * natural language search with scoring for job lookups.
  */
-import { mkdir, rename, rm } from "node:fs/promises";
+import { mkdir, open, rename, rm } from "node:fs/promises";
 import { createHash, randomUUID } from "node:crypto";
 import path from "node:path";
-import { CliError } from "./cli";
+import { CliError, printHint } from "./cli";
 import { MIN_SCORE, AMBIGUITY_GAP, MAX_OPTIONS, SCORES } from "./config/fuzzy";
 import type { EnvConfig } from "./env";
 import type { JenkinsClient } from "./jenkins/client";
 import { normalizeRecentJobs, pruneRecentJobs } from "./recent-job-data";
 import { findJobByUrl, getJobUrlKey, normalizeOptionalJobUrl } from "./job-url";
+import { selfInvocation } from "./self-invocation";
 import type { JenkinsJob, JenkinsJobLastBuild } from "./types/jenkins";
 import { resolveUserHome } from "./user-home";
 
@@ -106,44 +107,72 @@ export function getSuggestedJobs(
     .map((match) => match.job);
 }
 
+/** The slice of EnvConfig the job cache needs; also the background refresh payload. */
+export type JobCacheEnv = Pick<
+  EnvConfig,
+  "jenkinsUrl" | "jenkinsUser" | "jenkinsApiToken" | "useCrumb" | "folderDepth"
+>;
+
+const CACHE_TTL_MS = 24 * 60 * 60 * 1000;
+/** A refresh that has not finished within this window is assumed dead. */
+const REFRESH_LOCK_TTL_MS = 10 * 60 * 1000;
+export const JOB_CACHE_REFRESH_ENV = "JENKINS_CLI_JOB_CACHE_REFRESH";
+export const JOB_CACHE_REFRESH_COMMAND = "refresh-job-cache";
+
+type JobsDeps = {
+  spawnDetached: (command: string[], env: Record<string, string>) => void;
+};
+
+const defaultJobsDeps: JobsDeps = {
+  spawnDetached(command, env) {
+    Bun.spawn({
+      cmd: command,
+      env: { ...process.env, ...env },
+      stdio: ["ignore", "ignore", "ignore"],
+      detached: true,
+      windowsHide: true,
+    }).unref();
+  },
+};
+
+let jobsDeps = defaultJobsDeps;
+
+export function setJobsDepsForTesting(
+  overrides: Partial<JobsDeps>,
+): () => void {
+  jobsDeps = { ...defaultJobsDeps, ...overrides };
+  return () => {
+    jobsDeps = defaultJobsDeps;
+  };
+}
+
+/**
+ * Serves the cached job list. A missing or mismatched cache is fetched
+ * synchronously; a stale one is returned as-is while a detached CLI process
+ * refreshes it, so the caller never waits on Jenkins for data it already has.
+ */
 export async function loadJobs(options: {
   client: JenkinsClient;
-  env: EnvConfig;
+  env: JobCacheEnv;
   refresh?: boolean;
-  nonInteractive: boolean;
 }): Promise<JenkinsJob[]> {
-  const cache = await readJobCache(options.env);
-  const isCacheUsable = cache && cacheMatchesEnv(cache, options.env);
-
   if (options.refresh) {
     return await fetchAndCacheJobs(options.client, options.env);
   }
 
-  let isExpired = false;
-  if (isCacheUsable && cache.fetchedAt) {
-    const fetchedAt = new Date(cache.fetchedAt).getTime();
-    const now = Date.now();
-    isExpired = now - fetchedAt > 24 * 60 * 60 * 1000;
+  const cache = await readJobCache(options.env);
+  if (!cache || !cacheMatchesEnv(cache, options.env)) {
+    return await fetchAndCacheJobs(options.client, options.env);
   }
 
-  if (isCacheUsable && !isExpired) {
-    return cache.jobs;
+  const ageMs = Date.now() - new Date(cache.fetchedAt).getTime();
+  if (ageMs > CACHE_TTL_MS) {
+    await scheduleBackgroundRefresh(options.env);
+    printHint(
+      `Job cache is ${formatAge(ageMs)} old; refreshing it in the background. Run \`jenkins-cli list --refresh\` to wait for fresh data.`,
+    );
   }
-
-  const reason = cache
-    ? "Job cache does not match the current Jenkins URL, user, or folder depth."
-    : "Job cache is missing.";
-
-  const hints = [
-    "Run `jenkins-cli list --refresh` to rebuild the cache.",
-    "Or pass `--job-url` to skip cache matching.",
-  ];
-
-  if (options.nonInteractive && !isCacheUsable) {
-    throw new CliError(reason, hints);
-  }
-
-  return await fetchAndCacheJobs(options.client, options.env);
+  return cache.jobs;
 }
 
 export async function readJobCache(env: {
@@ -160,7 +189,7 @@ export async function writeJobCache(cache: JobCache): Promise<void> {
 
 async function fetchAndCacheJobs(
   client: JenkinsClient,
-  env: EnvConfig,
+  env: JobCacheEnv,
 ): Promise<JenkinsJob[]> {
   const jobs = await client.listJobs();
   const existingCache = await readJobCache(env);
@@ -182,6 +211,90 @@ async function fetchAndCacheJobs(
   };
   await writeJobCache(payload);
   return jobs;
+}
+
+/**
+ * Spawns `jenkins-cli refresh-job-cache` detached from this process. A lock
+ * file next to the cache stops concurrent commands from each spawning their
+ * own refresh. Failures are swallowed: the stale cache is still usable.
+ */
+async function scheduleBackgroundRefresh(env: JobCacheEnv): Promise<void> {
+  try {
+    await mkdir(CACHE_DIR, { recursive: true });
+    if (!(await acquireRefreshLock(getRefreshLockPath(env.jenkinsUrl)))) {
+      return;
+    }
+    const payload: JobCacheEnv = {
+      jenkinsUrl: env.jenkinsUrl,
+      jenkinsUser: env.jenkinsUser,
+      jenkinsApiToken: env.jenkinsApiToken,
+      useCrumb: env.useCrumb,
+      folderDepth: env.folderDepth,
+    };
+    jobsDeps.spawnDetached(
+      selfInvocation([JOB_CACHE_REFRESH_COMMAND, "--non-interactive"]),
+      { [JOB_CACHE_REFRESH_ENV]: JSON.stringify(payload) },
+    );
+  } catch {
+    // Best-effort only.
+  }
+}
+
+export async function clearJobCacheRefreshLock(
+  jenkinsUrl: string,
+): Promise<void> {
+  await rm(getRefreshLockPath(jenkinsUrl), { force: true });
+}
+
+function getRefreshLockPath(jenkinsUrl: string): string {
+  return `${getJobCachePath(jenkinsUrl)}.refreshing`;
+}
+
+/**
+ * Exclusive create makes the check and the claim one operation, so parallel
+ * commands cannot both win. A lock older than its TTL belongs to a worker
+ * that died and is removed before one retry.
+ */
+async function acquireRefreshLock(lockPath: string): Promise<boolean> {
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    try {
+      const handle = await open(lockPath, "wx");
+      try {
+        await handle.writeFile(new Date().toISOString());
+      } finally {
+        await handle.close();
+      }
+      return true;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "EEXIST") {
+        throw error;
+      }
+      if (await isRefreshInProgress(lockPath)) {
+        return false;
+      }
+      await rm(lockPath, { force: true });
+    }
+  }
+  return false;
+}
+
+async function isRefreshInProgress(lockPath: string): Promise<boolean> {
+  try {
+    const startedAt = Date.parse(await Bun.file(lockPath).text());
+    return (
+      !Number.isNaN(startedAt) && Date.now() - startedAt < REFRESH_LOCK_TTL_MS
+    );
+  } catch {
+    return false;
+  }
+}
+
+function formatAge(ageMs: number): string {
+  const hours = Math.floor(ageMs / (60 * 60 * 1000));
+  if (hours < 48) {
+    return `${hours}h`;
+  }
+  return `${Math.floor(hours / 24)}d`;
 }
 
 async function readCacheFromPath(cachePath: string): Promise<JobCache | null> {
@@ -219,7 +332,7 @@ async function writeCacheToPath(
 
 export function jobCacheMatchesEnv(
   cache: { jenkinsUrl: string; user: string },
-  env: EnvConfig,
+  env: Pick<EnvConfig, "jenkinsUrl" | "jenkinsUser">,
 ): boolean {
   return cache.jenkinsUrl === env.jenkinsUrl && cache.user === env.jenkinsUser;
 }
@@ -231,7 +344,7 @@ export async function readUsableJobCache(
   return cache && jobCacheMatchesEnv(cache, env) ? cache : null;
 }
 
-function cacheMatchesEnv(cache: JobCache, env: EnvConfig): boolean {
+function cacheMatchesEnv(cache: JobCache, env: JobCacheEnv): boolean {
   return (
     jobCacheMatchesEnv(cache, env) && cache.folderDepth === env.folderDepth
   );
@@ -481,7 +594,9 @@ export function resolveJobCandidates(
   const ranked = rankJobs(trimmedQuery, jobs);
   const topMatch = ranked[0];
   if (!topMatch || topMatch.score < MIN_SCORE) {
+    const closest = findClosestJobs(trimmedQuery, jobs).map(getJobDisplayName);
     throw new CliError(`No jobs match "${trimmedQuery}".`, [
+      ...(closest.length > 0 ? [`Closest: ${closest.join(", ")}.`] : []),
       "Try a different description or run `jenkins-cli list --refresh`.",
       "Or pass `--job-url` to skip cache matching.",
     ]);
@@ -493,6 +608,48 @@ export function resolveJobCandidates(
       match.score >= MIN_SCORE && topScore - match.score <= AMBIGUITY_GAP,
   );
   return closeMatches.slice(0, MAX_OPTIONS).map((match) => match.job);
+}
+
+const MAX_CLOSEST_JOBS = 5;
+const MIN_PARTIAL_TOKEN_LENGTH = 3;
+
+/**
+ * Loose pass behind the "No jobs match" error: ranking requires every query
+ * token to hit, so a single wrong token hides the whole namespace. Listing
+ * jobs that share any token lets a caller correct the name without a `list`
+ * round trip.
+ */
+function findClosestJobs(query: string, jobs: JenkinsJob[]): JenkinsJob[] {
+  const queryTokens = tokenize(normalizeText(query));
+  const scored: RankedJob[] = [];
+  for (const job of jobs) {
+    const candidateTokens = getJobCandidates(job).flatMap((candidate) =>
+      tokenize(normalizeText(candidate)),
+    );
+    const matched = queryTokens.filter((queryToken) =>
+      candidateTokens.some((candidateToken) =>
+        isPartialTokenMatch(queryToken, candidateToken),
+      ),
+    ).length;
+    if (matched > 0) {
+      scored.push({ job, score: matched });
+    }
+  }
+  scored.sort(compareRankedJobs);
+  return scored.slice(0, MAX_CLOSEST_JOBS).map((match) => match.job);
+}
+
+function isPartialTokenMatch(
+  queryToken: string,
+  candidateToken: string,
+): boolean {
+  if (getTokenMatchCredit(queryToken, candidateToken) !== null) {
+    return true;
+  }
+  return (
+    queryToken.length >= MIN_PARTIAL_TOKEN_LENGTH &&
+    candidateToken.includes(queryToken)
+  );
 }
 
 function ensureNonEmptyJobQuery(query: string): string {
