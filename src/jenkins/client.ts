@@ -1622,7 +1622,7 @@ const CLOUDBEES_FOLDER_CLASS = "com.cloudbees.hudson.plugins.folder.Folder";
 const CAUSE_FIELDS =
   "_class,shortDescription,userId,userName,upstreamProject,upstreamBuild";
 /** Affected paths reported per change before the CLI flags truncation. */
-export const MAX_CHANGE_PATHS = 100;
+const MAX_CHANGE_PATHS = 100;
 /** Known Jenkins cause classes mapped to the CLI's stable cause names. */
 const CAUSE_TYPE_BY_CLASS: Record<string, BuildCauseType> = {
   "hudson.model.Cause$UserIdCause": "user",
