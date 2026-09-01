@@ -1086,14 +1086,16 @@ jenkins-cli changes --job "api-prod" --json
 ```
 
 Human output starts with the build identity and its trigger causes, then a
-chronological change table. JSON carries `causes[]` (a stable `type` such as
+chronological change table (multi-SCM change sets are merged and sorted by
+commit timestamp before the limit is applied). JSON carries `causes[]` (a stable `type` such as
 `user`, `upstream`, `timer`, `scm`, `remote`, `replay`, `rebuild`, or `cli`,
 with a conservative `other` fallback, plus the display summary), `changes[]`
 (revision id, author, timestamp, full multiline message, and source kind), and
 `pagination` (`limit`, `returned`, `total` when known, and a `truncated` flag).
 
 Output is bounded to `--limit` changes (default 20). `--paths` additionally
-includes each change's affected file paths. A valid build without SCM data is a
+includes each change's affected file paths, capped at 100 per change with a
+`pathsTruncated` flag when Jenkins holds more. A valid build without SCM data is a
 successful empty result — note that Jenkins change sets only contain commits
 new since the previous build, so re-running the same commit yields no changes;
 use the `revisions[]` field on `status`/`history` to verify what was checked

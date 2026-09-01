@@ -177,6 +177,8 @@ export type BuildChange = {
   message?: string;
   /** Affected paths; present only when explicitly requested. */
   paths?: string[];
+  /** True when Jenkins holds more paths than the CLI's per-change cap. */
+  pathsTruncated?: boolean;
   /** Change-set kind as Jenkins reports it (e.g. "git"), or "unknown". */
   sourceType: string;
 };

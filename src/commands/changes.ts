@@ -151,6 +151,11 @@ function renderChanges(report: BuildChangesReport): string {
       for (const change of withPaths) {
         lines.push(`  ${change.id ? change.id.slice(0, 12) : "-"}:`);
         lines.push(...(change.paths ?? []).map((path) => `    ${path}`));
+        if (change.pathsTruncated) {
+          lines.push(
+            `    (more paths exist; showing the first ${change.paths?.length}; see the build's changes in Jenkins)`,
+          );
+        }
       }
     }
   }

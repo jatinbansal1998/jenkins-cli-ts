@@ -300,6 +300,60 @@ describe("JenkinsClient.getBuildChanges", () => {
     });
   });
 
+  test("merges interleaved multi-SCM sets chronologically before limiting", async () => {
+    installResponse({
+      number: 5,
+      url: BUILD_URL,
+      changeSets: [
+        {
+          kind: "git",
+          items: [
+            { commitId: "c300", timestamp: 300 },
+            { commitId: "c400", timestamp: 400 },
+          ],
+        },
+        {
+          kind: "git",
+          items: [{ commitId: "c100", timestamp: 100 }, { commitId: "c-late" }],
+        },
+      ],
+    });
+
+    const report = await client().getBuildChanges(BUILD_URL, { limit: 2 });
+
+    // The oldest commits win the limited window regardless of which change
+    // set carried them; entries without a timestamp sort last.
+    expect(report.changes.map((change) => change.id)).toEqual(["c100", "c300"]);
+    expect(report.truncated).toBe(true);
+  });
+
+  test("caps affected paths per change and flags the truncation", async () => {
+    installResponse({
+      number: 5,
+      url: BUILD_URL,
+      changeSet: {
+        kind: "git",
+        items: [
+          {
+            commitId: "big",
+            affectedPaths: Array.from({ length: 101 }, (_, i) => `f/${i}.ts`),
+          },
+          { commitId: "small", affectedPaths: ["one.ts"] },
+        ],
+      },
+    });
+
+    const report = await client().getBuildChanges(BUILD_URL, {
+      limit: 20,
+      includePaths: true,
+    });
+
+    expect(report.changes[0]?.paths).toHaveLength(100);
+    expect(report.changes[0]?.pathsTruncated).toBe(true);
+    expect(report.changes[1]?.paths).toEqual(["one.ts"]);
+    expect(report.changes[1]?.pathsTruncated).toBeUndefined();
+  });
+
   test("truncates across change sets and drops the unknowable total", async () => {
     installResponse({
       number: 5,

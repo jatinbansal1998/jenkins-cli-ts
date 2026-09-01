@@ -556,7 +556,11 @@ export class JenkinsClient {
       "timestamp",
       "msg",
       "comment",
-      ...(options.includePaths ? ["affectedPaths"] : []),
+      // Bounded with one lookahead so a huge commit cannot pull an unbounded
+      // path graph; the extra entry drives the per-change truncation flag.
+      ...(options.includePaths
+        ? [`affectedPaths{0,${MAX_CHANGE_PATHS + 1}}`]
+        : []),
     ].join(",");
     // One lookahead item per change set drives the truncation flag.
     const setFields = `kind,items[${itemFields}]{0,${options.limit + 1}}`;
@@ -1617,6 +1621,8 @@ function isBuildResourceContext(context: string): boolean {
 const CLOUDBEES_FOLDER_CLASS = "com.cloudbees.hudson.plugins.folder.Folder";
 const CAUSE_FIELDS =
   "_class,shortDescription,userId,userName,upstreamProject,upstreamBuild";
+/** Affected paths reported per change before the CLI flags truncation. */
+export const MAX_CHANGE_PATHS = 100;
 /** Known Jenkins cause classes mapped to the CLI's stable cause names. */
 const CAUSE_TYPE_BY_CLASS: Record<string, BuildCauseType> = {
   "hudson.model.Cause$UserIdCause": "user",
@@ -1959,12 +1965,19 @@ function normalizeChangeItem(
     typeof rawMessage === "string"
       ? normalizedOptionalText(rawMessage.trimEnd())
       : undefined;
-  const paths =
+  const fetchedPaths =
     includePaths && Array.isArray(item.affectedPaths)
       ? item.affectedPaths.filter(
           (path): path is string => typeof path === "string",
         )
       : undefined;
+  // The tree request fetches one lookahead path past the cap, so a longer
+  // list only proves Jenkins holds more than the CLI is willing to print.
+  const pathsTruncated =
+    fetchedPaths !== undefined && fetchedPaths.length > MAX_CHANGE_PATHS;
+  const paths = pathsTruncated
+    ? fetchedPaths.slice(0, MAX_CHANGE_PATHS)
+    : fetchedPaths;
   const author =
     item.author && typeof item.author === "object"
       ? trimmedText(item.author.fullName)
@@ -1975,6 +1988,7 @@ function normalizeChangeItem(
     timestampMs,
     message,
     ...(paths ? { paths } : {}),
+    ...(pathsTruncated ? { pathsTruncated } : {}),
     sourceType,
   };
 }
@@ -2021,8 +2035,17 @@ function normalizeBuildChanges(
       changes.push(normalizeChangeItem(item, sourceType, options.includePaths));
     }
   }
-  // Change sets arrive oldest-first; the lookahead item(s) past the limit only
-  // prove more data exists, so the total is unknown once anything is dropped.
+  // Change sets are concatenated in checkout order, so a multi-SCM build can
+  // interleave timestamps across sets. Sort the bounded entries chronologically
+  // (stable, entries without a timestamp last) before applying the global
+  // limit; otherwise the slice could drop an older commit from a later set.
+  changes.sort(
+    (a, b) =>
+      (a.timestampMs ?? Number.POSITIVE_INFINITY) -
+      (b.timestampMs ?? Number.POSITIVE_INFINITY),
+  );
+  // The lookahead item(s) past the limit only prove more data exists, so the
+  // total is unknown once anything is dropped.
   const truncated = changes.length > options.limit;
   const returned = truncated ? changes.slice(0, options.limit) : changes;
   return {
