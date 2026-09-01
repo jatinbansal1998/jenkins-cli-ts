@@ -73,7 +73,9 @@ export function assertProtectedMutationAllowed(env: EnvConfig): void {
   }
   throw new CliError(
     `Profile "${env.protectedProfileName}" is read-only.`,
-    ["Re-run with --confirm-protected to allow builds, cancels, and reruns."],
+    [
+      "Re-run with --confirm-protected to allow builds, cancels, creates, and reruns.",
+    ],
     PROFILE_PROTECTED_CODE,
   );
 }

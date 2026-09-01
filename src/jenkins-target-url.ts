@@ -3,7 +3,7 @@ import { CliError } from "./cli";
 export function normalizeControllerTargetUrl(
   value: string,
   controllerUrl: string,
-  label: "job-url" | "build-url" | "queue-url",
+  label: "job-url" | "build-url" | "queue-url" | "folder-url" | "copy-from",
 ): string {
   let target: URL;
   try {

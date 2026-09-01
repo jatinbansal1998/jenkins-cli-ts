@@ -489,7 +489,7 @@ describe("runList", () => {
       throw new CliError(
         'Profile "release" is read-only.',
         [
-          "Re-run with --confirm-protected to allow builds, cancels, and reruns.",
+          "Re-run with --confirm-protected to allow builds, cancels, creates, and reruns.",
         ],
         "PROFILE_PROTECTED",
       );
@@ -510,7 +510,7 @@ describe("runList", () => {
       'ERROR: Profile "release" is read-only.',
     );
     expect(errorSpy).toHaveBeenCalledWith(
-      "HINT: Re-run with --confirm-protected to allow builds, cancels, and reruns.",
+      "HINT: Re-run with --confirm-protected to allow builds, cancels, creates, and reruns.",
     );
     // Same job stays selected: the read action runs without reopening the picker.
     expect(runStatusMock).toHaveBeenCalledWith(

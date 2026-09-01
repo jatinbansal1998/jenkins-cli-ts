@@ -77,6 +77,25 @@ describe("JenkinsClient triggerBuild", () => {
     );
   });
 
+  test("never retries the trigger POST after a transport failure", async () => {
+    const fetchMock = mock(async (_input: FetchInput, _init?: FetchInit) => {
+      throw new Error("socket closed");
+    });
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+    const client = new JenkinsClient({
+      baseUrl: "https://jenkins.example.com",
+      user: "user",
+      apiToken: "token",
+      timeoutMs: 1_000,
+    });
+
+    await expect(
+      client.triggerBuild("https://jenkins.example.com/job/my-job", {}),
+    ).rejects.toThrow(CliError);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
   test("resolves the queued build from Jenkins' Location header", async () => {
     const fetchMock = mock(async (input: FetchInput) => {
       const url = String(input);
@@ -1417,5 +1436,157 @@ describe("JenkinsClient listNodes", () => {
       totalExecutors: 4,
       labels: ["linux", "docker"],
     });
+  });
+});
+
+describe("JenkinsClient getJobConfigXml", () => {
+  test("fetches config.xml from the job URL with basic auth", async () => {
+    const fetchMock = mock(async (_input: FetchInput, _init?: FetchInit) => {
+      return new Response("<project/>", { status: 200 });
+    });
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+    const client = new JenkinsClient({
+      baseUrl: "https://jenkins.example.com",
+      user: "user",
+      apiToken: "token",
+      timeoutMs: 1_000,
+    });
+
+    const xml = await client.getJobConfigXml(
+      "https://jenkins.example.com/job/team/job/api",
+    );
+
+    expect(xml).toBe("<project/>");
+    const call = fetchMock.mock.calls[0];
+    expect(call?.[0]).toBe(
+      "https://jenkins.example.com/job/team/job/api/config.xml",
+    );
+    expect(readHeader(call?.[1], "Authorization")).toBe(
+      `Basic ${Buffer.from("user:token").toString("base64")}`,
+    );
+  });
+
+  test("raises a CliError on HTTP errors", async () => {
+    globalThis.fetch = mock(
+      async () => new Response("nope", { status: 404 }),
+    ) as unknown as typeof fetch;
+
+    const client = new JenkinsClient({
+      baseUrl: "https://jenkins.example.com",
+      user: "user",
+      apiToken: "token",
+      timeoutMs: 1_000,
+    });
+
+    await expect(
+      client.getJobConfigXml("https://jenkins.example.com/job/missing"),
+    ).rejects.toThrow(CliError);
+  });
+});
+
+describe("JenkinsClient createItem", () => {
+  test("posts config XML with an application/xml content type", async () => {
+    const fetchMock = mock(async (_input: FetchInput, _init?: FetchInit) => {
+      return new Response("", { status: 200 });
+    });
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+    const client = new JenkinsClient({
+      baseUrl: "https://jenkins.example.com",
+      user: "user",
+      apiToken: "token",
+      timeoutMs: 1_000,
+    });
+
+    const url = await client.createItem({
+      name: "new job",
+      configXml: "<project/>",
+    });
+
+    expect(url).toBe("https://jenkins.example.com/job/new%20job/");
+    const call = fetchMock.mock.calls[0];
+    expect(call?.[0]).toBe(
+      "https://jenkins.example.com/createItem?name=new+job",
+    );
+    expect(call?.[1]?.method).toBe("POST");
+    expect(call?.[1]?.body).toBe("<project/>");
+    expect(readHeader(call?.[1], "Content-Type")).toBe("application/xml");
+  });
+
+  test("copies an existing item with mode=copy and no body", async () => {
+    const fetchMock = mock(async (_input: FetchInput, _init?: FetchInit) => {
+      return new Response("", { status: 200 });
+    });
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+    const client = new JenkinsClient({
+      baseUrl: "https://jenkins.example.com",
+      user: "user",
+      apiToken: "token",
+      timeoutMs: 1_000,
+    });
+
+    const url = await client.createItem({
+      name: "copy-job",
+      copyFrom: "/team/api",
+      parentUrl: "https://jenkins.example.com/job/team",
+    });
+
+    expect(url).toBe("https://jenkins.example.com/job/team/job/copy-job/");
+    const call = fetchMock.mock.calls[0];
+    expect(call?.[0]).toBe(
+      "https://jenkins.example.com/job/team/createItem?name=copy-job&mode=copy&from=%2Fteam%2Fapi",
+    );
+    expect(call?.[1]?.method).toBe("POST");
+    expect(call?.[1]?.body).toBeUndefined();
+    expect(readHeader(call?.[1], "Content-Type")).toBeUndefined();
+  });
+
+  test("never retries the create POST after a transport failure", async () => {
+    const fetchMock = mock(async (_input: FetchInput, _init?: FetchInit) => {
+      throw new Error("socket closed");
+    });
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+    const client = new JenkinsClient({
+      baseUrl: "https://jenkins.example.com",
+      user: "user",
+      apiToken: "token",
+      timeoutMs: 1_000,
+    });
+
+    await expect(
+      client.createItem({ name: "once", configXml: "<project/>" }),
+    ).rejects.toThrow(CliError);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  test("retries with a fresh crumb on 403, then surfaces HTTP errors", async () => {
+    let createAttempts = 0;
+    const fetchMock = mock(async (input: FetchInput, _init?: FetchInit) => {
+      if (typeof input === "string" && input.includes("crumbIssuer")) {
+        return new Response(
+          JSON.stringify({ crumbRequestField: "Jenkins-Crumb", crumb: "c1" }),
+          { status: 200 },
+        );
+      }
+      createAttempts += 1;
+      return new Response("", { status: createAttempts === 1 ? 403 : 400 });
+    });
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+    const client = new JenkinsClient({
+      baseUrl: "https://jenkins.example.com",
+      user: "user",
+      apiToken: "token",
+      timeoutMs: 1_000,
+      useCrumb: true,
+    });
+
+    await expect(
+      client.createItem({ name: "bad", configXml: "<project/>" }),
+    ).rejects.toThrow(CliError);
+    expect(createAttempts).toBe(2);
   });
 });

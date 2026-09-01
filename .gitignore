@@ -40,3 +40,7 @@ report.[0-9]_.[0-9]_.[0-9]_.[0-9]_.json
 # husky internal files
 .husky/_
 /*.bun-build
+
+# Claude Code local state (skills are symlinked from .agents/)
+.claude/*
+!.claude/skills

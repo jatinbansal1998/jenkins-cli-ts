@@ -50,6 +50,7 @@ keychain.
   - [Queue](#queue)
   - [Nodes](#nodes)
   - [Rerun Failed Builds](#rerun-failed-builds)
+  - [Item Config and Creation](#item-config-and-creation)
 - [Update](#update)
 - [Development](#development)
 - [Docs](#docs)
@@ -127,6 +128,7 @@ For standalone installs, use the built-in updater (see [Update](#update)).
 | Running build actions       | Yes       | List, open, or batch-cancel live running builds                     |
 | Logs, cancel, and rerun     | Yes       | Inspect recent logs and manage existing builds                      |
 | Artifacts                   | Yes       | List build artifacts and stream them to disk, preserving paths      |
+| Item config and creation    | Yes       | Print an item's config.xml; create items from a file or by copy     |
 | One-off credentials         | Yes       | Override profile config with `--url`, `--user`, and `--token`       |
 | Read-only profiles          | Yes       | Block builds, cancels, and reruns unless `--confirm-protected`      |
 | Script-friendly output      | Yes       | Parseable `OK:` and `HINT:` output for automation                   |
@@ -345,6 +347,7 @@ jenkins-cli --confirm-protected            # interactive session allowed to writ
 | `build` / `deploy`                                                   | Blocked                                         |
 | `cancel` (queued item or running build, including the watch `c` key) | Blocked                                         |
 | `rerun`, rerun last build, rerun with the same inputs                | Blocked                                         |
+| `create` (from config.xml or by copy)                                | Blocked                                         |
 | The same actions in `list`, `build`, `status`, `history` menus       | Blocked                                         |
 | `list`, `params`, `status`, `wait`, `logs`, `tests`, `history`       | Allowed                                         |
 | `queue`, `nodes`, `run`, `artifacts` (including download)            | Allowed                                         |
@@ -363,7 +366,7 @@ A blocked run exits non-zero:
 
 ```text
 ERROR: Profile "release" is read-only.
-HINT: Re-run with --confirm-protected to allow builds, cancels, and reruns.
+HINT: Re-run with --confirm-protected to allow builds, cancels, creates, and reruns.
 ```
 
 With `--json` it emits exactly one document:
@@ -457,6 +460,7 @@ Automation-relevant read and mutation commands accept `--json`:
 | `auth status`, `auth list`, `auth current`             | `--json`        | Credential diagnostics without tokens                   |
 | `update --check`                                       | `--json`        | Current/latest version and update decision              |
 | `build`, `cancel`, `rerun`                             | `--json`        | Canonical queue/build/source/target receipts            |
+| `create`                                               | `--json`        | Creation receipt: `name`, `url`, optional `copiedFrom`  |
 | `logs`                                                 | `--jsonl`       | Ordered `start`, `chunk`, `complete`, or `error` events |
 
 Commands without a structured contract still recognize `--json` and return a
@@ -1177,6 +1181,42 @@ Rerun one exact historical build with its original parameters:
 jenkins-cli rerun --job "api-prod" --build 184
 jenkins-cli rerun --build-url "https://jenkins.example.com/job/api-prod/184/"
 ```
+
+### Item Config and Creation
+
+Print a job or folder's raw config.xml to stdout:
+
+```bash
+jenkins-cli config --job "api-prod"
+jenkins-cli config --job-url "https://jenkins.example.com/job/team/job/api/" > config.xml
+```
+
+Create an item from a config.xml file, or by copying an existing job or
+folder. Exactly one of `--config` or `--copy-from` is required; `--copy-from`
+takes a job name (resolved like every other command) or a full job URL:
+
+```bash
+jenkins-cli create api-staging --config config.xml
+jenkins-cli create api-staging --copy-from "api-prod"
+jenkins-cli create api-staging --copy-from "api-prod" --folder-url "https://jenkins.example.com/job/team/" --json
+```
+
+**`create --json`** — `data` is a creation receipt:
+
+```json
+{
+  "ok": true,
+  "command": "create",
+  "data": {
+    "name": "api-staging",
+    "url": "https://jenkins.example.com/job/team/job/api-staging/",
+    "copiedFrom": "api-prod"
+  }
+}
+```
+
+Creation is a Jenkins write: read-only profiles block it unless
+`--confirm-protected` is passed.
 
 ### Exact Build Selectors
 

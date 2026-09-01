@@ -102,7 +102,7 @@ describe("assertProtectedMutationAllowed", () => {
     expect(error?.code).toBe("PROFILE_PROTECTED");
     expect(error?.message).toBe('Profile "release" is read-only.');
     expect(error?.hints).toEqual([
-      "Re-run with --confirm-protected to allow builds, cancels, and reruns.",
+      "Re-run with --confirm-protected to allow builds, cancels, creates, and reruns.",
     ]);
 
     expect(() =>
@@ -321,7 +321,7 @@ describe("protected profile CLI output", () => {
     expect(result.exitCode).toBe(1);
     expect(result.stderr).toContain('ERROR: Profile "release" is read-only.');
     expect(result.stderr).toContain(
-      "HINT: Re-run with --confirm-protected to allow builds, cancels, and reruns.",
+      "HINT: Re-run with --confirm-protected to allow builds, cancels, creates, and reruns.",
     );
   }, 30_000);
 
