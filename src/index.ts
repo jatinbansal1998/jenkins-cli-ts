@@ -341,6 +341,7 @@ const JSON_COMMANDS = new Set([
   "artifacts",
   "run",
   "cancel",
+  "create",
   "queue",
   "nodes",
   "rerun",

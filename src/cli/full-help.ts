@@ -14,6 +14,8 @@ export const FULL_HELP_COMMANDS: string[][] = [
   ["login"],
   ["list"],
   ["params"],
+  ["config"],
+  ["create"],
   ["build"],
   ["status"],
   ["history"],

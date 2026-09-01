@@ -31,6 +31,28 @@ export function findJobByUrl<T extends { url: string }>(
   return jobs.find((job) => areSameJobUrls(job.url, jobUrl));
 }
 
+/**
+ * Derives an item's full name ("folder/job") from its URL by collecting the
+ * path segment after each "/job/", so controllers served under a path prefix
+ * still resolve correctly.
+ */
+export function jobUrlToFullName(jobUrl: string): string | undefined {
+  let segments: string[];
+  try {
+    segments = new URL(jobUrl).pathname.split("/").filter(Boolean);
+  } catch {
+    return undefined;
+  }
+  const names: string[] = [];
+  for (let index = 0; index < segments.length - 1; index += 1) {
+    if (segments[index] === "job") {
+      names.push(decodeURIComponent(segments[index + 1] as string));
+      index += 1;
+    }
+  }
+  return names.length > 0 ? names.join("/") : undefined;
+}
+
 export function resolveJobUrlFromBuildUrl(
   buildUrl: string | undefined,
 ): string | undefined {

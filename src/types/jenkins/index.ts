@@ -54,4 +54,4 @@ export type {
   JenkinsQueueWaitTimeResponse,
 } from "./responses";
 
-export type { TriggerBuildParams } from "./requests";
+export type { CreateItemOptions, TriggerBuildParams } from "./requests";

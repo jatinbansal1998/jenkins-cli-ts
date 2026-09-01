@@ -1,4 +1,6 @@
 import type { Argv } from "yargs";
+import { runCreate } from "../commands/create";
+import { runJobConfig } from "../commands/job-config";
 import { runList } from "../commands/list";
 import { runParams } from "../commands/params";
 import { runJobCacheRefresh } from "../commands/refresh-job-cache";
@@ -44,6 +46,69 @@ export function registerJobCommands(
               env,
               job: optionalString(argv.job),
               jobUrl: optionalString(argv.jobUrl),
+              nonInteractive:
+                Boolean(argv.nonInteractive) || Boolean(argv.json),
+              json: Boolean(argv.json),
+            });
+          },
+        );
+      },
+    )
+    .command(
+      "config [job-name]",
+      "Print a job or folder's raw config.xml",
+      addJobOptions,
+      async (argv) => {
+        await dependencies.runTrackedCommandWithContext(
+          "config",
+          argv,
+          async ({ env, client }) => {
+            await runJobConfig({
+              client,
+              env,
+              job: optionalString(argv.job),
+              jobUrl: optionalString(argv.jobUrl),
+              nonInteractive: Boolean(argv.nonInteractive),
+            });
+          },
+        );
+      },
+    )
+    .command(
+      "create <name>",
+      "Create a Jenkins item from a config.xml file or by copying a job",
+      (yargsInstance) =>
+        addJsonOption(
+          yargsInstance
+            .positional("name", {
+              type: "string",
+              describe: "Name for the new item",
+            })
+            .option("config", {
+              type: "string",
+              describe: "Path to a config.xml file for the new item",
+            })
+            .option("copy-from", {
+              type: "string",
+              describe: "Job name or URL to copy the new item from",
+            })
+            .option("folder-url", {
+              type: "string",
+              describe: "Folder URL to create the item in (default: root)",
+            }),
+        ),
+      async (argv) => {
+        await dependencies.runTrackedCommandWithContext(
+          "create",
+          argv,
+          async ({ env, client }) => {
+            await runCreate({
+              client,
+              env,
+              name: optionalString(argv.name),
+              configPath: optionalString(argv.config),
+              copyFrom: optionalString(argv.copyFrom),
+              folderUrl: optionalString(argv.folderUrl),
               nonInteractive:
                 Boolean(argv.nonInteractive) || Boolean(argv.json),
               json: Boolean(argv.json),

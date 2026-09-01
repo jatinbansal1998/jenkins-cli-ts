@@ -25,6 +25,7 @@ import type {
   BuildStatus,
   BuildTestReport,
   ConsoleChunk,
+  CreateItemOptions,
   Crumb,
   JenkinsApiArtifact,
   JenkinsApiBuild,
@@ -74,6 +75,7 @@ export type {
   BuildStatus,
   BuildTestReport,
   ConsoleChunk,
+  CreateItemOptions,
   JenkinsClientOptions,
   JenkinsJob,
   JobParameterDefinition,
@@ -317,6 +319,54 @@ export class JenkinsClient {
       stages: pipeline?.stages,
       triggeredBy,
     };
+  }
+
+  async getJobConfigXml(jobUrl: string): Promise<string> {
+    const context = "fetch job config";
+    const url = this.withJob(jobUrl, "config.xml");
+    const response = await this.fetchWithTimeout(
+      url,
+      { method: "GET", headers: { Authorization: this.authHeader } },
+      1,
+      context,
+    );
+    if (!response.ok) {
+      recordJenkinsApiFailure({
+        operation: toAnalyticsOperation(context),
+        errorType: "http_error",
+        httpStatus: response.status,
+      });
+      await this.raiseHttpError(response, context);
+    }
+    return await response.text();
+  }
+
+  async createItem(options: CreateItemOptions): Promise<string> {
+    const context = "create item";
+    const parentUrl = options.parentUrl ?? this.baseUrl;
+    const url = new URL(this.withJob(parentUrl, "createItem"));
+    url.searchParams.set("name", options.name);
+    if (options.copyFrom !== undefined) {
+      url.searchParams.set("mode", "copy");
+      url.searchParams.set("from", options.copyFrom);
+    }
+    const response = await this.sendPostWithCrumbRetry({
+      url: url.toString(),
+      context,
+      ...(options.configXml !== undefined
+        ? { body: options.configXml, contentType: "application/xml" }
+        : {}),
+    });
+    if (!response.ok) {
+      recordJenkinsApiFailure({
+        operation: toAnalyticsOperation(context),
+        errorType: "http_error",
+        httpStatus: response.status,
+        retryAttempted: this.useCrumb && response.status === 403,
+      });
+      await this.raiseHttpError(response, context);
+    }
+    return this.withJob(parentUrl, `job/${encodeURIComponent(options.name)}/`);
   }
 
   async getJobParameterDefinitions(
@@ -1015,13 +1065,16 @@ export class JenkinsClient {
     url: string;
     context: string;
     body?: string;
+    contentType?: string;
   }): Promise<Response> {
+    const contentType =
+      options.contentType ?? "application/x-www-form-urlencoded";
     if (!this.useCrumb) {
       const headers: Record<string, string> = {
         Authorization: this.authHeader,
       };
       if (options.body !== undefined) {
-        headers["Content-Type"] = "application/x-www-form-urlencoded";
+        headers["Content-Type"] = contentType;
       }
       return await this.fetchWithTimeout(
         options.url,
@@ -1041,7 +1094,7 @@ export class JenkinsClient {
         Authorization: this.authHeader,
       };
       if (options.body !== undefined) {
-        headers["Content-Type"] = "application/x-www-form-urlencoded";
+        headers["Content-Type"] = contentType;
       }
       if (crumb) {
         headers[crumb.field] = crumb.value;

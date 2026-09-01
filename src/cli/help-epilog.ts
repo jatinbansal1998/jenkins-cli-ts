@@ -39,7 +39,7 @@ export function getRootHelpEpilog(): string {
   $0 auth logout --all --non-interactive
       Remove all locally stored credentials.
 
-Job selection (build, status, history, wait, logs, tests, artifacts, cancel, rerun, params):
+Job selection (build, status, history, wait, logs, tests, artifacts, cancel, rerun, params, config):
   [job-name]        Fuzzy match on job name or description (positional form)
   --job <text>      Fuzzy match on job name or description (uses the local job cache)
   --job-url <url>   Exact Jenkins job URL (skips the cache and search)
@@ -58,7 +58,8 @@ ${BUILD_METADATA_HELP}
 Scripting and AI agents:
   Pass --non-interactive to disable every prompt and fail fast; --json/--jsonl imply it.
   --json: list, params, build, status, history, wait, tests, artifacts,
-          run, cancel, queue, nodes, rerun, auth status/list/current, and update --check.
+          run, cancel, create, queue, nodes, rerun, auth status/list/current,
+          and update --check.
   --jsonl: logs.
   Output lines are prefixed OK: (success), ERROR: (failure), HINT: (guidance).
   Exit code is 0 on success and 1 on any error.
@@ -77,6 +78,20 @@ Command-specific options:
     --job <text>     Job name or description
     --job-url <url>  Full Jenkins job URL
     --json           Output a single JSON document (implies non-interactive)
+
+  config:
+    [job-name]       Job name or description
+    --job <text>     Job name or description
+    --job-url <url>  Full Jenkins job or folder URL
+    Prints the item's raw config.xml to stdout.
+
+  create:
+    <name>              Name for the new item
+    --config <file>     Path to a config.xml file for the new item
+    --copy-from <job>   Job name or URL to copy the new item from
+    --folder-url <url>  Folder URL to create the item in (default: root)
+    --json              Output one creation receipt (implies non-interactive)
+    Exactly one of --config or --copy-from is required.
 
   build / deploy:
     [job-name]             Job name or description
@@ -235,8 +250,8 @@ Command-specific options:
                          profile for this run only (never persisted)
     Make a profile read-only with "auth login --protected" (interactive login
     asks and defaults to no) or by setting "protected": true in the config file.
-    Blocked without the flag: build/deploy, cancel, rerun, rerun last build,
-    and the same actions reached from list/build/status/history menus.
+    Blocked without the flag: build/deploy, cancel, create, rerun, rerun last
+    build, and the same actions reached from list/build/status/history menus.
     Everything that only reads (list, params, status, wait, logs, tests,
     history, queue, nodes, artifacts, auth) still works. A direct --url pointing
     at a read-only profile's controller is read-only too. Blocked runs exit

@@ -429,6 +429,114 @@ describe.skipIf(!integrationEnabled)(
       });
     }, 180_000);
 
+    test("creates items from config.xml and by copy, then reads config back", async () => {
+      await withCliHome(async (home) => {
+        const suffix = Date.now().toString(36);
+
+        const jobName = `cli-created-${suffix}`;
+        const configPath = join(home, "created-config.xml");
+        await Bun.write(
+          configPath,
+          [
+            "<?xml version='1.1' encoding='UTF-8'?>",
+            "<project>",
+            "  <builders>",
+            "    <hudson.tasks.Shell>",
+            "      <command>echo created-by-cli</command>",
+            "    </hudson.tasks.Shell>",
+            "  </builders>",
+            "</project>",
+            "",
+          ].join("\n"),
+        );
+        const created = parseJson<{ data: { name: string; url: string } }>(
+          await runCli(home, [
+            "create",
+            jobName,
+            "--config",
+            configPath,
+            "--json",
+          ]),
+        );
+        expect(created).toMatchObject({
+          ok: true,
+          command: "create",
+          data: { name: jobName, url: `${jenkinsUrl}/job/${jobName}/` },
+        });
+
+        const createdConfig = await runCli(home, [
+          "config",
+          "--job-url",
+          created.data.url,
+        ]);
+        expect(createdConfig.output).toContain("echo created-by-cli");
+
+        const built = await runCli(home, [
+          "build",
+          "--job-url",
+          created.data.url,
+          "--without-params",
+          "--watch",
+        ]);
+        expect(built.output).toContain("SUCCESS");
+        expect(
+          (
+            await runCli(home, [
+              "logs",
+              "--job-url",
+              created.data.url,
+              "--no-follow",
+            ])
+          ).output,
+        ).toContain("created-by-cli");
+
+        const copyName = `cli-copied-${suffix}`;
+        const copied = parseJson<{ data: { url: string } }>(
+          await runCli(home, [
+            "create",
+            copyName,
+            "--copy-from",
+            "cli-exact",
+            "--json",
+          ]),
+        );
+        const copiedConfig = await runCli(home, [
+          "config",
+          "--job-url",
+          copied.data.url,
+        ]);
+        expect(copiedConfig.output).toContain("exact-build");
+
+        const nestedName = `cli-copied-nested-${suffix}`;
+        const nested = parseJson<{ data: { url: string } }>(
+          await runCli(home, [
+            "create",
+            nestedName,
+            "--copy-from",
+            `${jenkinsUrl}/job/team/job/nested%20smoke/`,
+            "--folder-url",
+            `${jenkinsUrl}/job/team/`,
+            "--json",
+          ]),
+        );
+        expect(nested.data.url).toBe(
+          `${jenkinsUrl}/job/team/job/${nestedName}/`,
+        );
+        expect(
+          (await runCli(home, ["config", "--job-url", nested.data.url])).output,
+        ).toContain("<project>");
+
+        const duplicate = await runCliExpectFailure(home, [
+          "create",
+          jobName,
+          "--config",
+          configPath,
+          "--json",
+        ]);
+        expect(duplicate.output).toContain("HTTP 400");
+      });
+    }, 180_000);
+
     test("targets one immutable build across every build-scoped command", async () => {
       await withCliHome(async (home) => {
         const exactUrl = `${jenkinsUrl}/job/cli-exact/`;
@@ -2411,7 +2519,7 @@ describe.skipIf(!integrationEnabled)(
             'ERROR: Profile "release" is read-only.',
           );
           expect(session.output).toContain(
-            "HINT: Re-run with --confirm-protected to allow builds, cancels, and reruns.",
+            "HINT: Re-run with --confirm-protected to allow builds, cancels, creates, and reruns.",
           );
         });
       },
