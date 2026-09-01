@@ -20,6 +20,10 @@ import {
 import type {
   ArtifactEntry,
   BuildArtifacts,
+  BuildCause,
+  BuildCauseType,
+  BuildChange,
+  BuildChangesReport,
   BuildHistoryEntry,
   BuildHistoryPage,
   BuildStatus,
@@ -30,7 +34,12 @@ import type {
   JenkinsApiArtifact,
   JenkinsApiBuild,
   JenkinsApiBuildAction,
+  JenkinsApiBuildCause,
   JenkinsApiBuildsResponse,
+  JenkinsApiChangeItem,
+  JenkinsApiChangeSet,
+  JenkinsBuildChangesResponse,
+  JenkinsLastBuildResponse,
   JenkinsApiComputer,
   JenkinsApiJob,
   JenkinsBuildArtifactsResponse,
@@ -71,6 +80,7 @@ import type {
 
 export type {
   BuildArtifacts,
+  BuildChangesReport,
   BuildHistoryPage,
   BuildStatus,
   BuildTestReport,
@@ -511,6 +521,58 @@ export class JenkinsClient {
       buildUrl: build.url,
       buildNumber: build.number,
     };
+  }
+
+  async getLastBuild(
+    jobUrl: string,
+  ): Promise<{ buildUrl: string; buildNumber?: number } | null> {
+    const url = this.withJob(jobUrl, "api/json?tree=lastBuild[number,url]");
+    const payload = await this.requestJson<JenkinsLastBuildResponse>(
+      url,
+      "fetch last build",
+    );
+    const build = payload.lastBuild;
+    if (!build?.url) {
+      return null;
+    }
+    return {
+      buildUrl: build.url,
+      buildNumber: build.number,
+    };
+  }
+
+  async getBuildChanges(
+    buildUrl: string,
+    options: {
+      limit: number;
+      includePaths?: boolean;
+    },
+  ): Promise<BuildChangesReport> {
+    const itemFields = [
+      "commitId",
+      "id",
+      "revision",
+      "author[fullName]",
+      "timestamp",
+      "msg",
+      "comment",
+      ...(options.includePaths ? ["affectedPaths"] : []),
+    ].join(",");
+    // One lookahead item per change set drives the truncation flag.
+    const setFields = `kind,items[${itemFields}]{0,${options.limit + 1}}`;
+    const url = this.withJob(
+      buildUrl,
+      `api/json?tree=number,url,actions[causes[${CAUSE_FIELDS}]],changeSet[${setFields}],changeSets[${setFields}]`,
+    );
+    const payload = await this.requestJson<JenkinsBuildChangesResponse>(
+      url,
+      "fetch build changes",
+    );
+    return normalizeBuildChanges(payload, {
+      buildUrl,
+      limit: options.limit,
+      includePaths: Boolean(options.includePaths),
+    });
   }
 
   async listArtifacts(buildUrl: string): Promise<BuildArtifacts> {
@@ -1544,6 +1606,7 @@ export class JenkinsClient {
 function isBuildResourceContext(context: string): boolean {
   return (
     context === "fetch build status" ||
+    context === "fetch build changes" ||
     context === "fetch build logs" ||
     context === "list build artifacts" ||
     context === "stop build" ||
@@ -1552,6 +1615,20 @@ function isBuildResourceContext(context: string): boolean {
 }
 
 const CLOUDBEES_FOLDER_CLASS = "com.cloudbees.hudson.plugins.folder.Folder";
+const CAUSE_FIELDS =
+  "_class,shortDescription,userId,userName,upstreamProject,upstreamBuild";
+/** Known Jenkins cause classes mapped to the CLI's stable cause names. */
+const CAUSE_TYPE_BY_CLASS: Record<string, BuildCauseType> = {
+  "hudson.model.Cause$UserIdCause": "user",
+  "hudson.model.Cause$UserCause": "user",
+  "hudson.model.Cause$UpstreamCause": "upstream",
+  "hudson.model.Cause$RemoteCause": "remote",
+  "hudson.triggers.TimerTrigger$TimerTriggerCause": "timer",
+  "hudson.triggers.SCMTrigger$SCMTriggerCause": "scm",
+  "org.jenkinsci.plugins.workflow.cps.replay.ReplayCause": "replay",
+  "com.sonyericsson.rebuild.RebuildCause": "rebuild",
+  "hudson.cli.BuildCommand$CLICause": "cli",
+};
 const GIT_BUILD_DATA_CLASS = "hudson.plugins.git.util.BuildData";
 const BUILD_ACTION_FIELDS =
   "parameters[name,value],_class,lastBuiltRevision[SHA1,branch[name]],remoteUrls,causes[shortDescription,userId,userName]";
@@ -1820,6 +1897,138 @@ function extractTriggeredBy(
     }
   }
   return undefined;
+}
+
+function normalizeBuildCause(cause: JenkinsApiBuildCause): BuildCause {
+  const causeClass = cause._class?.trim();
+  return {
+    type: (causeClass && CAUSE_TYPE_BY_CLASS[causeClass]) || "other",
+    summary: normalizedOptionalText(cause.shortDescription?.trim()),
+    userId: normalizedOptionalText(cause.userId?.trim()),
+    userName: normalizedOptionalText(cause.userName?.trim()),
+    upstreamJob: normalizedOptionalText(cause.upstreamProject?.trim()),
+    upstreamBuild:
+      typeof cause.upstreamBuild === "number" ? cause.upstreamBuild : undefined,
+  };
+}
+
+function extractBuildCauses(actions?: JenkinsApiBuildAction[]): BuildCause[] {
+  if (!Array.isArray(actions)) {
+    return [];
+  }
+  const causes: BuildCause[] = [];
+  for (const action of actions) {
+    if (!action || !Array.isArray(action.causes)) {
+      continue;
+    }
+    for (const cause of action.causes) {
+      if (cause && typeof cause === "object") {
+        causes.push(normalizeBuildCause(cause));
+      }
+    }
+  }
+  return causes;
+}
+
+function normalizeChangeItem(
+  item: JenkinsApiChangeItem,
+  sourceType: string,
+  includePaths: boolean,
+): BuildChange {
+  // Plugins disagree on the id field: git reports commitId, Subversion also
+  // reports a numeric revision, others only the generic Entry id.
+  const rawId = item.commitId ?? item.id ?? item.revision;
+  const id =
+    typeof rawId === "number"
+      ? String(rawId)
+      : normalizedOptionalText(rawId?.trim());
+  const timestampMs =
+    typeof item.timestamp === "number" && item.timestamp >= 0
+      ? item.timestamp
+      : undefined;
+  // `comment` carries the full multiline message where `msg` is one line.
+  const message = normalizedOptionalText((item.comment ?? item.msg)?.trimEnd());
+  const paths =
+    includePaths && Array.isArray(item.affectedPaths)
+      ? item.affectedPaths.filter(
+          (path): path is string => typeof path === "string",
+        )
+      : undefined;
+  return {
+    id,
+    author: normalizedOptionalText(item.author?.fullName?.trim()),
+    timestampMs,
+    message,
+    ...(paths ? { paths } : {}),
+    sourceType,
+  };
+}
+
+function collectChangeSets(
+  payload: JenkinsBuildChangesResponse,
+): JenkinsApiChangeSet[] {
+  if (payload.changeSet !== undefined && payload.changeSet !== null) {
+    if (typeof payload.changeSet !== "object") {
+      throw malformedChanges();
+    }
+    return [payload.changeSet];
+  }
+  if (payload.changeSets !== undefined && payload.changeSets !== null) {
+    if (!Array.isArray(payload.changeSets)) {
+      throw malformedChanges();
+    }
+    return payload.changeSets;
+  }
+  // A valid build without SCM data is a successful empty result.
+  return [];
+}
+
+function normalizeBuildChanges(
+  payload: JenkinsBuildChangesResponse,
+  options: { buildUrl: string; limit: number; includePaths: boolean },
+): BuildChangesReport {
+  if (!payload || typeof payload !== "object") {
+    throw malformedChanges();
+  }
+  const changes: BuildChange[] = [];
+  for (const changeSet of collectChangeSets(payload)) {
+    if (!changeSet || typeof changeSet !== "object") {
+      throw malformedChanges();
+    }
+    if (changeSet.items !== undefined && !Array.isArray(changeSet.items)) {
+      throw malformedChanges();
+    }
+    const sourceType =
+      normalizedOptionalText(changeSet.kind?.trim()) ?? "unknown";
+    for (const item of changeSet.items ?? []) {
+      if (!item || typeof item !== "object") {
+        throw malformedChanges();
+      }
+      changes.push(normalizeChangeItem(item, sourceType, options.includePaths));
+    }
+  }
+  // Change sets arrive oldest-first; the lookahead item(s) past the limit only
+  // prove more data exists, so the total is unknown once anything is dropped.
+  const truncated = changes.length > options.limit;
+  const returned = truncated ? changes.slice(0, options.limit) : changes;
+  return {
+    buildNumber: payload.number,
+    buildUrl: payload.url ?? options.buildUrl,
+    causes: extractBuildCauses(payload.actions),
+    changes: returned,
+    limit: options.limit,
+    returned: returned.length,
+    total: truncated ? undefined : returned.length,
+    truncated,
+  };
+}
+
+function malformedChanges(): CliError {
+  return new CliError(
+    "Jenkins returned malformed change data for this build.",
+    ["Check the job's SCM plugin, or view the build's changes in Jenkins."],
+    "CHANGES_MALFORMED",
+  );
 }
 
 function repoNameFromRemoteUrl(remoteUrl: string): string {

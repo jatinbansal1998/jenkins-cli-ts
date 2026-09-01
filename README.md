@@ -44,6 +44,7 @@ keychain.
   - [Build History](#build-history)
   - [Wait For Completion](#wait-for-completion)
   - [Stream Logs](#stream-logs)
+  - [Build Changes](#build-changes)
   - [Artifacts](#artifacts)
   - [Cancel Work](#cancel-work)
   - [Running Builds](#running-builds)
@@ -453,15 +454,15 @@ Automation-relevant read and mutation commands accept `--json`:
 - `build --json --watch` waits and returns the final result in the same
   one-document receipt. Other streaming output uses `logs --jsonl`.
 
-| Command                                                | Structured mode | `data` summary                                          |
-| ------------------------------------------------------ | --------------- | ------------------------------------------------------- |
-| `list`, `params`, `status`, `history`, `wait`, `tests` | `--json`        | Existing compatible read contracts and test summaries   |
-| `queue`, `nodes`, `run`, `artifacts`                   | `--json`        | Normalized collections; empty results are `[]`          |
-| `auth status`, `auth list`, `auth current`             | `--json`        | Credential diagnostics without tokens                   |
-| `update --check`                                       | `--json`        | Current/latest version and update decision              |
-| `build`, `cancel`, `rerun`                             | `--json`        | Canonical queue/build/source/target receipts            |
-| `create`                                               | `--json`        | Creation receipt: `name`, `url`, optional `copiedFrom`  |
-| `logs`                                                 | `--jsonl`       | Ordered `start`, `chunk`, `complete`, or `error` events |
+| Command                                                           | Structured mode | `data` summary                                          |
+| ----------------------------------------------------------------- | --------------- | ------------------------------------------------------- |
+| `list`, `params`, `status`, `history`, `wait`, `tests`, `changes` | `--json`        | Existing compatible read contracts and test summaries   |
+| `queue`, `nodes`, `run`, `artifacts`                              | `--json`        | Normalized collections; empty results are `[]`          |
+| `auth status`, `auth list`, `auth current`                        | `--json`        | Credential diagnostics without tokens                   |
+| `update --check`                                                  | `--json`        | Current/latest version and update decision              |
+| `build`, `cancel`, `rerun`                                        | `--json`        | Canonical queue/build/source/target receipts            |
+| `create`                                                          | `--json`        | Creation receipt: `name`, `url`, optional `copiedFrom`  |
+| `logs`                                                            | `--jsonl`       | Ordered `start`, `chunk`, `complete`, or `error` events |
 
 Commands without a structured contract still recognize `--json` and return a
 clear unsupported-output error instead of treating the flag as unknown.
@@ -1072,6 +1073,32 @@ only when `--failed` is requested. A missing report, unavailable report
 capability, denied report, malformed response, and transport failure have
 distinct stable error codes.
 
+### Build Changes
+
+Explain why a build ran and which commits it contains. Without an exact
+selector, `changes` uses the selected job's latest build:
+
+```bash
+jenkins-cli changes --job "api-prod"
+jenkins-cli changes --job "api-prod" --build 184
+jenkins-cli changes --build-url "https://jenkins.example.com/job/api-prod/184/" --limit 50
+jenkins-cli changes --job "api-prod" --json
+```
+
+Human output starts with the build identity and its trigger causes, then a
+chronological change table. JSON carries `causes[]` (a stable `type` such as
+`user`, `upstream`, `timer`, `scm`, `remote`, `replay`, `rebuild`, or `cli`,
+with a conservative `other` fallback, plus the display summary), `changes[]`
+(revision id, author, timestamp, full multiline message, and source kind), and
+`pagination` (`limit`, `returned`, `total` when known, and a `truncated` flag).
+
+Output is bounded to `--limit` changes (default 20). `--paths` additionally
+includes each change's affected file paths. A valid build without SCM data is a
+successful empty result — note that Jenkins change sets only contain commits
+new since the previous build, so re-running the same commit yields no changes;
+use the `revisions[]` field on `status`/`history` to verify what was checked
+out. Commit data never reaches analytics or error reporting.
+
 ### Artifacts
 
 List build artifacts (defaults to the latest completed build):
@@ -1220,7 +1247,7 @@ Creation is a Jenkins write: read-only profiles block it unless
 
 ### Exact Build Selectors
 
-`status`, `wait`, `logs`, `artifacts`, `cancel`, and `rerun` share one exact
+`status`, `wait`, `logs`, `changes`, `artifacts`, `cancel`, and `rerun` share one exact
 build contract. Use `--build <positive-integer>` with exactly one of `--job` or
 `--job-url`, or use a complete numeric `--build-url` by itself. Exact selectors
 never fall back to a newer build. Direct job, build, and queue URLs must belong

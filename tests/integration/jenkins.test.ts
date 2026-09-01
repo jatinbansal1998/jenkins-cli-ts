@@ -4,6 +4,7 @@ import { join } from "node:path";
 import {
   integrationEnabled,
   integrationCliExecutable,
+  integrationRuntimeDir,
   invokeCli,
   invokeCliAndInterrupt,
   jenkinsUrl,
@@ -19,6 +20,30 @@ import {
 
 const keychainIntegrationRequired =
   process.env.REQUIRE_KEYCHAIN_INTEGRATION === "1";
+
+/** Run git with a fixed synthetic identity; fails loudly on a non-zero exit. */
+async function git(...args: string[]): Promise<string> {
+  const child = Bun.spawn({
+    cmd: [
+      "git",
+      "-c",
+      "user.name=Jenkins CLI Integration",
+      "-c",
+      "user.email=integration@example.invalid",
+      ...args,
+    ],
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+  const [stdout, stderr] = await Promise.all([
+    new Response(child.stdout).text(),
+    new Response(child.stderr).text(),
+  ]);
+  if ((await child.exited) !== 0) {
+    throw new Error(`git ${args.join(" ")} failed: ${stderr}`);
+  }
+  return stdout.trim();
+}
 
 describe.skipIf(!integrationEnabled)(
   "compiled CLI against real Jenkins",
@@ -1885,6 +1910,202 @@ describe.skipIf(!integrationEnabled)(
         expect(noScmStatus.data.build.revisions).toEqual([]);
       });
     }, 120_000);
+
+    test("explains build causes and contained commits", async () => {
+      await withCliHome(async (home) => {
+        // A build without SCM: causes are reported, empty changes succeed.
+        const noScmJobUrl = `${jenkinsUrl}/job/cli-no-params/`;
+        await runCli(home, [
+          "build",
+          "--job-url",
+          noScmJobUrl,
+          "--without-params",
+          "--watch",
+        ]);
+        type ChangesDocument = {
+          ok: boolean;
+          command: string;
+          data: {
+            build: { number: number; url: string };
+            causes: Array<{
+              type: string;
+              summary?: string;
+              userId?: string;
+            }>;
+            changes: Array<{
+              id?: string;
+              author?: string;
+              timestampMs?: number;
+              message?: string;
+              paths?: string[];
+              sourceType: string;
+            }>;
+            pagination: {
+              limit: number;
+              returned: number;
+              total?: number;
+              truncated: boolean;
+            };
+          };
+        };
+        const noScmChanges = parseJson<ChangesDocument>(
+          await runCli(home, ["changes", "--job-url", noScmJobUrl, "--json"]),
+        );
+        expect(noScmChanges).toMatchObject({ ok: true, command: "changes" });
+        expect(noScmChanges.data.causes[0]).toMatchObject({
+          type: "user",
+          userId: "integration-test",
+        });
+        expect(noScmChanges.data.changes).toEqual([]);
+        expect(noScmChanges.data.pagination).toEqual({
+          limit: 20,
+          returned: 0,
+          total: 0,
+          truncated: false,
+        });
+
+        // Baseline build so the next one has a previous checkout to diff from.
+        const revisionsJobUrl = `${jenkinsUrl}/job/cli-git-revisions/`;
+        await runCli(home, [
+          "build",
+          "--job-url",
+          revisionsJobUrl,
+          "--without-params",
+          "--watch",
+        ]);
+
+        // Land one commit in the backend-api fixture repo, then rebuild: the
+        // new build must contain exactly that commit.
+        if (!integrationRuntimeDir) {
+          throw new Error(
+            "JENKINS_INTEGRATION_RUNTIME_DIR is required for the changes scenario.",
+          );
+        }
+        const bareRepository = join(integrationRuntimeDir, "backend-api.git");
+        const clone = join(home, "backend-api-clone");
+        await git("clone", bareRepository, clone);
+        await Bun.write(
+          join(clone, "release-notes.md"),
+          "# Release notes\n\nSynthetic change for the changes command.\n",
+        );
+        await git("-C", clone, "add", "release-notes.md");
+        await git(
+          "-C",
+          clone,
+          "commit",
+          "-m",
+          "Add synthetic release notes",
+          "-m",
+          "Body line for the changes command.",
+        );
+        const commitSha = await git("-C", clone, "rev-parse", "HEAD");
+        await git("-C", clone, "push", "origin", "main");
+        if (process.platform !== "win32") {
+          // The container's jenkins user reads the pushed objects.
+          Bun.spawnSync({ cmd: ["chmod", "-R", "a+rX", bareRepository] });
+        }
+
+        await runCli(home, [
+          "build",
+          "--job-url",
+          revisionsJobUrl,
+          "--without-params",
+          "--watch",
+        ]);
+        const commitChanges = parseJson<ChangesDocument>(
+          await runCli(home, [
+            "changes",
+            "--job-url",
+            revisionsJobUrl,
+            "--json",
+          ]),
+        );
+        expect(commitChanges.data.causes[0]).toMatchObject({
+          type: "user",
+          userId: "integration-test",
+        });
+        expect(commitChanges.data.changes).toHaveLength(1);
+        expect(commitChanges.data.changes[0]).toMatchObject({
+          id: commitSha,
+          author: "Jenkins CLI Integration",
+          message:
+            "Add synthetic release notes\n\nBody line for the changes command.",
+          sourceType: "git",
+        });
+        expect(commitChanges.data.changes[0]?.paths).toBeUndefined();
+        expect(commitChanges.data.pagination).toEqual({
+          limit: 20,
+          returned: 1,
+          total: 1,
+          truncated: false,
+        });
+
+        // Affected paths appear only with --paths, and the exact-build
+        // selector pins the same immutable answer.
+        const commitBuild = commitChanges.data.build.number;
+        const pinnedWithPaths = parseJson<ChangesDocument>(
+          await runCli(home, [
+            "changes",
+            "--job-url",
+            revisionsJobUrl,
+            "--build",
+            String(commitBuild),
+            "--paths",
+            "--json",
+          ]),
+        );
+        expect(pinnedWithPaths.data.build.number).toBe(commitBuild);
+        expect(pinnedWithPaths.data.changes[0]?.paths).toEqual([
+          "release-notes.md",
+        ]);
+
+        const human = await runCli(home, [
+          "changes",
+          "--job-url",
+          revisionsJobUrl,
+        ]);
+        expect(human.output).toContain(`Build: #${commitBuild}`);
+        expect(human.output).toContain("user: Started by user");
+        expect(human.output).toContain(commitSha.slice(0, 12));
+        expect(human.output).toContain("Add synthetic release notes");
+        expect(human.output).not.toContain("Body line for the changes");
+
+        // Re-running the same revision is a successful empty result.
+        await runCli(home, [
+          "build",
+          "--job-url",
+          revisionsJobUrl,
+          "--without-params",
+          "--watch",
+        ]);
+        const rerunChanges = parseJson<ChangesDocument>(
+          await runCli(home, [
+            "changes",
+            "--job-url",
+            revisionsJobUrl,
+            "--json",
+          ]),
+        );
+        expect(rerunChanges.data.build.number).toBe(commitBuild + 1);
+        expect(rerunChanges.data.changes).toEqual([]);
+
+        // A missing build keeps its stable error code in JSON.
+        const missing = parseJson<{ ok: boolean; error: { code: string } }>(
+          await runCliExpectFailure(home, [
+            "changes",
+            "--job-url",
+            revisionsJobUrl,
+            "--build",
+            "99999",
+            "--json",
+          ]),
+        );
+        expect(missing).toMatchObject({
+          ok: false,
+          error: { code: "BUILD_NOT_FOUND" },
+        });
+      });
+    }, 240_000);
 
     test("filters and selects real whole-build and Pipeline logs", async () => {
       await withCliHome(async (home) => {
