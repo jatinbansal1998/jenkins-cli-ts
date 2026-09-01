@@ -2072,6 +2072,16 @@ describe.skipIf(!integrationEnabled)(
         expect(human.output).toContain(commitSha.slice(0, 12));
         expect(human.output).toContain("Add synthetic release notes");
         expect(human.output).not.toContain("Body line for the changes");
+        expect(human.output).not.toContain("Affected paths:");
+
+        const humanWithPaths = await runCli(home, [
+          "changes",
+          "--job-url",
+          revisionsJobUrl,
+          "--paths",
+        ]);
+        expect(humanWithPaths.output).toContain("Affected paths:");
+        expect(humanWithPaths.output).toContain("release-notes.md");
 
         // Re-running the same revision is a successful empty result.
         await runCli(home, [

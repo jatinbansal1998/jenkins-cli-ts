@@ -531,13 +531,13 @@ export class JenkinsClient {
       url,
       "fetch last build",
     );
-    const build = payload.lastBuild;
-    if (!build?.url) {
+    const build = payload?.lastBuild;
+    if (typeof build?.url !== "string" || build.url.length === 0) {
       return null;
     }
     return {
       buildUrl: build.url,
-      buildNumber: build.number,
+      buildNumber: typeof build.number === "number" ? build.number : undefined,
     };
   }
 
@@ -1899,14 +1899,22 @@ function extractTriggeredBy(
   return undefined;
 }
 
+/** Trimmed non-empty string, or undefined for any other wire value. Plugins
+ * and proxies do return non-string scalars where strings are expected. */
+function trimmedText(value: unknown): string | undefined {
+  return typeof value === "string"
+    ? normalizedOptionalText(value.trim())
+    : undefined;
+}
+
 function normalizeBuildCause(cause: JenkinsApiBuildCause): BuildCause {
-  const causeClass = cause._class?.trim();
+  const causeClass = trimmedText(cause._class);
   return {
     type: (causeClass && CAUSE_TYPE_BY_CLASS[causeClass]) || "other",
-    summary: normalizedOptionalText(cause.shortDescription?.trim()),
-    userId: normalizedOptionalText(cause.userId?.trim()),
-    userName: normalizedOptionalText(cause.userName?.trim()),
-    upstreamJob: normalizedOptionalText(cause.upstreamProject?.trim()),
+    summary: trimmedText(cause.shortDescription),
+    userId: trimmedText(cause.userId),
+    userName: trimmedText(cause.userName),
+    upstreamJob: trimmedText(cause.upstreamProject),
     upstreamBuild:
       typeof cause.upstreamBuild === "number" ? cause.upstreamBuild : undefined,
   };
@@ -1937,26 +1945,33 @@ function normalizeChangeItem(
 ): BuildChange {
   // Plugins disagree on the id field: git reports commitId, Subversion also
   // reports a numeric revision, others only the generic Entry id.
-  const rawId = item.commitId ?? item.id ?? item.revision;
-  const id =
-    typeof rawId === "number"
-      ? String(rawId)
-      : normalizedOptionalText(rawId?.trim());
+  const rawId = [item.commitId, item.id, item.revision].find(
+    (candidate) => typeof candidate === "number" || trimmedText(candidate),
+  );
+  const id = typeof rawId === "number" ? String(rawId) : trimmedText(rawId);
   const timestampMs =
     typeof item.timestamp === "number" && item.timestamp >= 0
       ? item.timestamp
       : undefined;
   // `comment` carries the full multiline message where `msg` is one line.
-  const message = normalizedOptionalText((item.comment ?? item.msg)?.trimEnd());
+  const rawMessage = typeof item.comment === "string" ? item.comment : item.msg;
+  const message =
+    typeof rawMessage === "string"
+      ? normalizedOptionalText(rawMessage.trimEnd())
+      : undefined;
   const paths =
     includePaths && Array.isArray(item.affectedPaths)
       ? item.affectedPaths.filter(
           (path): path is string => typeof path === "string",
         )
       : undefined;
+  const author =
+    item.author && typeof item.author === "object"
+      ? trimmedText(item.author.fullName)
+      : undefined;
   return {
     id,
-    author: normalizedOptionalText(item.author?.fullName?.trim()),
+    author,
     timestampMs,
     message,
     ...(paths ? { paths } : {}),
@@ -1998,8 +2013,7 @@ function normalizeBuildChanges(
     if (changeSet.items !== undefined && !Array.isArray(changeSet.items)) {
       throw malformedChanges();
     }
-    const sourceType =
-      normalizedOptionalText(changeSet.kind?.trim()) ?? "unknown";
+    const sourceType = trimmedText(changeSet.kind) ?? "unknown";
     for (const item of changeSet.items ?? []) {
       if (!item || typeof item !== "object") {
         throw malformedChanges();

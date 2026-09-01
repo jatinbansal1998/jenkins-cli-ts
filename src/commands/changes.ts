@@ -143,6 +143,16 @@ function renderChanges(report: BuildChangesReport): string {
         ...report.changes.map(renderChangeRow),
       ]),
     );
+    // Paths are only present when --paths was requested.
+    const withPaths = report.changes.filter((change) => change.paths?.length);
+    if (withPaths.length > 0) {
+      lines.push("");
+      lines.push("Affected paths:");
+      for (const change of withPaths) {
+        lines.push(`  ${change.id ? change.id.slice(0, 12) : "-"}:`);
+        lines.push(...(change.paths ?? []).map((path) => `    ${path}`));
+      }
+    }
   }
   if (report.truncated) {
     lines.push("");

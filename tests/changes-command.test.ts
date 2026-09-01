@@ -236,6 +236,53 @@ describe("JenkinsClient.getBuildChanges", () => {
     ]);
   });
 
+  test("degrades non-string scalar fields to undefined instead of crashing", async () => {
+    installResponse({
+      number: 5,
+      url: BUILD_URL,
+      actions: [
+        {
+          causes: [
+            { _class: 7, shortDescription: 9, userId: 1, userName: true },
+          ],
+        },
+      ],
+      changeSet: {
+        kind: 3,
+        items: [
+          {
+            commitId: 123,
+            author: "not-an-object",
+            comment: 42,
+            msg: 42,
+          },
+        ],
+      },
+    });
+
+    const report = await client().getBuildChanges(BUILD_URL, { limit: 20 });
+
+    expect(report.causes).toEqual([
+      {
+        type: "other",
+        summary: undefined,
+        userId: undefined,
+        userName: undefined,
+        upstreamJob: undefined,
+        upstreamBuild: undefined,
+      },
+    ]);
+    expect(report.changes).toEqual([
+      {
+        id: "123",
+        author: undefined,
+        timestampMs: undefined,
+        message: undefined,
+        sourceType: "unknown",
+      },
+    ]);
+  });
+
   test("treats a build without SCM data as a successful empty result", async () => {
     installResponse({ number: 5, url: BUILD_URL });
 
@@ -339,6 +386,32 @@ describe("runChanges", () => {
     expect(output).toContain("Fix login");
     expect(output).not.toContain("Longer body");
     expect(output).not.toContain("More changes exist");
+  });
+
+  test("renders affected paths when the report carries them", async () => {
+    let output = "";
+    await runChanges({
+      client: createClient({
+        getBuildChanges: mock(async () => ({
+          ...REPORT,
+          changes: [
+            { ...REPORT.changes[0]!, paths: ["src/login.ts", "docs/auth.md"] },
+          ],
+        })),
+      }),
+      env: TEST_ENV,
+      buildUrl: BUILD_URL,
+      paths: true,
+      nonInteractive: true,
+      write: (text) => {
+        output += text;
+      },
+    });
+
+    expect(output).toContain("Affected paths:");
+    expect(output).toContain("  a1b2c3d4e5f6:");
+    expect(output).toContain("    src/login.ts");
+    expect(output).toContain("    docs/auth.md");
   });
 
   test("reports an empty build and flags truncation", async () => {
