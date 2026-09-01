@@ -2027,11 +2027,14 @@ describe.skipIf(!integrationEnabled)(
         expect(commitChanges.data.changes).toHaveLength(1);
         expect(commitChanges.data.changes[0]).toMatchObject({
           id: commitSha,
-          author: "Jenkins CLI Integration",
           message:
             "Add synthetic release notes\n\nBody line for the changes command.",
           sourceType: "git",
         });
+        // Jenkins resolves the changelog author to a Jenkins user account, so
+        // the display name derives from the commit identity (name or the
+        // email's local part) rather than echoing the raw git author string.
+        expect(commitChanges.data.changes[0]?.author).toMatch(/integration/i);
         expect(commitChanges.data.changes[0]?.paths).toBeUndefined();
         expect(commitChanges.data.pagination).toEqual({
           limit: 20,
