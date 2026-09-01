@@ -36,6 +36,16 @@ Default to using Bun instead of Node.js.
 - `Bun.file` over `node:fs` readFile/writeFile
 - `Bun.$\`cmd\``instead of`execa`
 
+## Jenkins API writes
+
+- Never transport-retry a non-idempotent POST. Triggering a build or creating
+  an item commits on the server even when the response is lost in transit, so
+  a retry double-commits (two builds) or misreports success as a duplicate-name
+  error. Pass `transportRetries: 0` to `sendPostWithCrumbRetry` for these.
+- Idempotent writes (cancel queue item, stop build) may keep the transport
+  retry. The crumb retry on 403 is always safe: a 403 means Jenkins rejected
+  the request, so nothing was committed.
+
 ## Validation
 
 After making all changes, always ask to run:

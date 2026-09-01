@@ -77,6 +77,25 @@ describe("JenkinsClient triggerBuild", () => {
     );
   });
 
+  test("never retries the trigger POST after a transport failure", async () => {
+    const fetchMock = mock(async (_input: FetchInput, _init?: FetchInit) => {
+      throw new Error("socket closed");
+    });
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+    const client = new JenkinsClient({
+      baseUrl: "https://jenkins.example.com",
+      user: "user",
+      apiToken: "token",
+      timeoutMs: 1_000,
+    });
+
+    await expect(
+      client.triggerBuild("https://jenkins.example.com/job/my-job", {}),
+    ).rejects.toThrow(CliError);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
   test("resolves the queued build from Jenkins' Location header", async () => {
     const fetchMock = mock(async (input: FetchInput) => {
       const url = String(input);

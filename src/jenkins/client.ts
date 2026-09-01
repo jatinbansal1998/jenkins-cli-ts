@@ -1018,10 +1018,13 @@ export class JenkinsClient {
     const url = new URL(buildUrl);
     url.searchParams.set("delay", "0sec");
     const body = hasParams ? filteredParams.toString() : undefined;
+    // Triggering is not idempotent: a transport retry after Jenkins already
+    // queued the build would enqueue it twice.
     const response = await this.sendPostWithCrumbRetry({
       url: url.toString(),
       context: "trigger build",
       body,
+      transportRetries: 0,
     });
 
     if (!response.ok) {
