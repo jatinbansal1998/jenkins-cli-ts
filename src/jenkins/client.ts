@@ -362,6 +362,16 @@ export class JenkinsClient {
 
   async createItem(options: CreateItemOptions): Promise<string> {
     const context = "create item";
+    // The type already forces one mode, but JavaScript callers can bypass it;
+    // without a body or copy mode Jenkins would reject or miscreate the item.
+    if (
+      (options.configXml === undefined) ===
+      (options.copyFrom === undefined)
+    ) {
+      throw new CliError(
+        "createItem requires exactly one of configXml or copyFrom.",
+      );
+    }
     const parentUrl = options.parentUrl ?? this.baseUrl;
     const url = new URL(this.withJob(parentUrl, "createItem"));
     url.searchParams.set("name", options.name);
