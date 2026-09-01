@@ -13,6 +13,7 @@ export type CreateItemOptions = {
   name: string;
   /** Folder to create the item in; defaults to the controller root. */
   parentUrl?: string;
-  configXml?: string;
-  copyFrom?: string;
-};
+} & (
+  | { configXml: string; copyFrom?: never }
+  | { copyFrom: string; configXml?: never }
+);

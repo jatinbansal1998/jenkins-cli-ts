@@ -1524,6 +1524,25 @@ describe("JenkinsClient createItem", () => {
     expect(readHeader(call?.[1], "Content-Type")).toBeUndefined();
   });
 
+  test("never retries the create POST after a transport failure", async () => {
+    const fetchMock = mock(async (_input: FetchInput, _init?: FetchInit) => {
+      throw new Error("socket closed");
+    });
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+    const client = new JenkinsClient({
+      baseUrl: "https://jenkins.example.com",
+      user: "user",
+      apiToken: "token",
+      timeoutMs: 1_000,
+    });
+
+    await expect(
+      client.createItem({ name: "once", configXml: "<project/>" }),
+    ).rejects.toThrow(CliError);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
   test("retries with a fresh crumb on 403, then surfaces HTTP errors", async () => {
     let createAttempts = 0;
     const fetchMock = mock(async (input: FetchInput, _init?: FetchInit) => {

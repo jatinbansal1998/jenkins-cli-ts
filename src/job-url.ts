@@ -46,7 +46,11 @@ export function jobUrlToFullName(jobUrl: string): string | undefined {
   const names: string[] = [];
   for (let index = 0; index < segments.length - 1; index += 1) {
     if (segments[index] === "job") {
-      names.push(decodeURIComponent(segments[index + 1] as string));
+      try {
+        names.push(decodeURIComponent(segments[index + 1] as string));
+      } catch {
+        return undefined;
+      }
       index += 1;
     }
   }

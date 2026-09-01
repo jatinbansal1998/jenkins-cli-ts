@@ -350,9 +350,12 @@ export class JenkinsClient {
       url.searchParams.set("mode", "copy");
       url.searchParams.set("from", options.copyFrom);
     }
+    // Creation is not idempotent: a transport retry after Jenkins already
+    // committed the item would misreport success as a duplicate-name error.
     const response = await this.sendPostWithCrumbRetry({
       url: url.toString(),
       context,
+      transportRetries: 0,
       ...(options.configXml !== undefined
         ? { body: options.configXml, contentType: "application/xml" }
         : {}),
@@ -1066,9 +1069,11 @@ export class JenkinsClient {
     context: string;
     body?: string;
     contentType?: string;
+    transportRetries?: number;
   }): Promise<Response> {
     const contentType =
       options.contentType ?? "application/x-www-form-urlencoded";
+    const transportRetries = options.transportRetries ?? 1;
     if (!this.useCrumb) {
       const headers: Record<string, string> = {
         Authorization: this.authHeader,
@@ -1083,7 +1088,7 @@ export class JenkinsClient {
           headers,
           ...(options.body !== undefined ? { body: options.body } : {}),
         },
-        1,
+        transportRetries,
         options.context,
       );
     }
@@ -1106,7 +1111,7 @@ export class JenkinsClient {
           headers,
           ...(options.body !== undefined ? { body: options.body } : {}),
         },
-        1,
+        transportRetries,
         options.context,
       );
       if (response.status === 403 && attempt === 0) {

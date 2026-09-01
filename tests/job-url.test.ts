@@ -40,6 +40,9 @@ describe("job-url helpers", () => {
     ).toBe("cli space job");
     expect(jobUrlToFullName("https://jenkins.example.com/")).toBeUndefined();
     expect(jobUrlToFullName("not a url")).toBeUndefined();
+    expect(
+      jobUrlToFullName("https://jenkins.example.com/job/%"),
+    ).toBeUndefined();
   });
 
   test("derives the job URL from a build URL", () => {
