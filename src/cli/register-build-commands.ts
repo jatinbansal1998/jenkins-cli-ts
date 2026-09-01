@@ -1,6 +1,7 @@
 import type { Argv } from "yargs";
 import { runArtifacts } from "../commands/artifacts";
 import { runBuild } from "../commands/build";
+import { DEFAULT_CHANGES_LIMIT, runChanges } from "../commands/changes";
 import { runHistory } from "../commands/history";
 import { DEFAULT_LOG_POLL_MS, runLogs } from "../commands/logs";
 import { runStatus } from "../commands/status";
@@ -214,6 +215,44 @@ export function registerBuildCommands(
               build: typeof argv.build === "number" ? argv.build : undefined,
               buildUrl: optionalString(argv.buildUrl),
               failed: Boolean(argv.failed),
+              nonInteractive: Boolean(argv.nonInteractive || argv.json),
+              json: Boolean(argv.json),
+            });
+          },
+        );
+      },
+    )
+    .command(
+      "changes [job-name]",
+      "Show why a build ran and which commits it contains",
+      (yargsInstance) =>
+        addJsonOption(
+          addBuildUrlOption(addBuildOption(addJobOptions(yargsInstance))),
+        )
+          .option("limit", {
+            type: "number",
+            default: DEFAULT_CHANGES_LIMIT,
+            describe: "Show at most N changes",
+          })
+          .option("paths", {
+            type: "boolean",
+            default: false,
+            describe: "Include each change's affected file paths",
+          }),
+      async (argv) => {
+        await runTrackedCommandWithContext(
+          "changes",
+          argv,
+          async ({ env, client }) => {
+            await runChanges({
+              client,
+              env,
+              job: optionalString(argv.job),
+              jobUrl: optionalString(argv.jobUrl),
+              build: typeof argv.build === "number" ? argv.build : undefined,
+              buildUrl: optionalString(argv.buildUrl),
+              limit: typeof argv.limit === "number" ? argv.limit : undefined,
+              paths: Boolean(argv.paths),
               nonInteractive: Boolean(argv.nonInteractive || argv.json),
               json: Boolean(argv.json),
             });

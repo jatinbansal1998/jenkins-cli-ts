@@ -53,10 +53,13 @@ type JenkinsApiGitRevision = {
   branch?: JenkinsApiGitBranch[];
 };
 
-type JenkinsApiBuildCause = {
+export type JenkinsApiBuildCause = {
+  _class?: string;
   shortDescription?: string;
   userId?: string;
   userName?: string;
+  upstreamProject?: string;
+  upstreamBuild?: number;
 };
 
 export type JenkinsApiBuildAction = {
@@ -82,6 +85,43 @@ export type JenkinsApiBuild = {
 export type JenkinsApiBuildsResponse = {
   builds?: JenkinsApiBuild[];
   lastBuild?: { number?: number };
+};
+
+type JenkinsApiChangeAuthor = {
+  fullName?: string;
+};
+
+export type JenkinsApiChangeItem = {
+  commitId?: string;
+  id?: string | number;
+  revision?: string | number;
+  author?: JenkinsApiChangeAuthor;
+  timestamp?: number;
+  msg?: string;
+  comment?: string;
+  affectedPaths?: string[];
+};
+
+export type JenkinsApiChangeSet = {
+  kind?: string | null;
+  items?: JenkinsApiChangeItem[];
+};
+
+export type JenkinsBuildChangesResponse = {
+  number?: number;
+  url?: string;
+  actions?: JenkinsApiBuildAction[];
+  /** Freestyle builds expose one change set … */
+  changeSet?: JenkinsApiChangeSet;
+  /** … while Pipeline builds expose one per checkout. */
+  changeSets?: JenkinsApiChangeSet[];
+};
+
+export type JenkinsLastBuildResponse = {
+  lastBuild?: {
+    number?: number;
+    url?: string;
+  };
 };
 
 export type JenkinsApiArtifact = {

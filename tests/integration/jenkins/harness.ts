@@ -7,6 +7,9 @@ import { runNativeExecutable } from "../../helpers.native-executable";
 
 export const jenkinsUrl = process.env.JENKINS_INTEGRATION_URL;
 export const integrationEnabled = Boolean(jenkinsUrl);
+/** Host path of the controller's runtime dir (bare git fixtures live there). */
+export const integrationRuntimeDir =
+  process.env.JENKINS_INTEGRATION_RUNTIME_DIR;
 const requestedIntegrationCliPath =
   process.env.JENKINS_INTEGRATION_CLI_PATH?.trim();
 export const integrationCliExecutable = requestedIntegrationCliPath

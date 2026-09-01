@@ -338,6 +338,7 @@ const JSON_COMMANDS = new Set([
   "history",
   "wait",
   "tests",
+  "changes",
   "artifacts",
   "run",
   "cancel",

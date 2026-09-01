@@ -146,6 +146,55 @@ export type BuildTestReport = {
   failures?: TestFailure[];
 };
 
+/** Stable trigger-cause names; raw Jenkins `_class` values map to these. */
+export type BuildCauseType =
+  | "user"
+  | "upstream"
+  | "timer"
+  | "scm"
+  | "remote"
+  | "replay"
+  | "rebuild"
+  | "cli"
+  | "other";
+
+export type BuildCause = {
+  type: BuildCauseType;
+  /** Jenkins' short description, e.g. "Started by user Jane". */
+  summary?: string;
+  userId?: string;
+  userName?: string;
+  upstreamJob?: string;
+  upstreamBuild?: number;
+};
+
+export type BuildChange = {
+  /** Revision id (commit SHA, SVN revision, …) when the plugin reports one. */
+  id?: string;
+  author?: string;
+  timestampMs?: number;
+  /** Full commit message; multiline text is preserved. */
+  message?: string;
+  /** Affected paths; present only when explicitly requested. */
+  paths?: string[];
+  /** True when Jenkins holds more paths than the CLI's per-change cap. */
+  pathsTruncated?: boolean;
+  /** Change-set kind as Jenkins reports it (e.g. "git"), or "unknown". */
+  sourceType: string;
+};
+
+export type BuildChangesReport = {
+  buildNumber?: number;
+  buildUrl: string;
+  causes: BuildCause[];
+  changes: BuildChange[];
+  limit: number;
+  returned: number;
+  /** Total changes in the build; known only when nothing was truncated. */
+  total?: number;
+  truncated: boolean;
+};
+
 export type BuildHistoryEntry = BuildStatus & {
   buildUrl: string;
   failure?: JenkinsBuildFailure;

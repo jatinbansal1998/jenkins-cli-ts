@@ -177,6 +177,7 @@ if (prepareNativeManifestPath) {
       ...process.env,
       JENKINS_INTEGRATION_CLI_PATH: cliPath,
       JENKINS_INTEGRATION_URL: jenkinsUrl,
+      JENKINS_INTEGRATION_RUNTIME_DIR: runtimeDir,
       JENKINS_INTEGRATION_USER: "integration-test",
       JENKINS_INTEGRATION_TOKEN: adminToken,
       JENKINS_INTEGRATION_READER_USER: "integration-reader",
