@@ -1911,7 +1911,7 @@ describe.skipIf(!integrationEnabled)(
       });
     }, 120_000);
 
-    test("explains build causes and contained commits", async () => {
+    test("explains build causes and groups contained commits by SCM", async () => {
       await withCliHome(async (home) => {
         // A build without SCM: causes are reported, empty changes succeed.
         const noScmJobUrl = `${jenkinsUrl}/job/cli-no-params/`;
@@ -1932,13 +1932,22 @@ describe.skipIf(!integrationEnabled)(
               summary?: string;
               userId?: string;
             }>;
-            changes: Array<{
-              id?: string;
-              author?: string;
-              timestampMs?: number;
-              message?: string;
-              paths?: string[];
+            changeSets: Array<{
               sourceType: string;
+              revision?: {
+                repo?: string;
+                remoteUrl?: string;
+                remoteUrls: string[];
+                branch?: string;
+                sha: string;
+              };
+              changes: Array<{
+                id?: string;
+                author?: string;
+                timestampMs?: number;
+                message?: string;
+                paths?: string[];
+              }>;
             }>;
             pagination: {
               limit: number;
@@ -1956,7 +1965,7 @@ describe.skipIf(!integrationEnabled)(
           type: "user",
           userId: "integration-test",
         });
-        expect(noScmChanges.data.changes).toEqual([]);
+        expect(noScmChanges.data.changeSets).toEqual([]);
         expect(noScmChanges.data.pagination).toEqual({
           limit: 20,
           returned: 0,
@@ -1974,35 +1983,52 @@ describe.skipIf(!integrationEnabled)(
           "--watch",
         ]);
 
-        // Land one commit in the backend-api fixture repo, then rebuild: the
-        // new build must contain exactly that commit.
+        // Land one commit in each fixture repo, then rebuild. Jenkins must
+        // return two attributable change sets rather than one flat list.
         if (!integrationRuntimeDir) {
           throw new Error(
             "JENKINS_INTEGRATION_RUNTIME_DIR is required for the changes scenario.",
           );
         }
-        const bareRepository = join(integrationRuntimeDir, "backend-api.git");
-        const clone = join(home, "backend-api-clone");
-        await git("clone", bareRepository, clone);
-        await Bun.write(
-          join(clone, "release-notes.md"),
-          "# Release notes\n\nSynthetic change for the changes command.\n",
-        );
-        await git("-C", clone, "add", "release-notes.md");
-        await git(
-          "-C",
-          clone,
-          "commit",
-          "-m",
-          "Add synthetic release notes",
-          "-m",
-          "Body line for the changes command.",
-        );
-        const commitSha = await git("-C", clone, "rev-parse", "HEAD");
-        await git("-C", clone, "push", "origin", "main");
-        if (process.platform !== "win32") {
-          // The container's jenkins user reads the pushed objects.
-          Bun.spawnSync({ cmd: ["chmod", "-R", "a+rX", bareRepository] });
+        const commits = new Map<string, string>();
+        for (const change of [
+          {
+            repo: "pipeline-definitions",
+            path: "pipeline-change.md",
+            contents: "# Pipeline change\n",
+            subject: "Update synthetic pipeline definitions",
+          },
+          {
+            repo: "backend-api",
+            path: "release-notes.md",
+            contents:
+              "# Release notes\n\nSynthetic change for the changes command.\n",
+            subject: "Add synthetic release notes",
+          },
+        ]) {
+          const bareRepository = join(
+            integrationRuntimeDir,
+            `${change.repo}.git`,
+          );
+          const clone = join(home, `${change.repo}-changes-clone`);
+          await git("clone", bareRepository, clone);
+          await Bun.write(join(clone, change.path), change.contents);
+          await git("-C", clone, "add", change.path);
+          await git(
+            "-C",
+            clone,
+            "commit",
+            "-m",
+            change.subject,
+            "-m",
+            "Body line for the changes command.",
+          );
+          commits.set(change.repo, await git("-C", clone, "rev-parse", "HEAD"));
+          await git("-C", clone, "push", "origin", "main");
+          if (process.platform !== "win32") {
+            // The container's jenkins user reads the pushed objects.
+            Bun.spawnSync({ cmd: ["chmod", "-R", "a+rX", bareRepository] });
+          }
         }
 
         await runCli(home, [
@@ -2024,22 +2050,39 @@ describe.skipIf(!integrationEnabled)(
           type: "user",
           userId: "integration-test",
         });
-        expect(commitChanges.data.changes).toHaveLength(1);
-        expect(commitChanges.data.changes[0]).toMatchObject({
-          id: commitSha,
-          message:
-            "Add synthetic release notes\n\nBody line for the changes command.",
-          sourceType: "git",
-        });
-        // Jenkins resolves the changelog author to a Jenkins user account, so
-        // the display name derives from the commit identity (name or the
-        // email's local part) rather than echoing the raw git author string.
-        expect(commitChanges.data.changes[0]?.author).toMatch(/integration/i);
-        expect(commitChanges.data.changes[0]?.paths).toBeUndefined();
+        expect(commitChanges.data.changeSets).toHaveLength(2);
+        const changeSetsByRepo = new Map(
+          commitChanges.data.changeSets.map((changeSet) => [
+            changeSet.revision?.repo,
+            changeSet,
+          ]),
+        );
+        for (const [repo, subject] of [
+          ["pipeline-definitions", "Update synthetic pipeline definitions"],
+          ["backend-api", "Add synthetic release notes"],
+        ] as const) {
+          const changeSet = changeSetsByRepo.get(repo);
+          if (!changeSet) {
+            throw new Error(`Missing change set for ${repo}`);
+          }
+          expect(changeSet.sourceType).toBe("git");
+          expect(changeSet.revision).toMatchObject({
+            repo,
+            sha: commits.get(repo),
+          });
+          expect(changeSet.changes).toHaveLength(1);
+          expect(changeSet.changes[0]).toMatchObject({
+            id: commits.get(repo),
+            message: `${subject}\n\nBody line for the changes command.`,
+          });
+          // Jenkins resolves the changelog author to a Jenkins user account.
+          expect(changeSet.changes[0]?.author).toMatch(/integration/i);
+          expect(changeSet.changes[0]?.paths).toBeUndefined();
+        }
         expect(commitChanges.data.pagination).toEqual({
           limit: 20,
-          returned: 1,
-          total: 1,
+          returned: 2,
+          total: 2,
           truncated: false,
         });
 
@@ -2058,9 +2101,16 @@ describe.skipIf(!integrationEnabled)(
           ]),
         );
         expect(pinnedWithPaths.data.build.number).toBe(commitBuild);
-        expect(pinnedWithPaths.data.changes[0]?.paths).toEqual([
-          "release-notes.md",
+        const pathsByRepo = new Map(
+          pinnedWithPaths.data.changeSets.map((changeSet) => [
+            changeSet.revision?.repo,
+            changeSet.changes[0]?.paths,
+          ]),
+        );
+        expect(pathsByRepo.get("pipeline-definitions")).toEqual([
+          "pipeline-change.md",
         ]);
+        expect(pathsByRepo.get("backend-api")).toEqual(["release-notes.md"]);
 
         const human = await runCli(home, [
           "changes",
@@ -2069,7 +2119,12 @@ describe.skipIf(!integrationEnabled)(
         ]);
         expect(human.output).toContain(`Build: #${commitBuild}`);
         expect(human.output).toContain("user: Started by user");
-        expect(human.output).toContain(commitSha.slice(0, 12));
+        expect(human.output).toContain("SCM: pipeline-definitions (git)");
+        expect(human.output).toContain("SCM: backend-api (git)");
+        for (const commit of commits.values()) {
+          expect(human.output).toContain(commit.slice(0, 12));
+        }
+        expect(human.output).toContain("Update synthetic pipeline definitions");
         expect(human.output).toContain("Add synthetic release notes");
         expect(human.output).not.toContain("Body line for the changes");
         expect(human.output).not.toContain("Affected paths:");
@@ -2100,7 +2155,7 @@ describe.skipIf(!integrationEnabled)(
           ]),
         );
         expect(rerunChanges.data.build.number).toBe(commitBuild + 1);
-        expect(rerunChanges.data.changes).toEqual([]);
+        expect(rerunChanges.data.changeSets).toEqual([]);
 
         // A missing build keeps its stable error code in JSON.
         const missing = parseJson<{ ok: boolean; error: { code: string } }>(

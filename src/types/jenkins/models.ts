@@ -179,15 +179,21 @@ export type BuildChange = {
   paths?: string[];
   /** True when Jenkins holds more paths than the CLI's per-change cap. */
   pathsTruncated?: boolean;
+};
+
+export type BuildChangeSet = {
   /** Change-set kind as Jenkins reports it (e.g. "git"), or "unknown". */
   sourceType: string;
+  /** Checkout metadata when the change set matches Jenkins Git BuildData. */
+  revision?: JenkinsRevision;
+  changes: BuildChange[];
 };
 
 export type BuildChangesReport = {
   buildNumber?: number;
   buildUrl: string;
   causes: BuildCause[];
-  changes: BuildChange[];
+  changeSets: BuildChangeSet[];
   limit: number;
   returned: number;
   /** Total changes in the build; known only when nothing was truncated. */

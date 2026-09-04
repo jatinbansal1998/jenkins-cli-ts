@@ -23,6 +23,7 @@ import type {
   BuildCause,
   BuildCauseType,
   BuildChange,
+  BuildChangeSet,
   BuildChangesReport,
   BuildHistoryEntry,
   BuildHistoryPage,
@@ -564,9 +565,12 @@ export class JenkinsClient {
     ].join(",");
     // One lookahead item per change set drives the truncation flag.
     const setFields = `kind,items[${itemFields}]{0,${options.limit + 1}}`;
+    const actionFields =
+      `_class,lastBuiltRevision[SHA1,branch[name]],remoteUrls,` +
+      `causes[${CAUSE_FIELDS}]`;
     const url = this.withJob(
       buildUrl,
-      `api/json?tree=number,url,actions[causes[${CAUSE_FIELDS}]],changeSet[${setFields}],changeSets[${setFields}]`,
+      `api/json?tree=number,url,actions[${actionFields}],changeSet[${setFields}],changeSets[${setFields}]`,
     );
     const payload = await this.requestJson<JenkinsBuildChangesResponse>(
       url,
@@ -1946,7 +1950,6 @@ function extractBuildCauses(actions?: JenkinsApiBuildAction[]): BuildCause[] {
 
 function normalizeChangeItem(
   item: JenkinsApiChangeItem,
-  sourceType: string,
   includePaths: boolean,
 ): BuildChange {
   // Plugins disagree on the id field: git reports commitId, Subversion also
@@ -1989,7 +1992,6 @@ function normalizeChangeItem(
     message,
     ...(paths ? { paths } : {}),
     ...(pathsTruncated ? { pathsTruncated } : {}),
-    sourceType,
   };
 }
 
@@ -2019,8 +2021,16 @@ function normalizeBuildChanges(
   if (!payload || typeof payload !== "object") {
     throw malformedChanges();
   }
-  const changes: BuildChange[] = [];
-  for (const changeSet of collectChangeSets(payload)) {
+  const revisions = extractGitRevisions(payload.actions);
+  const usedRevisionIndexes = new Set<number>();
+  const changeSets: BuildChangeSet[] = [];
+  const indexedChanges: Array<{ changeSetIndex: number; change: BuildChange }> =
+    [];
+  const rawChangeSets = collectChangeSets(payload);
+  const gitChangeSetCount = rawChangeSets.filter(
+    (changeSet) => trimmedText(changeSet?.kind)?.toLowerCase() === "git",
+  ).length;
+  for (const changeSet of rawChangeSets) {
     if (!changeSet || typeof changeSet !== "object") {
       throw malformedChanges();
     }
@@ -2028,36 +2038,93 @@ function normalizeBuildChanges(
       throw malformedChanges();
     }
     const sourceType = trimmedText(changeSet.kind) ?? "unknown";
+    const changes: BuildChange[] = [];
     for (const item of changeSet.items ?? []) {
       if (!item || typeof item !== "object") {
         throw malformedChanges();
       }
-      changes.push(normalizeChangeItem(item, sourceType, options.includePaths));
+      changes.push(normalizeChangeItem(item, options.includePaths));
     }
+    const revision = matchChangeSetRevision(
+      sourceType,
+      changes,
+      revisions,
+      usedRevisionIndexes,
+      gitChangeSetCount === 1,
+    );
+    const changeSetIndex = changeSets.length;
+    changeSets.push({ sourceType, ...(revision ? { revision } : {}), changes });
+    indexedChanges.push(
+      ...changes.map((change) => ({ changeSetIndex, change })),
+    );
   }
   // Change sets are concatenated in checkout order, so a multi-SCM build can
   // interleave timestamps across sets. Sort the bounded entries chronologically
   // (stable, entries without a timestamp last) before applying the global
   // limit; otherwise the slice could drop an older commit from a later set.
-  changes.sort(
+  indexedChanges.sort(
     (a, b) =>
-      (a.timestampMs ?? Number.POSITIVE_INFINITY) -
-      (b.timestampMs ?? Number.POSITIVE_INFINITY),
+      (a.change.timestampMs ?? Number.POSITIVE_INFINITY) -
+      (b.change.timestampMs ?? Number.POSITIVE_INFINITY),
   );
   // The lookahead item(s) past the limit only prove more data exists, so the
   // total is unknown once anything is dropped.
-  const truncated = changes.length > options.limit;
-  const returned = truncated ? changes.slice(0, options.limit) : changes;
+  const truncated = indexedChanges.length > options.limit;
+  const returned = truncated
+    ? indexedChanges.slice(0, options.limit)
+    : indexedChanges;
+  const returnedByChangeSet = new Map<number, BuildChange[]>();
+  for (const entry of returned) {
+    const changes = returnedByChangeSet.get(entry.changeSetIndex) ?? [];
+    changes.push(entry.change);
+    returnedByChangeSet.set(entry.changeSetIndex, changes);
+  }
+  const returnedChangeSets = changeSets.flatMap((changeSet, index) => {
+    const changes = returnedByChangeSet.get(index);
+    return changes ? [{ ...changeSet, changes }] : [];
+  });
   return {
     buildNumber: payload.number,
     buildUrl: payload.url ?? options.buildUrl,
     causes: extractBuildCauses(payload.actions),
-    changes: returned,
+    changeSets: returnedChangeSets,
     limit: options.limit,
     returned: returned.length,
     total: truncated ? undefined : returned.length,
     truncated,
   };
+}
+
+function matchChangeSetRevision(
+  sourceType: string,
+  changes: BuildChange[],
+  revisions: JenkinsRevision[],
+  usedRevisionIndexes: Set<number>,
+  onlyGitChangeSet: boolean,
+): JenkinsRevision | undefined {
+  if (sourceType.toLowerCase() !== "git") {
+    return undefined;
+  }
+  const changeIds = new Set(
+    changes.flatMap((change) => (change.id ? [change.id.toLowerCase()] : [])),
+  );
+  const available = revisions
+    .map((revision, index) => ({ revision, index }))
+    .filter(({ index }) => !usedRevisionIndexes.has(index));
+  const matching = available.filter(({ revision }) =>
+    changeIds.has(revision.sha.toLowerCase()),
+  );
+  const match =
+    matching.length === 1
+      ? matching[0]
+      : onlyGitChangeSet && available.length === 1
+        ? available[0]
+        : undefined;
+  if (!match) {
+    return undefined;
+  }
+  usedRevisionIndexes.add(match.index);
+  return match.revision;
 }
 
 function malformedChanges(): CliError {
