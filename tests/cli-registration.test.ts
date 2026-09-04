@@ -123,44 +123,6 @@ describe("command aliases", () => {
 });
 
 describe("structured output registration", () => {
-  test("documents JSON on supported commands and JSONL on logs", () => {
-    for (const command of [
-      ["build"],
-      ["artifacts"],
-      ["run"],
-      ["cancel"],
-      ["queue"],
-      ["nodes"],
-      ["rerun"],
-      ["auth", "status"],
-      ["auth", "list"],
-      ["auth", "current"],
-      ["update"],
-    ]) {
-      const result = runCli([...command, "--help"]);
-      expect(result.exitCode).toBe(0);
-      expect(result.output).toContain("--json");
-    }
-
-    const logs = runCli(["logs", "--help"]);
-    expect(logs.exitCode).toBe(0);
-    expect(logs.output).toContain("--jsonl");
-    expect(logs.output).toContain("[default: stdout is a TTY]");
-    for (const option of [
-      "--tail",
-      "--since",
-      "--stage",
-      "--stage-id",
-      "--failed",
-      "--plain",
-      "--no-timestamps",
-      "--grep",
-      "--context",
-    ]) {
-      expect(logs.output).toContain(option);
-    }
-  });
-
   test("documents the stdout-sensitive follow default", () => {
     const logs = runCli(["logs", "--help"]);
 
@@ -276,13 +238,59 @@ describe("command help and global options", () => {
     }
   }, 60_000);
 
-  test("help --full covers every registered canonical command", () => {
+  test("help --full covers commands and structured output options", () => {
     const result = runCli(["help", "--full"]);
 
     expect(result.exitCode).toBe(0);
+    const sectionFor = (commandPath: string[]): string => {
+      const rule = "=".repeat(72);
+      const header = ["jenkins-cli", ...commandPath, "--help"].join(" ");
+      const marker = `${rule}\n${header}\n${rule}\n`;
+      const start = result.output.indexOf(marker);
+      expect(start).not.toBe(-1);
+      const contentStart = start + marker.length;
+      const end = result.output.indexOf(`\n\n${rule}\n`, contentStart);
+      return result.output.slice(contentStart, end === -1 ? undefined : end);
+    };
+
     for (const commandPath of FULL_HELP_COMMANDS) {
       const header = ["jenkins-cli", ...commandPath, "--help"].join(" ");
       expect(result.output).toContain(`\n${header}\n`);
+    }
+
+    for (const commandPath of [
+      ["build"],
+      ["artifacts"],
+      ["run"],
+      ["cancel"],
+      ["queue"],
+      ["nodes"],
+      ["rerun"],
+      ["auth", "status"],
+      ["auth", "list"],
+      ["auth", "current"],
+    ]) {
+      const section = sectionFor(commandPath);
+      expect(section).toContain("--json");
+      expect(section).toContain("Output a single JSON document");
+    }
+    expect(sectionFor(["update"])).toContain("--json");
+
+    const logs = sectionFor(["logs"]);
+    expect(logs).toContain("--jsonl");
+    expect(logs).toContain("Stream one compact JSON event per line");
+    for (const option of [
+      "--tail",
+      "--since",
+      "--stage",
+      "--stage-id",
+      "--failed",
+      "--plain",
+      "--no-timestamps",
+      "--grep",
+      "--context",
+    ]) {
+      expect(logs).toContain(option);
     }
   }, 60_000);
 });
