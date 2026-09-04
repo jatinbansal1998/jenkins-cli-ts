@@ -48,13 +48,24 @@ const REPORT: BuildChangesReport = {
   buildNumber: 5,
   buildUrl: BUILD_URL,
   causes: [{ type: "user", summary: "Started by user Jane", userId: "jane" }],
-  changes: [
+  changeSets: [
     {
-      id: "a1b2c3d4e5f6a7b8c9d0a1b2c3d4e5f6a7b8c9d0",
-      author: "Jane Doe",
-      timestampMs: 1_700_000_000_000,
-      message: "Fix login\n\nLonger body.",
       sourceType: "git",
+      revision: {
+        repo: "backend-api",
+        remoteUrl: "https://github.com/acme/backend-api.git",
+        remoteUrls: ["https://github.com/acme/backend-api.git"],
+        branch: "origin/main",
+        sha: "a1b2c3d4e5f6a7b8c9d0a1b2c3d4e5f6a7b8c9d0",
+      },
+      changes: [
+        {
+          id: "a1b2c3d4e5f6a7b8c9d0a1b2c3d4e5f6a7b8c9d0",
+          author: "Jane Doe",
+          timestampMs: 1_700_000_000_000,
+          message: "Fix login\n\nLonger body.",
+        },
+      ],
     },
   ],
   limit: 20,
@@ -76,6 +87,9 @@ describe("JenkinsClient.getBuildChanges", () => {
     expect(requestUrl).toContain("{0,11}");
     expect(requestUrl).toContain("changeSet[");
     expect(requestUrl).toContain("changeSets[");
+    expect(requestUrl).toContain(
+      "lastBuiltRevision[SHA1,branch[name]],remoteUrls",
+    );
     expect(requestUrl).not.toContain("affectedPaths");
   });
 
@@ -170,27 +184,34 @@ describe("JenkinsClient.getBuildChanges", () => {
         upstreamBuild: undefined,
       },
     ]);
-    expect(report.changes).toEqual([
+    expect(report.changeSets).toEqual([
       {
-        id: "a1b2c3d4e5f6a7b8c9d0a1b2c3d4e5f6a7b8c9d0",
-        author: "Jane Doe",
-        timestampMs: 1_700_000_000_000,
-        message: "Fix login\n\nLonger body.",
         sourceType: "git",
+        changes: [
+          {
+            id: "a1b2c3d4e5f6a7b8c9d0a1b2c3d4e5f6a7b8c9d0",
+            author: "Jane Doe",
+            timestampMs: 1_700_000_000_000,
+            message: "Fix login\n\nLonger body.",
+          },
+          {
+            id: "42",
+            author: undefined,
+            timestampMs: undefined,
+            message: "No author or commitId",
+          },
+        ],
       },
       {
-        id: "42",
-        author: undefined,
-        timestampMs: undefined,
-        message: "No author or commitId",
-        sourceType: "git",
-      },
-      {
-        id: "1204",
-        author: undefined,
-        timestampMs: undefined,
-        message: "svn-style entry",
         sourceType: "unknown",
+        changes: [
+          {
+            id: "1204",
+            author: undefined,
+            timestampMs: undefined,
+            message: "svn-style entry",
+          },
+        ],
       },
     ]);
     expect(report).toMatchObject({
@@ -224,14 +245,18 @@ describe("JenkinsClient.getBuildChanges", () => {
       includePaths: true,
     });
 
-    expect(report.changes).toEqual([
+    expect(report.changeSets).toEqual([
       {
-        id: "deadbeef",
-        author: undefined,
-        timestampMs: undefined,
-        message: "Touch files",
-        paths: ["src/a.ts", "src/b.ts"],
         sourceType: "git",
+        changes: [
+          {
+            id: "deadbeef",
+            author: undefined,
+            timestampMs: undefined,
+            message: "Touch files",
+            paths: ["src/a.ts", "src/b.ts"],
+          },
+        ],
       },
     ]);
   });
@@ -272,13 +297,17 @@ describe("JenkinsClient.getBuildChanges", () => {
         upstreamBuild: undefined,
       },
     ]);
-    expect(report.changes).toEqual([
+    expect(report.changeSets).toEqual([
       {
-        id: "123",
-        author: undefined,
-        timestampMs: undefined,
-        message: undefined,
         sourceType: "unknown",
+        changes: [
+          {
+            id: "123",
+            author: undefined,
+            timestampMs: undefined,
+            message: undefined,
+          },
+        ],
       },
     ]);
   });
@@ -292,7 +321,7 @@ describe("JenkinsClient.getBuildChanges", () => {
       buildNumber: 5,
       buildUrl: BUILD_URL,
       causes: [],
-      changes: [],
+      changeSets: [],
       limit: 20,
       returned: 0,
       total: 0,
@@ -323,8 +352,100 @@ describe("JenkinsClient.getBuildChanges", () => {
 
     // The oldest commits win the limited window regardless of which change
     // set carried them; entries without a timestamp sort last.
-    expect(report.changes.map((change) => change.id)).toEqual(["c100", "c300"]);
+    expect(
+      report.changeSets.flatMap((changeSet) =>
+        changeSet.changes.map((change) => change.id),
+      ),
+    ).toEqual(["c300", "c100"]);
     expect(report.truncated).toBe(true);
+  });
+
+  test("preserves SCM groups and attaches each checkout revision", async () => {
+    installResponse({
+      number: 5,
+      url: BUILD_URL,
+      actions: [
+        {
+          _class: "hudson.plugins.git.util.BuildData",
+          lastBuiltRevision: {
+            SHA1: "c400",
+            branch: [{ name: "origin/main" }],
+          },
+          remoteUrls: ["https://github.com/acme/backend-api.git"],
+        },
+        {
+          _class: "hudson.plugins.git.util.BuildData",
+          lastBuiltRevision: {
+            SHA1: "c200",
+            branch: [{ name: "origin/main" }],
+          },
+          remoteUrls: ["https://github.com/acme/pipeline-definitions.git"],
+        },
+      ],
+      changeSets: [
+        {
+          kind: "git",
+          items: [
+            { commitId: "c300", timestamp: 300 },
+            { commitId: "c400", timestamp: 400 },
+          ],
+        },
+        {
+          kind: "git",
+          items: [
+            { commitId: "c100", timestamp: 100 },
+            { commitId: "c200", timestamp: 200 },
+          ],
+        },
+      ],
+    });
+
+    const report = await client().getBuildChanges(BUILD_URL, { limit: 3 });
+
+    expect(
+      report.changeSets.map((changeSet) => ({
+        repo: changeSet.revision?.repo,
+        sha: changeSet.revision?.sha,
+        changes: changeSet.changes.map((change) => change.id),
+      })),
+    ).toEqual([
+      { repo: "backend-api", sha: "c400", changes: ["c300"] },
+      {
+        repo: "pipeline-definitions",
+        sha: "c200",
+        changes: ["c100", "c200"],
+      },
+    ]);
+  });
+
+  test("does not guess repositories when Git checkouts share a revision", async () => {
+    installResponse({
+      number: 5,
+      url: BUILD_URL,
+      actions: [
+        {
+          _class: "hudson.plugins.git.util.BuildData",
+          lastBuiltRevision: { SHA1: "shared" },
+          remoteUrls: ["https://github.com/acme/backend-api.git"],
+        },
+        {
+          _class: "hudson.plugins.git.util.BuildData",
+          lastBuiltRevision: { SHA1: "shared" },
+          remoteUrls: ["https://github.com/acme/pipeline-definitions.git"],
+        },
+      ],
+      changeSets: [
+        { kind: "git", items: [{ commitId: "shared" }] },
+        { kind: "git", items: [{ commitId: "shared" }] },
+      ],
+    });
+
+    const report = await client().getBuildChanges(BUILD_URL, { limit: 20 });
+
+    expect(report.changeSets).toHaveLength(2);
+    expect(
+      report.changeSets.every((changeSet) => changeSet.revision === undefined),
+    ).toBe(true);
   });
 
   test("caps affected paths per change and flags the truncation", async () => {
@@ -348,10 +469,10 @@ describe("JenkinsClient.getBuildChanges", () => {
       includePaths: true,
     });
 
-    expect(report.changes[0]?.paths).toHaveLength(100);
-    expect(report.changes[0]?.pathsTruncated).toBe(true);
-    expect(report.changes[1]?.paths).toEqual(["one.ts"]);
-    expect(report.changes[1]?.pathsTruncated).toBeUndefined();
+    expect(report.changeSets[0]?.changes[0]?.paths).toHaveLength(100);
+    expect(report.changeSets[0]?.changes[0]?.pathsTruncated).toBe(true);
+    expect(report.changeSets[0]?.changes[1]?.paths).toEqual(["one.ts"]);
+    expect(report.changeSets[0]?.changes[1]?.pathsTruncated).toBeUndefined();
   });
 
   test("truncates across change sets and drops the unknowable total", async () => {
@@ -366,7 +487,11 @@ describe("JenkinsClient.getBuildChanges", () => {
 
     const report = await client().getBuildChanges(BUILD_URL, { limit: 2 });
 
-    expect(report.changes.map((change) => change.id)).toEqual(["c1", "c2"]);
+    expect(
+      report.changeSets.flatMap((changeSet) =>
+        changeSet.changes.map((change) => change.id),
+      ),
+    ).toEqual(["c1", "c2"]);
     expect(report).toMatchObject({
       limit: 2,
       returned: 2,
@@ -418,7 +543,7 @@ describe("JenkinsClient.getBuildChanges", () => {
 });
 
 describe("runChanges", () => {
-  test("renders causes and a chronological change table", async () => {
+  test("renders causes and an SCM-grouped change table", async () => {
     let output = "";
     await runChanges({
       client: createClient({
@@ -435,6 +560,7 @@ describe("runChanges", () => {
     expect(output).toContain(`Build: #5 (${BUILD_URL})`);
     expect(output).toContain("user: Started by user Jane");
     expect(output).toContain("Changes (1):");
+    expect(output).toContain("SCM: backend-api (git)");
     expect(output).toContain("a1b2c3d4e5f6");
     expect(output).toContain("Jane Doe");
     expect(output).toContain("Fix login");
@@ -448,8 +574,16 @@ describe("runChanges", () => {
       client: createClient({
         getBuildChanges: mock(async () => ({
           ...REPORT,
-          changes: [
-            { ...REPORT.changes[0]!, paths: ["src/login.ts", "docs/auth.md"] },
+          changeSets: [
+            {
+              ...REPORT.changeSets[0]!,
+              changes: [
+                {
+                  ...REPORT.changeSets[0]!.changes[0]!,
+                  paths: ["src/login.ts", "docs/auth.md"],
+                },
+              ],
+            },
           ],
         })),
       }),
@@ -475,7 +609,7 @@ describe("runChanges", () => {
         getBuildChanges: mock(async () => ({
           ...REPORT,
           causes: [],
-          changes: [],
+          changeSets: [],
           returned: 0,
           total: 0,
         })),
@@ -535,13 +669,24 @@ describe("runChanges", () => {
         causes: [
           { type: "user", summary: "Started by user Jane", userId: "jane" },
         ],
-        changes: [
+        changeSets: [
           {
-            id: "a1b2c3d4e5f6a7b8c9d0a1b2c3d4e5f6a7b8c9d0",
-            author: "Jane Doe",
-            timestampMs: 1_700_000_000_000,
-            message: "Fix login\n\nLonger body.",
             sourceType: "git",
+            revision: {
+              repo: "backend-api",
+              remoteUrl: "https://github.com/acme/backend-api.git",
+              remoteUrls: ["https://github.com/acme/backend-api.git"],
+              branch: "origin/main",
+              sha: "a1b2c3d4e5f6a7b8c9d0a1b2c3d4e5f6a7b8c9d0",
+            },
+            changes: [
+              {
+                id: "a1b2c3d4e5f6a7b8c9d0a1b2c3d4e5f6a7b8c9d0",
+                author: "Jane Doe",
+                timestampMs: 1_700_000_000_000,
+                message: "Fix login\n\nLonger body.",
+              },
+            ],
           },
         ],
         pagination: { limit: 20, returned: 1, total: 1, truncated: false },

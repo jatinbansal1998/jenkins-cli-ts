@@ -4,6 +4,7 @@ export type {
   BuildCause,
   BuildCauseType,
   BuildChange,
+  BuildChangeSet,
   BuildChangesReport,
   BuildTestReport,
   BuildHistoryEntry,

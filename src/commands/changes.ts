@@ -7,6 +7,7 @@ import { formatTable, truncateCell } from "../table";
 import type {
   BuildCause,
   BuildChange,
+  BuildChangeSet,
   BuildChangesReport,
 } from "../types/jenkins";
 
@@ -108,7 +109,7 @@ function toJsonChanges(report: BuildChangesReport): object {
       url: report.buildUrl,
     },
     causes: report.causes,
-    changes: report.changes,
+    changeSets: report.changeSets,
     pagination: {
       limit: report.limit,
       returned: report.returned,
@@ -130,33 +131,25 @@ function renderChanges(report: BuildChangesReport): string {
   }
 
   lines.push("");
-  if (report.changes.length === 0) {
+  if (report.changeSets.length === 0) {
     lines.push("No changes in this build.");
   } else {
     const count = report.truncated
       ? `first ${report.returned}`
       : `${report.returned}`;
     lines.push(`Changes (${count}):`);
-    lines.push(
-      formatTable([
-        ["ID", "AUTHOR", "DATE", "SUBJECT"],
-        ...report.changes.map(renderChangeRow),
-      ]),
-    );
-    // Paths are only present when --paths was requested.
-    const withPaths = report.changes.filter((change) => change.paths?.length);
-    if (withPaths.length > 0) {
-      lines.push("");
-      lines.push("Affected paths:");
-      for (const change of withPaths) {
-        lines.push(`  ${change.id ? change.id.slice(0, 12) : "-"}:`);
-        lines.push(...(change.paths ?? []).map((path) => `    ${path}`));
-        if (change.pathsTruncated) {
-          lines.push(
-            `    (more paths exist; showing the first ${change.paths?.length}; see the build's changes in Jenkins)`,
-          );
-        }
+    for (const [index, changeSet] of report.changeSets.entries()) {
+      if (index > 0) {
+        lines.push("");
       }
+      lines.push(renderScmHeading(changeSet, index));
+      lines.push(
+        formatTable([
+          ["ID", "AUTHOR", "DATE", "SUBJECT"],
+          ...changeSet.changes.map(renderChangeRow),
+        ]),
+      );
+      renderAffectedPaths(lines, changeSet.changes);
     }
   }
   if (report.truncated) {
@@ -166,6 +159,31 @@ function renderChanges(report: BuildChangesReport): string {
     );
   }
   return `${lines.join("\n")}\n`;
+}
+
+function renderScmHeading(changeSet: BuildChangeSet, index: number): string {
+  const scm = changeSet.revision?.repo
+    ? `SCM: ${changeSet.revision.repo}`
+    : `SCM ${index + 1}`;
+  return `${scm} (${changeSet.sourceType})`;
+}
+
+function renderAffectedPaths(lines: string[], changes: BuildChange[]): void {
+  const withPaths = changes.filter((change) => change.paths?.length);
+  if (withPaths.length === 0) {
+    return;
+  }
+  lines.push("");
+  lines.push("Affected paths:");
+  for (const change of withPaths) {
+    lines.push(`  ${change.id ? change.id.slice(0, 12) : "-"}:`);
+    lines.push(...(change.paths ?? []).map((path) => `    ${path}`));
+    if (change.pathsTruncated) {
+      lines.push(
+        `    (more paths exist; showing the first ${change.paths?.length}; see the build's changes in Jenkins)`,
+      );
+    }
+  }
 }
 
 function renderCause(cause: BuildCause): string {

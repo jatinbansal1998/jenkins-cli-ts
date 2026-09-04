@@ -1085,16 +1085,18 @@ jenkins-cli changes --build-url "https://jenkins.example.com/job/api-prod/184/" 
 jenkins-cli changes --job "api-prod" --json
 ```
 
-Human output starts with the build identity and its trigger causes, then a
-chronological change table (multi-SCM change sets are merged and sorted by
-commit timestamp before the limit is applied). JSON carries `causes[]` (a stable `type` such as
-`user`, `upstream`, `timer`, `scm`, `remote`, `replay`, `rebuild`, or `cli`,
-with a conservative `other` fallback, plus the display summary), `changes[]`
-(revision id, author, timestamp, full multiline message, and source kind), and
-`pagination` (`limit`, `returned`, `total` when known, and a `truncated` flag).
+Human output starts with the build identity and its trigger causes, then groups
+changes by Jenkins change set. Git groups include the matched checkout repository
+when Jenkins `BuildData` identifies it. The CLI sorts changes by commit timestamp
+before applying the global limit, then renders the retained changes within their
+SCM groups. JSON carries `causes[]` (a stable `type` such as `user`, `upstream`,
+`timer`, `scm`, `remote`, `replay`, `rebuild`, or `cli`, with a conservative
+`other` fallback plus the display summary), `changeSets[]` (source kind, optional
+checkout revision metadata, and nested changes), and `pagination` (`limit`,
+`returned`, `total` when known, and a `truncated` flag).
 
-Output is bounded to `--limit` changes (default 20). `--paths` additionally
-includes each change's affected file paths, capped at 100 per change with a
+Output is bounded to `--limit` changes across all SCM groups (default 20).
+`--paths` additionally includes each change's affected file paths, capped at 100 per change with a
 `pathsTruncated` flag when Jenkins holds more. A valid build without SCM data is a
 successful empty result — note that Jenkins change sets only contain commits
 new since the previous build, so re-running the same commit yields no changes;
