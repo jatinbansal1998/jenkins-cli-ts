@@ -33,8 +33,6 @@ jobs:
           persist-credentials: false
 
       - uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: latest
 
       - name: Install dependencies
         run: bun install
@@ -59,8 +57,6 @@ jobs:
       - uses: actions/checkout@v7
 
       - uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: latest
 
       - name: Install dependencies
         run: bun install
@@ -248,8 +244,6 @@ jobs:
       - uses: actions/checkout@v7
 
       - uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: latest
 
       - name: Set up Java for native Jenkins
         if: runner.os == 'macOS' || runner.os == 'Windows'
