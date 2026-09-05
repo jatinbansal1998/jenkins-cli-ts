@@ -49,6 +49,7 @@ let containerStarted = false;
 let imageBuilt = false;
 let nativeProcess: ReturnType<typeof Bun.spawn> | undefined;
 let toxiproxyProcess: ReturnType<typeof Bun.spawn> | undefined;
+let toxiproxyDir: string | undefined;
 let failed = false;
 
 function readArgumentValue(name: string): string | undefined {
@@ -281,6 +282,7 @@ if (prepareNativeManifestPath) {
       toxiproxyProcess.kill();
       await toxiproxyProcess.exited;
     }
+    if (toxiproxyDir) await rm(toxiproxyDir, { recursive: true, force: true });
     if (imageBuilt) {
       await run(["docker", "image", "rm", image]);
     }
@@ -309,13 +311,22 @@ async function startToxiproxy(): Promise<string> {
     process.env.JENKINS_INTEGRATION_TOOL_CACHE?.trim() ||
     join(tmpdir(), "jenkins-cli-integration-tools");
   await mkdir(cache, { recursive: true });
-  const executable = join(cache, `${name}-2.12.0`);
+  const cachedExecutable = join(cache, `${name}-2.12.0`);
   await ensureDownload(
     `https://github.com/Shopify/toxiproxy/releases/download/v2.12.0/${name}`,
-    executable,
+    cachedExecutable,
     hash,
   );
-  await chmod(executable, 0o755);
+  // Jenkins fixture directories are shared with the controller. Keep executable
+  // bytes private, and verify the copy rather than trusting a mutable cache.
+  toxiproxyDir = await mkdtemp(join(tmpdir(), "jenkins-cli-toxiproxy-"));
+  const executable = join(toxiproxyDir, name);
+  await copyFile(cachedExecutable, executable);
+  if (!(await hasExpectedSha256(executable, hash)))
+    throw new Error(
+      "Checksum verification failed for private Toxiproxy executable",
+    );
+  await chmod(executable, 0o700);
   const probe = Bun.serve({
     hostname: "127.0.0.1",
     port: 0,

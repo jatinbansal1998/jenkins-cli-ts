@@ -1388,7 +1388,8 @@ and removes the controller afterward. Set `JENKINS_TEST_IMAGE` to test against
 a different Jenkins image tag.
 
 Linux integration also requires `strace`. Toxiproxy 2.12.0 is downloaded into
-the integration tool cache, SHA-256 verified, and started on loopback. Linux
+the integration tool cache, copied into an owner-private temporary directory,
+SHA-256 verified again, and started on loopback. Linux
 and macOS run latency, reset, truncated-response and timeout scenarios against
 the compiled CLI. Build/create scenarios lose the response _after Jenkins
 commits_, then check request counts and server state for duplicate writes.
@@ -1405,7 +1406,9 @@ bun run test:network:jenkins --mutation
 Linux `strace` follows non-interactive CLI child processes and records socket
 destination IPs/ports, including failed connection attempts. Sanitized JSON
 reports live under `test-artifacts/jenkins-*/connections/`. No request bodies,
-headers, credentials, or full command arguments are recorded. The Jenkins-only
+headers, credentials, or full command arguments are recorded. Reports mark
+missing or malformed traces with `complete: false` and `auditError`;
+incomplete audits fail even in observation mode. The Jenkins-only
 tests fail on any destination other than their controller/proxy endpoints.
 They disable analytics/error reporting and seed a current minimum-version
 policy cache with automatic updates disabled.

@@ -260,17 +260,42 @@ export async function invokeCliExecutable(
     env.JENKINS_INTEGRATION_AUDIT_DIR,
     env.JENKINS_INTEGRATION_AUDIT_MODE !== "observe",
   );
+  let result: Awaited<ReturnType<typeof runNativeExecutable>> | undefined;
+  const errors: unknown[] = [];
   try {
-    const result = await runNativeExecutable({
+    result = await runNativeExecutable({
       executable: audit.command[0]!,
       args: audit.command.slice(1),
       env,
       timeoutMs: 120_000,
     });
-    return { ...result, output: result.stdout + result.stderr };
-  } finally {
-    await audit.finish();
+  } catch (executionError) {
+    errors.push(executionError);
   }
+  try {
+    await audit.finish();
+  } catch (auditError) {
+    if (result && result.exitCode !== 0) {
+      errors.push(
+        new Error(
+          `CLI exited with code ${result.exitCode}.\n${result.stdout}${result.stderr}`,
+        ),
+      );
+    }
+    errors.push(auditError);
+  }
+  if (errors.length > 1)
+    throw new AggregateError(
+      errors,
+      errors
+        .map((error) =>
+          error instanceof Error ? error.message : String(error),
+        )
+        .join("\n"),
+      { cause: errors[0] },
+    );
+  if (errors.length) throw errors[0];
+  return { ...result!, output: result!.stdout + result!.stderr };
 }
 
 function cliEnv(

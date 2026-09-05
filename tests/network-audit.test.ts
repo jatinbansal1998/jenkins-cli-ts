@@ -9,13 +9,58 @@ import {
 } from "./integration/jenkins/network-audit";
 
 describe("outbound connection audit", () => {
+  test("rejects an interrupted or truncated connect trace", () => {
+    expect(() =>
+      parseConnections(
+        '11 connect(3, {sa_family=AF_INET, sin_port=htons(443), sin_addr=inet_addr("127.0.0.1")}, 16) <unfinished ...>\n',
+      ),
+    ).toThrow("incomplete");
+    expect(() => parseConnections("11 connect(3, {sa_fam")).toThrow(
+      "incomplete",
+    );
+  });
+
+  test.skipIf(process.platform !== "linux" || !Bun.which("strace"))(
+    "retains reports for missing and malformed traces",
+    async () => {
+      const directory = await mkdtemp(join(tmpdir(), "jenkins-network-audit-"));
+      try {
+        for (const trace of [
+          undefined,
+          "11 connect(3, {sa_family=AF_INET, malformed}, 16) = 0\n",
+        ]) {
+          const audit = await auditCommand(
+            [process.execPath, "nodes"],
+            [],
+            directory,
+            false,
+          );
+          const tracePath = audit.command[audit.command.indexOf("-o") + 1]!;
+          if (trace !== undefined) await Bun.write(tracePath, trace);
+          await expect(audit.finish()).rejects.toThrow("audit is incomplete");
+          const report = await Bun.file(
+            tracePath.replace(/\.trace$/, ".json"),
+          ).json();
+          expect(report.complete).toBe(false);
+          expect(report.auditError).toBeTypeOf("string");
+          expect(report.connections).toBeNull();
+          expect(await Bun.file(tracePath).exists()).toBe(false);
+        }
+      } finally {
+        await rm(directory, { recursive: true, force: true });
+      }
+    },
+  );
+
   test("records IPv4, IPv6 and mapped addresses without payloads", () => {
     const connections = parseConnections(
       [
-        '11 connect(3, {sa_family=AF_INET, sin_port=htons(8080), sin_addr=inet_addr("127.0.0.1")}, 16) = 0',
+        '11 connect(3, {sa_family=AF_INET, sin_port=htons(8080), sin_addr=inet_addr("127.0.0.1")}, 16) <unfinished ...>',
         '12 connect(4, {sa_family=AF_INET6, sin6_port=htons(443), inet_pton(AF_INET6, "2001:db8::1", &sin6_addr)}, 28) = -1 EINPROGRESS',
         '13 connect(5, {sa_family=AF_INET6, sin6_port=htons(8080), inet_pton(AF_INET6, "::ffff:127.0.0.1", &sin6_addr)}, 28) = 0',
         '14 connect(6, {sa_family=AF_UNIX, sun_path="/run/user/1000/bus"}, 110) = 0',
+        "11 <... connect resumed>) = 0",
+        "",
       ].join("\n"),
     );
     expect(connections).toEqual([
