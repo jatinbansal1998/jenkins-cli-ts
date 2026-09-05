@@ -4,7 +4,6 @@ on:
   pull_request:
     branches: [main]
     paths-ignore:
-      - ".github/workflows/**"
       - "**/*.md"
       - "docs/**"
       - "fuzzy-search-docs/**"
@@ -41,6 +40,9 @@ jobs:
       - name: Lint
         run: bun run lint
 
+      - name: Check formatting
+        run: bun run format:check
+
       - name: Typecheck
         run: bun run typecheck
 
@@ -66,7 +68,7 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libsecret-tools gnome-keyring dbus dbus-x11
+          sudo apt-get install -y libsecret-tools gnome-keyring dbus dbus-x11 strace
 
       - name: Configure unlocked test keychain
         if: runner.os == 'macOS'
@@ -155,7 +157,7 @@ jobs:
           mkdir -p test-artifacts
 
           set +e
-          bun scripts/run-with-linux-keyring.ts -- bun test --isolate --only-failures 2>&1 | tee test-artifacts/bun-test.log
+          bun scripts/run-with-linux-keyring.ts -- bun test --isolate --only-failures --coverage --coverage-reporter=text --coverage-reporter=lcov 2>&1 | tee test-artifacts/bun-test.log
           TEST_EXIT=${PIPESTATUS[0]}
           set -e
 
@@ -224,7 +226,9 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: bun-test-artifacts-${{ matrix.os }}
-          path: test-artifacts
+          path: |
+            test-artifacts
+            coverage
           if-no-files-found: ignore
 
   jenkins-integration:
@@ -267,7 +271,7 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libsecret-tools gnome-keyring dbus dbus-x11 util-linux
+          sudo apt-get install -y libsecret-tools gnome-keyring dbus dbus-x11 util-linux strace
 
       - name: Configure unlocked macOS test keychain
         if: runner.os == 'macOS'
@@ -332,3 +336,11 @@ jobs:
           expected-target: bun-win32-x64
           expected-credential-backend: native-windows
           tool-cache: ${{ runner.temp }}/jenkins-cli-integration-tools
+
+      - name: Upload Jenkins fault and connection reports
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: jenkins-reports-${{ matrix.os }}
+          path: test-artifacts
+          if-no-files-found: ignore

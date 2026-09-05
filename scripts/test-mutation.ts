@@ -10,53 +10,87 @@ type Mutation = {
   replacement: string;
 };
 
-const mutations: Mutation[] = [
-  {
-    name: "uses an invalid Jenkins authorization scheme",
-    file: "src/jenkins/client.ts",
-    original: "this.authHeader = `Basic ${token}`;",
-    replacement: "this.authHeader = `Bearer ${token}`;",
-  },
-  {
-    name: "drops submitted build parameter values",
-    file: "src/jenkins/client.ts",
-    original: "filteredParams.set(normalizedKey, value);",
-    replacement: 'filteredParams.set(normalizedKey, "");',
-  },
-  {
-    name: "ignores the Jenkins queue Location header",
-    file: "src/jenkins/client.ts",
-    original: 'response.headers.get("location") ?? undefined',
-    replacement: 'response.headers.get("x-location") ?? undefined',
-  },
-  {
-    name: "hides the latest build result",
-    file: "src/jenkins/client.ts",
-    original: "result: lastBuild.result ?? null,",
-    replacement: "result: null,",
-  },
-  {
-    name: "requests JSON instead of progressive build logs",
-    file: "src/jenkins/client.ts",
-    original: 'this.withJob(buildUrl, "logText/progressiveText")',
-    replacement: 'this.withJob(buildUrl, "api/json")',
-  },
-  {
-    name: "downloads artifacts without authentication",
-    file: "src/jenkins/client.ts",
-    original:
-      "const headers: Record<string, string> = { Authorization: this.authHeader };",
-    replacement: "const headers: Record<string, string> = {};",
-  },
-  {
-    name: "hides build results from history",
-    file: "src/jenkins/client.ts",
-    original: "result: build.result ?? null,",
-    replacement: "result: null,",
-  },
-];
+const network = process.argv.includes("--network");
+const mutations: Mutation[] = network
+  ? [
+      {
+        name: "retries a committed build POST",
+        file: "src/jenkins/client.ts",
+        original:
+          'context: "trigger build",\n      body,\n      transportRetries: 0,',
+        replacement:
+          'context: "trigger build",\n      body,\n      transportRetries: 1,',
+      },
+      {
+        name: "retries a committed create POST",
+        file: "src/jenkins/client.ts",
+        original: "context,\n      transportRetries: 0,",
+        replacement: "context,\n      transportRetries: 1,",
+      },
+      {
+        name: "does not retry a timed-out read",
+        file: "src/jenkins/client.ts",
+        original:
+          'private async requestJson<T>(url: string, context: string): Promise<T> {\n    const response = await this.fetchWithTimeout(\n      url,\n      { method: "GET", headers: this.authHeaders() },\n      1,',
+        replacement:
+          'private async requestJson<T>(url: string, context: string): Promise<T> {\n    const response = await this.fetchWithTimeout(\n      url,\n      { method: "GET", headers: this.authHeaders() },\n      0,',
+      },
+      {
+        name: "does not retry an idempotent cancellation",
+        file: "src/jenkins/client.ts",
+        original: "const transportRetries = options.transportRetries ?? 1;",
+        replacement: "const transportRetries = options.transportRetries ?? 0;",
+      },
+    ]
+  : [
+      {
+        name: "uses an invalid Jenkins authorization scheme",
+        file: "src/jenkins/client.ts",
+        original: "this.authHeader = `Basic ${token}`;",
+        replacement: "this.authHeader = `Bearer ${token}`;",
+      },
+      {
+        name: "drops submitted build parameter values",
+        file: "src/jenkins/client.ts",
+        original: "filteredParams.set(normalizedKey, value);",
+        replacement: 'filteredParams.set(normalizedKey, "");',
+      },
+      {
+        name: "ignores the Jenkins queue Location header",
+        file: "src/jenkins/client.ts",
+        original: 'response.headers.get("location") ?? undefined',
+        replacement: 'response.headers.get("x-location") ?? undefined',
+      },
+      {
+        name: "hides the latest build result",
+        file: "src/jenkins/client.ts",
+        original: "result: lastBuild.result ?? null,",
+        replacement: "result: null,",
+      },
+      {
+        name: "requests JSON instead of progressive build logs",
+        file: "src/jenkins/client.ts",
+        original: 'this.withJob(buildUrl, "logText/progressiveText")',
+        replacement: 'this.withJob(buildUrl, "api/json")',
+      },
+      {
+        name: "downloads artifacts without authentication",
+        file: "src/jenkins/client.ts",
+        original:
+          "const headers: Record<string, string> = { Authorization: this.authHeader };",
+        replacement: "const headers: Record<string, string> = {};",
+      },
+      {
+        name: "hides build results from history",
+        file: "src/jenkins/client.ts",
+        original: "result: build.result ?? null,",
+        replacement: "result: null,",
+      },
+    ];
 
 const integration = process.argv.includes("--integration");
+if (network && !integration)
+  throw new Error("--network requires --integration.");
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const sandboxParent = await mkdtemp(join(tmpdir(), "jenkins-cli-mutation-"));
 const sandbox = join(sandboxParent, "workspace");
@@ -114,6 +148,7 @@ try {
         console.error(`SURVIVED: ${mutation.name}`);
       } else {
         console.log(`KILLED:   ${mutation.name}`);
+        if (network) console.log(result.output);
       }
     } finally {
       await Bun.write(path, source);
@@ -157,7 +192,10 @@ async function runSuite(): Promise<{ ok: boolean; output: string }> {
     return await run([
       "bun",
       "test",
-      "tests/integration/jenkins.contract.test.ts",
+      network
+        ? "tests/integration/jenkins.test.ts"
+        : "tests/integration/jenkins.contract.test.ts",
+      ...(network ? ["--test-name-pattern", "Toxiproxy"] : []),
     ]);
   }
   return await run(["bun", "test", "tests/client.test.ts"]);

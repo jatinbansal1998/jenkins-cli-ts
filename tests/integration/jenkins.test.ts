@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
+import { registerNetworkFaultTests } from "./jenkins/network-faults";
 import {
   integrationEnabled,
   integrationCliExecutable,
@@ -20,6 +21,8 @@ import {
 
 const keychainIntegrationRequired =
   process.env.REQUIRE_KEYCHAIN_INTEGRATION === "1";
+
+registerNetworkFaultTests();
 
 /** Run git with a fixed synthetic identity; fails loudly on a non-zero exit. */
 async function git(...args: string[]): Promise<string> {

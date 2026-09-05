@@ -56,7 +56,7 @@ jobs:
       - name: Install secure-store tooling (libsecret + keyring)
         run: |
           sudo apt-get update
-          sudo apt-get install -y libsecret-tools gnome-keyring dbus dbus-x11
+          sudo apt-get install -y libsecret-tools gnome-keyring dbus dbus-x11 strace
 
       - name: Run tests
         shell: bash
@@ -215,7 +215,7 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libsecret-tools gnome-keyring dbus dbus-x11 util-linux
+          sudo apt-get install -y libsecret-tools gnome-keyring dbus dbus-x11 util-linux strace
 
       - name: Expose Git shell to Jenkins on Windows
         if: runner.os == 'Windows'

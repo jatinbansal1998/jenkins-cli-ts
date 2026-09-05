@@ -27,6 +27,8 @@ export async function runNativeExecutable(
     env: options.env,
     stdout: "pipe",
     stderr: "pipe",
+    timeout: options.timeoutMs,
+    killSignal: "SIGKILL",
   });
   const [exitCode, stdout, stderr] = await Promise.all([
     subprocess.exited,
