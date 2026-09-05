@@ -1,7 +1,7 @@
 {
   "name": "jenkins-cli-ts",
   "version": "0.8.15-rc.1",
-  "packageManager": "bun@1.4.1",
+  "packageManager": "bun@1.4.2",
   "type": "module",
   "private": true,
   "sideEffects": false,
@@ -33,7 +33,7 @@
   },
   "devDependencies": {
     "@sentry/cli": "3.6.2",
-    "@types/bun": "1.4.0",
+    "@types/bun": "1.4.1",
     "@types/yargs": "^17.0.35",
     "husky": "^9.1.7",
     "knip": "^6.32.0",
