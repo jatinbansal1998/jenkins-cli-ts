@@ -190,7 +190,7 @@ describe.skipIf(process.env.JENKINS_INTEGRATION_LOAD !== "1")(
                     ok: error === undefined,
                     ...(error ? { error } : {}),
                     cpuTimeMs:
-                      (child.resourceUsage()?.cpuTime.total ?? 0) / 1_000,
+                      Number(child.resourceUsage()?.cpuTime.total ?? 0) / 1_000,
                     maxRssBytes: child.resourceUsage()?.maxRSS,
                   });
                 }
