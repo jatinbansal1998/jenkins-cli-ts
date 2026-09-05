@@ -1333,7 +1333,7 @@ Once the container is ready, use the same Bun commands as local development:
 
 ```bash
 bun run dev
-bun test
+bun run test
 bun run build
 ```
 
@@ -1344,6 +1344,30 @@ Install dependencies:
 ```bash
 bun install
 ```
+
+Run the non-mutating verification command:
+
+```bash
+bun run verify
+```
+
+It checks formatting, lint, types, unused code, the isolated Bun suite with
+coverage, and builds the local executable. It stops at the first failure.
+Reports and build output are generated, but tracked sources are not rewritten.
+Real Jenkins integration remains a separate command because it provisions a
+controller and takes longer.
+
+Run coverage separately:
+
+```bash
+bun run test:coverage
+```
+
+Bun prints line/function coverage and writes `coverage/lcov.info`. Test helpers
+and tooling scripts are excluded. This measures source exercised by the Bun
+test process, not code inside compiled CLI child processes. PR and post-merge
+Linux CI upload the report with test artifacts. No percentage threshold is
+enforced yet; inspect the report before choosing a baseline.
 
 Run lint:
 
@@ -1362,6 +1386,69 @@ The command provisions a secured controller and test job on a random local
 port, tests the compiled CLI from authentication through artifact download,
 and removes the controller afterward. Set `JENKINS_TEST_IMAGE` to test against
 a different Jenkins image tag.
+
+Linux integration also requires `strace`. Toxiproxy 2.12.0 is downloaded into
+the integration tool cache, copied into an owner-private temporary directory,
+SHA-256 verified again, and started on loopback. Linux
+and macOS run latency, reset, truncated-response and timeout scenarios against
+the compiled CLI. Build/create scenarios lose the response _after Jenkins
+commits_, then check request counts and server state for duplicate writes.
+The existing Windows acceptance remains separate; these fault scenarios and
+the load runner are currently Linux/macOS only.
+
+Run just network scenarios, including the Linux outbound-call inventory:
+
+```bash
+bun run test:network:jenkins
+bun run test:network:jenkins --mutation
+```
+
+Linux `strace` follows non-interactive CLI child processes and records socket
+destination IPs/ports, including failed connection attempts. Sanitized JSON
+reports live under `test-artifacts/jenkins-*/connections/`. No request bodies,
+headers, credentials, or full command arguments are recorded. Reports mark
+missing or malformed traces with `complete: false` and `auditError`;
+incomplete audits fail even in observation mode. The Jenkins-only
+tests fail on any destination other than their controller/proxy endpoints.
+They disable analytics/error reporting and seed a current minimum-version
+policy cache with automatic updates disabled.
+
+A separate `mode: "observe"` report runs `nodes` with a fresh profile and records
+non-Jenkins destinations without failing on them. The application normally
+fetches `https://raw.githubusercontent.com/jatinbansal1998/jenkins-cli-ts/main/version-policy.json`
+when that cache is absent or stale. Review this inventory for other calls.
+Addresses alone do not prove which encrypted URL or library made a request.
+This is observation, not a firewall. Unconnected UDP, inherited sockets,
+interactive PTY sessions, the controller itself and tooling downloads are
+outside this audit. macOS/Windows do not get socket auditing.
+
+Run an opt-in load test on a newly provisioned disposable controller:
+
+```bash
+bun run test:load:jenkins
+JENKINS_LOAD_CONCURRENCY=8 JENKINS_LOAD_SECONDS=60 bun run test:load:jenkins
+```
+
+The runner seeds one synthetic build, audits serial probes, then runs concurrent
+compiled CLI processes sharing an isolated cache. It measures fresh and cached
+`list`, `status`, `history`, `queue`, and `nodes`, comparing every JSON response
+with its serial baseline. It checks the final cache and writes `load.json` with
+per-command p50/p95/p99, throughput, failures, binary digest and Docker controller
+CPU/memory samples plus each CLI process's CPU time and peak RSS. Serial setup
+and tracing are excluded from latency samples.
+Native macOS runs report resource sampling as unavailable.
+
+Defaults are four workers for 30 seconds, a 15-second process deadline, zero
+failed samples, and a 5-second p95 ceiling per command. Configure these with
+`JENKINS_LOAD_CONCURRENCY` (1–32), `JENKINS_LOAD_SECONDS` (1–600),
+`JENKINS_LOAD_TIMEOUT_MS` (100–120000), and `JENKINS_LOAD_P95_MS` (1–120000).
+The initial ceiling is a guardrail, not an established performance promise.
+Compare runs with the same workload and machine; this uses a small fixture,
+not a production-sized controller. Load traffic is read-only after seeding.
+
+The **Jenkins CLI load test** GitHub Actions workflow is manual-only and uploads
+the reports. PR/post-merge integration jobs upload the fault and connection
+reports automatically. Generated artifacts are gitignored.
 
 Run semantic mutation canaries against the Jenkins client unit tests:
 

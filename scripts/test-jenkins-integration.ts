@@ -2,6 +2,7 @@ import { chmod, copyFile, mkdir, mkdtemp, rename, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { loadSettings } from "../tests/integration/jenkins/load";
 
 const STARTUP_TIMEOUT_MS = 4 * 60_000;
 const DOWNLOAD_TIMEOUT_MS = 12 * 60_000;
@@ -19,6 +20,8 @@ const PLUGIN_MANAGER_SHA256 =
 const baseImage =
   process.env.JENKINS_TEST_IMAGE?.trim() || DEFAULT_JENKINS_TEST_IMAGE;
 const mutationMode = process.argv.includes("--mutation");
+const loadMode = process.argv.includes("--load");
+const networkOnly = process.argv.includes("--network");
 const buildErrorsOnly = process.argv.includes("--build-errors");
 const prepareNativeManifestPath = readArgumentValue("--prepare-native");
 const nativeMode =
@@ -45,6 +48,8 @@ const runtimeDir = await mkdtemp(
 let containerStarted = false;
 let imageBuilt = false;
 let nativeProcess: ReturnType<typeof Bun.spawn> | undefined;
+let toxiproxyProcess: ReturnType<typeof Bun.spawn> | undefined;
+let toxiproxyDir: string | undefined;
 let failed = false;
 
 function readArgumentValue(name: string): string | undefined {
@@ -83,6 +88,20 @@ if (prepareNativeManifestPath) {
   }
 } else {
   try {
+    if (
+      loadMode &&
+      (mutationMode || buildErrorsOnly || externalCliPath || networkOnly)
+    ) {
+      throw new Error(
+        "--load requires a fresh local build and cannot be combined with other test modes.",
+      );
+    }
+    if (loadMode) loadSettings(process.env);
+    if (process.platform === "linux" && !Bun.which("strace")) {
+      throw new Error(
+        "Jenkins integration requires strace for outbound connection auditing.",
+      );
+    }
     if (externalCliPath && !(await Bun.file(cliPath).exists())) {
       throw new Error(
         `JENKINS_INTEGRATION_CLI_PATH does not exist: ${cliPath}`,
@@ -173,6 +192,14 @@ if (prepareNativeManifestPath) {
     } else {
       await runChecked(["bun", "run", "build"], { cwd: root, inherit: true });
     }
+    const artifactDir = join(
+      root,
+      "test-artifacts",
+      `jenkins-${Date.now()}-${process.pid}`,
+    );
+    await mkdir(artifactDir, { recursive: true });
+    const toxiproxyUrl = await startToxiproxy();
+    console.log(`Jenkins test artifacts: ${artifactDir}`);
     const integrationEnv = {
       ...process.env,
       JENKINS_INTEGRATION_CLI_PATH: cliPath,
@@ -182,26 +209,56 @@ if (prepareNativeManifestPath) {
       JENKINS_INTEGRATION_TOKEN: adminToken,
       JENKINS_INTEGRATION_READER_USER: "integration-reader",
       JENKINS_INTEGRATION_READER_TOKEN: readerToken,
+      JENKINS_INTEGRATION_TOXIPROXY_URL: toxiproxyUrl,
+      JENKINS_INTEGRATION_ARTIFACT_DIR: artifactDir,
+      JENKINS_INTEGRATION_AUDIT_DIR:
+        process.platform === "linux"
+          ? join(artifactDir, "connections")
+          : undefined,
+      JENKINS_INTEGRATION_CONTAINER: containerStarted
+        ? containerName
+        : undefined,
+      JENKINS_INTEGRATION_LOAD: loadMode ? "1" : undefined,
     };
-    const integrationTests = buildErrorsOnly
-      ? ["tests/integration/jenkins-build-errors.test.ts"]
-      : [
-          "tests/integration/jenkins.test.ts",
-          "tests/integration/jenkins-build-errors.test.ts",
-        ];
+    const integrationTests = loadMode
+      ? ["tests/integration/jenkins-load.test.ts"]
+      : networkOnly
+        ? ["tests/integration/jenkins.test.ts"]
+        : buildErrorsOnly
+          ? ["tests/integration/jenkins-build-errors.test.ts"]
+          : [
+              "tests/integration/jenkins.test.ts",
+              "tests/integration/jenkins-build-errors.test.ts",
+            ];
     for (const integrationTest of integrationTests) {
-      await runChecked(["bun", "test", integrationTest], {
-        cwd: root,
-        inherit: true,
-        env: integrationEnv,
-      });
+      await runChecked(
+        [
+          "bun",
+          "test",
+          integrationTest,
+          ...(networkOnly ? ["--test-name-pattern", "Toxiproxy"] : []),
+        ],
+        {
+          cwd: root,
+          inherit: true,
+          env: integrationEnv,
+        },
+      );
     }
     if (mutationMode) {
-      await runChecked(["bun", "scripts/test-mutation.ts", "--integration"], {
-        cwd: root,
-        inherit: true,
-        env: integrationEnv,
-      });
+      await runChecked(
+        [
+          "bun",
+          "scripts/test-mutation.ts",
+          "--integration",
+          ...(networkOnly ? ["--network"] : []),
+        ],
+        {
+          cwd: root,
+          inherit: true,
+          env: integrationEnv,
+        },
+      );
     }
   } catch (error) {
     failed = true;
@@ -221,11 +278,81 @@ if (prepareNativeManifestPath) {
       }
       await nativeProcess.exited;
     }
+    if (toxiproxyProcess) {
+      toxiproxyProcess.kill();
+      await toxiproxyProcess.exited;
+    }
+    if (toxiproxyDir) await rm(toxiproxyDir, { recursive: true, force: true });
     if (imageBuilt) {
       await run(["docker", "image", "rm", image]);
     }
     await rm(runtimeDir, { recursive: true, force: true });
   }
+}
+
+async function startToxiproxy(): Promise<string> {
+  const hashes: Record<string, string> = {
+    "linux-x64":
+      "556d891134a3c582dc1e1a3f7335fd55142e5965769855a00b944e13e48302fc",
+    "linux-arm64":
+      "53e770c1c3035b5a9f1bc629fce537db1f95f62b26f4ebe6e756afd701cf077c",
+    "darwin-x64":
+      "9625bba4bd96117eedae49f982aba4c2f462b268dd406c9ff18186f9b1ef8afe",
+    "darwin-arm64":
+      "aa299966b52f16a8594f1cd0d1e9049dc2e8fe2c04a90c19860e2719b2b95d15",
+  };
+  const hash = hashes[`${process.platform}-${process.arch}`];
+  if (!hash)
+    throw new Error(
+      "Toxiproxy scenarios require Linux or macOS on x64 or arm64.",
+    );
+  const name = `toxiproxy-server-${process.platform}-${process.arch === "x64" ? "amd64" : process.arch}`;
+  const cache =
+    process.env.JENKINS_INTEGRATION_TOOL_CACHE?.trim() ||
+    join(tmpdir(), "jenkins-cli-integration-tools");
+  await mkdir(cache, { recursive: true });
+  const cachedExecutable = join(cache, `${name}-2.12.0`);
+  await ensureDownload(
+    `https://github.com/Shopify/toxiproxy/releases/download/v2.12.0/${name}`,
+    cachedExecutable,
+    hash,
+  );
+  // Jenkins fixture directories are shared with the controller. Keep executable
+  // bytes private, and verify the copy rather than trusting a mutable cache.
+  toxiproxyDir = await mkdtemp(join(tmpdir(), "jenkins-cli-toxiproxy-"));
+  const executable = join(toxiproxyDir, name);
+  await copyFile(cachedExecutable, executable);
+  if (!(await hasExpectedSha256(executable, hash)))
+    throw new Error(
+      "Checksum verification failed for private Toxiproxy executable",
+    );
+  await chmod(executable, 0o700);
+  const probe = Bun.serve({
+    hostname: "127.0.0.1",
+    port: 0,
+    fetch: () => new Response(),
+  });
+  const port = probe.port;
+  await probe.stop(true);
+  toxiproxyProcess = Bun.spawn({
+    cmd: [executable, "-host", "127.0.0.1", "-port", String(port)],
+    stdout: "ignore",
+    stderr: "inherit",
+  });
+  const url = `http://127.0.0.1:${port}`;
+  const deadline = Date.now() + 10_000;
+  while (Date.now() < deadline && toxiproxyProcess.exitCode === null) {
+    try {
+      const response = await fetch(`${url}/version`, {
+        signal: AbortSignal.timeout(500),
+      });
+      if (response.ok) return url;
+    } catch {
+      /* Wait for the local daemon to bind its socket. */
+    }
+    await Bun.sleep(50);
+  }
+  throw new Error("Toxiproxy failed to start.");
 }
 
 async function prepareIntegrationFixture(): Promise<string> {

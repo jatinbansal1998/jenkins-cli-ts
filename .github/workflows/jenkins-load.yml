@@ -1,0 +1,52 @@
+name: Jenkins CLI load test
+
+on:
+  workflow_dispatch:
+    inputs:
+      concurrency:
+        description: Concurrent CLI processes, 1 to 32
+        default: "4"
+        required: true
+        type: string
+      seconds:
+        description: Measured duration, 1 to 600 seconds
+        default: "30"
+        required: true
+        type: string
+      p95_ms:
+        description: Maximum p95 latency per command in milliseconds
+        default: "5000"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: jenkins-cli-load
+
+jobs:
+  load:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@v2
+      - run: bun install --frozen-lockfile
+      - name: Install socket tracing
+        run: sudo apt-get update && sudo apt-get install -y strace
+      - name: Run compiled CLI against a disposable Jenkins
+        env:
+          JENKINS_LOAD_CONCURRENCY: ${{ inputs.concurrency }}
+          JENKINS_LOAD_SECONDS: ${{ inputs.seconds }}
+          JENKINS_LOAD_P95_MS: ${{ inputs.p95_ms }}
+        run: bun run test:load:jenkins
+      - name: Upload load and connection reports
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: jenkins-load
+          path: test-artifacts
+          if-no-files-found: warn

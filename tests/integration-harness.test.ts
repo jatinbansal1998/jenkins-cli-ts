@@ -1,8 +1,22 @@
 import { describe, expect, test } from "bun:test";
+import { runNativeExecutable } from "./helpers.native-executable";
 import {
   completedLineEnd,
   macOsExpectScript,
 } from "./integration/jenkins/harness";
+
+test.skipIf(process.platform === "win32")(
+  "bounds a stalled native CLI process",
+  async () => {
+    const result = await runNativeExecutable({
+      executable: process.execPath,
+      args: ["-e", "await Bun.sleep(1500)"],
+      env: process.env,
+      timeoutMs: 100,
+    });
+    expect(result.exitCode).not.toBe(0);
+  },
+);
 
 describe("interactive integration line matching", () => {
   test("matches only newline-complete semantic lines", () => {

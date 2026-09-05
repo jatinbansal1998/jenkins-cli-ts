@@ -4,6 +4,7 @@ import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { runNativeExecutable } from "../../helpers.native-executable";
+import { auditCommand } from "./network-audit";
 
 export const jenkinsUrl = process.env.JENKINS_INTEGRATION_URL;
 export const integrationEnabled = Boolean(jenkinsUrl);
@@ -43,6 +44,17 @@ export async function withCliHome(
   const home = mkdtempSync(join(tmpdir(), "jenkins-cli-integration-home-"));
   configureMacOsTestKeychain(home);
   try {
+    const configDir = join(home, ".config", "jenkins-cli");
+    mkdirSync(configDir, { recursive: true });
+    // Keep the documented GitHub policy/update checks out of Jenkins-only tests.
+    await Bun.write(
+      join(configDir, "update-state.json"),
+      JSON.stringify({
+        autoUpdate: false,
+        minAllowedVersion: "0.0.0",
+        minAllowedFetchedAt: new Date().toISOString(),
+      }),
+    );
     await action(home);
   } finally {
     rmSync(home, { recursive: true, force: true });
@@ -241,12 +253,49 @@ export async function invokeCliExecutable(
   args: string[],
   envOverrides: Record<string, string | undefined> = {},
 ): Promise<CliResult> {
-  const result = await runNativeExecutable({
-    executable,
-    args: [...args, "--non-interactive", "--no-banner"],
-    env: cliEnv(home, envOverrides),
-  });
-  return { ...result, output: result.stdout + result.stderr };
+  const env = cliEnv(home, envOverrides);
+  const audit = await auditCommand(
+    [executable, ...args, "--non-interactive", "--no-banner"],
+    [jenkinsUrl, env.JENKINS_URL].filter((url): url is string => Boolean(url)),
+    env.JENKINS_INTEGRATION_AUDIT_DIR,
+    env.JENKINS_INTEGRATION_AUDIT_MODE !== "observe",
+  );
+  let result: Awaited<ReturnType<typeof runNativeExecutable>> | undefined;
+  const errors: unknown[] = [];
+  try {
+    result = await runNativeExecutable({
+      executable: audit.command[0]!,
+      args: audit.command.slice(1),
+      env,
+      timeoutMs: 120_000,
+    });
+  } catch (executionError) {
+    errors.push(executionError);
+  }
+  try {
+    await audit.finish();
+  } catch (auditError) {
+    if (result && result.exitCode !== 0) {
+      errors.push(
+        new Error(
+          `CLI exited with code ${result.exitCode}.\n${result.stdout}${result.stderr}`,
+        ),
+      );
+    }
+    errors.push(auditError);
+  }
+  if (errors.length > 1)
+    throw new AggregateError(
+      errors,
+      errors
+        .map((error) =>
+          error instanceof Error ? error.message : String(error),
+        )
+        .join("\n"),
+      { cause: errors[0] },
+    );
+  if (errors.length) throw errors[0];
+  return { ...result!, output: result!.stdout + result!.stderr };
 }
 
 function cliEnv(
@@ -256,6 +305,8 @@ function cliEnv(
   return {
     ...process.env,
     HOME: home,
+    XDG_CACHE_HOME: join(home, ".cache"),
+    XDG_CONFIG_HOME: join(home, ".config"),
     ...(process.platform === "win32"
       ? {
           USERPROFILE: home,
@@ -267,6 +318,7 @@ function cliEnv(
     JENKINS_USER: process.env.JENKINS_INTEGRATION_USER,
     JENKINS_API_TOKEN: process.env.JENKINS_INTEGRATION_TOKEN,
     JENKINS_ANALYTICS_DISABLED: "true",
+    JENKINS_ERROR_REPORTING_DISABLED: "true",
     NO_COLOR: "1",
     ...envOverrides,
   };

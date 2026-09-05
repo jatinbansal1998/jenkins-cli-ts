@@ -163,6 +163,11 @@ def noParamsJob = jenkins.createProject(FreeStyleProject.class, "cli-no-params")
 noParamsJob.getBuildersList().add(new Shell("printf 'no-params-success\\n'"))
 noParamsJob.save()
 
+def networkJob = jenkins.createProject(FreeStyleProject.class, "cli-network")
+networkJob.setQuietPeriod(0)
+networkJob.getBuildersList().add(new Shell("printf 'network-test-success\\n'"))
+networkJob.save()
+
 // Activity-metadata fixtures: `cli-activity` is built by the listing scenario,
 // `cli-never-built` is never built by any scenario so listings can assert the
 // "enabled but never built" state.
