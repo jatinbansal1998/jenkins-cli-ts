@@ -4,6 +4,7 @@ description: >
   Cut a manual stable release for jenkins-cli-ts: bump package version (unless the
   user specifies one), tag vX.Y.Z, push to trigger .github/workflows/release.yml,
   then write GitHub release notes in the project's release-notes style.
+  Also use to audit or correct existing release notes.
   Use when the user asks to release, ship, cut a version, publish, bump and tag,
   or runs /release.
 ---
@@ -25,12 +26,22 @@ manual — post-merge CI only tests; it does not bump versions or open PRs.
    version (e.g. `0.9.0`). Tag is always `v` + that version (`v0.8.13`).
    `scripts/build.ts` fails the build unless the tag matches `package.json`
    exactly, so an `-rc.1` tag needs `"version": "0.9.0-rc.1"` in `package.json`.
-3. **Changelog:** write notes covering everything since the previous release (see
-   `references/release-notes-format.md`), plus a compare link.
+3. **Changelog:** cover everything since the previous stable release. For later
+   RCs, group changes by release, newest first, retaining earlier RC sections.
+   Read `references/release-notes-format.md` for baselines and compare links.
 4. **Publishing path:** commit version → tag → push → wait for Release workflow
    → set custom release body with `gh`. Do not invent alternate publish paths.
 5. **Confirm before push** if anything is unexpected (dirty tree, wrong branch,
    tag already exists). Default branch is `main`.
+
+## Correct existing notes
+
+For a notes-only request, skip version bumps, branch updates, tags, and release
+workflow execution. Read the target release, earlier RC notes in the same series,
+and the preceding stable release. Check their claims against the corresponding
+tag ranges, apply the format reference, then edit only the requested release
+bodies with `gh release edit --notes-file`. Read them back to verify the published
+text and unchanged channel. Do not infer authorization to rewrite unrelated history.
 
 ## Preconditions
 
@@ -57,12 +68,12 @@ gh release list --limit 20
 
 Identify:
 
-| Variable   | How                                                                            |
-| ---------- | ------------------------------------------------------------------------------ |
-| `CURRENT`  | `package.json` version (no `v`)                                                |
-| `PREV_TAG` | previous release tag, usually `v$CURRENT` if last release matched package.json |
-| `NEXT`     | user-specified version, else patch bump of `CURRENT` (`0.8.12` → `0.8.13`)     |
-| `NEXT_TAG` | `v$NEXT`                                                                       |
+| Variable   | How                                                                        |
+| ---------- | -------------------------------------------------------------------------- |
+| `CURRENT`  | `package.json` version (no `v`)                                            |
+| `PREV_TAG` | previous stable release tag; excludes RCs even when `CURRENT` is an RC     |
+| `NEXT`     | user-specified version, else patch bump of `CURRENT` (`0.8.12` → `0.8.13`) |
+| `NEXT_TAG` | `v$NEXT`                                                                   |
 
 Patch bump only for the default path. If the user requests minor/major or an exact version, use that.
 
@@ -136,11 +147,17 @@ Also skim meaningful diffs under `src/`, `scripts/`, `install`, tests, and docs 
 Write notes following **`references/release-notes-format.md`** exactly:
 
 1. Title heading `## v${NEXT}`
-2. One intro paragraph naming the previous release the changes build on
-3. `####`-grouped user-facing themes
-4. `### Full Changelog` — compare link `${PREV_TAG}...v${NEXT}`
+2. One intro paragraph naming the preceding stable release and the release channel
+3. Stable releases and first RCs use `####` user-facing themes. Later RCs use
+   `#### New in v...` followed by `#### From v...` for every earlier RC, newest first.
+4. `### Full Changelog` includes `${PREV_TAG}...v${NEXT}`. Later RCs also
+   include each consecutive RC comparison and the stable-to-first-RC comparison.
 
-Tone: user-facing, concrete, no internal-only noise (CI chore bumps, pure refactors without user impact). Group related work under short `####` titles.
+Inspect earlier RC notes and each consecutive tag diff before writing later RC
+sections. A final stable release includes the whole RC series since the preceding
+stable, grouped by theme. Never use the last RC as its full-changelog baseline.
+
+Tone: user-facing, concrete, no internal-only noise (CI chore bumps, pure refactors without user impact). Use the channel-specific grouping above.
 
 Apply the body:
 
