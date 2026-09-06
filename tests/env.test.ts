@@ -9,7 +9,7 @@ type LoadEnvResult = {
   env?: {
     jenkinsUrl: string;
     jenkinsUser: string;
-    jenkinsApiToken: string;
+    apiTokenMatches: boolean;
     profileName?: string;
     branchParamDefault: string;
     useCrumb: boolean;
@@ -40,6 +40,7 @@ function writeConfig(homeDir: string, config: unknown): void {
 
 function runLoadEnv(params: {
   homeDir: string;
+  expectedApiToken?: string;
   env?: Record<string, string | undefined>;
   options?: {
     profile?: string;
@@ -60,6 +61,7 @@ function runLoadEnv(params: {
       JENKINS_API_TOKEN: "token",
       JENKINS_USE_CRUMB: undefined,
       ...params.env,
+      TEST_EXPECTED_API_TOKEN: params.expectedApiToken,
       TEST_LOAD_ENV_OPTIONS: params.options
         ? JSON.stringify(params.options)
         : undefined,
@@ -69,6 +71,13 @@ function runLoadEnv(params: {
   });
 
   const output = new TextDecoder().decode(result.stdout).trim();
+  expect(output).not.toContain("jenkinsApiToken");
+  if (params.expectedApiToken) {
+    expect(output).not.toContain(params.expectedApiToken);
+    expect(new TextDecoder().decode(result.stderr)).not.toContain(
+      params.expectedApiToken,
+    );
+  }
   return {
     exitCode: result.exitCode,
     payload: JSON.parse(output) as LoadEnvResult,
@@ -193,6 +202,7 @@ describe("loadEnv useCrumb parsing", () => {
 
       const result = runLoadEnv({
         homeDir,
+        expectedApiToken: "work-token",
         env: {
           JENKINS_URL: "https://env-jenkins.example.com",
           JENKINS_USER: "env-user",
@@ -205,7 +215,7 @@ describe("loadEnv useCrumb parsing", () => {
         "https://work-jenkins.example.com",
       );
       expect(result.payload.env?.jenkinsUser).toBe("work-user");
-      expect(result.payload.env?.jenkinsApiToken).toBe("work-token");
+      expect(result.payload.env?.apiTokenMatches).toBeTrue();
       expect(result.payload.env?.profileName).toBe("work");
     });
   });
@@ -230,6 +240,7 @@ describe("loadEnv useCrumb parsing", () => {
 
       const result = runLoadEnv({
         homeDir,
+        expectedApiToken: "prod-token",
         options: { profile: "prod" },
         env: {
           JENKINS_URL: "https://env-jenkins.example.com",
@@ -243,7 +254,7 @@ describe("loadEnv useCrumb parsing", () => {
         "https://prod-jenkins.example.com",
       );
       expect(result.payload.env?.jenkinsUser).toBe("prod-user");
-      expect(result.payload.env?.jenkinsApiToken).toBe("prod-token");
+      expect(result.payload.env?.apiTokenMatches).toBeTrue();
       expect(result.payload.env?.profileName).toBe("prod");
     });
   });
@@ -293,6 +304,17 @@ describe("normalizeUrl", () => {
 });
 
 describe("loadEnv credential sources", () => {
+  test("reports a token mismatch without printing either token", () => {
+    withTempHome((homeDir) => {
+      const result = runLoadEnv({
+        homeDir,
+        expectedApiToken: "different-synthetic-token",
+      });
+      expect(result.exitCode).toBe(0);
+      expect(result.payload.env?.apiTokenMatches).toBeFalse();
+    });
+  });
+
   test("complete CLI credentials override the default profile", () => {
     withTempHome((homeDir) => {
       writeConfig(homeDir, {
@@ -308,6 +330,7 @@ describe("loadEnv credential sources", () => {
 
       const result = runLoadEnv({
         homeDir,
+        expectedApiToken: "cli-token",
         options: {
           url: "https://cli-jenkins.example.com/",
           user: "cli-user",
@@ -321,7 +344,7 @@ describe("loadEnv credential sources", () => {
         "https://cli-jenkins.example.com",
       );
       expect(result.payload.env?.jenkinsUser).toBe("cli-user");
-      expect(result.payload.env?.jenkinsApiToken).toBe("cli-token");
+      expect(result.payload.env?.apiTokenMatches).toBeTrue();
       expect(result.payload.env?.profileName).toBeUndefined();
     });
   });
@@ -397,6 +420,7 @@ describe("loadEnv credential sources", () => {
     withTempHome((homeDir) => {
       const result = runLoadEnv({
         homeDir,
+        expectedApiToken: "padded-token",
         env: {
           JENKINS_USER: "  padded-user  ",
           JENKINS_API_TOKEN: "  padded-token  ",
@@ -404,7 +428,7 @@ describe("loadEnv credential sources", () => {
       });
       expect(result.exitCode).toBe(0);
       expect(result.payload.env?.jenkinsUser).toBe("padded-user");
-      expect(result.payload.env?.jenkinsApiToken).toBe("padded-token");
+      expect(result.payload.env?.apiTokenMatches).toBeTrue();
     });
   });
 });
