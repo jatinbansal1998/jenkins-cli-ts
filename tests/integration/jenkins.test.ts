@@ -1152,14 +1152,15 @@ describe.skipIf(!integrationEnabled)(
           expect(built.output).toContain(selectedRoot);
           expect(built.output).not.toContain(advertisedRoot);
           for (const command of [
-            ["status"],
-            ["history"],
-            ["changes"],
+            ["status", "--json"],
+            ["history", "--json"],
+            ["changes", "--json"],
+            ["artifacts", "--json"],
             ["logs", "--no-follow"],
           ]) {
             const result = await invokeCli(
               home,
-              [...command, "--job-url", jobUrl, "--json"],
+              [...command, "--job-url", jobUrl],
               env,
             );
             expect(result.exitCode, result.output).toBe(0);
@@ -1170,7 +1171,7 @@ describe.skipIf(!integrationEnabled)(
           }
           expect(foreignRequests).toBe(0);
           console.log(
-            "Controller URL trust: build, status, history, changes, logs passed; foreign requests=0",
+            "Controller URL trust: build, status, history, changes, artifacts, logs passed; foreign requests=0",
           );
         });
       } finally {
