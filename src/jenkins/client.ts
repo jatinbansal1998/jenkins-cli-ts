@@ -297,7 +297,14 @@ export class JenkinsClient {
       return { disabled: data.disabled };
     }
 
-    const buildUrl = lastBuild.url;
+    // Jenkins' `lastBuild.url` reflects the controller's configured root URL,
+    // which may differ from the URL the user pointed us at. Follow-up requests
+    // (and the URL we report) are built from the validated job URL and the
+    // build number instead, so authenticated calls never leave this
+    // controller on the server's say-so.
+    const buildUrl = isBuildNumber(lastBuild.number)
+      ? this.withJob(jobUrl, `${lastBuild.number}/`)
+      : undefined;
     const buildDetails = buildUrl ? await this.getBuildDetails(buildUrl) : null;
     const pipeline = buildUrl ? await this.getPipelineInfo(buildUrl) : null;
     let queueTimeMs: number | undefined;
@@ -321,7 +328,7 @@ export class JenkinsClient {
     return {
       disabled: data.disabled,
       buildNumber: lastBuild.number,
-      buildUrl: lastBuild.url,
+      buildUrl,
       result: lastBuild.result ?? null,
       building: lastBuild.building ?? false,
       timestampMs: lastBuild.timestamp,
@@ -1886,6 +1893,10 @@ function isHtmlBody(contentType: string, body: string): boolean {
     /^\s*<!doctype\s+html/i.test(body) ||
     /^\s*<html[\s>]/i.test(body)
   );
+}
+
+function isBuildNumber(value: unknown): value is number {
+  return typeof value === "number" && Number.isSafeInteger(value) && value > 0;
 }
 
 function isBuildResourceContext(context: string): boolean {

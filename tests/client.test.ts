@@ -533,6 +533,78 @@ describe("JenkinsClient build transport", () => {
     );
   });
 
+  test("derives the latest build URL from the job URL, never from lastBuild.url", async () => {
+    const requested: string[] = [];
+    const fetchMock = mock(async (input: FetchInput) => {
+      const url = String(input);
+      requested.push(url);
+      if (url.includes("tree=disabled,lastBuild")) {
+        return Response.json({
+          disabled: false,
+          lastBuild: {
+            number: 9,
+            // A misconfigured root URL or a hostile controller response.
+            url: "https://evil.example.com/job/my-job/9/",
+            result: "SUCCESS",
+            building: false,
+          },
+        });
+      }
+      if (url.endsWith("/job/my-job/9/wfapi/describe")) {
+        return Response.json({ stages: [] });
+      }
+      return Response.json({ actions: [] });
+    });
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+    const client = new JenkinsClient({
+      baseUrl: "https://jenkins.example.com",
+      user: "user",
+      apiToken: "token",
+    });
+
+    const status = await client.getJobStatus(
+      "https://jenkins.example.com/job/my-job/",
+    );
+
+    expect(status.buildUrl).toBe("https://jenkins.example.com/job/my-job/9/");
+    expect(
+      requested.some((url) => url.includes("evil.example.com")),
+    ).toBeFalse();
+    expect(
+      requested.filter((url) =>
+        url.startsWith("https://jenkins.example.com/job/my-job/9/"),
+      ).length,
+    ).toBeGreaterThanOrEqual(2);
+  });
+
+  test("ignores a malformed lastBuild number instead of following its URL", async () => {
+    const fetchMock = mock(async (input: FetchInput) => {
+      const url = String(input);
+      if (url.includes("tree=disabled,lastBuild")) {
+        return Response.json({
+          disabled: false,
+          lastBuild: {
+            number: -1,
+            url: "https://evil.example.com/job/my-job/-1/",
+            result: "SUCCESS",
+          },
+        });
+      }
+      return new Response("", { status: 404 });
+    });
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+    const status = await new JenkinsClient({
+      baseUrl: "https://jenkins.example.com",
+      user: "user",
+      apiToken: "token",
+    }).getJobStatus("https://jenkins.example.com/job/my-job/");
+
+    expect(status.buildUrl).toBeUndefined();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
   test("returns disabled state for a job with no builds", async () => {
     const fetchMock = mock(async () =>
       Response.json({ disabled: true, lastBuild: null }),

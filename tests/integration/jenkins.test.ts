@@ -1132,14 +1132,19 @@ describe.skipIf(!integrationEnabled)(
         expect(build.output).toContain("SUCCESS");
         expect(build.output).not.toContain(secret);
 
-        const status = parseJson(
-          await runCli(home, ["status", "--job-url", jobUrl, "--json"]),
-        );
+        const status = parseJson<{
+          data: { build: { number: number; url: string } };
+        }>(await runCli(home, ["status", "--job-url", jobUrl, "--json"]));
         expect(status).toMatchObject({
           ok: true,
           command: "status",
           data: { build: { result: "SUCCESS", building: false } },
         });
+        // The reported build URL is derived from the job URL we were given,
+        // not copied from Jenkins' lastBuild.url.
+        expect(status.data.build.url).toBe(
+          `${jobUrl}${status.data.build.number}/`,
+        );
 
         const logs = await runCli(home, [
           "logs",
