@@ -808,6 +808,36 @@ describe("input approve/abort outcomes", () => {
     expect(client.submitPendingInput).toHaveBeenCalledTimes(1);
   });
 
+  test("a redirect or HTML page followed by disappearance is unknown, not stale", async () => {
+    const submissions: PendingInputSubmission[] = [
+      {
+        outcome: "rejected",
+        httpStatus: 302,
+        kind: "redirect",
+        detail: "redirected to https://jenkins.example.com/login",
+      },
+      {
+        outcome: "rejected",
+        httpStatus: 200,
+        kind: "html_page",
+        detail: "received an HTML page instead of a Jenkins response",
+      },
+    ];
+    for (const submission of submissions) {
+      const client = fakeClient({
+        pending: [[releaseAction], [releaseAction], []],
+        submission,
+      });
+      const error = await captureError(() =>
+        runInputAbort({ client: asClient(client), env, ...scripted }),
+      );
+      expect(error.code).toBe("INPUT_OUTCOME_UNKNOWN");
+      expect(error.message).not.toContain("was not applied");
+      expect(error.message).toContain("no longer pending");
+      expect(client.submitPendingInput).toHaveBeenCalledTimes(1);
+    }
+  });
+
   test("treats a client-side rejection followed by disappearance as settled by someone else", async () => {
     const client = fakeClient({
       pending: [[releaseAction], [releaseAction], []],

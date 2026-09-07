@@ -209,6 +209,7 @@ async function runBuildHistoryAction(options: {
             client: options.client,
             env: options.env,
             jobLabel: options.jobLabel,
+            jobUrl: options.jobUrl,
             buildUrl: options.build.buildUrl,
           }),
         "action_error",
@@ -381,12 +382,9 @@ async function runHistoryRebuildPostFlow(options: {
             client: options.client,
             env: options.env,
             jobLabel: options.jobLabel,
+            jobUrl: options.jobUrl,
             buildUrl: activeBuild.buildUrl,
             queueUrl: activeBuild.queueUrl,
-            jobUrl:
-              !activeBuild.buildUrl && !activeBuild.queueUrl
-                ? options.jobUrl
-                : undefined,
           });
           return "action_ok";
         }, "action_error");

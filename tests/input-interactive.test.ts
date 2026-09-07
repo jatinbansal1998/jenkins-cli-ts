@@ -156,6 +156,7 @@ describe("runPendingInputsMenu", () => {
     await runPendingInputsMenu({
       client: asClient(client),
       env,
+      jobUrl: JOB_URL,
       buildUrl: `${JOB_URL}/127/`,
       jobLabel: "deploy",
     });
@@ -207,6 +208,45 @@ describe("runPendingInputsMenu", () => {
     expect(logged()).toContain("deploy is still queued");
   });
 
+  test("rejects a retained build URL that belongs to another job on the same controller", async () => {
+    const client = fakeClient({ pending: [[releaseAction]] });
+    scriptPrompts([]);
+
+    await expect(
+      runPendingInputsMenu({
+        client: asClient(client),
+        env,
+        jobUrl: JOB_URL,
+        buildUrl: `${JENKINS_URL}/job/other/128/`,
+        jobLabel: "deploy",
+      }),
+    ).rejects.toMatchObject({ code: "PIPELINE_INPUT_INVALID_RESPONSE" });
+
+    expect(client.getBuildStatus).not.toHaveBeenCalled();
+    expect(client.listPendingInputActions).not.toHaveBeenCalled();
+  });
+
+  test("rejects a queued trigger whose build Jenkins reports under another job", async () => {
+    const client = fakeClient({ pending: [[releaseAction]] });
+    client.getQueueBuild.mockImplementation(async () => ({
+      buildUrl: `${JENKINS_URL}/job/other/5/`,
+      buildNumber: 5,
+    }));
+    scriptPrompts([]);
+
+    await expect(
+      runPendingInputsMenu({
+        client: asClient(client),
+        env,
+        jobUrl: JOB_URL,
+        queueUrl: `${JENKINS_URL}/queue/item/9/`,
+        jobLabel: "deploy",
+      }),
+    ).rejects.toMatchObject({ code: "PIPELINE_INPUT_INVALID_RESPONSE" });
+
+    expect(client.listPendingInputActions).not.toHaveBeenCalled();
+  });
+
   test("only offers operations Jenkins returned a usable link for", async () => {
     const abortOnly: PendingInputAction = {
       ...releaseAction,
@@ -219,6 +259,7 @@ describe("runPendingInputsMenu", () => {
     await runPendingInputsMenu({
       client: asClient(client),
       env,
+      jobUrl: JOB_URL,
       buildUrl: BUILD_URL,
       jobLabel: "deploy",
     });
@@ -240,6 +281,7 @@ describe("runPendingInputsMenu", () => {
     await runPendingInputsMenu({
       client: asClient(client),
       env,
+      jobUrl: JOB_URL,
       buildUrl: BUILD_URL,
       jobLabel: "deploy",
     });
@@ -272,6 +314,7 @@ describe("runPendingInputsMenu", () => {
     await runPendingInputsMenu({
       client: asClient(client),
       env,
+      jobUrl: JOB_URL,
       buildUrl: BUILD_URL,
       jobLabel: "deploy",
     });
@@ -291,6 +334,7 @@ describe("runPendingInputsMenu", () => {
     await runPendingInputsMenu({
       client: asClient(client),
       env,
+      jobUrl: JOB_URL,
       buildUrl: BUILD_URL,
       jobLabel: "deploy",
     });
@@ -308,6 +352,7 @@ describe("runPendingInputsMenu", () => {
     await runPendingInputsMenu({
       client: asClient(client),
       env,
+      jobUrl: JOB_URL,
       buildUrl: BUILD_URL,
       jobLabel: "deploy",
     });
@@ -325,6 +370,7 @@ describe("runPendingInputsMenu", () => {
     await runPendingInputsMenu({
       client: asClient(client),
       env,
+      jobUrl: JOB_URL,
       buildUrl: BUILD_URL,
       jobLabel: "deploy",
     });
@@ -352,6 +398,7 @@ describe("runPendingInputsMenu", () => {
     await runPendingInputsMenu({
       client: asClient(client),
       env,
+      jobUrl: JOB_URL,
       buildUrl: BUILD_URL,
       jobLabel: "deploy",
     });
@@ -375,6 +422,7 @@ describe("runPendingInputsMenu", () => {
     await runPendingInputsMenu({
       client: asClient(client),
       env: { ...env, protectedProfileName: "release" },
+      jobUrl: JOB_URL,
       buildUrl: BUILD_URL,
       jobLabel: "deploy",
     });
@@ -395,6 +443,7 @@ describe("runPendingInputsMenu", () => {
     await runPendingInputsMenu({
       client: asClient(client),
       env: { ...env, protectedProfileName: "release", confirmProtected: true },
+      jobUrl: JOB_URL,
       buildUrl: BUILD_URL,
       jobLabel: "deploy",
     });
@@ -417,6 +466,7 @@ describe("runPendingInputsMenu", () => {
     await runPendingInputsMenu({
       client: asClient(client),
       env,
+      jobUrl: JOB_URL,
       buildUrl: BUILD_URL,
       jobLabel: "deploy",
     });
@@ -438,6 +488,7 @@ describe("runPendingInputsMenu", () => {
     await runPendingInputsMenu({
       client: asClient(client),
       env,
+      jobUrl: JOB_URL,
       buildUrl: BUILD_URL,
       jobLabel: "deploy",
     });

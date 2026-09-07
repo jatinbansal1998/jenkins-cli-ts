@@ -33,7 +33,7 @@ import {
 import type { EnvConfig } from "../env";
 import type { JenkinsClient } from "../jenkins/client";
 import { normalizeControllerTargetUrl } from "../jenkins-target-url";
-import { normalizeOptionalJobUrl } from "../job-url";
+import { normalizeJobUrl, normalizeOptionalJobUrl } from "../job-url";
 import { recordRecentJob } from "../recent-jobs";
 import { runFlow } from "../flows/runner";
 import { flows } from "../flows/definition";
@@ -140,8 +140,13 @@ export async function runStatus(options: StatusOptions): Promise<void> {
 
       const result = status.building ? "RUNNING" : status.result || "UNKNOWN";
       const url = status.buildUrl || target.jobUrl;
-      if (status.buildUrl) {
-        displayedBuildUrls.set(target.jobUrl, status.buildUrl);
+      if (status.buildNumber) {
+        // Rebuilt from the validated job URL and the displayed number so the
+        // menu acts on exactly this build, whatever URL Jenkins reported.
+        displayedBuildUrls.set(
+          target.jobUrl,
+          `${normalizeJobUrl(target.jobUrl)}/${status.buildNumber}/`,
+        );
       }
       const knownTotalStages = await getKnownStageTotal({
         env: options.env,
@@ -239,14 +244,11 @@ export async function runStatus(options: StatusOptions): Promise<void> {
         if (action === "pending_inputs") {
           return await runTrackedStatusAction("input", () =>
             runMenuAction(async (): Promise<ActionEffectResult> => {
-              const displayedBuildUrl = displayedBuildUrls.get(
-                primaryTarget.jobUrl,
-              );
               await runPendingInputsMenu({
                 client: options.client,
                 env: options.env,
-                buildUrl: displayedBuildUrl,
-                jobUrl: displayedBuildUrl ? undefined : primaryTarget.jobUrl,
+                jobUrl: primaryTarget.jobUrl,
+                buildUrl: displayedBuildUrls.get(primaryTarget.jobUrl),
                 jobLabel: primaryTarget.jobLabel,
               });
               return "action_ok";

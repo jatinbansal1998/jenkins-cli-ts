@@ -212,8 +212,9 @@ async function runInputMutation(
 export async function runPendingInputsMenu(options: {
   client: JenkinsClient;
   env: EnvConfig;
+  /** The job the menu was opened from; every build acted on must belong to it. */
+  jobUrl: string;
   jobLabel?: string;
-  jobUrl?: string;
   buildUrl?: string;
   /** A build the caller triggered that may not have left the queue yet. */
   queueUrl?: string;
@@ -236,7 +237,9 @@ export async function runPendingInputsMenu(options: {
     client: options.client,
     env: options.env,
     jobUrl: buildUrl ? undefined : options.jobUrl,
-    buildUrl,
+    buildUrl: buildUrl
+      ? assertBuildBelongsToJob(buildUrl, options.jobUrl, options.jobLabel)
+      : undefined,
     nonInteractive: true,
   });
   if (options.jobLabel) {
@@ -311,6 +314,31 @@ export async function runPendingInputsMenu(options: {
       printMenuActionError(error);
     }
   }
+}
+
+/**
+ * Menus hand over build URLs that came from Jenkins (queue items, history
+ * entries, status). Only a numeric build directly under the originating job
+ * is accepted, so a stray URL can never move the action to another job.
+ */
+function assertBuildBelongsToJob(
+  buildUrl: string,
+  jobUrl: string,
+  jobLabel?: string,
+): string {
+  const jobPrefix = `${normalizeJobUrl(jobUrl)}/`;
+  const normalized = buildUrl.trim().replace(/\/+$/, "");
+  const rest = normalized.startsWith(jobPrefix)
+    ? normalized.slice(jobPrefix.length)
+    : undefined;
+  if (rest === undefined || !/^\d+$/.test(rest)) {
+    throw new CliError(
+      `Build URL ${sanitizeInputText(buildUrl)} does not belong to ${jobLabel ?? jobUrl}.`,
+      ["Pending inputs are only acted on for builds of the selected job."],
+      "PIPELINE_INPUT_INVALID_RESPONSE",
+    );
+  }
+  return `${jobPrefix}${rest}/`;
 }
 
 async function resolveInputBuild(
@@ -526,20 +554,36 @@ async function settlePendingInput(options: {
   }
 
   if (stillPending === false) {
-    if (submission.httpStatus >= 500) {
-      // A server error says nothing about whether Jenkins committed first;
-      // with the action gone there is no evidence either way.
+    // Only a Jenkins-authored 4xx proves the request was refused before
+    // anything committed. A server error, a redirect, or an HTML page could
+    // all have been produced after Jenkins accepted the POST, so an action
+    // that is gone afterwards has no authoritative disposition.
+    if (submission.kind !== "http_error" || submission.httpStatus >= 500) {
       throw unknownOutcomeError(
         operation,
         action,
         target,
-        `Jenkins returned HTTP ${submission.httpStatus}${submission.detail ? ` (${submission.detail})` : ""}`,
+        `${describeRejection(submission)} and the action is no longer pending`,
         stillPending,
       );
     }
     throw staleActionError(action.id, target, operation, submission);
   }
   throw rejectionError(operation, action, target, submission);
+}
+
+function describeRejection(
+  submission: Extract<PendingInputSubmission, { outcome: "rejected" }>,
+): string {
+  const detail = submission.detail ? ` (${submission.detail})` : "";
+  switch (submission.kind) {
+    case "redirect":
+      return `Jenkins redirected the request with HTTP ${submission.httpStatus}${detail}`;
+    case "html_page":
+      return `Jenkins answered HTTP ${submission.httpStatus} with an HTML page${detail}`;
+    default:
+      return `Jenkins returned HTTP ${submission.httpStatus}${detail}`;
+  }
 }
 
 function unknownOutcomeError(
