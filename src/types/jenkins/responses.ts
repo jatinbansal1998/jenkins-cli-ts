@@ -109,7 +109,6 @@ export type JenkinsApiChangeSet = {
 
 export type JenkinsBuildChangesResponse = {
   number?: number;
-  url?: string;
   actions?: JenkinsApiBuildAction[];
   /** Freestyle builds expose one change set … */
   changeSet?: JenkinsApiChangeSet;
@@ -120,7 +119,6 @@ export type JenkinsBuildChangesResponse = {
 export type JenkinsLastBuildResponse = {
   lastBuild?: {
     number?: number;
-    url?: string;
   };
 };
 
@@ -132,7 +130,6 @@ export type JenkinsApiArtifact = {
 
 export type JenkinsBuildArtifactsResponse = {
   number?: number;
-  url?: string;
   artifacts?: JenkinsApiArtifact[];
 };
 
@@ -169,7 +166,6 @@ type JenkinsApiChildTestReport = {
 export type JenkinsLastCompletedBuildResponse = {
   lastCompletedBuild?: {
     number?: number;
-    url?: string;
   };
 };
 
@@ -185,7 +181,6 @@ type JenkinsApiQueueTask = {
 
 type JenkinsApiQueueExecutable = {
   number?: number;
-  url?: string;
 };
 
 export type JenkinsApiQueueItem = {
@@ -243,7 +238,6 @@ export type JenkinsCrumbResponse = {
 
 export type JenkinsLastFailedBuildResponse = {
   lastFailedBuild?: {
-    url?: string;
     number?: number;
   };
 };

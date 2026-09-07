@@ -1083,6 +1083,102 @@ describe.skipIf(!integrationEnabled)(
       });
     }, 180_000);
 
+    test("keeps build requests on the selected controller when Jenkins advertises another root", async () => {
+      let foreignRequests = 0;
+      const foreign = Bun.serve({
+        hostname: "127.0.0.1",
+        port: 0,
+        fetch() {
+          foreignRequests++;
+          return new Response("Unexpected foreign request", { status: 500 });
+        },
+      });
+      const advertisedRoot = `${foreign.url.origin}/other`;
+      const proxy = Bun.serve({
+        hostname: "127.0.0.1",
+        port: 0,
+        async fetch(request) {
+          const incoming = new URL(request.url);
+          const target = new URL(jenkinsUrl!);
+          target.pathname = incoming.pathname;
+          target.search = incoming.search;
+          const headers = new Headers(request.headers);
+          headers.delete("host");
+          const response = await fetch(target, {
+            method: request.method,
+            headers,
+            body:
+              request.method === "GET" || request.method === "HEAD"
+                ? undefined
+                : await request.arrayBuffer(),
+            redirect: "manual",
+          });
+          const responseHeaders = new Headers(response.headers);
+          responseHeaders.delete("content-length");
+          responseHeaders.delete("content-encoding");
+          const location = responseHeaders.get("location");
+          if (location)
+            responseHeaders.set(
+              "location",
+              location.replace(jenkinsUrl!, advertisedRoot),
+            );
+          const body = await response.text();
+          return new Response(
+            responseHeaders.get("content-type")?.includes("application/json")
+              ? body.replaceAll(jenkinsUrl!, advertisedRoot)
+              : body,
+            { status: response.status, headers: responseHeaders },
+          );
+        },
+      });
+      try {
+        await withCliHome(async (home) => {
+          const selectedRoot = `${proxy.url.origin}/jenkins`;
+          const jobUrl = `${selectedRoot}/job/cli-no-params/`;
+          const env = { JENKINS_URL: selectedRoot };
+          const built = await invokeCli(
+            home,
+            [
+              "build",
+              "--job-url",
+              jobUrl,
+              "--without-params",
+              "--watch",
+              "--json",
+            ],
+            env,
+          );
+          expect(built.exitCode, built.output).toBe(0);
+          expect(built.output).toContain(selectedRoot);
+          expect(built.output).not.toContain(advertisedRoot);
+          for (const command of [
+            ["status"],
+            ["history"],
+            ["changes"],
+            ["logs", "--no-follow"],
+          ]) {
+            const result = await invokeCli(
+              home,
+              [...command, "--job-url", jobUrl, "--json"],
+              env,
+            );
+            expect(result.exitCode, result.output).toBe(0);
+            expect(result.output).not.toContain(advertisedRoot);
+            if (command[0] === "status" || command[0] === "history") {
+              expect(result.output).toContain(jobUrl);
+            }
+          }
+          expect(foreignRequests).toBe(0);
+          console.log(
+            "Controller URL trust: build, status, history, changes, logs passed; foreign requests=0",
+          );
+        });
+      } finally {
+        await proxy.stop(true);
+        await foreign.stop(true);
+      }
+    }, 90_000);
+
     test("validates typed parameters and preserves complex values through artifacts", async () => {
       await withCliHome(async (home) => {
         const artifactDir = join(home, "artifacts");

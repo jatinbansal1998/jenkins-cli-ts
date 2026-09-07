@@ -40,6 +40,144 @@ function readHeader(
   return undefined;
 }
 
+describe("server build URL trust", () => {
+  const baseUrl = "https://jenkins.example.com/jenkins";
+  const jobUrl = `${baseUrl}/job/folder/job/my%20job/`;
+  const foreignUrl = "https://foreign.example/other/job/wrong/9/";
+
+  function client() {
+    return new JenkinsClient({ baseUrl, user: "user", apiToken: "token" });
+  }
+
+  for (const [method, field] of [
+    ["getLastBuild", "lastBuild"],
+    ["getLastCompletedBuild", "lastCompletedBuild"],
+    ["getLastFailedBuild", "lastFailedBuild"],
+  ] as const) {
+    test(`${method} derives a trusted URL without requiring a server URL`, async () => {
+      for (const url of [foreignUrl, undefined]) {
+        globalThis.fetch = mock(async () =>
+          Response.json({
+            [field]: { number: 9, url },
+          }),
+        ) as unknown as typeof fetch;
+        expect(await client()[method](jobUrl)).toEqual({
+          buildNumber: 9,
+          buildUrl: `${jobUrl}9/`,
+        });
+      }
+    });
+    test(`${method} rejects invalid build numbers`, async () => {
+      for (const number of [
+        -1,
+        0,
+        1.5,
+        "9",
+        null,
+        Number.MAX_SAFE_INTEGER + 1,
+      ]) {
+        globalThis.fetch = mock(async () =>
+          Response.json({
+            [field]: { number, url: foreignUrl },
+          }),
+        ) as unknown as typeof fetch;
+        expect(await client()[method](jobUrl)).toBeNull();
+      }
+    });
+  }
+
+  test("history never follows server build URLs and drops invalid numbers", async () => {
+    const requested: string[] = [];
+    globalThis.fetch = mock(async (input: FetchInput) => {
+      const url = String(input);
+      requested.push(url);
+      if (url.includes("tree=builds"))
+        return Response.json({
+          builds: [
+            { number: 9, url: foreignUrl },
+            { number: 8 },
+            { number: -1, url: foreignUrl },
+          ],
+        });
+      return Response.json({ stages: [] });
+    }) as unknown as typeof fetch;
+    const page = await client().listBuildHistory(jobUrl);
+    expect(page.builds.map((build) => build.buildUrl)).toEqual([
+      `${jobUrl}9/`,
+      `${jobUrl}8/`,
+    ]);
+    expect(requested.every((url) => url.startsWith(jobUrl))).toBeTrue();
+    expect(requested.some((url) => url.startsWith(`${jobUrl}9/`))).toBeTrue();
+  });
+
+  for (const method of [
+    "getBuildStatus",
+    "listArtifacts",
+    "getBuildChanges",
+  ] as const) {
+    test(`${method} retains the selected build URL`, async () => {
+      globalThis.fetch = mock(async () =>
+        Response.json({ number: 9, url: foreignUrl, actions: [] }),
+      ) as unknown as typeof fetch;
+      const result = await client()[method](`${jobUrl}9/`, { limit: 10 });
+      expect(result.buildUrl).toBe(`${jobUrl}9/`);
+    });
+  }
+
+  test("queue references derive job paths under the selected controller", async () => {
+    globalThis.fetch = mock(async () =>
+      Response.json({
+        task: { url: "https://foreign.example/other/job/folder/job/my%20job/" },
+        executable: { number: 9, url: foreignUrl },
+      }),
+    ) as unknown as typeof fetch;
+    expect(await client().getQueueBuild(`${baseUrl}/queue/item/17/`)).toEqual({
+      buildNumber: 9,
+      buildUrl: `${jobUrl}9/`,
+    });
+  });
+
+  test("queue references ignore malformed numbers and task paths", async () => {
+    for (const [number, url] of [
+      [-1, jobUrl],
+      [9, "https://foreign.example/other/"],
+      [9, undefined],
+    ] as const) {
+      globalThis.fetch = mock(async () =>
+        Response.json({
+          task: { url },
+          executable: { number, url: foreignUrl },
+        }),
+      ) as unknown as typeof fetch;
+      expect(
+        (await client().getQueueBuild(`${baseUrl}/queue/item/17/`))?.buildUrl,
+      ).toBeUndefined();
+    }
+  });
+
+  test("trigger results retain the submitted job URL", async () => {
+    const requested: string[] = [];
+    globalThis.fetch = mock(async (input: FetchInput) => {
+      requested.push(String(input));
+      if (String(input).includes("/queue/item/17/"))
+        return Response.json({
+          id: 17,
+          task: { url: foreignUrl },
+          executable: { number: 9, url: foreignUrl },
+        });
+      return new Response("", {
+        status: 201,
+        headers: { Location: "https://foreign.example/other/queue/item/17/" },
+      });
+    }) as unknown as typeof fetch;
+    expect(await client().triggerBuild(jobUrl, {})).toMatchObject({
+      jobUrl,
+      buildUrl: `${jobUrl}9/`,
+    });
+    expect(requested.every((url) => url.startsWith(`${baseUrl}/`))).toBeTrue();
+  });
+});
+
 describe("JenkinsClient triggerBuild", () => {
   test("uses buildWithParameters when params are provided", async () => {
     const fetchMock = mock(async (_input: FetchInput, _init?: FetchInit) => {
@@ -429,7 +567,7 @@ describe("JenkinsClient pipeline stage cloning", () => {
       const url = String(input);
       if (
         url ===
-        "https://jenkins.example.com/job/my-job/api/json?tree=builds[number,url,result,building,timestamp,duration,estimatedDuration,actions[parameters[name,value],_class,lastBuiltRevision[SHA1,branch[name]],remoteUrls,causes[shortDescription,userId,userName]]]{0,2},lastBuild[number]"
+        "https://jenkins.example.com/job/my-job/api/json?tree=builds[number,result,building,timestamp,duration,estimatedDuration,actions[parameters[name,value],_class,lastBuiltRevision[SHA1,branch[name]],remoteUrls,causes[shortDescription,userId,userName]]]{0,2},lastBuild[number]"
       ) {
         return new Response(
           JSON.stringify({
@@ -1103,7 +1241,7 @@ describe("JenkinsClient listBuildHistory", () => {
           builds: [
             { number: 5, url: "https://jenkins.example.com/job/my-job/5/" },
             { number: 4, url: "https://jenkins.example.com/job/my-job/4/" },
-            { number: 3 },
+            { number: -1 },
           ],
         });
       }
@@ -1133,7 +1271,7 @@ describe("JenkinsClient listBuildHistory", () => {
         return Response.json({
           builds: [
             { number: 5, url: "https://jenkins.example.com/job/my-job/5/" },
-            { number: 4 },
+            { number: -1 },
             { number: 3, url: "https://jenkins.example.com/job/my-job/3/" },
           ],
         });
@@ -1258,7 +1396,7 @@ describe("JenkinsClient listBuildHistory", () => {
       const url = String(input);
       if (
         url ===
-        "https://jenkins.example.com/job/my-job/api/json?tree=builds[number,url,result,building,timestamp,duration,estimatedDuration,actions[parameters[name,value],_class,lastBuiltRevision[SHA1,branch[name]],remoteUrls,causes[shortDescription,userId,userName]]]{1,4},lastBuild[number]"
+        "https://jenkins.example.com/job/my-job/api/json?tree=builds[number,result,building,timestamp,duration,estimatedDuration,actions[parameters[name,value],_class,lastBuiltRevision[SHA1,branch[name]],remoteUrls,causes[shortDescription,userId,userName]]]{1,4},lastBuild[number]"
       ) {
         return new Response(
           JSON.stringify({

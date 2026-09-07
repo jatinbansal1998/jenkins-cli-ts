@@ -285,7 +285,7 @@ export class JenkinsClient {
   async getJobStatus(jobUrl: string): Promise<JobStatus> {
     const url = this.withJob(
       jobUrl,
-      "api/json?tree=disabled,lastBuild[number,url,result,building,timestamp,duration,estimatedDuration]",
+      "api/json?tree=disabled,lastBuild[number,result,building,timestamp,duration,estimatedDuration]",
     );
     const data = await this.requestJson<JenkinsJobStatusResponse>(
       url,
@@ -297,11 +297,8 @@ export class JenkinsClient {
       return { disabled: data.disabled };
     }
 
-    // Jenkins' `lastBuild.url` reflects the controller's configured root URL,
-    // which may differ from the URL the user pointed us at. Follow-up requests
-    // (and the URL we report) are built from the validated job URL and the
-    // build number instead, so authenticated calls never leave this
-    // controller on the server's say-so.
+    // Server URLs may name a different controller. Derive authenticated
+    // request targets from the validated job URL instead.
     const buildUrl = isBuildNumber(lastBuild.number)
       ? this.withJob(jobUrl, `${lastBuild.number}/`)
       : undefined;
@@ -436,7 +433,7 @@ export class JenkinsClient {
 
     return {
       buildNumber: buildDetails.number,
-      buildUrl: buildDetails.url ?? buildUrl,
+      buildUrl,
       result: buildDetails.result ?? null,
       building: buildDetails.building ?? false,
       timestampMs: buildDetails.timestamp,
@@ -490,7 +487,7 @@ export class JenkinsClient {
     // lookahead build into the current one.
     const pageBuilds = windowed
       .slice(0, limit)
-      .map(normalizeBuildHistoryEntry)
+      .map((build) => normalizeBuildHistoryEntry(build, jobUrl))
       .filter((entry): entry is BuildHistoryEntry => Boolean(entry));
     const enrichedBuilds = await Promise.all(
       pageBuilds.map(async (entry) => {
@@ -519,18 +516,18 @@ export class JenkinsClient {
   ): Promise<{ buildUrl: string; buildNumber?: number } | null> {
     const url = this.withJob(
       jobUrl,
-      "api/json?tree=lastCompletedBuild[number,url]",
+      "api/json?tree=lastCompletedBuild[number]",
     );
     const payload = await this.requestJson<JenkinsLastCompletedBuildResponse>(
       url,
       "fetch last completed build",
     );
     const build = payload.lastCompletedBuild;
-    if (!build?.url) {
+    if (!isBuildNumber(build?.number)) {
       return null;
     }
     return {
-      buildUrl: build.url,
+      buildUrl: this.withJob(jobUrl, `${build.number}/`),
       buildNumber: build.number,
     };
   }
@@ -538,18 +535,18 @@ export class JenkinsClient {
   async getLastBuild(
     jobUrl: string,
   ): Promise<{ buildUrl: string; buildNumber?: number } | null> {
-    const url = this.withJob(jobUrl, "api/json?tree=lastBuild[number,url]");
+    const url = this.withJob(jobUrl, "api/json?tree=lastBuild[number]");
     const payload = await this.requestJson<JenkinsLastBuildResponse>(
       url,
       "fetch last build",
     );
     const build = payload?.lastBuild;
-    if (typeof build?.url !== "string" || build.url.length === 0) {
+    if (!isBuildNumber(build?.number)) {
       return null;
     }
     return {
-      buildUrl: build.url,
-      buildNumber: typeof build.number === "number" ? build.number : undefined,
+      buildUrl: this.withJob(jobUrl, `${build.number}/`),
+      buildNumber: build.number,
     };
   }
 
@@ -581,7 +578,7 @@ export class JenkinsClient {
       `causes[${CAUSE_FIELDS}]`;
     const url = this.withJob(
       buildUrl,
-      `api/json?tree=number,url,actions[${actionFields}],changeSet[${setFields}],changeSets[${setFields}]`,
+      `api/json?tree=number,actions[${actionFields}],changeSet[${setFields}],changeSets[${setFields}]`,
     );
     const payload = await this.requestJson<JenkinsBuildChangesResponse>(
       url,
@@ -597,7 +594,7 @@ export class JenkinsClient {
   async listArtifacts(buildUrl: string): Promise<BuildArtifacts> {
     const url = this.withJob(
       buildUrl,
-      "api/json?tree=artifacts[fileName,relativePath],number,url",
+      "api/json?tree=artifacts[fileName,relativePath],number",
     );
     const data = await this.requestJson<JenkinsBuildArtifactsResponse>(
       url,
@@ -608,7 +605,7 @@ export class JenkinsClient {
       .filter((entry): entry is ArtifactEntry => Boolean(entry));
     return {
       buildNumber: data.number,
-      buildUrl: data.url ?? buildUrl,
+      buildUrl,
       artifacts,
     };
   }
@@ -828,9 +825,23 @@ export class JenkinsClient {
     if (!queueItem) {
       return null;
     }
+    const buildNumber = queueItem.executable?.number;
+    // Only the job path identifies the task. Its origin and context path may
+    // reflect a different configured Jenkins root URL.
+    let jobPath: string | undefined;
+    try {
+      jobPath = new URL(queueItem.task?.url ?? "").pathname.match(
+        /\/(job\/[^/]+(?:\/job\/[^/]+)*)\/?$/,
+      )?.[1];
+    } catch {
+      // A missing or malformed task cannot identify a build safely.
+    }
     return {
-      buildUrl: queueItem.executable?.url,
-      buildNumber: queueItem.executable?.number,
+      buildUrl:
+        jobPath && isBuildNumber(buildNumber)
+          ? this.withBase(`${jobPath}/${buildNumber}/`)
+          : undefined,
+      buildNumber: isBuildNumber(buildNumber) ? buildNumber : undefined,
     };
   }
 
@@ -1298,20 +1309,17 @@ export class JenkinsClient {
   async getLastFailedBuild(
     jobUrl: string,
   ): Promise<LastFailedBuildReference | null> {
-    const url = this.withJob(
-      jobUrl,
-      "api/json?tree=lastFailedBuild[url,number]",
-    );
+    const url = this.withJob(jobUrl, "api/json?tree=lastFailedBuild[number]");
     const payload = await this.requestJson<JenkinsLastFailedBuildResponse>(
       url,
       "fetch last failed build",
     );
     const build = payload.lastFailedBuild;
-    if (!build?.url) {
+    if (!isBuildNumber(build?.number)) {
       return null;
     }
     return {
-      buildUrl: build.url,
+      buildUrl: this.withJob(jobUrl, `${build.number}/`),
       buildNumber: build.number,
     };
   }
@@ -1354,14 +1362,26 @@ export class JenkinsClient {
     }
 
     const location = response.headers.get("location") ?? undefined;
-    const queueUrl = location ? this.resolveUrl(location) : undefined;
+    let queueUrl: string | undefined;
+    if (location) {
+      try {
+        const queuePath = new URL(location, `${this.baseUrl}/`).pathname.match(
+          /\/(queue\/item\/\d+)\/?$/,
+        )?.[1];
+        if (queuePath) queueUrl = this.withBase(`${queuePath}/`);
+      } catch {
+        // The POST already committed. A malformed Location cannot be followed.
+      }
+    }
     const queueItem = queueUrl ? await this.getQueueItem(queueUrl) : null;
 
     return {
       queueUrl,
       queueId: queueItem?.id,
-      jobUrl: queueItem?.task?.url ?? jobUrl,
-      buildUrl: queueItem?.executable?.url,
+      jobUrl,
+      buildUrl: isBuildNumber(queueItem?.executable?.number)
+        ? this.withJob(jobUrl, `${queueItem.executable.number}/`)
+        : undefined,
       buildNumber: queueItem?.executable?.number,
     };
   }
@@ -1739,7 +1759,7 @@ export class JenkinsClient {
   ): Promise<JenkinsApiQueueItem | null> {
     const url = this.withJob(
       queueUrl,
-      "api/json?tree=id,task[url],executable[number,url]",
+      "api/json?tree=id,task[url],executable[number]",
     );
     try {
       const response = await this.fetchWithTimeout(
@@ -1930,7 +1950,7 @@ const CAUSE_TYPE_BY_CLASS: Record<string, BuildCauseType> = {
 const GIT_BUILD_DATA_CLASS = "hudson.plugins.git.util.BuildData";
 const BUILD_ACTION_FIELDS =
   "parameters[name,value],_class,lastBuiltRevision[SHA1,branch[name]],remoteUrls,causes[shortDescription,userId,userName]";
-const BUILD_HISTORY_FIELDS = `number,url,result,building,timestamp,duration,estimatedDuration,actions[${BUILD_ACTION_FIELDS}]`;
+const BUILD_HISTORY_FIELDS = `number,result,building,timestamp,duration,estimatedDuration,actions[${BUILD_ACTION_FIELDS}]`;
 const BUILD_DETAILS_FIELDS = `${BUILD_HISTORY_FIELDS},queueId`;
 
 const FOLDER_LEAF_FIELDS =
@@ -2373,7 +2393,7 @@ function normalizeBuildChanges(
   });
   return {
     buildNumber: payload.number,
-    buildUrl: payload.url ?? options.buildUrl,
+    buildUrl: options.buildUrl,
     causes: extractBuildCauses(payload.actions),
     changeSets: returnedChangeSets,
     limit: options.limit,
@@ -2588,14 +2608,17 @@ function normalizeArtifact(artifact: JenkinsApiArtifact): ArtifactEntry | null {
 
 function normalizeBuildHistoryEntry(
   build: JenkinsApiBuild,
+  jobUrl: string,
 ): BuildHistoryEntry | null {
-  const buildUrl = typeof build.url === "string" ? build.url : "";
-  if (!buildUrl) {
+  if (!isBuildNumber(build.number)) {
     return null;
   }
   return {
     buildNumber: build.number,
-    buildUrl,
+    buildUrl: new URL(
+      `${build.number}/`,
+      `${jobUrl.replace(/\/+$/, "")}/`,
+    ).toString(),
     result: build.result ?? null,
     building: build.building ?? false,
     timestampMs: build.timestamp,
