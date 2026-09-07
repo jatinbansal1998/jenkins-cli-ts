@@ -306,14 +306,21 @@ export type PendingInputAction = {
   approvalUrl?: string;
 };
 
-/** Evidence from one approve/abort POST, before any reconciliation. */
+/**
+ * Evidence from one approve/abort POST, before any reconciliation.
+ * `rejected` means Jenkins (or something in front of it) answered without
+ * committing: an HTTP error, a redirect, or an HTML page where Jenkins would
+ * have sent an empty/JSON body. `unconfirmed` means the request may have been
+ * applied but the response is not trustworthy evidence either way (transport
+ * failure or a gateway error).
+ */
 export type PendingInputSubmission =
   | { outcome: "accepted" }
   | {
       outcome: "rejected";
       httpStatus: number;
       detail?: string;
-      redirected: boolean;
+      kind: "http_error" | "redirect" | "html_page";
     }
   | { outcome: "unconfirmed"; reason: string };
 

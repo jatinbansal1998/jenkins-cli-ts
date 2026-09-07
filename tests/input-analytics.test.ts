@@ -77,7 +77,7 @@ function client(submissionOutcome: "accepted" | "rejected"): JenkinsClient {
         : {
             outcome: "rejected",
             httpStatus: 400,
-            redirected: false,
+            kind: "http_error",
             detail: "You need to have Job/Build permissions to submit this.",
           },
     ),

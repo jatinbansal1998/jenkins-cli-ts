@@ -513,25 +513,52 @@ async function settlePendingInput(options: {
 
   const stillPending = await isStillPending(client, target.buildUrl, action.id);
   if (submission.outcome === "unconfirmed") {
-    recordInputOutcome("unknown");
-    throw new CliError(
-      `The ${operation} request for input "${displayId(action)}" on ${buildLabel(target)} could not be confirmed: ${submission.reason}`,
-      [
-        stillPending === true
-          ? "The input was still pending when re-read, but the request may still be processed. Inspect the build in Jenkins before retrying."
-          : stillPending === false
-            ? "The input is no longer pending, but that alone does not prove this request settled it. Inspect the build in Jenkins before taking further action."
-            : "Pending inputs could not be re-read afterwards. Inspect the build in Jenkins before taking further action.",
-        ...inspectInJenkinsHint(action, target),
-      ],
-      "INPUT_OUTCOME_UNKNOWN",
+    throw unknownOutcomeError(
+      operation,
+      action,
+      target,
+      submission.reason,
+      stillPending,
     );
   }
 
   if (stillPending === false) {
+    if (submission.httpStatus >= 500) {
+      // A server error says nothing about whether Jenkins committed first;
+      // with the action gone there is no evidence either way.
+      throw unknownOutcomeError(
+        operation,
+        action,
+        target,
+        `Jenkins returned HTTP ${submission.httpStatus}${submission.detail ? ` (${submission.detail})` : ""}`,
+        stillPending,
+      );
+    }
     throw staleActionError(action.id, target, operation, submission);
   }
   throw rejectionError(operation, action, target, submission);
+}
+
+function unknownOutcomeError(
+  operation: InputOperation,
+  action: PendingInputAction,
+  target: ResolvedInputBuild,
+  reason: string,
+  stillPending: boolean | undefined,
+): CliError {
+  recordInputOutcome("unknown");
+  return new CliError(
+    `The ${operation} request for input "${displayId(action)}" on ${buildLabel(target)} could not be confirmed: ${reason}`,
+    [
+      stillPending === true
+        ? "The input was still pending when re-read, but the request may still be processed. Inspect the build in Jenkins before retrying."
+        : stillPending === false
+          ? "The input is no longer pending, but that alone does not prove this request settled it. Inspect the build in Jenkins before taking further action."
+          : "Pending inputs could not be re-read afterwards. Inspect the build in Jenkins before taking further action.",
+      ...inspectInJenkinsHint(action, target),
+    ],
+    "INPUT_OUTCOME_UNKNOWN",
+  );
 }
 
 function assertParameterlessApproval(action: PendingInputAction): void {
@@ -597,7 +624,7 @@ function rejectionError(
   const detail = submission.detail ?? "";
   const where = `input "${displayId(action)}" on ${buildLabel(target)}`;
   const inspect = inspectInJenkinsHint(action, target);
-  if (submission.redirected) {
+  if (submission.kind === "redirect") {
     recordInputOutcome("login_redirect");
     return new CliError(
       `The Jenkins API request was redirected to another page while trying to ${operation} ${where}; nothing was submitted.`,
@@ -605,6 +632,17 @@ function rejectionError(
         "Jenkins or a proxy in front of it probably sent the request to a login page. Check credentials with `auth status`.",
       ],
       "JENKINS_LOGIN_REDIRECT",
+    );
+  }
+  if (submission.kind === "html_page") {
+    recordInputOutcome("login_redirect");
+    return new CliError(
+      `Unexpected Jenkins response while trying to ${operation} ${where}: received an HTML page instead of a Jenkins response, so the input was not settled by this command.`,
+      [
+        "A login page or proxy intercepted the request. Check the controller URL and credentials with `auth status`.",
+        ...inspect,
+      ],
+      "PIPELINE_INPUT_INVALID_RESPONSE",
     );
   }
   if (/crumb/i.test(detail)) {

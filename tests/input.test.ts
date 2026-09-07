@@ -607,7 +607,7 @@ describe("input approve/abort outcomes", () => {
       submission: {
         outcome: "rejected",
         httpStatus: 400,
-        redirected: false,
+        kind: "http_error",
         detail: "You need to have Job/Build permissions to submit this.",
       },
     });
@@ -622,7 +622,7 @@ describe("input approve/abort outcomes", () => {
       submission: {
         outcome: "rejected",
         httpStatus: 400,
-        redirected: false,
+        kind: "http_error",
         detail: "You need to have Job/Cancel permissions to cancel this.",
       },
     });
@@ -639,7 +639,7 @@ describe("input approve/abort outcomes", () => {
       submission: {
         outcome: "rejected",
         httpStatus: 403,
-        redirected: false,
+        kind: "http_error",
         detail: "No valid crumb was included in the request",
       },
     });
@@ -652,7 +652,7 @@ describe("input approve/abort outcomes", () => {
   test("keeps an ambiguous 403 as a generic rejection", async () => {
     const client = fakeClient({
       pending: [[releaseAction]],
-      submission: { outcome: "rejected", httpStatus: 403, redirected: false },
+      submission: { outcome: "rejected", httpStatus: 403, kind: "http_error" },
     });
     const error = await captureError(() =>
       runInputApprove({ client: asClient(client), env, ...scripted }),
@@ -668,7 +668,7 @@ describe("input approve/abort outcomes", () => {
       submission: {
         outcome: "rejected",
         httpStatus: 200,
-        redirected: true,
+        kind: "redirect",
         detail: "redirected to https://jenkins.example.com/login",
       },
     });
@@ -678,10 +678,55 @@ describe("input approve/abort outcomes", () => {
     expect(error.code).toBe("JENKINS_LOGIN_REDIRECT");
   });
 
-  test("treats a rejection followed by disappearance as settled by someone else", async () => {
+  test("an HTML success page is never a receipt", async () => {
+    for (const run of [runInputApprove, runInputAbort]) {
+      const client = fakeClient({
+        pending: [[releaseAction]],
+        submission: {
+          outcome: "rejected",
+          httpStatus: 200,
+          kind: "html_page",
+          detail: "received an HTML page instead of a Jenkins response",
+        },
+      });
+      const output = sink();
+
+      await run({
+        client: asClient(client),
+        env,
+        buildUrl: BUILD_URL,
+        json: true,
+        yes: true,
+        nonInteractive: false,
+        write: output.write,
+      });
+
+      const document = output.document();
+      expect(document.ok).toBeFalse();
+      expect(document.error?.code).toBe("PIPELINE_INPUT_INVALID_RESPONSE");
+      expect(process.exitCode).toBe(1);
+      process.exitCode = 0;
+    }
+  });
+
+  test("a server error followed by disappearance is unknown, not stale", async () => {
     const client = fakeClient({
       pending: [[releaseAction], [releaseAction], []],
-      submission: { outcome: "rejected", httpStatus: 500, redirected: false },
+      submission: { outcome: "rejected", httpStatus: 500, kind: "http_error" },
+    });
+    const error = await captureError(() =>
+      runInputApprove({ client: asClient(client), env, ...scripted }),
+    );
+    expect(error.code).toBe("INPUT_OUTCOME_UNKNOWN");
+    expect(error.message).not.toContain("was not applied");
+    expect(error.message).toContain("HTTP 500");
+    expect(client.submitPendingInput).toHaveBeenCalledTimes(1);
+  });
+
+  test("treats a client-side rejection followed by disappearance as settled by someone else", async () => {
+    const client = fakeClient({
+      pending: [[releaseAction], [releaseAction], []],
+      submission: { outcome: "rejected", httpStatus: 400, kind: "http_error" },
     });
     const output = sink();
 

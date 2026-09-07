@@ -283,7 +283,7 @@ describe("JenkinsClient.submitPendingInput", () => {
     expect(result.outcome).toBe("rejected");
     if (result.outcome === "rejected") {
       expect(result.httpStatus).toBe(400);
-      expect(result.redirected).toBeFalse();
+      expect(result.kind).toBe("http_error");
       expect(result.detail).toContain(
         "You need to have Job/Build permissions to submit this.",
       );
@@ -305,9 +305,68 @@ describe("JenkinsClient.submitPendingInput", () => {
     expect(result).toEqual({
       outcome: "rejected",
       httpStatus: 302,
-      redirected: true,
+      kind: "redirect",
       detail: `redirected to ${BASE_URL}/login`,
     });
+  });
+
+  test("rejects a 2xx HTML page instead of reporting success", async () => {
+    for (const operation of ["approve", "abort"] as const) {
+      installFetch(
+        async () =>
+          new Response("<!DOCTYPE html><html><body>Sign in</body></html>", {
+            status: 200,
+            headers: { "content-type": "text/html;charset=utf-8" },
+          }),
+      );
+
+      const result = await createClient().submitPendingInput({
+        url: operation === "approve" ? PROCEED_URL : ABORT_URL,
+        operation,
+      });
+
+      expect(result).toEqual({
+        outcome: "rejected",
+        httpStatus: 200,
+        kind: "html_page",
+        detail: "received an HTML page instead of a Jenkins response",
+      });
+    }
+  });
+
+  test("accepts Jenkins' empty and JSON success bodies", async () => {
+    for (const body of ["", "null", "{}"]) {
+      installFetch(
+        async () =>
+          new Response(body, {
+            status: 200,
+            headers: body ? { "content-type": "application/json" } : {},
+          }),
+      );
+      expect(
+        await createClient().submitPendingInput({
+          url: PROCEED_URL,
+          operation: "approve",
+        }),
+      ).toEqual({ outcome: "accepted" });
+    }
+  });
+
+  test("treats gateway errors as unconfirmed, not rejected", async () => {
+    for (const status of [502, 503, 504]) {
+      const fetchMock = installFetch(
+        async () => new Response("Bad Gateway", { status }),
+      );
+      const result = await createClient().submitPendingInput({
+        url: ABORT_URL,
+        operation: "abort",
+      });
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      expect(result.outcome).toBe("unconfirmed");
+      if (result.outcome === "unconfirmed") {
+        expect(result.reason).toContain(`HTTP ${status}`);
+      }
+    }
   });
 
   test("refreshes the crumb once after a 403 and resubmits", async () => {

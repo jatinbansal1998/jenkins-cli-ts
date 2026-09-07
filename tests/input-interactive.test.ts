@@ -408,7 +408,7 @@ describe("runPendingInputsMenu", () => {
       submission: {
         outcome: "rejected",
         httpStatus: 400,
-        redirected: false,
+        kind: "http_error",
         detail: "You need to have Job/Cancel permissions to cancel this.",
       },
     });

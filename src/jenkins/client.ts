@@ -1067,11 +1067,29 @@ export class JenkinsClient {
       return {
         outcome: "rejected",
         httpStatus: response.status,
-        redirected: true,
+        kind: "redirect",
         detail: location ? `redirected to ${location}` : "redirected",
       };
     }
     if (response.ok) {
+      // Jenkins answers these POSTs with an empty or JSON body. An HTML page
+      // with 2xx is an SSO/login proxy that swallowed the request.
+      const body = await readResponseText(response);
+      const contentType =
+        response.headers.get("content-type")?.toLowerCase() ?? "";
+      if (isHtmlBody(contentType, body)) {
+        recordJenkinsApiFailure({
+          operation: toAnalyticsOperation(context),
+          errorType: "invalid_json",
+          httpStatus: response.status,
+        });
+        return {
+          outcome: "rejected",
+          httpStatus: response.status,
+          kind: "html_page",
+          detail: "received an HTML page instead of a Jenkins response",
+        };
+      }
       return { outcome: "accepted" };
     }
     recordJenkinsApiFailure({
@@ -1080,11 +1098,20 @@ export class JenkinsClient {
       httpStatus: response.status,
       retryAttempted: this.useCrumb && response.status === 403,
     });
+    const detail = await readJenkinsErrorDetail(response);
+    if (isGatewayError(response.status)) {
+      // A gateway can lose Jenkins' reply after Jenkins committed the input,
+      // so its error is not evidence of rejection.
+      return {
+        outcome: "unconfirmed",
+        reason: `Jenkins returned HTTP ${response.status} while trying to ${context}${detail ? `: ${detail}` : "."}`,
+      };
+    }
     return {
       outcome: "rejected",
       httpStatus: response.status,
-      redirected: false,
-      detail: await readJenkinsErrorDetail(response),
+      kind: "http_error",
+      detail,
     };
   }
 
@@ -1800,6 +1827,10 @@ function loginRedirectError(context: string): CliError {
     ],
     "JENKINS_LOGIN_REDIRECT",
   );
+}
+
+function isGatewayError(status: number): boolean {
+  return status === 502 || status === 503 || status === 504;
 }
 
 function isRedirect(response: Response): boolean {
