@@ -218,7 +218,7 @@ export function registerNetworkFaultTests(): void {
                 `${buildPath}api/json?tree=building,result`,
               );
             }
-            expect(build).toEqual({ building: false, result: "SUCCESS" });
+            expect(build).toMatchObject({ building: false, result: "SUCCESS" });
             proxy.results.push({
               scenario: "lost input approval response",
               inputSubmitRequests: 1,
