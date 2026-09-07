@@ -1073,8 +1073,22 @@ export class JenkinsClient {
     }
     if (response.ok) {
       // Jenkins answers these POSTs with an empty or JSON body. An HTML page
-      // with 2xx is an SSO/login proxy that swallowed the request.
-      const body = await readResponseText(response);
+      // with 2xx is an SSO/login proxy that swallowed the request. A body
+      // that cannot be read completely is not evidence of anything.
+      let body: string;
+      try {
+        body = await response.text();
+      } catch (error) {
+        recordJenkinsApiFailure({
+          operation: toAnalyticsOperation(context),
+          errorType: "network_error",
+          httpStatus: response.status,
+        });
+        return {
+          outcome: "unconfirmed",
+          reason: `the HTTP ${response.status} response body could not be read while trying to ${context}${error instanceof Error && error.message ? ` (${error.message})` : ""}`,
+        };
+      }
       const contentType =
         response.headers.get("content-type")?.toLowerCase() ?? "";
       if (isHtmlBody(contentType, body)) {

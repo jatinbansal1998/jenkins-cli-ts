@@ -296,6 +296,91 @@ describe("input list", () => {
     expect(logged()).toContain("parameters: none | actions: approve, abort");
   });
 
+  test("keeps the validated selector URL even when Jenkins reports another one", async () => {
+    const client = fakeClient({ pending: [[releaseAction]] });
+    client.getBuildStatus.mockImplementation(async () => ({
+      buildUrl: "https://evil.example.com/job/deploy/999/",
+      buildNumber: 999,
+      building: true,
+      result: null,
+    }));
+    const output = sink();
+
+    await runInputApprove({
+      client: asClient(client),
+      env,
+      buildUrl: BUILD_URL,
+      nonInteractive: true,
+      yes: true,
+      json: true,
+      write: output.write,
+    });
+
+    for (const [url] of client.listPendingInputActions.mock.calls) {
+      expect(url).toBe(BUILD_URL);
+    }
+    expect(output.document().data?.build).toEqual({
+      jobUrl: JOB_URL,
+      url: BUILD_URL,
+      number: 128,
+      building: true,
+      result: null,
+    });
+  });
+
+  test("rebuilds the latest-build URL under the validated job URL", async () => {
+    const client = fakeClient({ pending: [[releaseAction]] });
+    client.getJobStatus.mockImplementation(async () => ({
+      buildUrl: "https://evil.example.com/job/other/128/",
+      buildNumber: 128,
+      building: true,
+      result: null,
+    }));
+    setDeps({
+      resolveJobTarget: mock(async () => ({
+        jobUrl: JOB_URL,
+        jobLabel: "deploy",
+      })),
+    });
+
+    await runInputList({
+      client: asClient(client),
+      env,
+      job: "deploy",
+      nonInteractive: true,
+    });
+
+    expect(client.listPendingInputActions).toHaveBeenCalledWith(BUILD_URL);
+    expect(logged()).toContain(BUILD_URL);
+    expect(logged()).not.toContain("evil.example.com");
+  });
+
+  test("rejects a malformed latest build number instead of trusting the URL", async () => {
+    const client = fakeClient({ pending: [[releaseAction]] });
+    client.getJobStatus.mockImplementation(async () => ({
+      buildUrl: `${JOB_URL}/128/`,
+      buildNumber: -1,
+      building: true,
+    }));
+    setDeps({
+      resolveJobTarget: mock(async () => ({
+        jobUrl: JOB_URL,
+        jobLabel: "deploy",
+      })),
+    });
+
+    const error = await captureError(() =>
+      runInputList({
+        client: asClient(client),
+        env,
+        job: "deploy",
+        nonInteractive: true,
+      }),
+    );
+    expect(error.code).toBe("PIPELINE_INPUT_INVALID_RESPONSE");
+    expect(client.listPendingInputActions).not.toHaveBeenCalled();
+  });
+
   test("fails with NO_BUILDS when the job never built", async () => {
     const client = fakeClient({ pending: [[]] });
     client.getJobStatus.mockImplementation(async () => ({}));

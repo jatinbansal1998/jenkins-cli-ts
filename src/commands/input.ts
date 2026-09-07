@@ -21,9 +21,9 @@ import {
   jsonPendingInputAction,
   runJsonCommand,
 } from "../json-output";
+import { normalizeJobUrl } from "../job-url";
 import { sanitizeInputText } from "../pipeline-inputs";
 import type {
-  BuildStatus,
   PendingInputAction,
   PendingInputSubmission,
 } from "../types/jenkins";
@@ -332,38 +332,41 @@ async function resolveInputBuild(
     ]);
   }
   if (target.kind === "build") {
+    // The selector already validated this URL against the active controller.
+    // Jenkins' own `url` field is display data and must never replace it,
+    // otherwise every later request would trust whatever the server said.
     const status = await options.client.getBuildStatus(target.buildUrl);
-    return toResolvedBuild(target.jobUrl, target.jobLabel, {
-      ...status,
-      buildUrl: status.buildUrl || target.buildUrl,
-      buildNumber: status.buildNumber ?? target.buildNumber,
-    });
+    return {
+      jobUrl: target.jobUrl,
+      jobLabel: target.jobLabel,
+      buildUrl: target.buildUrl,
+      buildNumber: target.buildNumber,
+      building: status.building ?? false,
+      result: status.result ?? null,
+    };
   }
   const status = await options.client.getJobStatus(target.jobUrl);
-  if (!status.buildUrl) {
+  if (!status.buildUrl || status.buildNumber === undefined) {
     throw new CliError(
       `No builds found for ${target.jobLabel}.`,
       ["Pending inputs only exist on a running Pipeline build."],
       "NO_BUILDS",
     );
   }
-  return toResolvedBuild(target.jobUrl, target.jobLabel, status);
-}
-
-function toResolvedBuild(
-  jobUrl: string,
-  jobLabel: string,
-  status: BuildStatus & { buildUrl?: string },
-): ResolvedInputBuild {
-  if (!status.buildUrl) {
-    throw new CliError("Jenkins did not return a build URL.", [
-      "Retry with an explicit --build-url.",
-    ]);
+  // Only the build number is taken from Jenkins; the URL is rebuilt under the
+  // validated job URL so a hostile or misconfigured response cannot redirect
+  // authenticated requests elsewhere.
+  if (!Number.isSafeInteger(status.buildNumber) || status.buildNumber <= 0) {
+    throw new CliError(
+      `Unexpected Jenkins response while trying to resolve the latest build of ${target.jobLabel}: invalid build number.`,
+      ["Retry with an explicit --build or --build-url."],
+      "PIPELINE_INPUT_INVALID_RESPONSE",
+    );
   }
   return {
-    jobUrl,
-    jobLabel,
-    buildUrl: status.buildUrl,
+    jobUrl: target.jobUrl,
+    jobLabel: target.jobLabel,
+    buildUrl: `${normalizeJobUrl(target.jobUrl)}/${status.buildNumber}/`,
     buildNumber: status.buildNumber,
     building: status.building ?? false,
     result: status.result ?? null,

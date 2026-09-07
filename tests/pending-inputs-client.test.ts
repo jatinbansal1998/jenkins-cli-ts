@@ -334,6 +334,34 @@ describe("JenkinsClient.submitPendingInput", () => {
     }
   });
 
+  test("a 2xx whose body fails mid-stream is unconfirmed, not accepted", async () => {
+    for (const operation of ["approve", "abort"] as const) {
+      const fetchMock = installFetch(async () => {
+        const stream = new ReadableStream<Uint8Array>({
+          start(controller) {
+            controller.enqueue(new TextEncoder().encode("<html><body>Sign in"));
+            controller.error(new Error("connection reset mid-body"));
+          },
+        });
+        return new Response(stream, {
+          status: 200,
+          headers: { "content-type": "text/plain" },
+        });
+      });
+
+      const result = await createClient().submitPendingInput({
+        url: operation === "approve" ? PROCEED_URL : ABORT_URL,
+        operation,
+      });
+
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      expect(result.outcome).toBe("unconfirmed");
+      if (result.outcome === "unconfirmed") {
+        expect(result.reason).toContain("response body could not be read");
+      }
+    }
+  });
+
   test("accepts Jenkins' empty and JSON success bodies", async () => {
     for (const body of ["", "null", "{}"]) {
       installFetch(
