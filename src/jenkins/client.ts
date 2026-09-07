@@ -11,6 +11,7 @@ import { dirname } from "node:path";
 import { CliError } from "../cli";
 import { recordJenkinsApiCall, recordJenkinsApiFailure } from "../analytics";
 import { normalizeJobParameterDefinitions } from "../job-parameters";
+import { normalizePendingInputActions } from "../pipeline-inputs";
 import {
   logApiRequest,
   logApiResponse,
@@ -63,6 +64,7 @@ import type {
   JenkinsTestReportResponse,
   JenkinsApiTestSuite,
   JenkinsLastFailedBuildResponse,
+  JenkinsPendingInputActionResponse,
   JenkinsPipelineDescribeResponse,
   JenkinsQueueItemsResponse,
   JenkinsQueueWaitTimeResponse,
@@ -70,6 +72,8 @@ import type {
   LastFailedBuildReference,
   NodeSummary,
   NodesSummary,
+  PendingInputAction,
+  PendingInputSubmission,
   PipelineInfo,
   QueueBuildReference,
   QueueItemSummary,
@@ -911,6 +915,241 @@ export class JenkinsClient {
     await this.postWithCrumb(url, "stop build");
   }
 
+  /**
+   * Lists the Pipeline `input` steps waiting on a build. Unlike the
+   * best-effort `wfapi/describe` fetch, every failure is explicit: a 404 means
+   * the build cannot expose inputs (not a Pipeline run, or the Pipeline REST
+   * API / Input Step plugins are missing), and a login redirect or HTML body
+   * is never mistaken for "no pending inputs".
+   */
+  async listPendingInputActions(
+    buildUrl: string,
+  ): Promise<PendingInputAction[]> {
+    const context = "fetch pending input actions";
+    const url = this.withJob(buildUrl, "wfapi/pendingInputActions");
+    // Redirects are never followed: a login or proxy redirect must surface as
+    // an error rather than an HTML page parsed as "no pending inputs".
+    const response = await this.fetchWithTimeout(
+      url,
+      { method: "GET", headers: this.authHeaders(), redirect: "manual" },
+      1,
+      context,
+    );
+    if (isRedirect(response)) {
+      recordJenkinsApiFailure({
+        operation: toAnalyticsOperation(context),
+        errorType: "http_error",
+        httpStatus: response.status,
+      });
+      throw loginRedirectError(context);
+    }
+    if (response.status === 404) {
+      recordJenkinsApiFailure({
+        operation: toAnalyticsOperation(context),
+        errorType: "http_error",
+        httpStatus: response.status,
+      });
+      throw new CliError(
+        `Jenkins returned HTTP 404 while trying to ${context}; this build does not expose Pipeline input actions.`,
+        [
+          "Pending inputs require a Pipeline build on a controller with the Pipeline REST API (pipeline-rest-api) and Pipeline Input Step plugins.",
+        ],
+        "PIPELINE_INPUT_UNSUPPORTED",
+      );
+    }
+    if (!response.ok) {
+      recordJenkinsApiFailure({
+        operation: toAnalyticsOperation(context),
+        errorType: "http_error",
+        httpStatus: response.status,
+      });
+      await this.raiseHttpError(response, context);
+    }
+
+    const body = await readResponseText(response);
+    const contentType =
+      response.headers.get("content-type")?.toLowerCase() ?? "";
+    if (isHtmlBody(contentType, body)) {
+      recordJenkinsApiFailure({
+        operation: toAnalyticsOperation(context),
+        errorType: "invalid_json",
+        httpStatus: response.status,
+      });
+      throw new CliError(
+        `Unexpected Jenkins response while trying to ${context}: received an HTML page instead of JSON.`,
+        [
+          "A login page or proxy probably intercepted the request. Check the controller URL and credentials with `auth status`.",
+        ],
+        "PIPELINE_INPUT_INVALID_RESPONSE",
+      );
+    }
+    let data: unknown;
+    try {
+      data = JSON.parse(body);
+    } catch {
+      recordJenkinsApiFailure({
+        operation: toAnalyticsOperation(context),
+        errorType: "invalid_json",
+        httpStatus: response.status,
+      });
+      throw new CliError(
+        `Invalid JSON response while trying to ${context}.`,
+        ["Try again, or verify your Jenkins server is healthy."],
+        "PIPELINE_INPUT_INVALID_RESPONSE",
+      );
+    }
+    if (!Array.isArray(data)) {
+      recordJenkinsApiFailure({
+        operation: toAnalyticsOperation(context),
+        errorType: "invalid_json",
+        httpStatus: response.status,
+      });
+      throw new CliError(
+        `Unexpected Jenkins response while trying to ${context}: expected a JSON array.`,
+        [],
+        "PIPELINE_INPUT_INVALID_RESPONSE",
+      );
+    }
+    return normalizePendingInputActions(
+      data as JenkinsPendingInputActionResponse[],
+      buildUrl,
+    );
+  }
+
+  /**
+   * Approves or aborts one pending input through the URL Jenkins returned for
+   * it. Settling an input is not idempotent, so the POST is never transport
+   * retried; a lost response is reported as `unconfirmed` for the caller to
+   * reconcile instead of being resent. The crumb refresh on a rejected 403 is
+   * kept because a 403 proves Jenkins committed nothing.
+   */
+  async submitPendingInput(options: {
+    url: string;
+    operation: "approve" | "abort";
+  }): Promise<PendingInputSubmission> {
+    const context =
+      options.operation === "approve"
+        ? "approve pending input"
+        : "abort pending input";
+    if (this.useCrumb) {
+      // Fetch (and cache) the crumb before the POST so a crumb failure is a
+      // plain error rather than an unconfirmed submission.
+      await this.getCrumb();
+    }
+    // One deadline covers headers and body: the shared header timeout is
+    // released as soon as headers arrive, and a proxy that stalls the body
+    // must not hang the command or keep the connection open.
+    const { controller, cleanup } = withTimeout(this.timeoutMs);
+    try {
+      return await this.sendPendingInputRequest(options, context, controller);
+    } finally {
+      cleanup();
+    }
+  }
+
+  private async sendPendingInputRequest(
+    options: { url: string; operation: "approve" | "abort" },
+    context: string,
+    controller: AbortController,
+  ): Promise<PendingInputSubmission> {
+    let response: Response;
+    try {
+      response = await this.sendPostWithCrumbRetry({
+        url: options.url,
+        context,
+        transportRetries: 0,
+        signal: controller.signal,
+        // Following a redirect would replay the crumb header elsewhere and
+        // turn the POST into a GET; a 3xx is treated as "not submitted".
+        redirect: "manual",
+        // `wfapi/inputSubmit` parses a `json` form field; an empty object is
+        // the parameterless approval.
+        ...(options.operation === "approve"
+          ? { body: new URLSearchParams({ json: "{}" }).toString() }
+          : {}),
+      });
+    } catch (error) {
+      if (!(error instanceof CliError)) {
+        throw error;
+      }
+      return { outcome: "unconfirmed", reason: error.message };
+    }
+    if (isRedirect(response)) {
+      recordJenkinsApiFailure({
+        operation: toAnalyticsOperation(context),
+        errorType: "http_error",
+        httpStatus: response.status,
+      });
+      const location = response.headers.get("location");
+      return {
+        outcome: "rejected",
+        httpStatus: response.status,
+        kind: "redirect",
+        detail: location ? `redirected to ${location}` : "redirected",
+      };
+    }
+    if (response.ok) {
+      // Jenkins answers these POSTs with an empty or JSON body. An HTML page
+      // with 2xx is an SSO/login proxy that swallowed the request. A body
+      // that cannot be read completely, or that stalls past the request
+      // deadline (which only covered the headers), is not evidence of anything.
+      let body: string;
+      try {
+        body = await response.text();
+      } catch (error) {
+        const timedOut = controller.signal.aborted;
+        recordJenkinsApiFailure({
+          operation: toAnalyticsOperation(context),
+          errorType: timedOut ? "timeout" : "network_error",
+          httpStatus: response.status,
+        });
+        return {
+          outcome: "unconfirmed",
+          reason: `the HTTP ${response.status} response body could not be read while trying to ${context} (${timedOut ? `body did not finish within ${this.timeoutMs}ms` : error instanceof Error && error.message ? error.message : "read failed"})`,
+        };
+      }
+      const contentType =
+        response.headers.get("content-type")?.toLowerCase() ?? "";
+      if (isHtmlBody(contentType, body)) {
+        recordJenkinsApiFailure({
+          operation: toAnalyticsOperation(context),
+          errorType: "invalid_json",
+          httpStatus: response.status,
+        });
+        return {
+          outcome: "rejected",
+          httpStatus: response.status,
+          kind: "html_page",
+          detail: "received an HTML page instead of a Jenkins response",
+        };
+      }
+      return { outcome: "accepted" };
+    }
+    recordJenkinsApiFailure({
+      operation: toAnalyticsOperation(context),
+      errorType: "http_error",
+      httpStatus: response.status,
+      retryAttempted: this.useCrumb && response.status === 403,
+    });
+    // The abort signal also bounds this read; a stalled error body yields no
+    // detail rather than a hang.
+    const detail = await readJenkinsErrorDetail(response);
+    if (isGatewayError(response.status)) {
+      // A gateway can lose Jenkins' reply after Jenkins committed the input,
+      // so its error is not evidence of rejection.
+      return {
+        outcome: "unconfirmed",
+        reason: `Jenkins returned HTTP ${response.status} while trying to ${context}${detail ? `: ${detail}` : "."}`,
+      };
+    }
+    return {
+      outcome: "rejected",
+      httpStatus: response.status,
+      kind: "http_error",
+      detail,
+    };
+  }
+
   async getConsoleChunk(buildUrl: string, start = 0): Promise<ConsoleChunk> {
     return await this.getProgressiveLogChunk(
       this.withJob(buildUrl, "logText/progressiveText"),
@@ -1143,10 +1382,13 @@ export class JenkinsClient {
     body?: string;
     contentType?: string;
     transportRetries?: number;
+    redirect?: RequestInit["redirect"];
+    signal?: AbortSignal;
   }): Promise<Response> {
     const contentType =
       options.contentType ?? "application/x-www-form-urlencoded";
     const transportRetries = options.transportRetries ?? 1;
+    const redirect = options.redirect ?? "follow";
     if (!this.useCrumb) {
       const headers: Record<string, string> = {
         Authorization: this.authHeader,
@@ -1159,6 +1401,8 @@ export class JenkinsClient {
         {
           method: "POST",
           headers,
+          redirect,
+          ...(options.signal ? { signal: options.signal } : {}),
           ...(options.body !== undefined ? { body: options.body } : {}),
         },
         transportRetries,
@@ -1182,6 +1426,8 @@ export class JenkinsClient {
         {
           method: "POST",
           headers,
+          redirect,
+          ...(options.signal ? { signal: options.signal } : {}),
           ...(options.body !== undefined ? { body: options.body } : {}),
         },
         transportRetries,
@@ -1295,7 +1541,12 @@ export class JenkinsClient {
     try {
       const response = await fetch(url, {
         ...options,
-        signal: controller.signal,
+        // A caller-provided signal outlives the header deadline, so callers
+        // that read a body can keep one bounded deadline over the whole
+        // exchange.
+        signal: options.signal
+          ? AbortSignal.any([options.signal, controller.signal])
+          : controller.signal,
       });
       // Jenkins responses can contain password parameter defaults or values.
       // Keep response bodies out of persistent debug logs for every method.
@@ -1609,6 +1860,32 @@ export class JenkinsClient {
       return null;
     }
   }
+}
+
+function loginRedirectError(context: string): CliError {
+  return new CliError(
+    `The Jenkins API request was redirected to another page while trying to ${context}.`,
+    [
+      "Jenkins or a proxy in front of it probably sent the request to a login page. Check credentials with `auth status`.",
+    ],
+    "JENKINS_LOGIN_REDIRECT",
+  );
+}
+
+function isGatewayError(status: number): boolean {
+  return status === 502 || status === 503 || status === 504;
+}
+
+function isRedirect(response: Response): boolean {
+  return response.status >= 300 && response.status < 400;
+}
+
+function isHtmlBody(contentType: string, body: string): boolean {
+  return (
+    contentType.includes("text/html") ||
+    /^\s*<!doctype\s+html/i.test(body) ||
+    /^\s*<html[\s>]/i.test(body)
+  );
 }
 
 function isBuildResourceContext(context: string): boolean {

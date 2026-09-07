@@ -83,6 +83,7 @@ const runWaitMock = mock(async (..._args: unknown[]) => undefined);
 const runLogsMock = mock(async () => undefined);
 const runParamsMock = mock(async () => undefined);
 const runCancelMock = mock(async () => undefined);
+const runPendingInputsMenuMock = mock(async () => undefined);
 const runRerunMock = mock(async () => undefined);
 const runRerunLastBuildMock = mock(async () => undefined);
 const realListDeps = await import("../src/commands/list-deps");
@@ -124,6 +125,7 @@ void mock.module("../src/commands/list-deps", () => ({
     runLogs: runLogsMock,
     runParams: runParamsMock,
     runCancel: runCancelMock,
+    runPendingInputsMenu: runPendingInputsMenuMock,
     runRerun: runRerunMock,
     runRerunLastBuild: runRerunLastBuildMock,
   },
@@ -163,6 +165,8 @@ describe("runList", () => {
     runParamsMock.mockImplementation(async () => undefined);
     runCancelMock.mockReset();
     runCancelMock.mockImplementation(async () => undefined);
+    runPendingInputsMenuMock.mockReset();
+    runPendingInputsMenuMock.mockImplementation(async () => undefined);
     runRerunMock.mockReset();
     runRerunMock.mockImplementation(async () => undefined);
     runRerunLastBuildMock.mockReset();
@@ -440,6 +444,33 @@ describe("runList", () => {
     );
   });
 
+  test("pending inputs menu action receives the selected job and returns to the menu", async () => {
+    autocompleteMock
+      .mockImplementationOnce(
+        async () => "https://jenkins.example.com/job/alpha",
+      )
+      .mockImplementationOnce(async () => EXIT_VALUE);
+    selectMock
+      .mockImplementationOnce(async () => "pending_inputs")
+      .mockImplementationOnce(async () => "search");
+
+    await runList({
+      client: {} as JenkinsClient,
+      env: { branchParamDefault: "BRANCH" } as EnvConfig,
+      refresh: false,
+      nonInteractive: false,
+    });
+
+    expect(runPendingInputsMenuMock).toHaveBeenCalledTimes(1);
+    expect(runPendingInputsMenuMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        jobUrl: "https://jenkins.example.com/job/alpha",
+      }),
+    );
+    // The action returned to the same job's menu, where "search" was picked.
+    expect(selectMock).toHaveBeenCalledTimes(2);
+  });
+
   test("interactive action errors are shown and menu continues", async () => {
     const errorSpy = trackRestore(spyOn(console, "error"));
 
@@ -489,7 +520,7 @@ describe("runList", () => {
       throw new CliError(
         'Profile "release" is read-only.',
         [
-          "Re-run with --confirm-protected to allow builds, cancels, creates, and reruns.",
+          "Re-run with --confirm-protected to allow builds, cancels, creates, reruns, and input approvals or aborts.",
         ],
         "PROFILE_PROTECTED",
       );
@@ -510,7 +541,7 @@ describe("runList", () => {
       'ERROR: Profile "release" is read-only.',
     );
     expect(errorSpy).toHaveBeenCalledWith(
-      "HINT: Re-run with --confirm-protected to allow builds, cancels, creates, and reruns.",
+      "HINT: Re-run with --confirm-protected to allow builds, cancels, creates, reruns, and input approvals or aborts.",
     );
     // Same job stays selected: the read action runs without reopening the picker.
     expect(runStatusMock).toHaveBeenCalledWith(

@@ -215,6 +215,10 @@ async function performListAction(
       return await runTrackedListAction("logs", () =>
         runMenuAction(() => runLogsAction(context), "action_error"),
       );
+    case "pending_inputs":
+      return await runTrackedListAction("input", () =>
+        runMenuAction(() => runPendingInputsAction(context), "action_error"),
+      );
     case "cancel":
       return await runTrackedListAction("cancel", () =>
         runMenuAction(() => runCancelAction(context), "action_error"),
@@ -311,6 +315,18 @@ async function runLogsAction(context: ListActionContext): Promise<"action_ok"> {
     env: context.env,
     jobUrl: context.selectedJob.url,
     nonInteractive: false,
+  });
+  return "action_ok";
+}
+
+async function runPendingInputsAction(
+  context: ListActionContext,
+): Promise<"action_ok"> {
+  await listDeps.runPendingInputsMenu({
+    client: context.client,
+    env: context.env,
+    jobUrl: context.selectedJob.url,
+    jobLabel: listDeps.getJobDisplayLabel(context.selectedJob),
   });
   return "action_ok";
 }

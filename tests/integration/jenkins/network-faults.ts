@@ -150,6 +150,81 @@ export function registerNetworkFaultTests(): void {
         });
       }, 45_000);
 
+      test("reports an unconfirmed input approval after Jenkins commits and the response is lost", async () => {
+        await withProxy(async (proxy) => {
+          await withCliHome(async (home) => {
+            const buildPath = await triggerPausedInput(home);
+            proxy.loseNextPost({ type: "timeout", attributes: { timeout: 0 } });
+            const approve = await invokeCli(
+              home,
+              [
+                "input",
+                "approve",
+                "--build-url",
+                `${proxy.url}${buildPath}`,
+                "--yes",
+                "--json",
+              ],
+              { JENKINS_URL: proxy.url },
+            );
+            expect(approve.exitCode, approve.output).not.toBe(0);
+            expect(parseJson(approve)).toMatchObject({
+              ok: false,
+              error: { code: "INPUT_OUTCOME_UNKNOWN" },
+            });
+            await proxy.clear();
+            expect(inputSubmitRequests(proxy.requests)).toHaveLength(1);
+            const build = await waitForBuildToFinish(buildPath);
+            expect(build).toMatchObject({ building: false, result: "SUCCESS" });
+            proxy.results.push({
+              scenario: "lost input approval response",
+              inputSubmitRequests: 1,
+              cliOutcome: "INPUT_OUTCOME_UNKNOWN",
+              buildResult: build.result,
+            });
+          });
+        });
+      }, 120_000);
+
+      test("reports an unconfirmed input approval when a gateway error hides Jenkins' commit", async () => {
+        await withProxy(async (proxy) => {
+          await withCliHome(async (home) => {
+            const buildPath = await triggerPausedInput(home);
+            proxy.failNextPostWith(502);
+            const approve = await invokeCli(
+              home,
+              [
+                "input",
+                "approve",
+                "--build-url",
+                `${proxy.url}${buildPath}`,
+                "--yes",
+                "--json",
+              ],
+              { JENKINS_URL: proxy.url },
+            );
+            expect(approve.exitCode, approve.output).not.toBe(0);
+            const payload = parseJson<{
+              error: { code: string; message: string };
+            }>(approve);
+            expect(payload).toMatchObject({
+              ok: false,
+              error: { code: "INPUT_OUTCOME_UNKNOWN" },
+            });
+            expect(payload.error.message).not.toContain("was not applied");
+            expect(inputSubmitRequests(proxy.requests)).toHaveLength(1);
+            const build = await waitForBuildToFinish(buildPath);
+            expect(build).toMatchObject({ building: false, result: "SUCCESS" });
+            proxy.results.push({
+              scenario: "gateway 502 after committed input approval",
+              inputSubmitRequests: 1,
+              cliOutcome: "INPUT_OUTCOME_UNKNOWN",
+              buildResult: build.result,
+            });
+          });
+        });
+      }, 120_000);
+
       test("does not repeat a build or item creation after Jenkins commits and the response is lost", async () => {
         await withProxy(async (proxy) => {
           await withCliHome(async (home) => {
@@ -227,6 +302,59 @@ export function registerNetworkFaultTests(): void {
   );
 }
 
+/** Triggers `cli-pipeline-input` directly (not through the proxy) and returns
+ * its build path once the `ReleaseProd` input is pending. */
+async function triggerPausedInput(home: string): Promise<string> {
+  const jobPath = "/job/cli-pipeline-input/";
+  const before = await jenkinsJson<{ nextBuildNumber: number }>(
+    `${jobPath}api/json`,
+  );
+  const triggered = await invokeCli(home, [
+    "build",
+    "--job-url",
+    `${jenkinsUrl}${jobPath}`,
+    "--without-params",
+    "--json",
+  ]);
+  expect(triggered.exitCode, triggered.output).toBe(0);
+  const buildPath = `${jobPath}${before.nextBuildNumber}/`;
+  const deadline = Date.now() + 30_000;
+  const readPending = (): Promise<Array<{ id: string }>> =>
+    jenkinsJson<Array<{ id: string }>>(
+      `${buildPath}wfapi/pendingInputActions`,
+    ).catch(() => []);
+  let pending = await readPending();
+  while (pending.length === 0 && Date.now() < deadline) {
+    await Bun.sleep(250);
+    pending = await readPending();
+  }
+  expect(pending.map((action) => action.id)).toEqual(["ReleaseProd"]);
+  return buildPath;
+}
+
+function inputSubmitRequests(
+  requests: { method: string; path: string }[],
+): { method: string; path: string }[] {
+  return requests.filter(
+    (request) =>
+      request.method === "POST" && request.path.endsWith("/wfapi/inputSubmit"),
+  );
+}
+
+async function waitForBuildToFinish(
+  buildPath: string,
+): Promise<{ building: boolean; result: string | null }> {
+  const deadline = Date.now() + 60_000;
+  let build = await jenkinsJson<{ building: boolean; result: string | null }>(
+    `${buildPath}api/json?tree=building,result`,
+  );
+  while (build.building && Date.now() < deadline) {
+    await Bun.sleep(250);
+    build = await jenkinsJson(`${buildPath}api/json?tree=building,result`);
+  }
+  return build;
+}
+
 async function jenkinsJson<T>(path: string): Promise<T> {
   const response = await fetch(`${jenkinsUrl}${path}`, {
     headers: {
@@ -263,12 +391,15 @@ async function withProxy(
     toxic: (fault: Toxic) => Promise<void>;
     clear: () => Promise<void>;
     loseNextPost: (fault: Toxic) => void;
+    /** Replace the next committed POST's reply with a synthetic gateway error. */
+    failNextPostWith: (status: number) => void;
   }) => Promise<void>,
 ): Promise<void> {
   const name = `jenkins-${crypto.randomUUID()}`;
   const requests: { method: string; path: string }[] = [];
   const results: Record<string, unknown>[] = [];
   let pendingPostFault: Toxic | undefined;
+  let pendingPostStatus: number | undefined;
   let active = false;
   async function toxic(fault: Toxic): Promise<void> {
     await control(`/proxies/${name}/toxics`, {
@@ -305,12 +436,19 @@ async function withProxy(
         signal: AbortSignal.timeout(10_000),
       });
       const body = await response.arrayBuffer();
-      if (
+      const committed =
         request.method === "POST" &&
-        pendingPostFault &&
         response.status >= 200 &&
-        response.status < 400
-      ) {
+        response.status < 400;
+      if (committed && pendingPostStatus) {
+        const status = pendingPostStatus;
+        pendingPostStatus = undefined;
+        return new Response("Bad Gateway", {
+          status,
+          headers: { "content-type": "text/html" },
+        });
+      }
+      if (committed && pendingPostFault) {
         const fault = pendingPostFault;
         pendingPostFault = undefined;
         await toxic(fault);
@@ -343,6 +481,9 @@ async function withProxy(
       clear,
       loseNextPost: (fault) => {
         pendingPostFault = fault;
+      },
+      failNextPostWith: (status) => {
+        pendingPostStatus = status;
       },
     });
   } finally {

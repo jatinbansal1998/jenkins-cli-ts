@@ -9,6 +9,7 @@ import { pickJob } from "../job-picker";
 import { runBuild } from "./build";
 import { runCancel } from "./cancel";
 import { runHistory } from "./history";
+import { runPendingInputsMenu } from "./input";
 import { runLogs } from "./logs";
 import { runParams } from "./params";
 import { runRerun, runRerunLastBuild } from "./rerun";
@@ -33,6 +34,7 @@ export const listDeps = {
   runLogs,
   runParams,
   runCancel,
+  runPendingInputsMenu,
   runRerun,
   runRerunLastBuild,
 };

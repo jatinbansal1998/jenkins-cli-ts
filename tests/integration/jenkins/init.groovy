@@ -349,6 +349,34 @@ node {
 ''', true))
 failingPipelineJob.save()
 
+// Pipeline `input` steps run outside `node` so a paused build does not hold
+// the controller's single executor while other scenarios build.
+def inputPipelineJob = jenkins.createProject(WorkflowJob.class, "cli-pipeline-input")
+inputPipelineJob.setDefinition(new CpsFlowDefinition('''
+stage('Prepare') {
+  echo 'input-prepare'
+}
+stage('Approval') {
+  input id: 'ReleaseProd', message: 'Deploy cli-pipeline-input to production?', ok: 'Ship it'
+}
+stage('Ship') {
+  node {
+    echo 'input-shipped'
+  }
+}
+''', true))
+inputPipelineJob.save()
+
+def parameterizedInputJob = jenkins.createProject(WorkflowJob.class, "cli-pipeline-input-params")
+parameterizedInputJob.setDefinition(new CpsFlowDefinition('''
+stage('Choose') {
+  input id: 'PickTag', message: 'Choose a release tag', parameters: [
+    string(name: 'TAG', defaultValue: 'v1', description: 'Release tag')
+  ]
+}
+''', true))
+parameterizedInputJob.save()
+
 def logInspectionPipeline = jenkins.createProject(WorkflowJob.class, "cli-pipeline-logs")
 logInspectionPipeline.setDefinition(new CpsFlowDefinition('''
 timestamps {

@@ -2714,6 +2714,340 @@ describe.skipIf(!integrationEnabled)(
       });
     }, 120_000);
 
+    test("lists, guards, approves, and aborts pending Pipeline input actions", async () => {
+      await withCliHome(async (home) => {
+        const jobUrl = `${jenkinsUrl}/job/cli-pipeline-input/`;
+        const parameterizedJobUrl = `${jenkinsUrl}/job/cli-pipeline-input-params/`;
+        const readerEnv = {
+          JENKINS_USER:
+            process.env.JENKINS_INTEGRATION_READER_USER ?? "integration-reader",
+          JENKINS_API_TOKEN: process.env.JENKINS_INTEGRATION_READER_TOKEN ?? "",
+        };
+        const latestBuildNumber = async (url: string): Promise<number> => {
+          const status = parseJson<{
+            data: { build: { number: number } | null };
+          }>(await runCli(home, ["status", "--job-url", url, "--json"]));
+          return status.data.build?.number ?? 0;
+        };
+        const pendingIds = async (buildUrl: string): Promise<string[]> => {
+          const listed = parseJson<{
+            data: { actions: Array<{ id: string }> };
+          }>(
+            await runCli(home, [
+              "input",
+              "list",
+              "--build-url",
+              buildUrl,
+              "--json",
+            ]),
+          );
+          return listed.data.actions.map((action) => action.id);
+        };
+        const waitForPendingInput = async (buildUrl: string): Promise<void> => {
+          await pollCli(
+            home,
+            ["input", "list", "--build-url", buildUrl, "--json"],
+            (candidate) => {
+              const payload = JSON.parse(candidate.stdout) as {
+                data?: { actions?: unknown[] };
+              };
+              return (payload.data?.actions?.length ?? 0) > 0;
+            },
+            60_000,
+          );
+        };
+        const expectFailureCode = async (
+          args: string[],
+          codes: string[],
+          envOverrides: Record<string, string | undefined> = {},
+        ): Promise<string> => {
+          const result = await runCliExpectFailure(home, args, envOverrides);
+          const lines = result.stdout.split("\n").filter(Boolean);
+          expect(lines, result.output).toHaveLength(1);
+          const payload = JSON.parse(lines[0] as string) as {
+            ok: boolean;
+            error: { code: string; message: string };
+          };
+          expect(payload.ok).toBe(false);
+          expect(codes, payload.error.message).toContain(payload.error.code);
+          return payload.error.code;
+        };
+
+        // A freestyle build has no Pipeline REST API: never an empty list.
+        const freestyleJobUrl = `${jenkinsUrl}/job/cli-no-params/`;
+        await runCli(home, [
+          "build",
+          "--job-url",
+          freestyleJobUrl,
+          "--without-params",
+          "--watch",
+          "--json",
+        ]);
+        await expectFailureCode(
+          ["input", "list", "--job-url", freestyleJobUrl, "--json"],
+          ["PIPELINE_INPUT_UNSUPPORTED"],
+        );
+
+        // Pause a Pipeline at its parameterless input step.
+        const before = await latestBuildNumber(jobUrl);
+        await runCli(home, [
+          "build",
+          "--job-url",
+          jobUrl,
+          "--without-params",
+          "--json",
+        ]);
+        const buildUrl = await waitForNewBuild(home, jobUrl, before);
+        const buildNumber = before + 1;
+        await waitForPendingInput(buildUrl);
+
+        const listed = parseJson(
+          await runCli(home, [
+            "input",
+            "list",
+            "--build-url",
+            buildUrl,
+            "--json",
+          ]),
+        );
+        expect(listed).toMatchObject({
+          ok: true,
+          command: "input list",
+          data: {
+            build: { url: buildUrl, number: buildNumber, building: true },
+            actions: [
+              {
+                id: "ReleaseProd",
+                message: "Deploy cli-pipeline-input to production?",
+                proceedText: "Ship it",
+                requiresParameters: false,
+                parameters: [],
+                proceedUrl: `${buildUrl}wfapi/inputSubmit?inputId=ReleaseProd`,
+                abortUrl: `${buildUrl}input/ReleaseProd/abort`,
+                approvalUrl: `${buildUrl}input/`,
+              },
+            ],
+          },
+        });
+        const byNumber = parseJson<{
+          data: { actions: Array<{ id: string }> };
+        }>(
+          await runCli(home, [
+            "input",
+            "list",
+            "--job-url",
+            jobUrl,
+            "--build",
+            String(buildNumber),
+            "--json",
+          ]),
+        );
+        expect(byNumber.data.actions.map((action) => action.id)).toEqual([
+          "ReleaseProd",
+        ]);
+        const text = await runCli(home, [
+          "input",
+          "list",
+          "--build-url",
+          buildUrl,
+        ]);
+        expect(text.output).toContain(
+          "ReleaseProd: Deploy cli-pipeline-input to production?",
+        );
+        expect(text.output).toContain(
+          "parameters: none | actions: approve, abort",
+        );
+
+        // --json and --non-interactive alone never submit.
+        await expectFailureCode(
+          ["input", "approve", "--build-url", buildUrl, "--json"],
+          ["INPUT_CONFIRMATION_REQUIRED"],
+        );
+        const refusedText = await runCliExpectFailure(home, [
+          "input",
+          "abort",
+          "--build-url",
+          buildUrl,
+        ]);
+        expect(refusedText.output).toContain(
+          "ERROR: Refusing to abort a pending input without confirmation.",
+        );
+        await expectFailureCode(
+          [
+            "input",
+            "approve",
+            "--build-url",
+            buildUrl,
+            "--id",
+            "Nope",
+            "--yes",
+            "--json",
+          ],
+          ["INPUT_ACTION_NOT_FOUND"],
+        );
+
+        // A reader may neither approve nor abort; Jenkins wraps the approval
+        // rejection generically, so only the abort proves the permission text.
+        const readerApprove = await expectFailureCode(
+          ["input", "approve", "--build-url", buildUrl, "--yes", "--json"],
+          ["INPUT_PERMISSION_DENIED", "INPUT_SUBMISSION_REJECTED"],
+          readerEnv,
+        );
+        const readerAbort = await expectFailureCode(
+          ["input", "abort", "--build-url", buildUrl, "--yes", "--json"],
+          ["INPUT_PERMISSION_DENIED", "INPUT_SUBMISSION_REJECTED"],
+          readerEnv,
+        );
+        console.log(
+          `reader approve -> ${readerApprove}; reader abort -> ${readerAbort}`,
+        );
+        expect(await pendingIds(buildUrl)).toEqual(["ReleaseProd"]);
+
+        if (process.platform !== "win32") {
+          // Bare interactive launcher: discover the input from the job menu,
+          // Esc back without submitting, and the action menu survives.
+          const session = await observeInteractiveCli(
+            home,
+            ["--no-banner"],
+            [
+              {
+                text: "Job name or description",
+                input: "cli-pipeline-input\r",
+              },
+              {
+                text: "Action for cli-pipeline-input",
+                input: `${"\u001b[B".repeat(8)}\r`,
+              },
+              {
+                text: `Pending inputs for cli-pipeline-input #${buildNumber}`,
+                input: "\u001b",
+              },
+              { text: "Action for cli-pipeline-input", input: "" },
+            ],
+          );
+          expect(session.output).toContain(
+            "ReleaseProd: Deploy cli-pipeline-input to production?",
+          );
+          expect(session.output).not.toContain("Approved input");
+          expect(await pendingIds(buildUrl)).toEqual(["ReleaseProd"]);
+        }
+
+        // Approve with the crumb path enabled; the build then completes.
+        const approved = parseJson(
+          await runCli(
+            home,
+            ["input", "approve", "--build-url", buildUrl, "--yes", "--json"],
+            { JENKINS_USE_CRUMB: "true" },
+          ),
+        );
+        expect(approved).toMatchObject({
+          ok: true,
+          command: "input approve",
+          data: {
+            operation: "approve",
+            disposition: "approved",
+            build: { url: buildUrl, number: buildNumber },
+            action: { id: "ReleaseProd" },
+          },
+        });
+        const waited = parseJson<{ data: { result: string } }>(
+          await runCli(home, [
+            "wait",
+            "--build-url",
+            buildUrl,
+            "--timeout",
+            "90s",
+            "--json",
+          ]),
+        );
+        expect(waited.data.result).toBe("SUCCESS");
+        expect(await pendingIds(buildUrl)).toEqual([]);
+        await expectFailureCode(
+          ["input", "approve", "--build-url", buildUrl, "--yes", "--json"],
+          ["INPUT_NOT_PENDING"],
+        );
+
+        // Parameterized inputs cannot be approved here but can be aborted.
+        const beforeParameterized =
+          await latestBuildNumber(parameterizedJobUrl);
+        await runCli(home, [
+          "build",
+          "--job-url",
+          parameterizedJobUrl,
+          "--without-params",
+          "--json",
+        ]);
+        const parameterizedBuildUrl = await waitForNewBuild(
+          home,
+          parameterizedJobUrl,
+          beforeParameterized,
+        );
+        await waitForPendingInput(parameterizedBuildUrl);
+        const parameterized = parseJson<{
+          data: { actions: Array<Record<string, unknown>> };
+        }>(
+          await runCli(home, [
+            "input",
+            "list",
+            "--build-url",
+            parameterizedBuildUrl,
+            "--json",
+          ]),
+        );
+        expect(parameterized.data.actions).toEqual([
+          expect.objectContaining({
+            id: "PickTag",
+            requiresParameters: true,
+            parameters: [
+              expect.objectContaining({
+                name: "TAG",
+                type: "StringParameterDefinition",
+              }),
+            ],
+          }),
+        ]);
+        await expectFailureCode(
+          [
+            "input",
+            "approve",
+            "--build-url",
+            parameterizedBuildUrl,
+            "--yes",
+            "--json",
+          ],
+          ["INPUT_PARAMETERS_UNSUPPORTED"],
+        );
+        expect(await pendingIds(parameterizedBuildUrl)).toEqual(["PickTag"]);
+        const aborted = parseJson(
+          await runCli(home, [
+            "input",
+            "abort",
+            "--build-url",
+            parameterizedBuildUrl,
+            "--yes",
+            "--json",
+          ]),
+        );
+        expect(aborted).toMatchObject({
+          ok: true,
+          command: "input abort",
+          data: { disposition: "aborted", action: { id: "PickTag" } },
+        });
+        const abortedWait = parseJson<{ data: { result: string } }>(
+          await runCliExpectFailure(home, [
+            "wait",
+            "--build-url",
+            parameterizedBuildUrl,
+            "--timeout",
+            "90s",
+            "--json",
+          ]),
+        );
+        expect(abortedWait.data.result).toBe("ABORTED");
+        expect(await pendingIds(parameterizedBuildUrl)).toEqual([]);
+      });
+    }, 300_000);
+
     test("blocks mutations for a protected profile until confirmed", async () => {
       await withCliHome(async (home) => {
         await writeProtectedProfile(home);
@@ -2736,6 +3070,8 @@ describe.skipIf(!integrationEnabled)(
           ["build", "--job-url", jobUrl, "--json"],
           ["cancel", "--job-url", jobUrl, "--json"],
           ["rerun", "--job-url", jobUrl, "--json"],
+          ["input", "approve", "--job-url", jobUrl, "--yes", "--json"],
+          ["input", "abort", "--job-url", jobUrl, "--yes", "--json"],
           [
             "build",
             "--job-url",
@@ -2811,7 +3147,7 @@ describe.skipIf(!integrationEnabled)(
             'ERROR: Profile "release" is read-only.',
           );
           expect(session.output).toContain(
-            "HINT: Re-run with --confirm-protected to allow builds, cancels, creates, and reruns.",
+            "HINT: Re-run with --confirm-protected to allow builds, cancels, creates, reruns, and input approvals or aborts.",
           );
         });
       },

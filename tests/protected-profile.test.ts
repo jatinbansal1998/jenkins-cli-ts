@@ -13,6 +13,11 @@ import { assertProtectedMutationAllowed, type EnvConfig } from "../src/env";
 import type { JenkinsClient } from "../src/jenkins/client";
 import { runBuild } from "../src/commands/build";
 import { runCancel } from "../src/commands/cancel";
+import {
+  runInputAbort,
+  runInputApprove,
+  runInputList,
+} from "../src/commands/input";
 import { runRerun, runRerunLastBuild } from "../src/commands/rerun";
 import { runParams } from "../src/commands/params";
 import { runQueue } from "../src/commands/queue";
@@ -40,6 +45,7 @@ function mutationSpies() {
     triggerBuild: mock(async () => ({ queueUrl: `${PROTECTED_URL}/queue/1/` })),
     stopBuild: mock(async () => undefined),
     cancelQueueItem: mock(async () => true),
+    submitPendingInput: mock(async () => ({ outcome: "accepted" as const })),
   };
 }
 
@@ -102,7 +108,7 @@ describe("assertProtectedMutationAllowed", () => {
     expect(error?.code).toBe("PROFILE_PROTECTED");
     expect(error?.message).toBe('Profile "release" is read-only.');
     expect(error?.hints).toEqual([
-      "Re-run with --confirm-protected to allow builds, cancels, creates, and reruns.",
+      "Re-run with --confirm-protected to allow builds, cancels, creates, reruns, and input approvals or aborts.",
     ]);
 
     expect(() =>
@@ -153,6 +159,54 @@ describe("direct mutation commands on a protected profile", () => {
 
     expect(spies.stopBuild).not.toHaveBeenCalled();
     expect(spies.cancelQueueItem).not.toHaveBeenCalled();
+  });
+
+  test("input approve and abort reject before any Jenkins call, even with --yes", async () => {
+    const spies = mutationSpies();
+    const listPendingInputActions = mock(async () => []);
+    const getBuildStatus = mock(async () => ({}));
+
+    for (const run of [runInputApprove, runInputAbort]) {
+      await expect(
+        run({
+          client: client({ ...spies, listPendingInputActions, getBuildStatus }),
+          env: protectedEnv(),
+          buildUrl: `${JOB_URL}12/`,
+          nonInteractive: true,
+          yes: true,
+        }),
+      ).rejects.toThrow('Profile "release" is read-only.');
+    }
+
+    expect(spies.submitPendingInput).not.toHaveBeenCalled();
+    expect(listPendingInputActions).not.toHaveBeenCalled();
+    expect(getBuildStatus).not.toHaveBeenCalled();
+  });
+
+  test("input list stays read-only on a protected profile", async () => {
+    const listPendingInputActions = mock(async () => []);
+    const getBuildStatus = mock(async () => ({
+      buildUrl: `${JOB_URL}12/`,
+      buildNumber: 12,
+      building: true,
+      result: null,
+    }));
+    const output = sink();
+
+    await runInputList({
+      client: client({ listPendingInputActions, getBuildStatus }),
+      env: protectedEnv(),
+      buildUrl: `${JOB_URL}12/`,
+      nonInteractive: true,
+      json: true,
+      write: output.write,
+    });
+
+    expect(listPendingInputActions).toHaveBeenCalledTimes(1);
+    expect(JSON.parse(output.text())).toMatchObject({
+      ok: true,
+      command: "input list",
+    });
   });
 
   test("rerun and rerun-last reject before their mutating client methods", async () => {
@@ -295,6 +349,8 @@ describe("protected profile CLI output", () => {
       ["deploy", "--job-url", JOB_URL, "--json"],
       ["cancel", "--build-url", `${JOB_URL}12/`, "--json"],
       ["rerun", "--job-url", JOB_URL, "--json"],
+      ["input", "approve", "--build-url", `${JOB_URL}12/`, "--json", "--yes"],
+      ["input", "abort", "--build-url", `${JOB_URL}12/`, "--json", "--yes"],
     ]) {
       const result = runCli(args);
       expect(result.exitCode).toBe(1);
@@ -321,13 +377,22 @@ describe("protected profile CLI output", () => {
     expect(result.exitCode).toBe(1);
     expect(result.stderr).toContain('ERROR: Profile "release" is read-only.');
     expect(result.stderr).toContain(
-      "HINT: Re-run with --confirm-protected to allow builds, cancels, creates, and reruns.",
+      "HINT: Re-run with --confirm-protected to allow builds, cancels, creates, reruns, and input approvals or aborts.",
     );
   }, 30_000);
 
   test("--confirm-protected clears the policy block for every entry point", () => {
     for (const args of [
       ["build", "--job-url", JOB_URL, "--json", "--confirm-protected"],
+      [
+        "input",
+        "approve",
+        "--build-url",
+        `${JOB_URL}12/`,
+        "--json",
+        "--yes",
+        "--confirm-protected",
+      ],
       ["list", "--json", "--confirm-protected"],
       ["--json", "--confirm-protected"],
     ]) {

@@ -18,6 +18,8 @@ import type {
   JenkinsRevision,
   NodeSummary,
   NodesSummary,
+  PendingInputAction,
+  PendingInputParameter,
   QueueItemSummary,
   RunningBuildSummary,
   TriggerBuildResult,
@@ -138,6 +140,41 @@ export type JsonCancelReceipt = {
 export type JsonRerunReceipt = {
   source: { buildUrl?: string; buildNumber?: number };
   target: JsonMutationTarget;
+};
+
+/** The exact build a pending-input command resolved. */
+export type JsonPendingInputBuild = {
+  jobUrl: string;
+  url: string;
+  number?: number;
+  building: boolean;
+  result: string | null;
+};
+
+export type JsonPendingInputAction = {
+  id: string;
+  message: string;
+  proceedText?: string;
+  /** `null` when Jenkins did not report parameter metadata. */
+  requiresParameters: boolean | null;
+  parameters: PendingInputParameter[] | null;
+  proceedUrl?: string;
+  abortUrl?: string;
+  approvalUrl?: string;
+};
+
+export type JsonPendingInputList = {
+  build: JsonPendingInputBuild;
+  actions: JsonPendingInputAction[];
+};
+
+/** Receipt for a confirmed approve/abort. An unconfirmed submission is an
+ * error document with code `INPUT_OUTCOME_UNKNOWN`, never a receipt. */
+export type JsonPendingInputReceipt = {
+  operation: "approve" | "abort";
+  disposition: "approved" | "aborted";
+  build: JsonPendingInputBuild;
+  action: { id: string; message: string };
 };
 
 export type JsonAuthStatus = Omit<AuthDiagnosticsResult, "problemHints">;
@@ -377,6 +414,22 @@ export function jsonTriggerTarget(
     buildUrl: result.buildUrl,
     buildNumber: result.buildNumber,
     jobUrl: result.jobUrl,
+  };
+}
+
+export function jsonPendingInputAction(
+  action: PendingInputAction,
+): JsonPendingInputAction {
+  return {
+    id: action.id,
+    message: action.message,
+    proceedText: action.proceedText,
+    requiresParameters:
+      action.parameters === null ? null : action.parameters.length > 0,
+    parameters: action.parameters,
+    proceedUrl: action.proceedUrl,
+    abortUrl: action.abortUrl,
+    approvalUrl: action.approvalUrl,
   };
 }
 

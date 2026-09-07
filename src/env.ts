@@ -64,7 +64,7 @@ export type EnvConfig = {
 export { normalizeUrl } from "./jenkins-url";
 
 /**
- * Rejects Jenkins writes (builds, cancels, reruns) against a read-only profile
+ * Rejects Jenkins writes (builds, cancels, reruns, input approvals) against a read-only profile
  * unless the invocation acknowledged them with `--confirm-protected`.
  */
 export function assertProtectedMutationAllowed(env: EnvConfig): void {
@@ -74,7 +74,7 @@ export function assertProtectedMutationAllowed(env: EnvConfig): void {
   throw new CliError(
     `Profile "${env.protectedProfileName}" is read-only.`,
     [
-      "Re-run with --confirm-protected to allow builds, cancels, creates, and reruns.",
+      "Re-run with --confirm-protected to allow builds, cancels, creates, reruns, and input approvals or aborts.",
     ],
     PROFILE_PROTECTED_CODE,
   );

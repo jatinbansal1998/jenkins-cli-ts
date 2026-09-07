@@ -21,6 +21,7 @@ import { registerAuthCommands } from "./cli/register-auth-commands";
 import { registerBuildCommands } from "./cli/register-build-commands";
 import { registerJobCommands } from "./cli/register-job-commands";
 import { registerOperationsCommands } from "./cli/register-operations-commands";
+import { registerInputCommands } from "./cli/register-input-commands";
 import { registerUpdateHelpCommands } from "./cli/register-update-help-commands";
 import type {
   CommandContext,
@@ -148,7 +149,7 @@ async function main(): Promise<void> {
     .option("confirm-protected", {
       type: "boolean",
       describe:
-        "Allow builds, cancels, and reruns on a read-only profile for this run",
+        "Allow builds, cancels, reruns, and input approvals on a read-only profile for this run",
     })
     .middleware((argv) => {
       // Check if --debug or --no-debug was explicitly passed.
@@ -167,6 +168,7 @@ async function main(): Promise<void> {
   parser = registerJobCommands(parser, dependencies);
   parser = registerBuildCommands(parser, dependencies, rawArgs);
   parser = registerOperationsCommands(parser, dependencies);
+  parser = registerInputCommands(parser, dependencies);
   parser = registerUpdateHelpCommands(parser, dependencies, {
     version: VERSION,
     printFullHelp: () => printFullHelp(scriptName),
@@ -346,6 +348,9 @@ const JSON_COMMANDS = new Set([
   "queue",
   "nodes",
   "rerun",
+  "input:list",
+  "input:approve",
+  "input:abort",
   "auth:status",
   "auth:list",
   "auth:current",

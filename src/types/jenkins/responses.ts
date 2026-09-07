@@ -317,3 +317,20 @@ export type JenkinsPipelineDescribeResponse = {
   stages?: JenkinsPipelineStageResponse[];
   queueDurationMillis?: number;
 };
+
+/** One entry of `<build>/wfapi/pendingInputActions` (pipeline-rest-api). */
+export type JenkinsPendingInputActionResponse = {
+  id?: string;
+  proceedText?: string;
+  message?: string;
+  inputs?: JenkinsPendingInputParameterResponse[];
+  proceedUrl?: string;
+  abortUrl?: string;
+  redirectApprovalUrl?: string;
+};
+
+type JenkinsPendingInputParameterResponse = {
+  type?: string;
+  name?: string;
+  description?: string;
+};

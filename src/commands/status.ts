@@ -15,6 +15,7 @@ import {
 } from "../json-output";
 import { runBuild } from "./build";
 import { runCancel } from "./cancel";
+import { runPendingInputsMenu } from "./input";
 import { runHistory } from "./history";
 import { runLogs } from "./logs";
 import { resolveJobTarget, resolveJobTargets } from "./ops-helpers";
@@ -32,7 +33,7 @@ import {
 import type { EnvConfig } from "../env";
 import type { JenkinsClient } from "../jenkins/client";
 import { normalizeControllerTargetUrl } from "../jenkins-target-url";
-import { normalizeOptionalJobUrl } from "../job-url";
+import { normalizeJobUrl, normalizeOptionalJobUrl } from "../job-url";
 import { recordRecentJob } from "../recent-jobs";
 import { runFlow } from "../flows/runner";
 import { flows } from "../flows/definition";
@@ -112,6 +113,9 @@ export async function runStatus(options: StatusOptions): Promise<void> {
     }
 
     const showSeparators = targets.length > 1;
+    // The build shown for each job is the one follow-up actions must act on,
+    // even if a newer build starts while the menu is open.
+    const displayedBuildUrls = new Map<string, string>();
     for (const [index, target] of targets.entries()) {
       if (showSeparators && index > 0) {
         console.log("");
@@ -136,6 +140,14 @@ export async function runStatus(options: StatusOptions): Promise<void> {
 
       const result = status.building ? "RUNNING" : status.result || "UNKNOWN";
       const url = status.buildUrl || target.jobUrl;
+      if (status.buildNumber) {
+        // Rebuilt from the validated job URL and the displayed number so the
+        // menu acts on exactly this build, whatever URL Jenkins reported.
+        displayedBuildUrls.set(
+          target.jobUrl,
+          `${normalizeJobUrl(target.jobUrl)}/${status.buildNumber}/`,
+        );
+      }
       const knownTotalStages = await getKnownStageTotal({
         env: options.env,
         jobUrl: target.jobUrl,
@@ -224,6 +236,20 @@ export async function runStatus(options: StatusOptions): Promise<void> {
                 env: options.env,
                 jobUrl: primaryTarget.jobUrl,
                 nonInteractive: false,
+              });
+              return "action_ok";
+            }, "action_error"),
+          );
+        }
+        if (action === "pending_inputs") {
+          return await runTrackedStatusAction("input", () =>
+            runMenuAction(async (): Promise<ActionEffectResult> => {
+              await runPendingInputsMenu({
+                client: options.client,
+                env: options.env,
+                jobUrl: primaryTarget.jobUrl,
+                buildUrl: displayedBuildUrls.get(primaryTarget.jobUrl),
+                jobLabel: primaryTarget.jobLabel,
               });
               return "action_ok";
             }, "action_error"),

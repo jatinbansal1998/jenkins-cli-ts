@@ -15,7 +15,7 @@ CLI args
        -> buildPre flow (collect job + build parameters)
        -> triggerBuild(...)
        -> optional watch loop
-       -> buildPost flow (watch/logs/cancel/rerun/done)
+       -> buildPost flow (watch/logs/history/pending inputs/cancel/rerun/done)
 ```
 
 ## 2) Where each part lives

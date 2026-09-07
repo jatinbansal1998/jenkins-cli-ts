@@ -26,6 +26,7 @@ const BACK_VALUE = "__jenkins_cli_history_back__";
 const REBUILD_VALUE = "__jenkins_cli_history_rebuild__";
 const RERUN_LAST_VALUE = "__jenkins_cli_history_rerun_last__";
 const LOGS_VALUE = "__jenkins_cli_history_logs__";
+const INPUTS_VALUE = "__jenkins_cli_history_inputs__";
 const URL_VALUE = "__jenkins_cli_history_url__";
 
 type HistoryActiveBuild = {
@@ -180,6 +181,7 @@ async function runBuildHistoryAction(options: {
         { value: REBUILD_VALUE, label: "Rebuild selected build" },
         { value: RERUN_LAST_VALUE, label: "Rerun last build for job" },
         { value: LOGS_VALUE, label: "Logs" },
+        { value: INPUTS_VALUE, label: "Pending inputs" },
         { value: URL_VALUE, label: "Show URL" },
         { value: BACK_VALUE, label: "Back" },
       ],
@@ -198,6 +200,20 @@ async function runBuildHistoryAction(options: {
         buildUrl: options.build.buildUrl,
         nonInteractive: false,
       });
+      continue;
+    }
+    if (selection === INPUTS_VALUE) {
+      await runMenuAction(
+        () =>
+          deps.runPendingInputsMenu({
+            client: options.client,
+            env: options.env,
+            jobLabel: options.jobLabel,
+            jobUrl: options.jobUrl,
+            buildUrl: options.build.buildUrl,
+          }),
+        "action_error",
+      );
       continue;
     }
     if (selection === REBUILD_VALUE || selection === RERUN_LAST_VALUE) {
@@ -356,6 +372,20 @@ async function runHistoryRebuildPostFlow(options: {
           if (historyResult.activeBuild) {
             activeBuild = { ...historyResult.activeBuild };
           }
+          return "action_ok";
+        }, "action_error");
+      }
+
+      if (action === "pending_inputs") {
+        return await runMenuAction(async (): Promise<ActionEffectResult> => {
+          await deps.runPendingInputsMenu({
+            client: options.client,
+            env: options.env,
+            jobLabel: options.jobLabel,
+            jobUrl: options.jobUrl,
+            buildUrl: activeBuild.buildUrl,
+            queueUrl: activeBuild.queueUrl,
+          });
           return "action_ok";
         }, "action_error");
       }

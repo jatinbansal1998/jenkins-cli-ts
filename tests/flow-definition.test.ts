@@ -131,6 +131,7 @@ describe("flow definitions", () => {
       "watch",
       "logs",
       "history",
+      "pending_inputs",
       "cancel",
       "search",
       "exit",
@@ -184,6 +185,7 @@ describe("flow definitions", () => {
       "watch",
       "logs",
       "history",
+      "pending_inputs",
       "cancel",
       "done",
     ]);
@@ -195,6 +197,7 @@ describe("flow definitions", () => {
       "watch",
       "logs",
       "history",
+      "pending_inputs",
       "cancel",
       "done",
     ]);

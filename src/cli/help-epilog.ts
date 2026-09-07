@@ -38,17 +38,21 @@ export function getRootHelpEpilog(): string {
       Trigger causes and commits contained in one build.
   $0 artifacts --job api --download --dest ./out --non-interactive
       Download the last build's artifacts.
+  $0 input list --job deploy --build 128 --json
+      Show the Pipeline input steps waiting on one exact build.
+  $0 input approve --build-url https://jenkins.example.com/job/deploy/128/ --id ReleaseProd --yes
+      Approve a parameterless input without a prompt (never without --yes).
   $0 auth logout --all --non-interactive
       Remove all locally stored credentials.
 
-Job selection (build, status, history, wait, logs, tests, changes, artifacts, cancel, rerun, params, config):
+Job selection (build, status, history, wait, logs, tests, changes, artifacts, cancel, rerun, input, params, config):
   [job-name]        Fuzzy match on job name or description (positional form)
   --job <text>      Fuzzy match on job name or description (uses the local job cache)
   --job-url <url>   Exact Jenkins job URL (skips the cache and search)
   The positional form and --job are equivalent; if both are passed, they must match.
   With no job argument or flag, an interactive job picker opens (requires a TTY).
 
-Exact build selection (status, wait, logs, tests, changes, artifacts, cancel, rerun):
+Exact build selection (status, wait, logs, tests, changes, artifacts, cancel, rerun, input):
   --build <n>       Positive integer build number; requires --job or --job-url
   --build-url <url> Complete numeric Jenkins build URL; cannot be combined with
                     --build, --job, --job-url, or --queue-url
@@ -60,8 +64,8 @@ ${BUILD_METADATA_HELP}
 Scripting and AI agents:
   Pass --non-interactive to disable every prompt and fail fast; --json/--jsonl imply it.
   --json: list, params, build, status, history, wait, tests, changes, artifacts,
-          run, cancel, create, queue, nodes, rerun, auth status/list/current,
-          and update --check.
+          run, cancel, create, queue, nodes, rerun, input list/approve/abort,
+          auth status/list/current, and update --check.
   --jsonl: logs.
   Output lines are prefixed OK: (success), ERROR: (failure), HINT: (guidance).
   Exit code is 0 on success and 1 on any error.
@@ -213,6 +217,24 @@ Command-specific options:
     --build-url <url> Full Jenkins build URL
     --json           Output source and new target receipt
 
+  input list / approve / abort:
+    [job-name]        Job name or description
+    --job <text>      Job name or description
+    --job-url <url>   Full Jenkins job URL
+    --build <n>       Target a specific build number (with --job/--job-url)
+    --build-url <url> Full Jenkins build URL
+    --id <id>         Pending input id (approve/abort; required when several
+                      are pending)
+    --yes             Skip confirmation (approve/abort). Required with
+                      --non-interactive or --json; neither flag alone submits.
+    --json            list: build identity plus pending actions (empty list
+                      when none). approve/abort: one receipt with a confirmed
+                      disposition; an unconfirmed submission is an error
+                      document with code INPUT_OUTCOME_UNKNOWN.
+    Without an exact selector, input targets the job's latest build. Approval
+    only supports parameterless inputs; parameterized inputs must be approved
+    in Jenkins, but can still be aborted here.
+
   auth login / login:
     --url <url>            Jenkins base URL
     --user <name>          Jenkins username
@@ -258,14 +280,16 @@ Command-specific options:
     (--url, --user, and --token must be passed together)
 
   read-only profiles (any command):
-    --confirm-protected  Allow builds, cancels, and reruns on a read-only
-                         profile for this run only (never persisted)
+    --confirm-protected  Allow builds, cancels, reruns, and input approvals or
+                         aborts on a read-only profile for this run only
+                         (never persisted)
     Make a profile read-only with "auth login --protected" (interactive login
     asks and defaults to no) or by setting "protected": true in the config file.
     Blocked without the flag: build/deploy, cancel, create, rerun, rerun last
-    build, and the same actions reached from list/build/status/history menus.
-    Everything that only reads (list, params, status, wait, logs, tests,
-    changes, history, queue, nodes, artifacts, auth) still works. A direct --url pointing
+    build, input approve/abort, and the same actions reached from
+    list/build/status/history menus. Everything that only reads (list, params,
+    status, wait, logs, tests, changes, history, queue, nodes, artifacts,
+    input list, auth) still works. A direct --url pointing
     at a read-only profile's controller is read-only too. Blocked runs exit
     non-zero; with --json they emit one document with code PROFILE_PROTECTED.
 

@@ -47,6 +47,7 @@ keychain.
   - [Build Changes](#build-changes)
   - [Artifacts](#artifacts)
   - [Cancel Work](#cancel-work)
+  - [Pending Pipeline Inputs](#pending-pipeline-inputs)
   - [Running Builds](#running-builds)
   - [Queue](#queue)
   - [Nodes](#nodes)
@@ -128,6 +129,7 @@ For standalone installs, use the built-in updater (see [Update](#update)).
 | Node/agent visibility       | Yes       | List agents with status, executor usage, and labels                 |
 | Running build actions       | Yes       | List, open, or batch-cancel live running builds                     |
 | Logs, cancel, and rerun     | Yes       | Inspect recent logs and manage existing builds                      |
+| Pending Pipeline inputs     | Yes       | List, approve, or abort `input` steps waiting on one exact build    |
 | Artifacts                   | Yes       | List build artifacts and stream them to disk, preserving paths      |
 | Item config and creation    | Yes       | Print an item's config.xml; create items from a file or by copy     |
 | One-off credentials         | Yes       | Override profile config with `--url`, `--user`, and `--token`       |
@@ -349,8 +351,10 @@ jenkins-cli --confirm-protected            # interactive session allowed to writ
 | `cancel` (queued item or running build, including the watch `c` key) | Blocked                                         |
 | `rerun`, rerun last build, rerun with the same inputs                | Blocked                                         |
 | `create` (from config.xml or by copy)                                | Blocked                                         |
+| `input approve` / `input abort` (even with `--yes`)                  | Blocked                                         |
 | The same actions in `list`, `build`, `status`, `history` menus       | Blocked                                         |
 | `list`, `params`, `status`, `wait`, `logs`, `tests`, `history`       | Allowed                                         |
+| `input list`                                                         | Allowed                                         |
 | `queue`, `nodes`, `run`, `artifacts` (including download)            | Allowed                                         |
 | `auth` / profile management and browser navigation                   | Allowed                                         |
 
@@ -367,7 +371,7 @@ A blocked run exits non-zero:
 
 ```text
 ERROR: Profile "release" is read-only.
-HINT: Re-run with --confirm-protected to allow builds, cancels, creates, and reruns.
+HINT: Re-run with --confirm-protected to allow builds, cancels, creates, reruns, and input approvals or aborts.
 ```
 
 With `--json` it emits exactly one document:
@@ -454,15 +458,17 @@ Automation-relevant read and mutation commands accept `--json`:
 - `build --json --watch` waits and returns the final result in the same
   one-document receipt. Other streaming output uses `logs --jsonl`.
 
-| Command                                                           | Structured mode | `data` summary                                          |
-| ----------------------------------------------------------------- | --------------- | ------------------------------------------------------- |
-| `list`, `params`, `status`, `history`, `wait`, `tests`, `changes` | `--json`        | Existing compatible read contracts and test summaries   |
-| `queue`, `nodes`, `run`, `artifacts`                              | `--json`        | Normalized collections; empty results are `[]`          |
-| `auth status`, `auth list`, `auth current`                        | `--json`        | Credential diagnostics without tokens                   |
-| `update --check`                                                  | `--json`        | Current/latest version and update decision              |
-| `build`, `cancel`, `rerun`                                        | `--json`        | Canonical queue/build/source/target receipts            |
-| `create`                                                          | `--json`        | Creation receipt: `name`, `url`, optional `copiedFrom`  |
-| `logs`                                                            | `--jsonl`       | Ordered `start`, `chunk`, `complete`, or `error` events |
+| Command                                                           | Structured mode | `data` summary                                            |
+| ----------------------------------------------------------------- | --------------- | --------------------------------------------------------- |
+| `list`, `params`, `status`, `history`, `wait`, `tests`, `changes` | `--json`        | Existing compatible read contracts and test summaries     |
+| `queue`, `nodes`, `run`, `artifacts`                              | `--json`        | Normalized collections; empty results are `[]`            |
+| `auth status`, `auth list`, `auth current`                        | `--json`        | Credential diagnostics without tokens                     |
+| `update --check`                                                  | `--json`        | Current/latest version and update decision                |
+| `build`, `cancel`, `rerun`                                        | `--json`        | Canonical queue/build/source/target receipts              |
+| `input list`                                                      | `--json`        | Exact build identity plus pending actions (`[]` if none)  |
+| `input approve`, `input abort` (with `--yes`)                     | `--json`        | Receipt with a confirmed `approved`/`aborted` disposition |
+| `create`                                                          | `--json`        | Creation receipt: `name`, `url`, optional `copiedFrom`    |
+| `logs`                                                            | `--jsonl`       | Ordered `start`, `chunk`, `complete`, or `error` events   |
 
 Commands without a structured contract still recognize `--json` and return a
 clear unsupported-output error instead of treating the flag as unknown.
@@ -813,7 +819,8 @@ jenkins-cli list
 In interactive mode, `list` acts as a launcher:
 
 - Search and select a job
-- Run `Build`, `Status`, `Build history`, `Watch`, `Logs`, `Cancel`, or `Rerun`
+- Run `Build`, `Status`, `Build history`, `Watch`, `Logs`, `Pending inputs`,
+  `Cancel`, or `Rerun`
 
 The cache is fetched automatically on first use and served instantly after
 that. Once it is older than 24 hours, commands keep using it and a detached
@@ -1150,6 +1157,50 @@ supports selecting one, several, or all of them. You can also fall back to the
 existing cached job search. Explicit targets and non-interactive behavior are
 unchanged.
 
+### Pending Pipeline Inputs
+
+Discover, approve, or abort Pipeline `input` steps waiting on one exact build:
+
+```bash
+jenkins-cli input list --job deploy --build 128
+jenkins-cli input list --build-url "https://jenkins.example.com/job/deploy/128/" --json
+jenkins-cli input approve --job deploy --build 128 --id ReleaseProd
+jenkins-cli input abort --build-url "https://jenkins.example.com/job/deploy/128/" --id ReleaseProd --yes --json
+```
+
+`input list` shows the build identity plus each pending action's stable id,
+message, proceed caption, parameter requirements, and which approve/abort links
+Jenkins exposed. A build with no pending inputs returns a successful empty list;
+a build that cannot expose inputs (not a Pipeline run, or the Pipeline REST API
+and Pipeline Input Step plugins are missing) fails with
+`PIPELINE_INPUT_UNSUPPORTED` instead. Without `--build`/`--build-url`, the
+command targets the job's latest build.
+
+Approve and abort always confirm interactively, showing the build, the input
+message, and the requested action. Non-interactive runs, including `--json`,
+must pass `--yes`; `--non-interactive` or `--json` alone never submit. Only
+parameterless inputs can be approved from the CLI. A parameterized input fails
+with `INPUT_PARAMETERS_UNSUPPORTED` and a link to approve it in Jenkins, but
+aborting it still works. Read-only profiles block both mutations until
+`--confirm-protected` is passed; listing stays allowed.
+
+The action is re-read right before submission, and the CLI only uses the
+approve/abort URLs Jenkins returned after checking they stay under the build on
+the active controller. Success requires Jenkins to accept the POST. Stable
+error codes cover the other outcomes: `INPUT_ACTION_STALE` (settled by someone
+else), `INPUT_PERMISSION_DENIED`, `JENKINS_CRUMB_REJECTED`,
+`INPUT_SUBMISSION_REJECTED` (ambiguous rejection), `JENKINS_LOGIN_REDIRECT`,
+`INPUT_ACTION_NOT_FOUND`, `INPUT_ACTION_AMBIGUOUS`, `INPUT_NOT_PENDING`, and
+`INPUT_OUTCOME_UNKNOWN`. The last one means the POST was sent but no response
+arrived; the CLI re-reads pending inputs, never resubmits, and exits non-zero
+so you can inspect the build in Jenkins before acting again. An input that has
+merely disappeared is not treated as proof of your approval.
+
+The same discovery, confirmation, and safety rules apply to the `Pending inputs`
+action in the `list`, `build`, `status`, and `history` menus, including the bare
+`jenkins-cli` launcher. Cancelling a confirmation, a stale action, or a
+read-only-profile block returns you to the same build's menu.
+
 ### Running Builds
 
 List live running builds and open one in the default browser:
@@ -1251,8 +1302,8 @@ Creation is a Jenkins write: read-only profiles block it unless
 
 ### Exact Build Selectors
 
-`status`, `wait`, `logs`, `changes`, `artifacts`, `cancel`, and `rerun` share one exact
-build contract. Use `--build <positive-integer>` with exactly one of `--job` or
+`status`, `wait`, `logs`, `changes`, `artifacts`, `cancel`, `rerun`, and the
+`input` commands share one exact build contract. Use `--build <positive-integer>` with exactly one of `--job` or
 `--job-url`, or use a complete numeric `--build-url` by itself. Exact selectors
 never fall back to a newer build. Direct job, build, and queue URLs must belong
 to the active Jenkins controller, including its configured context path.
