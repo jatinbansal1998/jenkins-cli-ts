@@ -11,6 +11,7 @@ import { dirname } from "node:path";
 import { CliError } from "../cli";
 import { recordJenkinsApiCall, recordJenkinsApiFailure } from "../analytics";
 import { normalizeJobParameterDefinitions } from "../job-parameters";
+import { normalizePendingInputActions } from "../pipeline-inputs";
 import {
   logApiRequest,
   logApiResponse,
@@ -63,6 +64,7 @@ import type {
   JenkinsTestReportResponse,
   JenkinsApiTestSuite,
   JenkinsLastFailedBuildResponse,
+  JenkinsPendingInputActionResponse,
   JenkinsPipelineDescribeResponse,
   JenkinsQueueItemsResponse,
   JenkinsQueueWaitTimeResponse,
@@ -70,6 +72,8 @@ import type {
   LastFailedBuildReference,
   NodeSummary,
   NodesSummary,
+  PendingInputAction,
+  PendingInputSubmission,
   PipelineInfo,
   QueueBuildReference,
   QueueItemSummary,
@@ -911,6 +915,173 @@ export class JenkinsClient {
     await this.postWithCrumb(url, "stop build");
   }
 
+  /**
+   * Lists the Pipeline `input` steps waiting on a build. Unlike the
+   * best-effort `wfapi/describe` fetch, every failure is explicit: a 404 means
+   * the build cannot expose inputs (not a Pipeline run, or the Pipeline REST
+   * API / Input Step plugins are missing), and a login redirect or HTML body
+   * is never mistaken for "no pending inputs".
+   */
+  async listPendingInputActions(
+    buildUrl: string,
+  ): Promise<PendingInputAction[]> {
+    const context = "fetch pending input actions";
+    const url = this.withJob(buildUrl, "wfapi/pendingInputActions");
+    const response = await this.fetchWithTimeout(
+      url,
+      { method: "GET", headers: this.authHeaders() },
+      1,
+      context,
+    );
+    if (response.redirected) {
+      recordJenkinsApiFailure({
+        operation: toAnalyticsOperation(context),
+        errorType: "http_error",
+        httpStatus: response.status,
+      });
+      throw loginRedirectError(context);
+    }
+    if (response.status === 404) {
+      recordJenkinsApiFailure({
+        operation: toAnalyticsOperation(context),
+        errorType: "http_error",
+        httpStatus: response.status,
+      });
+      throw new CliError(
+        `Jenkins returned HTTP 404 while trying to ${context}; this build does not expose Pipeline input actions.`,
+        [
+          "Pending inputs require a Pipeline build on a controller with the Pipeline REST API (pipeline-rest-api) and Pipeline Input Step plugins.",
+        ],
+        "PIPELINE_INPUT_UNSUPPORTED",
+      );
+    }
+    if (!response.ok) {
+      recordJenkinsApiFailure({
+        operation: toAnalyticsOperation(context),
+        errorType: "http_error",
+        httpStatus: response.status,
+      });
+      await this.raiseHttpError(response, context);
+    }
+
+    const body = await readResponseText(response);
+    const contentType =
+      response.headers.get("content-type")?.toLowerCase() ?? "";
+    if (isHtmlBody(contentType, body)) {
+      recordJenkinsApiFailure({
+        operation: toAnalyticsOperation(context),
+        errorType: "invalid_json",
+        httpStatus: response.status,
+      });
+      throw new CliError(
+        `Unexpected Jenkins response while trying to ${context}: received an HTML page instead of JSON.`,
+        [
+          "A login page or proxy probably intercepted the request. Check the controller URL and credentials with `auth status`.",
+        ],
+        "PIPELINE_INPUT_INVALID_RESPONSE",
+      );
+    }
+    let data: unknown;
+    try {
+      data = JSON.parse(body);
+    } catch {
+      recordJenkinsApiFailure({
+        operation: toAnalyticsOperation(context),
+        errorType: "invalid_json",
+        httpStatus: response.status,
+      });
+      throw new CliError(
+        `Invalid JSON response while trying to ${context}.`,
+        ["Try again, or verify your Jenkins server is healthy."],
+        "PIPELINE_INPUT_INVALID_RESPONSE",
+      );
+    }
+    if (!Array.isArray(data)) {
+      recordJenkinsApiFailure({
+        operation: toAnalyticsOperation(context),
+        errorType: "invalid_json",
+        httpStatus: response.status,
+      });
+      throw new CliError(
+        `Unexpected Jenkins response while trying to ${context}: expected a JSON array.`,
+        [],
+        "PIPELINE_INPUT_INVALID_RESPONSE",
+      );
+    }
+    return normalizePendingInputActions(
+      data as JenkinsPendingInputActionResponse[],
+      buildUrl,
+    );
+  }
+
+  /**
+   * Approves or aborts one pending input through the URL Jenkins returned for
+   * it. Settling an input is not idempotent, so the POST is never transport
+   * retried; a lost response is reported as `unconfirmed` for the caller to
+   * reconcile instead of being resent. The crumb refresh on a rejected 403 is
+   * kept because a 403 proves Jenkins committed nothing.
+   */
+  async submitPendingInput(options: {
+    url: string;
+    operation: "approve" | "abort";
+  }): Promise<PendingInputSubmission> {
+    const context =
+      options.operation === "approve"
+        ? "approve pending input"
+        : "abort pending input";
+    if (this.useCrumb) {
+      // Fetch (and cache) the crumb before the POST so a crumb failure is a
+      // plain error rather than an unconfirmed submission.
+      await this.getCrumb();
+    }
+    let response: Response;
+    try {
+      response = await this.sendPostWithCrumbRetry({
+        url: options.url,
+        context,
+        transportRetries: 0,
+        // `wfapi/inputSubmit` parses a `json` form field; an empty object is
+        // the parameterless approval.
+        ...(options.operation === "approve"
+          ? { body: new URLSearchParams({ json: "{}" }).toString() }
+          : {}),
+      });
+    } catch (error) {
+      if (!(error instanceof CliError)) {
+        throw error;
+      }
+      return { outcome: "unconfirmed", reason: error.message };
+    }
+    if (response.redirected) {
+      recordJenkinsApiFailure({
+        operation: toAnalyticsOperation(context),
+        errorType: "http_error",
+        httpStatus: response.status,
+      });
+      return {
+        outcome: "rejected",
+        httpStatus: response.status,
+        redirected: true,
+        detail: `redirected to ${response.url}`,
+      };
+    }
+    if (response.ok) {
+      return { outcome: "accepted" };
+    }
+    recordJenkinsApiFailure({
+      operation: toAnalyticsOperation(context),
+      errorType: "http_error",
+      httpStatus: response.status,
+      retryAttempted: this.useCrumb && response.status === 403,
+    });
+    return {
+      outcome: "rejected",
+      httpStatus: response.status,
+      redirected: false,
+      detail: await readJenkinsErrorDetail(response),
+    };
+  }
+
   async getConsoleChunk(buildUrl: string, start = 0): Promise<ConsoleChunk> {
     return await this.getProgressiveLogChunk(
       this.withJob(buildUrl, "logText/progressiveText"),
@@ -1609,6 +1780,24 @@ export class JenkinsClient {
       return null;
     }
   }
+}
+
+function loginRedirectError(context: string): CliError {
+  return new CliError(
+    `The Jenkins API request was redirected to another page while trying to ${context}.`,
+    [
+      "Jenkins or a proxy in front of it probably sent the request to a login page. Check credentials with `auth status`.",
+    ],
+    "JENKINS_LOGIN_REDIRECT",
+  );
+}
+
+function isHtmlBody(contentType: string, body: string): boolean {
+  return (
+    contentType.includes("text/html") ||
+    /^\s*<!doctype\s+html/i.test(body) ||
+    /^\s*<html[\s>]/i.test(body)
+  );
 }
 
 function isBuildResourceContext(context: string): boolean {

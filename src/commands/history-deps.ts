@@ -2,6 +2,7 @@ import { autocomplete, confirm, isCancel, select, text } from "../clack";
 import { recordBranchSelection } from "../branches";
 import { recordRecentJob } from "../recent-jobs";
 import { runCancel } from "./cancel";
+import { runPendingInputsMenu } from "./input";
 import { runLogs } from "./logs";
 import { resolveJobTarget } from "./ops-helpers";
 import { runWait } from "./wait";
@@ -17,6 +18,7 @@ type HistoryDeps = {
   recordRecentJob: typeof recordRecentJob;
   runCancel: typeof runCancel;
   runLogs: typeof runLogs;
+  runPendingInputsMenu: typeof runPendingInputsMenu;
   runWait: typeof runWait;
   resolveJobTarget: typeof resolveJobTarget;
 };
@@ -31,6 +33,7 @@ export const historyDeps: HistoryDeps = {
   recordBranchSelection,
   runCancel,
   runLogs,
+  runPendingInputsMenu,
   runWait,
   resolveJobTarget,
 };

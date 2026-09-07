@@ -15,6 +15,7 @@ import {
 } from "../json-output";
 import { runBuild } from "./build";
 import { runCancel } from "./cancel";
+import { runPendingInputsMenu } from "./input";
 import { runHistory } from "./history";
 import { runLogs } from "./logs";
 import { resolveJobTarget, resolveJobTargets } from "./ops-helpers";
@@ -224,6 +225,19 @@ export async function runStatus(options: StatusOptions): Promise<void> {
                 env: options.env,
                 jobUrl: primaryTarget.jobUrl,
                 nonInteractive: false,
+              });
+              return "action_ok";
+            }, "action_error"),
+          );
+        }
+        if (action === "pending_inputs") {
+          return await runTrackedStatusAction("input", () =>
+            runMenuAction(async (): Promise<ActionEffectResult> => {
+              await runPendingInputsMenu({
+                client: options.client,
+                env: options.env,
+                jobUrl: primaryTarget.jobUrl,
+                jobLabel: primaryTarget.jobLabel,
               });
               return "action_ok";
             }, "action_error"),

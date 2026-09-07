@@ -57,6 +57,7 @@ stateDiagram-v2
     action_menu --> run_action: select_history
     action_menu --> run_action: select_watch
     action_menu --> run_action: select_logs
+    action_menu --> run_action: select_pending_inputs
     action_menu --> run_action: select_cancel
 
     run_action --> action_menu: action_ok
@@ -173,7 +174,7 @@ stateDiagram-v2
     state "return_to_caller_root (terminal)" as t_return_root
 
     action_menu --> after_menu: esc_or_done
-    action_menu --> run_action: watch_logs_history_cancel_or_rerun
+    action_menu --> run_action: watch_logs_history_pending_inputs_cancel_or_rerun
     run_action --> action_menu: action_ok
     run_action --> after_root: watch_cancelled_action_error_or_root
     run_action --> t_exit: exit
@@ -203,7 +204,7 @@ stateDiagram-v2
     state "exit_command (terminal)" as t_exit
 
     action_menu --> again_confirm: esc_or_done
-    action_menu --> run_action: build_rerun_watch_logs_history_or_cancel
+    action_menu --> run_action: build_rerun_watch_logs_history_pending_inputs_or_cancel
     run_action --> action_menu: action_ok
     run_action --> again_confirm: watch_cancelled_action_error_or_root
     run_action --> t_exit: exit

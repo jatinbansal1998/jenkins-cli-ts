@@ -200,15 +200,18 @@ describe("structured output registration", () => {
 describe("command help and global options", () => {
   test("all exact-build commands expose the shared selectors", () => {
     for (const command of [
-      "status",
-      "wait",
-      "logs",
-      "artifacts",
-      "tests",
-      "cancel",
-      "rerun",
+      ["status"],
+      ["wait"],
+      ["logs"],
+      ["artifacts"],
+      ["tests"],
+      ["cancel"],
+      ["rerun"],
+      ["input", "list"],
+      ["input", "approve"],
+      ["input", "abort"],
     ]) {
-      const result = runCli([command, "--help"]);
+      const result = runCli([...command, "--help"]);
       expect(result.exitCode).toBe(0);
       expect(result.output).toContain("--build");
       expect(result.output).toContain("--build-url");
@@ -266,6 +269,9 @@ describe("command help and global options", () => {
       ["queue"],
       ["nodes"],
       ["rerun"],
+      ["input", "list"],
+      ["input", "approve"],
+      ["input", "abort"],
       ["auth", "status"],
       ["auth", "list"],
       ["auth", "current"],

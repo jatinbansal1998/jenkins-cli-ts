@@ -150,6 +150,85 @@ export function registerNetworkFaultTests(): void {
         });
       }, 45_000);
 
+      test("reports an unconfirmed input approval after Jenkins commits and the response is lost", async () => {
+        await withProxy(async (proxy) => {
+          await withCliHome(async (home) => {
+            const jobPath = "/job/cli-pipeline-input/";
+            const before = await jenkinsJson<{ nextBuildNumber: number }>(
+              `${jobPath}api/json`,
+            );
+            const triggered = await invokeCli(home, [
+              "build",
+              "--job-url",
+              `${jenkinsUrl}${jobPath}`,
+              "--without-params",
+              "--json",
+            ]);
+            expect(triggered.exitCode, triggered.output).toBe(0);
+            const buildPath = `${jobPath}${before.nextBuildNumber}/`;
+            const deadline = Date.now() + 30_000;
+            let pending = await jenkinsJson<Array<{ id: string }>>(
+              `${buildPath}wfapi/pendingInputActions`,
+            ).catch(() => [] as Array<{ id: string }>);
+            while (pending.length === 0 && Date.now() < deadline) {
+              await Bun.sleep(250);
+              pending = await jenkinsJson<Array<{ id: string }>>(
+                `${buildPath}wfapi/pendingInputActions`,
+              ).catch(() => [] as Array<{ id: string }>);
+            }
+            expect(pending.map((action) => action.id)).toEqual(["ReleaseProd"]);
+
+            proxy.loseNextPost({ type: "timeout", attributes: { timeout: 0 } });
+            const approve = await invokeCli(
+              home,
+              [
+                "input",
+                "approve",
+                "--build-url",
+                `${proxy.url}${buildPath}`,
+                "--yes",
+                "--json",
+              ],
+              { JENKINS_URL: proxy.url },
+            );
+            expect(approve.exitCode, approve.output).not.toBe(0);
+            expect(parseJson(approve)).toMatchObject({
+              ok: false,
+              error: { code: "INPUT_OUTCOME_UNKNOWN" },
+            });
+            await proxy.clear();
+            expect(
+              proxy.requests.filter(
+                (request) =>
+                  request.method === "POST" &&
+                  request.path.endsWith("/wfapi/inputSubmit"),
+              ),
+            ).toHaveLength(1);
+
+            // Jenkins committed the approval even though the CLI never saw
+            // the response: the build proceeds to SUCCESS without a resubmit.
+            const finished = Date.now() + 60_000;
+            let build = await jenkinsJson<{
+              building: boolean;
+              result: string | null;
+            }>(`${buildPath}api/json?tree=building,result`);
+            while (build.building && Date.now() < finished) {
+              await Bun.sleep(250);
+              build = await jenkinsJson(
+                `${buildPath}api/json?tree=building,result`,
+              );
+            }
+            expect(build).toEqual({ building: false, result: "SUCCESS" });
+            proxy.results.push({
+              scenario: "lost input approval response",
+              inputSubmitRequests: 1,
+              cliOutcome: "INPUT_OUTCOME_UNKNOWN",
+              buildResult: build.result,
+            });
+          });
+        });
+      }, 120_000);
+
       test("does not repeat a build or item creation after Jenkins commits and the response is lost", async () => {
         await withProxy(async (proxy) => {
           await withCliHome(async (home) => {

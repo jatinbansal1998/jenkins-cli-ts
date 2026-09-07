@@ -283,6 +283,40 @@ export type PipelineInfo = {
   failure?: JenkinsBuildFailure;
 };
 
+export type PendingInputParameter = {
+  name: string;
+  type?: string;
+  description?: string;
+};
+
+/**
+ * A Pipeline `input` step waiting for a decision. URLs are absolute, already
+ * validated to sit under the owning build, and absent when Jenkins did not
+ * return a usable link for that operation.
+ */
+export type PendingInputAction = {
+  id: string;
+  message: string;
+  proceedText?: string;
+  /** `null` when Jenkins omitted parameter metadata, so approval cannot be
+   * proven parameterless. */
+  parameters: PendingInputParameter[] | null;
+  proceedUrl?: string;
+  abortUrl?: string;
+  approvalUrl?: string;
+};
+
+/** Evidence from one approve/abort POST, before any reconciliation. */
+export type PendingInputSubmission =
+  | { outcome: "accepted" }
+  | {
+      outcome: "rejected";
+      httpStatus: number;
+      detail?: string;
+      redirected: boolean;
+    }
+  | { outcome: "unconfirmed"; reason: string };
+
 export type Crumb = {
   field: string;
   value: string;

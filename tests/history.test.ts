@@ -34,6 +34,7 @@ const isCancelPrompt = (value: unknown): value is symbol =>
   Boolean(isCancelMock(value));
 const runCancelMock = mock(async () => undefined);
 const runLogsMock = mock(async () => undefined);
+const runPendingInputsMenuMock = mock(async () => undefined);
 const runWaitMock = mock(
   async (): Promise<{
     result: string;
@@ -118,6 +119,7 @@ describe("runHistory", () => {
       isCancel: isCancelPrompt,
       runCancel: runCancelMock,
       runLogs: runLogsMock,
+      runPendingInputsMenu: runPendingInputsMenuMock,
       runWait: runWaitMock,
       recordRecentJob: recordRecentJobMock,
       recordBranchSelection: recordBranchSelectionMock,
@@ -507,7 +509,7 @@ describe("runHistory", () => {
       'ERROR: Profile "release" is read-only.',
     );
     expect(errorSpy).toHaveBeenCalledWith(
-      "HINT: Re-run with --confirm-protected to allow builds, cancels, creates, and reruns.",
+      "HINT: Re-run with --confirm-protected to allow builds, cancels, creates, reruns, and input approvals or aborts.",
     );
     // Both blocks kept the build action menu open: two blocked selections, the
     // read action, the back-out, then the history page prompt again.

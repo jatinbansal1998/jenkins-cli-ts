@@ -46,6 +46,7 @@ import {
 } from "../stage-count-cache";
 import { runCancel } from "./cancel";
 import { runHistory } from "./history";
+import { runPendingInputsMenu } from "./input";
 import { runLogs } from "./logs";
 import { printRerunResult, rerunLastBuildForJob } from "./rerun-core";
 import {
@@ -145,6 +146,7 @@ type BuildDeps = {
   runCancel: typeof runCancel;
   runHistory: typeof runHistory;
   runLogs: typeof runLogs;
+  runPendingInputsMenu: typeof runPendingInputsMenu;
 };
 
 const defaultBuildDeps: BuildDeps = {
@@ -169,6 +171,7 @@ const defaultBuildDeps: BuildDeps = {
   runCancel,
   runHistory,
   runLogs,
+  runPendingInputsMenu,
 };
 
 let activeBuildDeps: BuildDeps = defaultBuildDeps;
@@ -429,6 +432,21 @@ export async function runBuild(options: BuildOptions): Promise<BuildRunResult> {
                   queueUrl: historyResult.activeBuild.queueUrl,
                 };
               }
+              return "action_ok";
+            }, "action_error"),
+          );
+        }
+
+        if (action === "pending_inputs") {
+          return await runTrackedBuildAction("input", () =>
+            runMenuAction(async (): Promise<ActionEffectResult> => {
+              await deps.runPendingInputsMenu({
+                client: options.client,
+                env: options.env,
+                jobLabel: displayJob,
+                buildUrl: activeBuild.buildUrl,
+                jobUrl: activeBuild.buildUrl ? undefined : resolvedJobUrl,
+              });
               return "action_ok";
             }, "action_error"),
           );
