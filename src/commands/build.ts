@@ -445,7 +445,11 @@ export async function runBuild(options: BuildOptions): Promise<BuildRunResult> {
                 env: options.env,
                 jobLabel: displayJob,
                 buildUrl: activeBuild.buildUrl,
-                jobUrl: activeBuild.buildUrl ? undefined : resolvedJobUrl,
+                queueUrl: activeBuild.queueUrl,
+                jobUrl:
+                  !activeBuild.buildUrl && !activeBuild.queueUrl
+                    ? resolvedJobUrl
+                    : undefined,
               });
               return "action_ok";
             }, "action_error"),

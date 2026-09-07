@@ -70,6 +70,11 @@ function fakeClient(options: {
       building: true,
       result: null,
     })),
+    getQueueBuild: mock(
+      async (
+        _queueUrl: string,
+      ): Promise<{ buildUrl?: string; buildNumber?: number }> => ({}),
+    ),
     listPendingInputActions: mock(async (_buildUrl: string) => {
       const page = pages.length > 1 ? pages.shift() : pages[0];
       return page ?? [];
@@ -160,6 +165,72 @@ describe("runPendingInputsMenu", () => {
     expect(client.listPendingInputActions).toHaveBeenCalledWith(
       `${JOB_URL}/127/`,
     );
+  });
+
+  test("resolves a queued trigger to its build instead of the job's latest build", async () => {
+    const client = fakeClient({ pending: [[]] });
+    const queueUrl = `${JENKINS_URL}/queue/item/9/`;
+    client.getQueueBuild.mockImplementation(async () => ({
+      buildUrl: `${JOB_URL}/129/`,
+      buildNumber: 129,
+    }));
+    scriptPrompts([]);
+
+    await runPendingInputsMenu({
+      client: asClient(client),
+      env,
+      queueUrl,
+      jobUrl: JOB_URL,
+      jobLabel: "deploy",
+    });
+
+    expect(client.getQueueBuild).toHaveBeenCalledWith(queueUrl);
+    expect(client.getJobStatus).not.toHaveBeenCalled();
+    expect(client.getBuildStatus).toHaveBeenCalledWith(`${JOB_URL}/129/`);
+  });
+
+  test("a still-queued trigger returns without touching any build", async () => {
+    const client = fakeClient({ pending: [[releaseAction]] });
+    scriptPrompts([]);
+
+    await runPendingInputsMenu({
+      client: asClient(client),
+      env,
+      queueUrl: `${JENKINS_URL}/queue/item/9/`,
+      jobUrl: JOB_URL,
+      jobLabel: "deploy",
+    });
+
+    expect(client.getJobStatus).not.toHaveBeenCalled();
+    expect(client.getBuildStatus).not.toHaveBeenCalled();
+    expect(client.listPendingInputActions).not.toHaveBeenCalled();
+    expect(logged()).toContain("deploy is still queued");
+  });
+
+  test("only offers operations Jenkins returned a usable link for", async () => {
+    const abortOnly: PendingInputAction = {
+      ...releaseAction,
+      id: "AbortOnly",
+      proceedUrl: undefined,
+    };
+    const client = fakeClient({ pending: [[abortOnly]] });
+    const { select } = scriptPrompts(["AbortOnly", BACK, BACK]);
+
+    await runPendingInputsMenu({
+      client: asClient(client),
+      env,
+      buildUrl: BUILD_URL,
+      jobLabel: "deploy",
+    });
+
+    const operationPrompt = select.mock.calls[1]?.[0] as {
+      options: Array<{ value: string }>;
+    };
+    expect(operationPrompt.options.map((option) => option.value)).toEqual([
+      "abort",
+      BACK,
+    ]);
+    expect(client.submitPendingInput).not.toHaveBeenCalled();
   });
 
   test("listing and selecting never submit; Back returns to the caller", async () => {

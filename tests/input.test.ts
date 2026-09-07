@@ -338,7 +338,35 @@ describe("input list", () => {
     });
 
     expect(logged()).toContain("Release: Danger line two");
-    expect(logged()).not.toContain("");
+    expect(logged()).not.toContain("\u001b");
+  });
+
+  test("sanitizes terminal control sequences in action ids for display only", async () => {
+    const client = fakeClient({
+      pending: [[{ ...releaseAction, id: "Rel\u001b[31mease\u0007" }]],
+    });
+
+    await runInputList({
+      client: asClient(client),
+      env,
+      buildUrl: BUILD_URL,
+      nonInteractive: true,
+    });
+    expect(logged()).toContain("  - Release: Deploy to production?");
+    expect(logged()).not.toContain("\u001b");
+
+    const output = sink();
+    await runInputList({
+      client: asClient(client),
+      env,
+      buildUrl: BUILD_URL,
+      nonInteractive: true,
+      json: true,
+      write: output.write,
+    });
+    const actions = output.document().data?.actions as
+      Array<{ id: string }> | undefined;
+    expect(actions?.[0]?.id).toBe("Rel\u001b[31mease\u0007");
   });
 });
 
@@ -733,6 +761,23 @@ describe("interactive confirmation", () => {
 
     expect(client.submitPendingInput).not.toHaveBeenCalled();
     expect(logged()).toContain("OK: Approval skipped.");
+  });
+
+  test("--yes skips the prompt even in an interactive terminal", async () => {
+    const client = fakeClient({ pending: [[releaseAction]] });
+    const confirm = mock(async (_options: unknown) => false);
+    setDeps({ confirm });
+
+    await runInputApprove({
+      client: asClient(client),
+      env,
+      buildUrl: BUILD_URL,
+      nonInteractive: false,
+      yes: true,
+    });
+
+    expect(confirm).not.toHaveBeenCalled();
+    expect(client.submitPendingInput).toHaveBeenCalledTimes(1);
   });
 
   test("Esc during confirmation cancels without submitting", async () => {

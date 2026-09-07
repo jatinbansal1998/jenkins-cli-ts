@@ -113,6 +113,9 @@ export async function runStatus(options: StatusOptions): Promise<void> {
     }
 
     const showSeparators = targets.length > 1;
+    // The build shown for each job is the one follow-up actions must act on,
+    // even if a newer build starts while the menu is open.
+    const displayedBuildUrls = new Map<string, string>();
     for (const [index, target] of targets.entries()) {
       if (showSeparators && index > 0) {
         console.log("");
@@ -137,6 +140,9 @@ export async function runStatus(options: StatusOptions): Promise<void> {
 
       const result = status.building ? "RUNNING" : status.result || "UNKNOWN";
       const url = status.buildUrl || target.jobUrl;
+      if (status.buildUrl) {
+        displayedBuildUrls.set(target.jobUrl, status.buildUrl);
+      }
       const knownTotalStages = await getKnownStageTotal({
         env: options.env,
         jobUrl: target.jobUrl,
@@ -233,10 +239,14 @@ export async function runStatus(options: StatusOptions): Promise<void> {
         if (action === "pending_inputs") {
           return await runTrackedStatusAction("input", () =>
             runMenuAction(async (): Promise<ActionEffectResult> => {
+              const displayedBuildUrl = displayedBuildUrls.get(
+                primaryTarget.jobUrl,
+              );
               await runPendingInputsMenu({
                 client: options.client,
                 env: options.env,
-                jobUrl: primaryTarget.jobUrl,
+                buildUrl: displayedBuildUrl,
+                jobUrl: displayedBuildUrl ? undefined : primaryTarget.jobUrl,
                 jobLabel: primaryTarget.jobLabel,
               });
               return "action_ok";

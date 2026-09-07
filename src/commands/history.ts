@@ -382,7 +382,11 @@ async function runHistoryRebuildPostFlow(options: {
             env: options.env,
             jobLabel: options.jobLabel,
             buildUrl: activeBuild.buildUrl,
-            jobUrl: activeBuild.buildUrl ? undefined : options.jobUrl,
+            queueUrl: activeBuild.queueUrl,
+            jobUrl:
+              !activeBuild.buildUrl && !activeBuild.queueUrl
+                ? options.jobUrl
+                : undefined,
           });
           return "action_ok";
         }, "action_error");

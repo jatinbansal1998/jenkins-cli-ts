@@ -33,14 +33,8 @@ function jsonResponse(body: unknown, status = 200): Response {
   });
 }
 
-function redirectedResponse(body: string, url: string): Response {
-  const response = new Response(body, {
-    status: 200,
-    headers: { "content-type": "text/html" },
-  });
-  Object.defineProperty(response, "redirected", { value: true });
-  Object.defineProperty(response, "url", { value: url });
-  return response;
+function redirectResponse(location: string): Response {
+  return new Response("", { status: 302, headers: { location } });
 }
 
 function installFetch(
@@ -136,14 +130,15 @@ describe("JenkinsClient.listPendingInputActions", () => {
     expect(error.message).toContain("HTML page");
   });
 
-  test("reports a followed redirect as a login redirect", async () => {
-    installFetch(async () =>
-      redirectedResponse("<html>login</html>", `${BASE_URL}/login`),
+  test("does not follow redirects and reports them as a login redirect", async () => {
+    const fetchMock = installFetch(async () =>
+      redirectResponse(`${BASE_URL}/login`),
     );
     const error = await captureError(() =>
       createClient().listPendingInputActions(BUILD_URL),
     );
     expect(error.code).toBe("JENKINS_LOGIN_REDIRECT");
+    expect(fetchMock.mock.calls[0]?.[1]?.redirect).toBe("manual");
   });
 
   test("rejects non-array JSON and malformed JSON", async () => {
@@ -295,9 +290,9 @@ describe("JenkinsClient.submitPendingInput", () => {
     }
   });
 
-  test("treats a followed redirect as a rejection, never as success", async () => {
-    installFetch(async () =>
-      redirectedResponse("<html>login</html>", `${BASE_URL}/login`),
+  test("never follows a redirect on submit and treats it as a rejection", async () => {
+    const fetchMock = installFetch(async () =>
+      redirectResponse(`${BASE_URL}/login`),
     );
 
     const result = await createClient().submitPendingInput({
@@ -305,9 +300,11 @@ describe("JenkinsClient.submitPendingInput", () => {
       operation: "abort",
     });
 
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock.mock.calls[0]?.[1]?.redirect).toBe("manual");
     expect(result).toEqual({
       outcome: "rejected",
-      httpStatus: 200,
+      httpStatus: 302,
       redirected: true,
       detail: `redirected to ${BASE_URL}/login`,
     });

@@ -195,7 +195,7 @@ async function runInputMutation(
     operation,
     target,
     action,
-    confirm: nonInteractive ? undefined : promptConfirmation,
+    confirm: nonInteractive || options.yes ? undefined : promptConfirmation,
   });
   if (result.kind === "cancelled") {
     throw new CliError("Operation cancelled.");
@@ -215,13 +215,28 @@ export async function runPendingInputsMenu(options: {
   jobLabel?: string;
   jobUrl?: string;
   buildUrl?: string;
+  /** A build the caller triggered that may not have left the queue yet. */
+  queueUrl?: string;
 }): Promise<void> {
   const deps = activeInputDeps;
+  let buildUrl = options.buildUrl;
+  if (!buildUrl && options.queueUrl) {
+    // Never fall back to the job's latest build for a queued trigger: that
+    // could be the previous run. Wait for the queue item to become a build.
+    const queued = await options.client.getQueueBuild(options.queueUrl);
+    if (!queued?.buildUrl) {
+      printOk(
+        `${options.jobLabel ?? options.queueUrl} is still queued; pending inputs appear once the build starts.`,
+      );
+      return;
+    }
+    buildUrl = queued.buildUrl;
+  }
   const target = await resolveInputBuild({
     client: options.client,
     env: options.env,
-    jobUrl: options.buildUrl ? undefined : options.jobUrl,
-    buildUrl: options.buildUrl,
+    jobUrl: buildUrl ? undefined : options.jobUrl,
+    buildUrl,
     nonInteractive: true,
   });
   if (options.jobLabel) {
@@ -243,7 +258,7 @@ export async function runPendingInputsMenu(options: {
       options: [
         ...actions.map((action) => ({
           value: action.id,
-          label: `${action.id}: ${displayMessage(action)}`,
+          label: `${displayId(action)}: ${displayMessage(action)}`,
         })),
         { value: BACK_VALUE, label: "Back" },
       ],
@@ -256,11 +271,16 @@ export async function runPendingInputsMenu(options: {
       continue;
     }
 
+    // Only offer what Jenkins returned a usable link for. A parameterized
+    // approval stays visible (labelled unsupported) so the user gets the
+    // stable error and the Jenkins link instead of a silently missing option.
     const operation = await deps.select({
-      message: `Input "${action.id}" on ${buildLabel(target)}: ${displayMessage(action)}`,
+      message: `Input "${displayId(action)}" on ${buildLabel(target)}: ${displayMessage(action)}`,
       options: [
-        { value: "approve", label: approveLabel(action) },
-        { value: "abort", label: "Abort" },
+        ...(action.proceedUrl
+          ? [{ value: "approve", label: approveLabel(action) }]
+          : []),
+        ...(action.abortUrl ? [{ value: "abort", label: "Abort" }] : []),
         { value: BACK_VALUE, label: "Back" },
       ],
     });
@@ -379,8 +399,8 @@ async function selectPendingInput(options: {
     if (!match) {
       recordInputOutcome("not_pending");
       throw new CliError(
-        `No pending input action with id "${requestedId}" on ${label}.`,
-        [`Pending ids: ${actions.map((action) => action.id).join(", ")}.`],
+        `No pending input action with id "${sanitizeInputText(requestedId)}" on ${label}.`,
+        [`Pending ids: ${actions.map(displayId).join(", ")}.`],
         "INPUT_ACTION_NOT_FOUND",
       );
     }
@@ -394,7 +414,7 @@ async function selectPendingInput(options: {
   if (options.nonInteractive) {
     throw new CliError(
       `${label} has ${actions.length} pending input actions; pass --id to choose one.`,
-      [`Pending ids: ${actions.map((action) => action.id).join(", ")}.`],
+      [`Pending ids: ${actions.map(displayId).join(", ")}.`],
       "INPUT_ACTION_AMBIGUOUS",
     );
   }
@@ -404,7 +424,7 @@ async function selectPendingInput(options: {
     message: `Select a pending input on ${label}`,
     options: actions.map((action) => ({
       value: action.id,
-      label: `${action.id}: ${displayMessage(action)}`,
+      label: `${displayId(action)}: ${displayMessage(action)}`,
     })),
   });
   if (deps.isCancel(selected)) {
@@ -468,7 +488,7 @@ async function settlePendingInput(options: {
   const url = operation === "approve" ? action.proceedUrl : action.abortUrl;
   if (!url) {
     throw new CliError(
-      `Jenkins did not return a usable ${operation} URL for input "${action.id}".`,
+      `Jenkins did not return a usable ${operation} URL for input "${displayId(action)}".`,
       [
         "The link was missing or pointed outside this build on the active controller, so nothing was submitted.",
         ...inspectInJenkinsHint(action, target),
@@ -495,7 +515,7 @@ async function settlePendingInput(options: {
   if (submission.outcome === "unconfirmed") {
     recordInputOutcome("unknown");
     throw new CliError(
-      `The ${operation} request for input "${action.id}" on ${buildLabel(target)} could not be confirmed: ${submission.reason}`,
+      `The ${operation} request for input "${displayId(action)}" on ${buildLabel(target)} could not be confirmed: ${submission.reason}`,
       [
         stillPending === true
           ? "The input was still pending when re-read, but the request may still be processed. Inspect the build in Jenkins before retrying."
@@ -518,7 +538,7 @@ function assertParameterlessApproval(action: PendingInputAction): void {
   if (action.parameters === null) {
     recordInputOutcome("parameters_unknown");
     throw new CliError(
-      `Jenkins did not report whether input "${action.id}" requires parameters, so it cannot be approved from the CLI.`,
+      `Jenkins did not report whether input "${displayId(action)}" requires parameters, so it cannot be approved from the CLI.`,
       [
         "Approve it in Jenkins instead; aborting from the CLI is still supported.",
       ],
@@ -528,7 +548,7 @@ function assertParameterlessApproval(action: PendingInputAction): void {
   if (action.parameters.length > 0) {
     recordInputOutcome("unsupported_parameters");
     throw new CliError(
-      `Input "${action.id}" requires ${action.parameters.length} parameter${action.parameters.length === 1 ? "" : "s"} (${action.parameters.map((parameter) => parameter.name).join(", ")}); parameterized approval is not supported by the CLI.`,
+      `Input "${displayId(action)}" requires ${action.parameters.length} parameter${action.parameters.length === 1 ? "" : "s"} (${action.parameters.map((parameter) => parameter.name).join(", ")}); parameterized approval is not supported by the CLI.`,
       [
         "Approve it in Jenkins to supply the values; aborting from the CLI is still supported.",
         ...(action.approvalUrl ? [`Open ${action.approvalUrl}`] : []),
@@ -562,7 +582,7 @@ function staleActionError(
     ? ` Jenkins rejected this ${operation} with HTTP ${submission.httpStatus}${submission.detail ? ` (${submission.detail})` : ""}.`
     : "";
   return new CliError(
-    `Input "${id}" on ${buildLabel(target)} is no longer pending; another user, a timeout, or a build cancellation settled it, so this ${operation} was not applied.${rejection}`,
+    `Input "${sanitizeInputText(id)}" on ${buildLabel(target)} is no longer pending; another user, a timeout, or a build cancellation settled it, so this ${operation} was not applied.${rejection}`,
     ["Run `input list` to see the build's current pending inputs."],
     "INPUT_ACTION_STALE",
   );
@@ -575,7 +595,7 @@ function rejectionError(
   submission: Extract<PendingInputSubmission, { outcome: "rejected" }>,
 ): CliError {
   const detail = submission.detail ?? "";
-  const where = `input "${action.id}" on ${buildLabel(target)}`;
+  const where = `input "${displayId(action)}" on ${buildLabel(target)}`;
   const inspect = inspectInJenkinsHint(action, target);
   if (submission.redirected) {
     recordInputOutcome("login_redirect");
@@ -643,9 +663,11 @@ async function promptConfirmation(options: {
   const deps = activeInputDeps;
   const verb = options.operation === "approve" ? "Approve" : "Abort";
   printOk(`Build: ${buildLabel(options.target)} (${options.target.buildUrl})`);
-  printOk(`Input: ${options.action.id}: ${displayMessage(options.action)}`);
+  printOk(
+    `Input: ${displayId(options.action)}: ${displayMessage(options.action)}`,
+  );
   const response = await deps.confirm({
-    message: `${verb} input "${options.action.id}" on ${buildLabel(options.target)}?`,
+    message: `${verb} input "${displayId(options.action)}" on ${buildLabel(options.target)}?`,
     initialValue: false,
   });
   if (deps.isCancel(response)) {
@@ -665,7 +687,7 @@ function printSettleResult(
   }
   const { receipt } = result;
   printOk(
-    `${receipt.disposition === "approved" ? "Approved" : "Aborted"} input "${receipt.action.id}" on ${buildLabel(target)}.`,
+    `${receipt.disposition === "approved" ? "Approved" : "Aborted"} input "${sanitizeInputText(receipt.action.id)}" on ${buildLabel(target)}.`,
   );
   printOk(`Build URL: ${target.buildUrl}`);
 }
@@ -684,7 +706,7 @@ function printPendingInputs(
     `${actions.length} pending input action${actions.length === 1 ? "" : "s"}:`,
   );
   for (const action of actions) {
-    console.log(`  - ${action.id}: ${displayMessage(action)}`);
+    console.log(`  - ${displayId(action)}: ${displayMessage(action)}`);
     const parameters =
       action.parameters === null
         ? "unknown"
@@ -713,6 +735,11 @@ function approveLabel(action: PendingInputAction): string {
   return action.proceedText
     ? `Approve (${sanitizeInputText(action.proceedText)})`
     : "Approve";
+}
+
+/** Terminal-safe copy of the id; the raw id stays authoritative for matching and URLs. */
+function displayId(action: PendingInputAction): string {
+  return sanitizeInputText(action.id) || "(unprintable id)";
 }
 
 function displayMessage(action: PendingInputAction): string {

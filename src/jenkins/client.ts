@@ -927,13 +927,15 @@ export class JenkinsClient {
   ): Promise<PendingInputAction[]> {
     const context = "fetch pending input actions";
     const url = this.withJob(buildUrl, "wfapi/pendingInputActions");
+    // Redirects are never followed: a login or proxy redirect must surface as
+    // an error rather than an HTML page parsed as "no pending inputs".
     const response = await this.fetchWithTimeout(
       url,
-      { method: "GET", headers: this.authHeaders() },
+      { method: "GET", headers: this.authHeaders(), redirect: "manual" },
       1,
       context,
     );
-    if (response.redirected) {
+    if (isRedirect(response)) {
       recordJenkinsApiFailure({
         operation: toAnalyticsOperation(context),
         errorType: "http_error",
@@ -1040,6 +1042,9 @@ export class JenkinsClient {
         url: options.url,
         context,
         transportRetries: 0,
+        // Following a redirect would replay the crumb header elsewhere and
+        // turn the POST into a GET; a 3xx is treated as "not submitted".
+        redirect: "manual",
         // `wfapi/inputSubmit` parses a `json` form field; an empty object is
         // the parameterless approval.
         ...(options.operation === "approve"
@@ -1052,17 +1057,18 @@ export class JenkinsClient {
       }
       return { outcome: "unconfirmed", reason: error.message };
     }
-    if (response.redirected) {
+    if (isRedirect(response)) {
       recordJenkinsApiFailure({
         operation: toAnalyticsOperation(context),
         errorType: "http_error",
         httpStatus: response.status,
       });
+      const location = response.headers.get("location");
       return {
         outcome: "rejected",
         httpStatus: response.status,
         redirected: true,
-        detail: `redirected to ${response.url}`,
+        detail: location ? `redirected to ${location}` : "redirected",
       };
     }
     if (response.ok) {
@@ -1314,10 +1320,12 @@ export class JenkinsClient {
     body?: string;
     contentType?: string;
     transportRetries?: number;
+    redirect?: RequestInit["redirect"];
   }): Promise<Response> {
     const contentType =
       options.contentType ?? "application/x-www-form-urlencoded";
     const transportRetries = options.transportRetries ?? 1;
+    const redirect = options.redirect ?? "follow";
     if (!this.useCrumb) {
       const headers: Record<string, string> = {
         Authorization: this.authHeader,
@@ -1330,6 +1338,7 @@ export class JenkinsClient {
         {
           method: "POST",
           headers,
+          redirect,
           ...(options.body !== undefined ? { body: options.body } : {}),
         },
         transportRetries,
@@ -1353,6 +1362,7 @@ export class JenkinsClient {
         {
           method: "POST",
           headers,
+          redirect,
           ...(options.body !== undefined ? { body: options.body } : {}),
         },
         transportRetries,
@@ -1790,6 +1800,10 @@ function loginRedirectError(context: string): CliError {
     ],
     "JENKINS_LOGIN_REDIRECT",
   );
+}
+
+function isRedirect(response: Response): boolean {
+  return response.status >= 300 && response.status < 400;
 }
 
 function isHtmlBody(contentType: string, body: string): boolean {
