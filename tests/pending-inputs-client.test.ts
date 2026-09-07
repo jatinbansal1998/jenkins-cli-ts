@@ -362,6 +362,79 @@ describe("JenkinsClient.submitPendingInput", () => {
     }
   });
 
+  test("a 2xx whose body stalls past the deadline is unconfirmed within the deadline", async () => {
+    for (const operation of ["approve", "abort"] as const) {
+      // Like real fetch, aborting the request signal fails the body read.
+      const fetchMock = installFetch(async (_input, init) => {
+        const stream = new ReadableStream<Uint8Array>({
+          start(controller) {
+            controller.enqueue(new TextEncoder().encode("{"));
+            init?.signal?.addEventListener("abort", () => {
+              controller.error(new DOMException("aborted", "AbortError"));
+            });
+          },
+        });
+        return new Response(stream, {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        });
+      });
+      const client = new JenkinsClient({
+        baseUrl: BASE_URL,
+        user: "user",
+        apiToken: "token",
+        timeoutMs: 100,
+      });
+
+      const startedAt = Date.now();
+      const result = await client.submitPendingInput({
+        url: operation === "approve" ? PROCEED_URL : ABORT_URL,
+        operation,
+      });
+      const elapsed = Date.now() - startedAt;
+
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      expect(elapsed).toBeLessThan(1_500);
+      expect(result.outcome).toBe("unconfirmed");
+      if (result.outcome === "unconfirmed") {
+        expect(result.reason).toContain("did not finish within 100ms");
+      }
+    }
+  }, 5_000);
+
+  test("a gateway error whose body stalls is still unconfirmed within the deadline", async () => {
+    installFetch(async (_input, init) => {
+      const stream = new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(new TextEncoder().encode("<html>"));
+          init?.signal?.addEventListener("abort", () => {
+            controller.error(new DOMException("aborted", "AbortError"));
+          });
+        },
+      });
+      return new Response(stream, {
+        status: 502,
+        headers: { "content-type": "text/html" },
+      });
+    });
+    const client = new JenkinsClient({
+      baseUrl: BASE_URL,
+      user: "user",
+      apiToken: "token",
+      timeoutMs: 100,
+    });
+
+    const result = await client.submitPendingInput({
+      url: ABORT_URL,
+      operation: "abort",
+    });
+
+    expect(result.outcome).toBe("unconfirmed");
+    if (result.outcome === "unconfirmed") {
+      expect(result.reason).toContain("HTTP 502");
+    }
+  }, 5_000);
+
   test("accepts Jenkins' empty and JSON success bodies", async () => {
     for (const body of ["", "null", "{}"]) {
       installFetch(

@@ -1036,12 +1036,29 @@ export class JenkinsClient {
       // plain error rather than an unconfirmed submission.
       await this.getCrumb();
     }
+    // One deadline covers headers and body: the shared header timeout is
+    // released as soon as headers arrive, and a proxy that stalls the body
+    // must not hang the command or keep the connection open.
+    const { controller, cleanup } = withTimeout(this.timeoutMs);
+    try {
+      return await this.sendPendingInputRequest(options, context, controller);
+    } finally {
+      cleanup();
+    }
+  }
+
+  private async sendPendingInputRequest(
+    options: { url: string; operation: "approve" | "abort" },
+    context: string,
+    controller: AbortController,
+  ): Promise<PendingInputSubmission> {
     let response: Response;
     try {
       response = await this.sendPostWithCrumbRetry({
         url: options.url,
         context,
         transportRetries: 0,
+        signal: controller.signal,
         // Following a redirect would replay the crumb header elsewhere and
         // turn the POST into a GET; a 3xx is treated as "not submitted".
         redirect: "manual",
@@ -1074,19 +1091,21 @@ export class JenkinsClient {
     if (response.ok) {
       // Jenkins answers these POSTs with an empty or JSON body. An HTML page
       // with 2xx is an SSO/login proxy that swallowed the request. A body
-      // that cannot be read completely is not evidence of anything.
+      // that cannot be read completely, or that stalls past the request
+      // deadline (which only covered the headers), is not evidence of anything.
       let body: string;
       try {
         body = await response.text();
       } catch (error) {
+        const timedOut = controller.signal.aborted;
         recordJenkinsApiFailure({
           operation: toAnalyticsOperation(context),
-          errorType: "network_error",
+          errorType: timedOut ? "timeout" : "network_error",
           httpStatus: response.status,
         });
         return {
           outcome: "unconfirmed",
-          reason: `the HTTP ${response.status} response body could not be read while trying to ${context}${error instanceof Error && error.message ? ` (${error.message})` : ""}`,
+          reason: `the HTTP ${response.status} response body could not be read while trying to ${context} (${timedOut ? `body did not finish within ${this.timeoutMs}ms` : error instanceof Error && error.message ? error.message : "read failed"})`,
         };
       }
       const contentType =
@@ -1112,6 +1131,8 @@ export class JenkinsClient {
       httpStatus: response.status,
       retryAttempted: this.useCrumb && response.status === 403,
     });
+    // The abort signal also bounds this read; a stalled error body yields no
+    // detail rather than a hang.
     const detail = await readJenkinsErrorDetail(response);
     if (isGatewayError(response.status)) {
       // A gateway can lose Jenkins' reply after Jenkins committed the input,
@@ -1362,6 +1383,7 @@ export class JenkinsClient {
     contentType?: string;
     transportRetries?: number;
     redirect?: RequestInit["redirect"];
+    signal?: AbortSignal;
   }): Promise<Response> {
     const contentType =
       options.contentType ?? "application/x-www-form-urlencoded";
@@ -1380,6 +1402,7 @@ export class JenkinsClient {
           method: "POST",
           headers,
           redirect,
+          ...(options.signal ? { signal: options.signal } : {}),
           ...(options.body !== undefined ? { body: options.body } : {}),
         },
         transportRetries,
@@ -1404,6 +1427,7 @@ export class JenkinsClient {
           method: "POST",
           headers,
           redirect,
+          ...(options.signal ? { signal: options.signal } : {}),
           ...(options.body !== undefined ? { body: options.body } : {}),
         },
         transportRetries,
@@ -1517,7 +1541,12 @@ export class JenkinsClient {
     try {
       const response = await fetch(url, {
         ...options,
-        signal: controller.signal,
+        // A caller-provided signal outlives the header deadline, so callers
+        // that read a body can keep one bounded deadline over the whole
+        // exchange.
+        signal: options.signal
+          ? AbortSignal.any([options.signal, controller.signal])
+          : controller.signal,
       });
       // Jenkins responses can contain password parameter defaults or values.
       // Keep response bodies out of persistent debug logs for every method.
