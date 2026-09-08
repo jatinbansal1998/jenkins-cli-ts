@@ -1774,13 +1774,20 @@ describe("JenkinsClient createItem", () => {
       configXml: "<project/>",
       copyFrom: "/api",
     } as unknown as Parameters<typeof client.createItem>[0];
+    const nullConfigXml = {
+      name: "invalid",
+      configXml: null,
+    } as unknown as Parameters<typeof client.createItem>[0];
+    const nullCopyFrom = {
+      name: "invalid",
+      copyFrom: null,
+    } as unknown as Parameters<typeof client.createItem>[0];
 
-    await expect(client.createItem(neither)).rejects.toThrow(
-      "createItem requires exactly one of configXml or copyFrom.",
-    );
-    await expect(client.createItem(both)).rejects.toThrow(
-      "createItem requires exactly one of configXml or copyFrom.",
-    );
+    for (const invalid of [neither, both, nullConfigXml, nullCopyFrom]) {
+      await expect(client.createItem(invalid)).rejects.toThrow(
+        "createItem requires exactly one of configXml or copyFrom.",
+      );
+    }
     expect(fetchMock).not.toHaveBeenCalled();
   });
 

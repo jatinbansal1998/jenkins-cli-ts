@@ -364,10 +364,9 @@ export class JenkinsClient {
     const context = "create item";
     // The type already forces one mode, but JavaScript callers can bypass it;
     // without a body or copy mode Jenkins would reject or miscreate the item.
-    if (
-      (options.configXml === undefined) ===
-      (options.copyFrom === undefined)
-    ) {
+    const hasConfigXml = typeof options.configXml === "string";
+    const hasCopyFrom = typeof options.copyFrom === "string";
+    if (hasConfigXml === hasCopyFrom) {
       throw new CliError(
         "createItem requires exactly one of configXml or copyFrom.",
       );
