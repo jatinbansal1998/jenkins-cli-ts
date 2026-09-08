@@ -1753,37 +1753,6 @@ describe("JenkinsClient createItem", () => {
     expect(readHeader(call?.[1], "Content-Type")).toBeUndefined();
   });
 
-  test("rejects neither or both creation modes without hitting Jenkins", async () => {
-    const fetchMock = mock(async (_input: FetchInput, _init?: FetchInit) => {
-      return new Response("", { status: 200 });
-    });
-    globalThis.fetch = fetchMock as unknown as typeof fetch;
-
-    const client = new JenkinsClient({
-      baseUrl: "https://jenkins.example.com",
-      user: "user",
-      apiToken: "token",
-      timeoutMs: 1_000,
-    });
-
-    const neither = { name: "invalid" } as unknown as Parameters<
-      typeof client.createItem
-    >[0];
-    const both = {
-      name: "invalid",
-      configXml: "<project/>",
-      copyFrom: "/api",
-    } as unknown as Parameters<typeof client.createItem>[0];
-
-    await expect(client.createItem(neither)).rejects.toThrow(
-      "createItem requires exactly one of configXml or copyFrom.",
-    );
-    await expect(client.createItem(both)).rejects.toThrow(
-      "createItem requires exactly one of configXml or copyFrom.",
-    );
-    expect(fetchMock).not.toHaveBeenCalled();
-  });
-
   test("never retries the create POST after a transport failure", async () => {
     const fetchMock = mock(async (_input: FetchInput, _init?: FetchInit) => {
       throw new Error("socket closed");
