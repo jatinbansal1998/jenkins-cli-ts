@@ -8,11 +8,9 @@ import {
 } from "../src/flows/handlers";
 import { resetValidatedFlowsForTesting, runFlow } from "../src/flows/runner";
 import type {
-  AutocompletePromptValue,
   AutocompletePromptResult,
   BuildPreContext,
   BuildPostContext,
-  FlowPromptValue,
   ListInteractiveContext,
   PromptAdapter,
   StatusPostContext,
@@ -369,137 +367,5 @@ describe("flow runner", () => {
     ).rejects.toThrow(
       "Prompt adapter is missing branchPicker support for a branchPicker prompt.",
     );
-  });
-
-  test("dynamic autocomplete prompts bypass clack's default text filter", async () => {
-    resetValidatedFlowsForTesting();
-    const prompts: PromptAdapter = {
-      autocomplete: async (options) => {
-        const option = {
-          value:
-            "https://jenkins.example.com/job/crypto-order-matching-engine/",
-          label: "crypto-order-matching-engine",
-        };
-
-        expect(options.filter?.("matching engine", option)).toBeTrue();
-        const resolvedOptions =
-          typeof options.options === "function"
-            ? options.options.call({ userInput: "matching engine" })
-            : options.options;
-
-        expect(resolvedOptions).toContainEqual(option);
-        return option.value;
-      },
-      select: async () => "",
-      confirm: async () => false,
-      text: async () => "",
-      isCancel: () => false,
-    };
-
-    const result = await runFlow({
-      definition: {
-        id: "listInteractive",
-        initialState: "search",
-        states: {
-          search: {
-            prompt: {
-              kind: "autocomplete",
-              message: "Search",
-              options: (_context, search) =>
-                search === "matching engine"
-                  ? [
-                      {
-                        value:
-                          "https://jenkins.example.com/job/crypto-order-matching-engine/",
-                        label: "crypto-order-matching-engine",
-                      },
-                    ]
-                  : [],
-            },
-            transitions: {
-              "select:https://jenkins.example.com/job/crypto-order-matching-engine/":
-                "complete",
-            },
-          },
-        },
-      },
-      handlers: {},
-      prompts,
-      context: {},
-    });
-
-    expect(result.terminal).toBe("complete");
-  });
-
-  test("static autocomplete prompts preserve the current user input", async () => {
-    resetValidatedFlowsForTesting();
-    type CaptureContext = { captured?: AutocompletePromptValue };
-    const context: CaptureContext = {};
-    const prompts: PromptAdapter = {
-      autocomplete: async (options) => {
-        const resolvedOptions =
-          typeof options.options === "function"
-            ? options.options.call({ userInput: "matching engine" })
-            : options.options;
-
-        expect(resolvedOptions).toContainEqual({
-          value:
-            "https://jenkins.example.com/job/crypto-order-matching-engine/",
-          label: "crypto-order-matching-engine",
-        });
-        return "https://jenkins.example.com/job/crypto-order-matching-engine/";
-      },
-      select: async () => "",
-      confirm: async () => false,
-      text: async () => "",
-      isCancel: () => false,
-    };
-
-    const result = await runFlow({
-      definition: {
-        id: "listInteractive",
-        initialState: "search",
-        states: {
-          search: {
-            prompt: {
-              kind: "autocomplete",
-              message: "Search",
-              options: [
-                {
-                  value:
-                    "https://jenkins.example.com/job/crypto-order-matching-engine/",
-                  label: "crypto-order-matching-engine",
-                },
-              ],
-            },
-            onSelect: "capture",
-            transitions: {
-              "select:https://jenkins.example.com/job/crypto-order-matching-engine/":
-                "complete",
-            },
-          },
-        },
-      },
-      handlers: {
-        capture: ({
-          context: captureContext,
-          input,
-        }: {
-          context: CaptureContext;
-          input?: FlowPromptValue;
-        }) => {
-          captureContext.captured = input as AutocompletePromptValue;
-          return `select:${captureContext.captured.value}`;
-        },
-      },
-      prompts,
-      context,
-    });
-
-    expect(result.terminal).toBe("complete");
-    expect(context.captured).toEqual({
-      value: "https://jenkins.example.com/job/crypto-order-matching-engine/",
-      userInput: "matching engine",
-    });
   });
 });

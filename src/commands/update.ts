@@ -1,3 +1,4 @@
+import { fetchLatestRelease } from "../github/api-wrapper";
 /**
  * Update command implementation.
  */
@@ -8,7 +9,6 @@ import {
   clearPendingUpdateState,
   describeInstalledBinary,
   downloadAndInstall,
-  fetchLatestRelease,
   fetchReleaseByTag,
   getReleaseInstallDecision,
   getPreferredUpdateCommand,

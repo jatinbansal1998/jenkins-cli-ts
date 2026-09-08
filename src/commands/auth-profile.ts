@@ -22,11 +22,7 @@ import {
   type ProfileOperationsDeps,
 } from "../profile-operations";
 import { normalizeProfileName } from "../config";
-import {
-  type JsonAuthCurrent,
-  jsonAuthProfiles,
-  runJsonCommand,
-} from "../json-output";
+import { type JsonAuthCurrent, runJsonCommand } from "../json-output";
 
 export type AuthCommandDeps = ProfileOperationsDeps & {
   confirm?: typeof confirm;
@@ -43,11 +39,9 @@ export async function runAuthList(
   json = false,
 ): Promise<void> {
   if (json) {
-    await runJsonCommand(
-      "auth list",
-      async () => jsonAuthProfiles(await listProfiles(deps)),
-      { write: (text) => write(text.trimEnd()) },
-    );
+    await runJsonCommand("auth list", () => listProfiles(deps), {
+      write: (text) => write(text.trimEnd()),
+    });
     return;
   }
   const result = await listProfiles(deps);

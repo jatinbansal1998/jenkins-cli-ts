@@ -173,6 +173,25 @@ describe("compiled CLI", () => {
     expect(compatibility.output).toBe(list.output);
   });
 
+  test("ignores a malformed cached minimum version", async () => {
+    const home = makeHome({ version: 2, profiles: {} });
+    writeFileSync(
+      join(home, ".config", "jenkins-cli", "update-state.json"),
+      JSON.stringify({
+        enabled: false,
+        minAllowedVersion: "9999.0",
+        minAllowedFetchedAt: new Date().toISOString(),
+      }),
+    );
+
+    const result = await runCompiled(
+      ["auth", "list", "--non-interactive"],
+      home,
+    );
+    expect(result.exitCode).toBe(0);
+    expect(result.output).toContain("OK: No profiles configured.");
+  });
+
   test("handles offline validation errors through the compiled entry point", async () => {
     const login = await runCompiled(["login", "--non-interactive"]);
     expect(login.exitCode).toBe(1);

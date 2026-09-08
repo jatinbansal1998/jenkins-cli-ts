@@ -194,29 +194,28 @@ export async function runStatus(options: StatusOptions): Promise<void> {
           return "action_error";
         }
         if (action === "watch") {
-          const result = await runTrackedStatusAction("wait", () =>
-            runMenuAction(
-              async () =>
-                runWait({
-                  client: options.client,
-                  env: options.env,
-                  jobUrl: primaryTarget.jobUrl,
-                  nonInteractive: false,
-                  suppressExitCode: true,
-                }),
-              "action_error",
-            ),
+          const result = await runInteractiveSubcommandWithAnalytics(
+            "wait",
+            () =>
+              runMenuAction(
+                async () =>
+                  runWait({
+                    client: options.client,
+                    env: options.env,
+                    jobUrl: primaryTarget.jobUrl,
+                    nonInteractive: false,
+                    suppressExitCode: true,
+                  }),
+                "action_error",
+              ),
           );
           if (typeof result === "string") {
             return result;
           }
-          if (!result) {
-            return "action_error";
-          }
           return result.cancelled ? "watch_cancelled" : "action_ok";
         }
         if (action === "logs") {
-          return await runTrackedStatusAction("logs", () =>
+          return await runInteractiveSubcommandWithAnalytics("logs", () =>
             runMenuAction(async (): Promise<ActionEffectResult> => {
               await runLogs({
                 client: options.client,
@@ -229,7 +228,7 @@ export async function runStatus(options: StatusOptions): Promise<void> {
           );
         }
         if (action === "history") {
-          return await runTrackedStatusAction("history", () =>
+          return await runInteractiveSubcommandWithAnalytics("history", () =>
             runMenuAction(async (): Promise<ActionEffectResult> => {
               await runHistory({
                 client: options.client,
@@ -242,7 +241,7 @@ export async function runStatus(options: StatusOptions): Promise<void> {
           );
         }
         if (action === "pending_inputs") {
-          return await runTrackedStatusAction("input", () =>
+          return await runInteractiveSubcommandWithAnalytics("input", () =>
             runMenuAction(async (): Promise<ActionEffectResult> => {
               await runPendingInputsMenu({
                 client: options.client,
@@ -256,7 +255,7 @@ export async function runStatus(options: StatusOptions): Promise<void> {
           );
         }
         if (action === "cancel") {
-          return await runTrackedStatusAction("cancel", () =>
+          return await runInteractiveSubcommandWithAnalytics("cancel", () =>
             runMenuAction(async (): Promise<ActionEffectResult> => {
               await runCancel({
                 client: options.client,
@@ -269,7 +268,7 @@ export async function runStatus(options: StatusOptions): Promise<void> {
           );
         }
         if (action === "rerun") {
-          return await runTrackedStatusAction("rerun", () =>
+          return await runInteractiveSubcommandWithAnalytics("rerun", () =>
             runMenuAction(async (): Promise<ActionEffectResult> => {
               await runRerun({
                 client: options.client,
@@ -282,7 +281,7 @@ export async function runStatus(options: StatusOptions): Promise<void> {
           );
         }
         if (action === "rerun_last") {
-          return await runTrackedStatusAction("rerun-last", () =>
+          return await runInteractiveSubcommandWithAnalytics("rerun-last", () =>
             runMenuAction(async (): Promise<ActionEffectResult> => {
               await runRerunLastBuild({
                 client: options.client,
@@ -295,7 +294,7 @@ export async function runStatus(options: StatusOptions): Promise<void> {
           );
         }
         if (action === "build") {
-          return await runTrackedStatusAction("build", () =>
+          return await runInteractiveSubcommandWithAnalytics("build", () =>
             runMenuAction(async (): Promise<ActionEffectResult> => {
               const buildResult = await runBuild({
                 client: options.client,
@@ -538,11 +537,4 @@ function appendJobState(
   jobState: JobState | undefined,
 ): string {
   return jobState ? `${output}\nJob state: ${jobState}` : output;
-}
-
-async function runTrackedStatusAction<T>(
-  command: string,
-  action: () => Promise<T>,
-): Promise<T> {
-  return await runInteractiveSubcommandWithAnalytics(command, action);
 }

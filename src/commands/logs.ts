@@ -31,6 +31,7 @@ import type {
   ConsoleChunk,
 } from "../types/jenkins";
 import { parseOptionalDurationMs } from "./ops-helpers";
+import { waitForPollIntervalOrCancel } from "./watch-utils";
 
 export const DEFAULT_LOG_POLL_MS = 1_000;
 const INTERACTIVE_HISTORY_LIMIT = 10;
@@ -824,22 +825,8 @@ async function waitForPoll(
   pollMs: number,
   signal?: LogCancellationSignal,
 ): Promise<boolean> {
-  if (!signal) {
-    await Bun.sleep(pollMs);
-    return false;
-  }
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  const timeout = new Promise<void>((resolve) => {
-    timer = setTimeout(resolve, pollMs);
-  });
-  try {
-    await Promise.race([timeout, signal.wait]);
-    return signal.isCancelled();
-  } finally {
-    if (timer) {
-      clearTimeout(timer);
-    }
-  }
+  await waitForPollIntervalOrCancel(pollMs, signal);
+  return signal?.isCancelled() ?? false;
 }
 
 function createLocalCancellationSignal(): {

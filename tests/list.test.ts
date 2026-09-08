@@ -79,7 +79,9 @@ const pickJobMock = mock(
 const runBuildMock = mock(async () => undefined);
 const runHistoryMock = mock(async () => undefined);
 const runStatusMock = mock(async () => undefined);
-const runWaitMock = mock(async (..._args: unknown[]) => undefined);
+const runWaitMock = mock(async (..._args: unknown[]) => ({
+  result: "SUCCESS",
+}));
 const runLogsMock = mock(async () => undefined);
 const runParamsMock = mock(async () => undefined);
 const runCancelMock = mock(async () => undefined);
@@ -158,7 +160,7 @@ describe("runList", () => {
     runStatusMock.mockReset();
     runStatusMock.mockImplementation(async () => undefined);
     runWaitMock.mockReset();
-    runWaitMock.mockImplementation(async () => undefined);
+    runWaitMock.mockImplementation(async () => ({ result: "SUCCESS" }));
     runLogsMock.mockReset();
     runLogsMock.mockImplementation(async () => undefined);
     runParamsMock.mockReset();

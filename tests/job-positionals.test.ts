@@ -1,12 +1,10 @@
 import { describe, expect, test } from "bun:test";
-import { mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import yargs from "yargs/yargs";
 import { registerBuildCommands } from "../src/cli/register-build-commands";
 import { registerJobCommands } from "../src/cli/register-job-commands";
 import { registerOperationsCommands } from "../src/cli/register-operations-commands";
 import type { CommandRegistrationDependencies } from "../src/cli/registration-types";
+import { runCli } from "./helpers.cli";
 
 const jobCommands = [
   "params",
@@ -55,34 +53,6 @@ async function parseJobCommand(
     throw new Error(`Command handler did not run for: ${args.join(" ")}`);
   }
   return parsedArgv;
-}
-
-function runCli(args: string[]): { exitCode: number; output: string } {
-  const home = mkdtempSync(join(tmpdir(), "jenkins-cli-positionals-home-"));
-  try {
-    const result = Bun.spawnSync({
-      cmd: ["bun", "run", "src/index.ts", ...args],
-      cwd: process.cwd(),
-      env: {
-        ...process.env,
-        HOME: home,
-        JENKINS_URL: undefined,
-        JENKINS_USER: undefined,
-        JENKINS_API_TOKEN: undefined,
-      },
-      stdout: "pipe",
-      stderr: "pipe",
-      stdin: "ignore",
-    });
-    return {
-      exitCode: result.exitCode,
-      output:
-        new TextDecoder().decode(result.stdout) +
-        new TextDecoder().decode(result.stderr),
-    };
-  } finally {
-    rmSync(home, { recursive: true, force: true });
-  }
 }
 
 describe("job positionals", () => {

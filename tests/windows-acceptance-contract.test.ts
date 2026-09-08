@@ -10,8 +10,13 @@ describe("Windows Jenkins acceptance backend contract", () => {
     "%s verifies source builds through native-windows",
     async (path) => {
       const workflow = await Bun.file(path).text();
-
-      expect(workflow).toContain("expected-credential-backend: native-windows");
+      expect(workflow).toContain("uses: ./.github/workflows/ci.yml");
+      const sharedWorkflow = await Bun.file(".github/workflows/ci.yml").text();
+      expect(sharedWorkflow).toContain("workflow_call:");
+      expect(sharedWorkflow).toContain("test-script: test:integration:jenkins");
+      expect(sharedWorkflow).toContain(
+        "expected-credential-backend: native-windows",
+      );
     },
   );
 

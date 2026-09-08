@@ -192,55 +192,48 @@ async function performListAction(
 
   switch (action) {
     case "build":
-      return await runTrackedListAction("build", () =>
+      return await runInteractiveSubcommandWithAnalytics("build", () =>
         runMenuAction(() => runBuildAction(context), "action_error"),
       );
     case "view_params":
-      return await runTrackedListAction("params", () =>
+      return await runInteractiveSubcommandWithAnalytics("params", () =>
         runMenuAction(() => runViewParamsAction(context), "action_error"),
       );
     case "status":
-      return await runTrackedListAction("status", () =>
+      return await runInteractiveSubcommandWithAnalytics("status", () =>
         runMenuAction(() => runStatusAction(context), "action_error"),
       );
     case "history":
-      return await runTrackedListAction("history", () =>
+      return await runInteractiveSubcommandWithAnalytics("history", () =>
         runMenuAction(() => runHistoryAction(context), "action_error"),
       );
     case "watch":
-      return await runTrackedListAction("wait", () =>
+      return await runInteractiveSubcommandWithAnalytics("wait", () =>
         runMenuAction(() => runWatchAction(context), "action_error"),
       );
     case "logs":
-      return await runTrackedListAction("logs", () =>
+      return await runInteractiveSubcommandWithAnalytics("logs", () =>
         runMenuAction(() => runLogsAction(context), "action_error"),
       );
     case "pending_inputs":
-      return await runTrackedListAction("input", () =>
+      return await runInteractiveSubcommandWithAnalytics("input", () =>
         runMenuAction(() => runPendingInputsAction(context), "action_error"),
       );
     case "cancel":
-      return await runTrackedListAction("cancel", () =>
+      return await runInteractiveSubcommandWithAnalytics("cancel", () =>
         runMenuAction(() => runCancelAction(context), "action_error"),
       );
     case "rerun":
-      return await runTrackedListAction("rerun", () =>
+      return await runInteractiveSubcommandWithAnalytics("rerun", () =>
         runMenuAction(() => runRerunAction(context), "action_error"),
       );
     case "rerun_last":
-      return await runTrackedListAction("rerun-last", () =>
+      return await runInteractiveSubcommandWithAnalytics("rerun-last", () =>
         runMenuAction(() => runRerunLastBuildAction(context), "action_error"),
       );
     default:
       return "action_error";
   }
-}
-
-async function runTrackedListAction<T>(
-  command: string,
-  action: () => Promise<T>,
-): Promise<T> {
-  return await runInteractiveSubcommandWithAnalytics(command, action);
 }
 
 async function runBuildAction(
@@ -303,9 +296,6 @@ async function runWatchAction(
     nonInteractive: false,
     suppressExitCode: true,
   });
-  if (!result) {
-    return "action_error";
-  }
   return result.cancelled ? "watch_cancelled" : "action_ok";
 }
 

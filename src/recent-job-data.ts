@@ -3,10 +3,6 @@ import { getJobUrlKey, normalizeJobUrl } from "./job-url";
 
 export const MAX_RECENT_JOBS = 20;
 
-export function normalizeRecentJobUrl(value: string): string {
-  return normalizeJobUrl(value);
-}
-
 export function normalizeRecentJobs(entries: unknown[] | undefined): string[] {
   if (!Array.isArray(entries)) {
     return [];
@@ -19,7 +15,7 @@ export function normalizeRecentJobs(entries: unknown[] | undefined): string[] {
       continue;
     }
 
-    const canonical = normalizeRecentJobUrl(entry);
+    const canonical = normalizeJobUrl(entry);
     if (!canonical) {
       continue;
     }
@@ -56,7 +52,7 @@ function buildCanonicalUrlMap(
 ): Map<string, string> {
   const activeUrls = new Map<string, string>();
   for (const job of jobs) {
-    const canonicalUrl = normalizeRecentJobUrl(job.url);
+    const canonicalUrl = normalizeJobUrl(job.url);
     if (!canonicalUrl) {
       continue;
     }

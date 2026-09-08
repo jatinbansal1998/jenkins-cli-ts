@@ -1,4 +1,5 @@
 import os from "node:os";
+import parseSemver from "semver/functions/parse";
 import path from "node:path";
 import { readFileSync } from "node:fs";
 import { chmod, copyFile, mkdir, mkdtemp, rename, rm } from "node:fs/promises";
@@ -16,7 +17,7 @@ import { CliError, printHint } from "./cli";
 import { CONFIG_DIR } from "./config";
 import {
   downloadReleaseAsset,
-  fetchLatestRelease as fetchLatestGitHubRelease,
+  fetchLatestRelease,
   fetchReleaseByTag as fetchReleaseByTagFromGitHub,
   type GitHubReleaseInfo as ReleaseInfo,
 } from "./github/api-wrapper";
@@ -264,106 +265,10 @@ function stripVersionPrefix(input: string): string {
   return input.trim().replace(/^v/i, "");
 }
 
-type ParsedVersion = {
-  main: number[];
-  prerelease: string[] | null;
-};
-
-function parseVersion(input: string): ParsedVersion | null {
-  const cleaned = stripVersionPrefix(input).split("+")[0]?.trim();
-  if (!cleaned) {
-    return null;
-  }
-  const match =
-    /^(?<main>\d+(?:\.\d+)*)(?:-(?<prerelease>[0-9A-Za-z.-]+))?$/.exec(cleaned);
-  const main = match?.groups?.main;
-  if (!main) {
-    return null;
-  }
-  const numbers = main.split(".").map((part) => {
-    if (!/^\d+$/.test(part)) {
-      return Number.NaN;
-    }
-    return Number(part);
-  });
-  if (numbers.some((part) => Number.isNaN(part))) {
-    return null;
-  }
-  const prerelease = match?.groups?.prerelease?.split(".") ?? null;
-  return {
-    main: numbers,
-    prerelease,
-  };
-}
-
 export function compareVersions(a: string, b: string): number | null {
-  const aVersion = parseVersion(a);
-  const bVersion = parseVersion(b);
-  if (!aVersion || !bVersion) {
-    return null;
-  }
-  const length = Math.max(aVersion.main.length, bVersion.main.length, 3);
-  for (let i = 0; i < length; i += 1) {
-    const aValue = aVersion.main[i] ?? 0;
-    const bValue = bVersion.main[i] ?? 0;
-    if (aValue > bValue) {
-      return 1;
-    }
-    if (aValue < bValue) {
-      return -1;
-    }
-  }
-
-  if (!aVersion.prerelease && !bVersion.prerelease) {
-    return 0;
-  }
-  if (!aVersion.prerelease) {
-    return 1;
-  }
-  if (!bVersion.prerelease) {
-    return -1;
-  }
-
-  const prereleaseLength = Math.max(
-    aVersion.prerelease.length,
-    bVersion.prerelease.length,
-  );
-  for (let i = 0; i < prereleaseLength; i += 1) {
-    const aIdentifier = aVersion.prerelease[i];
-    const bIdentifier = bVersion.prerelease[i];
-    if (aIdentifier === undefined) {
-      return -1;
-    }
-    if (bIdentifier === undefined) {
-      return 1;
-    }
-    if (aIdentifier === bIdentifier) {
-      continue;
-    }
-
-    const aNumeric = /^\d+$/.test(aIdentifier);
-    const bNumeric = /^\d+$/.test(bIdentifier);
-    if (aNumeric && bNumeric) {
-      const aValue = Number(aIdentifier);
-      const bValue = Number(bIdentifier);
-      if (aValue > bValue) {
-        return 1;
-      }
-      if (aValue < bValue) {
-        return -1;
-      }
-      continue;
-    }
-    if (aNumeric) {
-      return -1;
-    }
-    if (bNumeric) {
-      return 1;
-    }
-    return aIdentifier.localeCompare(bIdentifier);
-  }
-
-  return 0;
+  const aVersion = parseSemver(stripVersionPrefix(a));
+  const bVersion = parseSemver(stripVersionPrefix(b));
+  return aVersion && bVersion ? aVersion.compare(bVersion) : null;
 }
 
 export async function readUpdateState(): Promise<UpdateState> {
@@ -429,14 +334,6 @@ export function getPreferredUpdateCommand(): string {
   return isHomebrewManagedPath(resolved)
     ? UPDATE_COMMAND_BREW
     : UPDATE_COMMAND_SELF;
-}
-
-export async function fetchLatestRelease(options: {
-  currentVersion: string;
-  channel?: UpdateChannel;
-  timeoutMs?: number;
-}): Promise<ReleaseInfo> {
-  return await fetchLatestGitHubRelease(options);
 }
 
 export async function fetchReleaseByTag(
