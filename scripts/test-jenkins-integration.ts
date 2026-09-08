@@ -198,7 +198,21 @@ if (prepareNativeManifestPath) {
       `jenkins-${Date.now()}-${process.pid}`,
     );
     await mkdir(artifactDir, { recursive: true });
-    const toxiproxyUrl = await startToxiproxy();
+    const integrationTests = loadMode
+      ? ["tests/integration/jenkins-load.test.ts"]
+      : networkOnly
+        ? ["tests/integration/jenkins.test.ts"]
+        : buildErrorsOnly
+          ? ["tests/integration/jenkins-build-errors.test.ts"]
+          : [
+              "tests/integration/jenkins.test.ts",
+              "tests/integration/jenkins-build-errors.test.ts",
+            ];
+    const toxiproxyUrl = integrationTests.includes(
+      "tests/integration/jenkins.test.ts",
+    )
+      ? await startToxiproxy()
+      : undefined;
     console.log(`Jenkins test artifacts: ${artifactDir}`);
     const integrationEnv = {
       ...process.env,
@@ -220,16 +234,6 @@ if (prepareNativeManifestPath) {
         : undefined,
       JENKINS_INTEGRATION_LOAD: loadMode ? "1" : undefined,
     };
-    const integrationTests = loadMode
-      ? ["tests/integration/jenkins-load.test.ts"]
-      : networkOnly
-        ? ["tests/integration/jenkins.test.ts"]
-        : buildErrorsOnly
-          ? ["tests/integration/jenkins-build-errors.test.ts"]
-          : [
-              "tests/integration/jenkins.test.ts",
-              "tests/integration/jenkins-build-errors.test.ts",
-            ];
     for (const integrationTest of integrationTests) {
       await runChecked(
         [

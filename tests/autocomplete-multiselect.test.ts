@@ -2,7 +2,6 @@ import { describe, expect, test } from "bun:test";
 import { S_CHECKBOX_INACTIVE, S_CHECKBOX_SELECTED } from "@clack/prompts";
 import { stripVTControlCharacters } from "node:util";
 import { formatAutocompleteMultiselectOption } from "../src/prompts/autocomplete-multiselect";
-import { formatFocusedOption } from "../src/prompts/focused-option";
 import { forceColorForFile } from "./helpers.force-color";
 
 forceColorForFile();
@@ -25,23 +24,6 @@ describe("custom autocomplete multi-select rendering", () => {
     expect(rendered).toContain("\u001b[4m");
     expect(stripVTControlCharacters(rendered)).toBe(
       `${S_CHECKBOX_INACTIVE} api-deploy`,
-    );
-  });
-
-  test("uses the shared focused-option formatter", () => {
-    const rendered = formatAutocompleteMultiselectOption({
-      option,
-      active: true,
-      selectedValues: [],
-      focusedValue: option.value,
-    });
-    const expected = formatFocusedOption(
-      `${S_CHECKBOX_INACTIVE} api-deploy`,
-      true,
-    );
-
-    expect(stripVTControlCharacters(rendered)).toBe(
-      stripVTControlCharacters(expected),
     );
   });
 

@@ -4,11 +4,11 @@
 import { BUILD_TARGET } from "../build-target";
 import { CliError, printHint, printOk } from "../cli";
 import { UPDATE_COMMAND_BREW } from "../cli-constants";
+import { fetchLatestRelease } from "../github/api-wrapper";
 import {
   clearPendingUpdateState,
   describeInstalledBinary,
   downloadAndInstall,
-  fetchLatestRelease,
   fetchReleaseByTag,
   getReleaseInstallDecision,
   getPreferredUpdateCommand,

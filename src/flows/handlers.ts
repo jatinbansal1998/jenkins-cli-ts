@@ -132,10 +132,6 @@ function buildAfterRootHandler({
   return context.returnToCaller ? "return_to_caller_root" : "ask_repeat";
 }
 
-function repeatConfirmHandler({ input }: { input?: unknown }): EventId {
-  return input ? "confirm:yes" : "confirm:no";
-}
-
 async function pickBuildJobHandler({
   context,
 }: {
@@ -540,7 +536,6 @@ export const buildFlowHandlers = {
   "build.runAction": runBuildActionHandler,
   "build.afterMenu": buildAfterMenuHandler,
   "build.afterRoot": buildAfterRootHandler,
-  "build.repeatConfirm": repeatConfirmHandler,
 } satisfies FlowHandlerRegistry<BuildPostContext>;
 
 export const buildPreFlowHandlers = {
@@ -563,5 +558,4 @@ export const buildPreFlowHandlers = {
 export const statusFlowHandlers = {
   "status.selectAction": selectStatusActionHandler,
   "status.runAction": runStatusActionHandler,
-  "status.repeatConfirm": repeatConfirmHandler,
 } satisfies FlowHandlerRegistry<StatusPostContext>;

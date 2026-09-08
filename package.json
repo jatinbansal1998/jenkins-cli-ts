@@ -34,6 +34,7 @@
   "devDependencies": {
     "@sentry/cli": "3.6.2",
     "@types/bun": "1.4.1",
+    "@types/semver": "^7.8.0",
     "@types/yargs": "^17.0.35",
     "husky": "^9.1.7",
     "knip": "^6.32.0",
@@ -48,6 +49,7 @@
     "@clack/prompts": "^1.7.0",
     "@sentry/bun": "^10.67.0",
     "cross-keychain": "^1.1.0",
+    "semver": "^7.8.5",
     "yargs": "^18.0.0",
     "yargs-parser": "^22.0.0"
   },

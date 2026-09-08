@@ -19,13 +19,13 @@ export type TerminalState =
   | "root"
   | "complete";
 
-export type AutocompletePromptValue = {
+type AutocompletePromptValue = {
   value: string;
   userInput: string;
 };
 
 /** Primitive prompt values returned by the prompt adapter. */
-export type FlowPromptValue = string | boolean | AutocompletePromptValue;
+export type FlowPromptValue = string | boolean;
 
 /** Autocomplete can also surface the prompt library's cancel token. */
 export type AutocompletePromptResult =
@@ -45,9 +45,6 @@ type PromptFilterOption = {
   hint?: string;
   disabled?: boolean;
 };
-
-type PromptAutocompleteOptions<Ctx> =
-  PromptOption[] | ((context: Ctx, search: string) => PromptOption[]);
 
 /** Declarative prompt spec for a flow state. */
 export type PromptSpec<Ctx> =
@@ -81,28 +78,10 @@ export type PromptSpec<Ctx> =
       options: PromptOption[] | ((context: Ctx) => PromptOption[]);
       placeholder?: string | ((context: Ctx) => string);
       maxItems?: number | ((context: Ctx) => number);
-    }
-  | {
-      /** Searchable type-ahead selector. */
-      kind: "autocomplete";
-      message: string | ((context: Ctx) => string);
-      options: PromptAutocompleteOptions<Ctx>;
-      maxItems?: number | ((context: Ctx) => number);
-      placeholder?: string | ((context: Ctx) => string);
-      initialValue?: string | ((context: Ctx) => string);
-      initialUserInput?: string | ((context: Ctx) => string);
-      validate?:
-        | ((
-            value: string | string[] | undefined,
-            context: Ctx,
-          ) => string | Error | undefined)
-        | undefined;
     };
 
 /** Single state in a flow state machine. */
 type StateDefinition<Ctx> = {
-  /** Marks state as a root/return point for escape-driven navigation. */
-  root?: boolean;
   /** Prompt shown in this state (if state is prompt-driven). */
   prompt?: PromptSpec<Ctx>;
   /** Handler called automatically when entering the state. */

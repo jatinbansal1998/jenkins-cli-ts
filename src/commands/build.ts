@@ -361,20 +361,22 @@ export async function runBuild(options: BuildOptions): Promise<BuildRunResult> {
       returnToCaller: Boolean(options.returnToCaller),
       performAction: async (action): Promise<ActionEffectResult> => {
         if (action === "watch") {
-          const finalStatus = await runTrackedBuildAction("wait", () =>
-            runMenuAction(
-              async () =>
-                watchBuildStatus({
-                  client: options.client,
-                  env: options.env,
-                  jobUrl: resolvedJobUrl,
-                  jobLabel: displayJob,
-                  buildUrl: activeBuild.buildUrl,
-                  buildNumber: activeBuild.buildNumber,
-                  queueUrl: activeBuild.queueUrl,
-                }),
-              "action_error",
-            ),
+          const finalStatus = await runInteractiveSubcommandWithAnalytics(
+            "wait",
+            () =>
+              runMenuAction(
+                async () =>
+                  watchBuildStatus({
+                    client: options.client,
+                    env: options.env,
+                    jobUrl: resolvedJobUrl,
+                    jobLabel: displayJob,
+                    buildUrl: activeBuild.buildUrl,
+                    buildNumber: activeBuild.buildNumber,
+                    queueUrl: activeBuild.queueUrl,
+                  }),
+                "action_error",
+              ),
           );
           if (typeof finalStatus === "string") {
             return finalStatus;
@@ -398,7 +400,7 @@ export async function runBuild(options: BuildOptions): Promise<BuildRunResult> {
         }
 
         if (action === "logs") {
-          return await runTrackedBuildAction("logs", () =>
+          return await runInteractiveSubcommandWithAnalytics("logs", () =>
             runMenuAction(async (): Promise<ActionEffectResult> => {
               await deps.runLogs({
                 client: options.client,
@@ -417,7 +419,7 @@ export async function runBuild(options: BuildOptions): Promise<BuildRunResult> {
         }
 
         if (action === "history") {
-          return await runTrackedBuildAction("history", () =>
+          return await runInteractiveSubcommandWithAnalytics("history", () =>
             runMenuAction(async (): Promise<ActionEffectResult> => {
               const historyResult = await deps.runHistory({
                 client: options.client,
@@ -438,7 +440,7 @@ export async function runBuild(options: BuildOptions): Promise<BuildRunResult> {
         }
 
         if (action === "pending_inputs") {
-          return await runTrackedBuildAction("input", () =>
+          return await runInteractiveSubcommandWithAnalytics("input", () =>
             runMenuAction(async (): Promise<ActionEffectResult> => {
               await deps.runPendingInputsMenu({
                 client: options.client,
@@ -454,7 +456,7 @@ export async function runBuild(options: BuildOptions): Promise<BuildRunResult> {
         }
 
         if (action === "cancel") {
-          return await runTrackedBuildAction("cancel", () =>
+          return await runInteractiveSubcommandWithAnalytics("cancel", () =>
             runMenuAction(async (): Promise<ActionEffectResult> => {
               const cancelTarget = resolveCancelTarget(activeBuild);
               await deps.runCancel({
@@ -474,7 +476,7 @@ export async function runBuild(options: BuildOptions): Promise<BuildRunResult> {
         }
 
         if (action === "rerun") {
-          return await runTrackedBuildAction<ActionEffectResult>(
+          return await runInteractiveSubcommandWithAnalytics<ActionEffectResult>(
             "rerun",
             async (): Promise<ActionEffectResult> => {
               const rerunResult = await options.client.triggerBuild(
@@ -529,7 +531,7 @@ export async function runBuild(options: BuildOptions): Promise<BuildRunResult> {
         }
 
         if (action === "rerun_last") {
-          return await runTrackedBuildAction<ActionEffectResult>(
+          return await runInteractiveSubcommandWithAnalytics<ActionEffectResult>(
             "rerun-last",
             async (): Promise<ActionEffectResult> => {
               const rerun = await rerunLastBuildForJob({
@@ -604,13 +606,6 @@ export async function runBuild(options: BuildOptions): Promise<BuildRunResult> {
 
     return {};
   }
-}
-
-async function runTrackedBuildAction<T>(
-  command: string,
-  action: () => Promise<T>,
-): Promise<T> {
-  return await runInteractiveSubcommandWithAnalytics(command, action);
 }
 
 async function runBuildOnce(options: {

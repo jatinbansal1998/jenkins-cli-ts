@@ -25,7 +25,6 @@ import type {
   TriggerBuildResult,
 } from "./types/jenkins";
 import type { AuthDiagnosticsResult } from "./auth-diagnostics";
-import type { ProfileListResult } from "./profile-operations";
 
 /** Sink for the single JSON document. Defaults to stdout. */
 export type JsonWrite = (text: string) => void;
@@ -431,10 +430,6 @@ export function jsonPendingInputAction(
     abortUrl: action.abortUrl,
     approvalUrl: action.approvalUrl,
   };
-}
-
-export function jsonAuthProfiles(result: ProfileListResult): ProfileListResult {
-  return result;
 }
 
 function queueIdFromUrl(url: string | undefined): number | undefined {

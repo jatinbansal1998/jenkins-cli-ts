@@ -3,7 +3,16 @@ import { runNativeExecutable } from "./helpers.native-executable";
 import {
   completedLineEnd,
   macOsExpectScript,
+  stripTerminalCodes,
 } from "./integration/jenkins/harness";
+
+test("preserves hyperlink text while removing terminal formatting", () => {
+  const hyperlink =
+    "\u001b]8;;https://example.com\u001b\\Jenkins\u001b]8;;\u001b\\";
+  expect(stripTerminalCodes(`\u001b[32m${hyperlink}\u001b[0m\r\n`)).toBe(
+    "Jenkins\n",
+  );
+});
 
 test.skipIf(process.platform === "win32")(
   "bounds a stalled native CLI process",

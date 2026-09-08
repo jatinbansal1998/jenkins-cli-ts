@@ -282,7 +282,7 @@ function parseConfigContents(
   );
   const legacyProfile = hasProfileEntries
     ? undefined
-    : parseLegacyProfile(record);
+    : parseProfileRecord(record);
 
   const profiles =
     legacyProfile && !hasProfileEntries
@@ -349,12 +349,6 @@ function parseProfiles(
     result[profileName] = parsedProfile;
   }
   return result;
-}
-
-function parseLegacyProfile(
-  record: Record<string, unknown>,
-): JenkinsProfileConfig | undefined {
-  return parseProfileRecord(record);
 }
 
 function parseProfileRecord(

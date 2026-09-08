@@ -18,8 +18,7 @@ malformed output
 
   test("every Linux CI test path uses the shared runner", async () => {
     for (const path of [
-      ".github/workflows/pull-request.yml",
-      ".github/workflows/post-merge.yml",
+      ".github/workflows/ci.yml",
       ".github/workflows/release.yml",
     ]) {
       const workflow = await Bun.file(path).text();

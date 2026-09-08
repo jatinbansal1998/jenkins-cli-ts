@@ -57,7 +57,6 @@ const listInteractiveFlow: FlowDefinition<ListInteractiveContext> = {
   states: {
     /** Root entry state delegated to the shared Jenkins job picker. */
     select_job: {
-      root: true,
       onEnter: "list.pickJob",
       transitions: {
         cancelled: "exit_command",
@@ -123,7 +122,6 @@ const buildPreFlow: FlowDefinition<BuildPreContext> = {
   states: {
     /** Root entry state delegated to the shared Jenkins job picker. */
     entry: {
-      root: true,
       onEnter: "buildPre.pickJob",
       transitions: {
         cancelled: "exit_command",
@@ -430,13 +428,11 @@ const buildPostFlow: FlowDefinition<BuildPostContext> = {
     },
     /** Root confirmation prompt to optionally run another build. */
     repeat_confirm: {
-      root: true,
       prompt: {
         kind: "confirm",
         message: () => "Trigger another build?",
         initialValue: false,
       },
-      onSelect: "build.repeatConfirm",
       transitions: {
         esc: "exit_command",
         "confirm:yes": "repeat",
@@ -495,13 +491,11 @@ const statusPostFlow: FlowDefinition<StatusPostContext> = {
     },
     /** Root confirmation prompt to optionally inspect another job. */
     again_confirm: {
-      root: true,
       prompt: {
         kind: "confirm",
         message: () => "Check another job?",
         initialValue: false,
       },
-      onSelect: "status.repeatConfirm",
       transitions: {
         esc: "exit_command",
         "confirm:yes": "repeat",

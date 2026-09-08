@@ -4,13 +4,13 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { CliError } from "../src/cli";
 import { GITHUB_REPO_URL } from "../src/github-constants";
+import { fetchLatestRelease } from "../src/github/api-wrapper";
 const realUpdate = await import("../src/update");
 const {
   clearPendingUpdateState,
   compareVersions,
   downloadAndInstall,
   extractInstalledBinaryVersionOutput,
-  fetchLatestRelease,
   getDeferredUpdatePromptVersion,
   getPreferredUpdateCommand,
   getReleaseInstallDecision,
@@ -70,6 +70,23 @@ describe("update version helpers", () => {
 
   test("compareVersions orders prerelease identifiers semantically", () => {
     expect(compareVersions("v1.0.0-beta.2", "v1.0.0-beta.11")).toBe(-1);
+  });
+
+  test("compareVersions uses ASCII order for prerelease identifiers", () => {
+    expect(compareVersions("1.0.0-A", "1.0.0-a")).toBe(-1);
+    expect(compareVersions("1.0.0-a", "1.0.0-A")).toBe(1);
+  });
+
+  test.each([
+    "1.2",
+    "1.2.3.4",
+    "01.0.0",
+    "1.0.0-01",
+    "1.0.0-alpha..1",
+    "1.0.0+",
+  ])("compareVersions rejects malformed release %s", (version) => {
+    expect(compareVersions(version, "1.0.0")).toBeNull();
+    expect(compareVersions("1.0.0", version)).toBeNull();
   });
 
   test("parseUpdateChannel supports prerelease aliases", () => {

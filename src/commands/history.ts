@@ -333,9 +333,6 @@ async function runHistoryRebuildPostFlow(options: {
         if (typeof result === "string") {
           return result;
         }
-        if (!result) {
-          return "action_error";
-        }
         activeBuild = {
           buildUrl: result.buildUrl ?? activeBuild.buildUrl,
           buildNumber: result.buildNumber ?? activeBuild.buildNumber,

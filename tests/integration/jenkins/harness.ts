@@ -27,14 +27,6 @@ export type CliResult = {
   output: string;
 };
 
-const OSC_TERMINAL_SEQUENCE = new RegExp(
-  String.raw`\u001B\][^\u0007]*(?:\u0007|\u001B\\)`,
-  "g",
-);
-const CSI_TERMINAL_SEQUENCE = new RegExp(
-  String.raw`\u001B\[[0-?]*[ -/]*[@-~]`,
-  "g",
-);
 const EXPECT_STEP_TIMEOUT_MS = 20_000;
 const EXPECT_WRAPPER_BUFFER_MS = 5_000;
 
@@ -421,10 +413,7 @@ async function waitForExpectExit(
 }
 
 export function stripTerminalCodes(value: string): string {
-  return value
-    .replace(OSC_TERMINAL_SEQUENCE, "")
-    .replace(CSI_TERMINAL_SEQUENCE, "")
-    .replaceAll("\r", "");
+  return Bun.stripANSI(value).replaceAll("\r", "");
 }
 
 export function macOsExpectScript(

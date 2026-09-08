@@ -3,17 +3,13 @@
  */
 import type { JenkinsJob } from "./types/jenkins";
 import type { EnvConfig } from "./env";
-import { getJobUrlKey } from "./job-url";
+import { getJobUrlKey, normalizeJobUrl } from "./job-url";
 import {
   readUsableJobCache,
   sortJobsByDisplayName,
   writeJobCache,
 } from "./jobs";
-import {
-  MAX_RECENT_JOBS,
-  normalizeRecentJobs,
-  normalizeRecentJobUrl,
-} from "./recent-job-data";
+import { MAX_RECENT_JOBS, normalizeRecentJobs } from "./recent-job-data";
 
 type RecentJob = {
   url: string;
@@ -63,7 +59,7 @@ export async function recordRecentJob(options: {
   jobUrl: string;
 }): Promise<void> {
   try {
-    const jobUrl = normalizeRecentJobUrl(options.jobUrl);
+    const jobUrl = normalizeJobUrl(options.jobUrl);
     if (!jobUrl) {
       return;
     }
