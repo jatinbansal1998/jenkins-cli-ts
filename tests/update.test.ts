@@ -1,10 +1,10 @@
-import { fetchLatestRelease } from "../src/github/api-wrapper";
 import { afterEach, describe, expect, mock, test } from "bun:test";
 import fs from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { CliError } from "../src/cli";
 import { GITHUB_REPO_URL } from "../src/github-constants";
+import { fetchLatestRelease } from "../src/github/api-wrapper";
 const realUpdate = await import("../src/update");
 const {
   clearPendingUpdateState,

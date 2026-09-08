@@ -1,8 +1,8 @@
 import os from "node:os";
-import parseSemver from "semver/functions/parse";
 import path from "node:path";
 import { readFileSync } from "node:fs";
 import { chmod, copyFile, mkdir, mkdtemp, rename, rm } from "node:fs/promises";
+import parseSemver from "semver/functions/parse";
 import {
   CLI_FLAGS,
   UPDATE_COMMAND_BREW,
