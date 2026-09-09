@@ -193,8 +193,6 @@ async function runLogsCore(
     return { cancelled: true, buildUrl: target.buildUrl };
   }
   const outputEmitter = createPostProcessingEmitter(emitter, effective);
-  if (effective.follow) {
-  }
 
   if (!options.jsonl) {
     printHint(`Reading logs for ${target.jobLabel}.`);
