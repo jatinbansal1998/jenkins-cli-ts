@@ -1211,6 +1211,7 @@ describe.skipIf(!integrationEnabled)(
         const secret = "integration-secret-value";
         const build = await runCli(home, [
           "build",
+          "--debug",
           "--job-url",
           jobUrl,
           "--param",
@@ -1228,6 +1229,22 @@ describe.skipIf(!integrationEnabled)(
         expect(build.output).toMatch(/Build (?:queued|started)/);
         expect(build.output).toContain("SUCCESS");
         expect(build.output).not.toContain(secret);
+        const apiLog = await Bun.file(
+          join(
+            home,
+            ".config",
+            "jenkins-cli",
+            `api-${new Date().toISOString().slice(0, 10)}.log`,
+          ),
+        ).text();
+        expect(apiLog).toContain("REQUEST GET ");
+        expect(apiLog).toContain("REQUEST POST ");
+        expect(apiLog).toContain("RESPONSE POST ");
+        expect(apiLog).toContain("Body:\n  <omitted>");
+        expect(apiLog).not.toContain(secret);
+        expect(apiLog).not.toContain("default-secret");
+        expect(apiLog).not.toContain("default-message");
+        expect(apiLog).not.toContain(message);
 
         const status = parseJson<{
           data: { build: { number: number; url: string } };

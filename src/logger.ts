@@ -235,12 +235,10 @@ export function logApiResponse(
   url: string,
   status: number,
   headers?: LogHeaders,
-  body?: string | null,
 ): void {
   logBlock([
     `[${getTimestamp()}] RESPONSE ${method} ${url} -> ${status}`,
     formatHeadersBlock(headers),
-    formatBodyBlock(body),
   ]);
 }
 
@@ -252,12 +250,10 @@ export function logApiError(
   url: string,
   status: number,
   headers?: LogHeaders,
-  body?: string | null,
 ): void {
   logBlock([
     `[${getTimestamp()}] ERROR ${method} ${url} -> HTTP ${status}`,
     formatHeadersBlock(headers),
-    formatBodyBlock(body),
   ]);
 }
 

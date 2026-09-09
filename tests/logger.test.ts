@@ -34,14 +34,8 @@ describe("api logger", () => {
     logApiRequest("GET", "https://jenkins.example.com/api/json", {
       Authorization: "Basic dXNlcjp0b2tlbg==",
     });
-    logApiResponse(
-      "GET",
-      "https://jenkins.example.com/api/json",
-      200,
-      {},
-      "{}",
-    );
-    logApiError("GET", "https://jenkins.example.com/api/json", 500, {}, "boom");
+    logApiResponse("GET", "https://jenkins.example.com/api/json", 200, {});
+    logApiError("GET", "https://jenkins.example.com/api/json", 500, {});
 
     expect(appendSpy).not.toHaveBeenCalled();
   });
@@ -75,13 +69,9 @@ describe("api logger", () => {
   test("writes to a UTC-dated log file created with 0600 permissions", () => {
     setDebugMode(true);
 
-    logApiResponse(
-      "GET",
-      "https://jenkins.example.com/api/json",
-      200,
-      { "Set-Cookie": "JSESSIONID=abc" },
-      "{}",
-    );
+    logApiResponse("GET", "https://jenkins.example.com/api/json", 200, {
+      "Set-Cookie": "JSESSIONID=abc",
+    });
 
     expect(appendSpy).toHaveBeenCalledTimes(1);
     const [filePath, , appendOptions] = appendSpy.mock.calls[0] ?? [];

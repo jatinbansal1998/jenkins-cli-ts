@@ -1451,14 +1451,9 @@ export class JenkinsClient {
     context: string,
   ): Promise<Response> {
     const method = options.method ?? "GET";
-    // POST bodies can contain build parameters and secrets. Never persist them
-    // in debug logs; the real body is still sent unchanged to Jenkins.
+    // Request bodies can contain build parameters and secrets.
     const requestBody =
-      method.toUpperCase() === "POST"
-        ? options.body === undefined || options.body === null
-          ? null
-          : "<omitted>"
-        : this.serializeRequestBody(options.body);
+      options.body === undefined || options.body === null ? null : "<omitted>";
 
     logApiRequest(method, url, options.headers, requestBody);
 
@@ -1475,23 +1470,10 @@ export class JenkinsClient {
       });
       // Jenkins responses can contain password parameter defaults or values.
       // Keep response bodies out of persistent debug logs for every method.
-      const loggedResponseBody = null;
       if (response.ok) {
-        logApiResponse(
-          method,
-          url,
-          response.status,
-          response.headers,
-          loggedResponseBody,
-        );
+        logApiResponse(method, url, response.status, response.headers);
       } else {
-        logApiError(
-          method,
-          url,
-          response.status,
-          response.headers,
-          loggedResponseBody,
-        );
+        logApiError(method, url, response.status, response.headers);
       }
       return response;
     } catch (error) {
@@ -1516,37 +1498,6 @@ export class JenkinsClient {
     } finally {
       cleanup();
     }
-  }
-
-  private serializeRequestBody(
-    body: Bun.BodyInit | null | undefined,
-  ): string | null {
-    if (body === null || body === undefined) {
-      return null;
-    }
-    if (typeof body === "string") {
-      return body;
-    }
-    if (body instanceof URLSearchParams) {
-      return body.toString();
-    }
-    if (body instanceof FormData) {
-      const entries: string[] = [];
-      for (const [key, value] of body.entries()) {
-        entries.push(`${key}=${serializeUnknownValue(value)}`);
-      }
-      return entries.join("&");
-    }
-    if (body instanceof Blob) {
-      return `[blob size=${body.size} type=${body.type || "unknown"}]`;
-    }
-    if (body instanceof ArrayBuffer) {
-      return `[arraybuffer byteLength=${body.byteLength}]`;
-    }
-    if (ArrayBuffer.isView(body)) {
-      return `[binary byteLength=${body.byteLength}]`;
-    }
-    return `[body kind=${typeof body}]`;
   }
 
   private async raiseHttpError(

@@ -209,9 +209,9 @@ export async function probeJenkinsIdentity(
       requestUrl,
     );
     if (response.ok) {
-      logApiResponse("GET", requestUrl, response.status, responseHeaders, null);
+      logApiResponse("GET", requestUrl, response.status, responseHeaders);
     } else {
-      logApiError("GET", requestUrl, response.status, responseHeaders, null);
+      logApiError("GET", requestUrl, response.status, responseHeaders);
     }
 
     const common = responseMetadata(response);
