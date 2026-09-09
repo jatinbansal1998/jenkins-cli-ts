@@ -1,6 +1,7 @@
 /**
  * Local error stacks and opt-in API metadata logs, retained for seven days.
- * Error messages are preserved in full. API credential headers are redacted;
+ * Error details are preserved except for registered API tokens and Basic credentials.
+ * API credential headers are redacted;
  * request and response bodies are omitted. Nothing is uploaded.
  */
 import fs from "node:fs";
@@ -36,6 +37,22 @@ export function isDebugMode(): boolean {
   return debugMode;
 }
 
+const redactedSecrets = new Set<string>();
+let secretPattern: RegExp | undefined;
+
+export function registerRedactedSecret(secret: string): void {
+  if (!secret || redactedSecrets.has(secret)) return;
+  redactedSecrets.add(secret);
+  // Mask the longest match so an overlapping token cannot leave a suffix exposed.
+  secretPattern = new RegExp(
+    [...redactedSecrets]
+      .toSorted((a, b) => b.length - a.length)
+      .map((value) => RegExp.escape(value))
+      .join("|"),
+    "g",
+  );
+}
+
 function ensureConfigDir(): void {
   if (!fs.existsSync(CONFIG_DIR)) {
     fs.mkdirSync(CONFIG_DIR, { recursive: true, mode: 0o700 });
@@ -60,7 +77,10 @@ function appendLogFile(kind: "api" | "error", payload: string): void {
   try {
     if (!fs.fstatSync(descriptor).isFile()) return;
     fs.fchmodSync(descriptor, 0o600);
-    fs.appendFileSync(descriptor, payload);
+    fs.appendFileSync(
+      descriptor,
+      secretPattern ? payload.replaceAll(secretPattern, "<redacted>") : payload,
+    );
   } finally {
     fs.closeSync(descriptor);
   }

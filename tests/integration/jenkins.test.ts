@@ -121,6 +121,83 @@ describe.skipIf(!integrationEnabled)(
       });
     }, 30_000);
 
+    test("masks credentials echoed by a proxy around real Jenkins failures", async () => {
+      const token = process.env.JENKINS_INTEGRATION_READER_TOKEN!;
+      const user =
+        process.env.JENKINS_INTEGRATION_READER_USER ?? "integration-reader";
+      const encoded = Buffer.from(`${user}:${token}`).toString("base64");
+      let deniedRequests = 0;
+      const proxy = Bun.serve({
+        hostname: "127.0.0.1",
+        port: 0,
+        async fetch(request) {
+          const incoming = new URL(request.url);
+          const target = new URL(jenkinsUrl!);
+          target.pathname = incoming.pathname;
+          target.search = incoming.search;
+          const headers = new Headers(request.headers);
+          headers.delete("host");
+          const response = await fetch(target, {
+            method: request.method,
+            headers,
+            body: ["GET", "HEAD"].includes(request.method)
+              ? undefined
+              : await request.arrayBuffer(),
+            redirect: "manual",
+          });
+          if (response.status !== 403) return response;
+          deniedRequests++;
+          const echo = `token=${token}; Authorization: ${request.headers.get("authorization")}; diagnostic=keep-this-detail`;
+          await response.arrayBuffer();
+          return new Response(echo, {
+            status: 403,
+            headers: { "Content-Type": "text/plain", "X-Proxy-Detail": echo },
+          });
+        },
+      });
+      try {
+        await withCliHome(async (home) => {
+          const root = `${proxy.url.origin}/jenkins`;
+          const result = await invokeCli(
+            home,
+            [
+              "build",
+              "--job-url",
+              `${root}/job/cli-no-params/`,
+              "--non-interactive",
+              "--debug",
+              "--json",
+            ],
+            {
+              JENKINS_URL: root,
+              JENKINS_USER: user,
+              JENKINS_API_TOKEN: token,
+            },
+          );
+          expect(result.exitCode).toBe(1);
+          expect(deniedRequests).toBeGreaterThan(0);
+          expect(
+            parseJson<{ error: { message: string } }>(result).error.message,
+          ).toContain("diagnostic=keep-this-detail");
+          for (const kind of ["api", "error"] as const) {
+            const files = cliLogFiles(home, kind);
+            expect(files.length).toBeGreaterThan(0);
+            const log = (
+              await Promise.all(files.map((file) => Bun.file(file).text()))
+            ).join("\n");
+            expect(log).not.toContain(token);
+            expect(log).not.toContain(encoded);
+            expect(log).toContain(
+              "token=<redacted>; Authorization: Basic <redacted>; diagnostic=keep-this-detail",
+            );
+            if (kind === "error") expect(log).toMatch(/\s+at .+:\d+:\d+/);
+          }
+        });
+      } finally {
+        await proxy.stop(true);
+      }
+    }, 30_000);
+
     test("keeps expanded JSON and JSONL contracts pure against real Jenkins", async () => {
       await withCliHome(async (home) => {
         const authStatus = parseJson(

@@ -15,6 +15,7 @@ import {
   logApiRequest,
   logApiResponse,
   logNetworkError,
+  registerRedactedSecret,
 } from "./logger";
 import {
   buildSecureStoreAccount,
@@ -190,6 +191,8 @@ export async function probeJenkinsIdentity(
       "base64",
     );
     headers.Authorization = `Basic ${encoded}`;
+    registerRedactedSecret(input.token);
+    registerRedactedSecret(encoded);
   }
 
   logApiRequest("GET", requestUrl, headers);

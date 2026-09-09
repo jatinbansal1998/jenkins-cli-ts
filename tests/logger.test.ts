@@ -8,10 +8,13 @@ import {
   setSystemTime,
 } from "bun:test";
 import fs from "node:fs";
+import { probeJenkinsIdentity } from "../src/auth-diagnostics";
 import { toJsonError } from "../src/json-output";
 import path from "node:path";
 import { resolveUserHome } from "../src/user-home";
 import {
+  logCliError,
+  registerRedactedSecret,
   logApiError,
   logApiRequest,
   logApiResponse,
@@ -38,6 +41,70 @@ function appendedPayload(): string {
 }
 
 describe("api logger", () => {
+  test("masks registered tokens and Basic credentials in both disk logs, retaining other details", () => {
+    const token = "synthetic.api-token+$[literal]";
+    const encoded = Buffer.from(`synthetic-user:${token}`).toString("base64");
+    registerRedactedSecret(token);
+    registerRedactedSecret(encoded);
+    logCliError(
+      new Error(
+        `proxy echoed ${token} twice ${token}; password=keep-local-detail`,
+        { cause: new Error(`Authorization: Basic ${encoded}`) },
+      ),
+    );
+    setDebugMode(true);
+    logApiResponse("GET", "https://jenkins.example.com", 403, {
+      "X-Proxy-Detail": `${token} Basic ${encoded}; diagnostic=keep-local-detail`,
+    });
+    expect(appendSpy).toHaveBeenCalledTimes(2);
+    for (const [, value] of appendSpy.mock.calls) {
+      const payload = String(value);
+      expect(payload).not.toContain(token);
+      expect(payload).not.toContain(encoded);
+      expect(payload).toContain("<redacted>");
+      expect(payload).toContain("keep-local-detail");
+    }
+    expect(appendedPayload()).toContain(
+      "Caused by\nError: Authorization: Basic <redacted>",
+    );
+    expect(appendedPayload()).toMatch(/\s+at .+:\d+:\d+/);
+  });
+
+  test("masks credentials used by the standalone authentication probe", async () => {
+    const token = "synthetic-probe-token";
+    const encoded = Buffer.from(`probe-user:${token}`).toString("base64");
+    setDebugMode(true);
+    await probeJenkinsIdentity(
+      {
+        controller: "https://jenkins.example.com",
+        username: "probe-user",
+        token,
+      },
+      {
+        fetch: async () =>
+          new Response("forbidden", {
+            status: 403,
+            headers: { "X-Proxy-Detail": `${token} Basic ${encoded}` },
+          }),
+      },
+    );
+    expect(appendSpy).toHaveBeenCalledTimes(2);
+    expect(appendedPayload()).not.toContain(token);
+    expect(appendedPayload()).not.toContain(encoded);
+    expect(appendedPayload()).toContain(
+      "x-proxy-detail: <redacted> Basic <redacted>",
+    );
+  });
+
+  test("masks overlapping credentials completely across clients", () => {
+    for (const token of ["synthetic-overlap", "synthetic-overlap-extended"]) {
+      registerRedactedSecret(token);
+    }
+    logCliError(new Error("synthetic-overlap-extended synthetic-overlap"));
+    expect(appendedPayload()).toContain("Error: <redacted> <redacted>");
+    expect(appendedPayload()).not.toContain("extended");
+  });
+
   test("converts JSON errors without writing a log", () => {
     expect(toJsonError(new Error("synthetic conversion")).message).toBe(
       "synthetic conversion",

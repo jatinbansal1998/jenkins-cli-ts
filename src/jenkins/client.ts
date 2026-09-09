@@ -17,6 +17,7 @@ import {
   logApiResponse,
   logApiError,
   logNetworkError,
+  registerRedactedSecret,
 } from "../logger";
 import type {
   ArtifactEntry,
@@ -117,6 +118,8 @@ export class JenkinsClient {
       "base64",
     );
     this.authHeader = `Basic ${token}`;
+    registerRedactedSecret(options.apiToken);
+    registerRedactedSecret(token);
     this.timeoutMs = options.timeoutMs ?? 10_000;
     this.useCrumb = options.useCrumb === true;
     const inDepth = options.folderDepth;

@@ -405,7 +405,8 @@ Single-account fallback only:
 The CLI collects no usage analytics and sends no automatic error reports.
 Errors are written locally to `~/.config/jenkins-cli/error-YYYY-MM-DD.log`,
 including CLI version, full error messages, stacks, and error causes, even without
-`--debug`. Error logs are not redacted automatically and can contain sensitive
+`--debug`. Active API tokens and their Basic-auth encodings are masked in both
+error and API log files. Other error details remain intact and can contain sensitive
 values from exception messages, including details returned by Jenkins or a proxy.
 Review and redact them before sharing.
 
