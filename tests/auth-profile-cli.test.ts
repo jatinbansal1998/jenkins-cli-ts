@@ -79,7 +79,6 @@ const TWO_PROFILE_CONFIG = {
   version: 2,
   defaultProfile: "work",
   debug: true,
-  analyticsDisabled: true,
   profiles: {
     work: {
       jenkinsUrl: "https://jenkins-a.example.com",
@@ -227,7 +226,6 @@ describe("auth profile management CLI", () => {
     expect(config.defaultProfile).toBe("home");
     // Top-level settings survive the rewrite.
     expect(config.debug).toBe(true);
-    expect(config.analyticsDisabled).toBe(true);
   });
 
   test("auth logout rejects --all combined with --profile", () => {
@@ -317,6 +315,5 @@ describe("auth profile management CLI", () => {
 
     const config = readHomeConfig(home);
     expect((config.profiles as Record<string, unknown>).home).toBeUndefined();
-    expect(config.analyticsDisabled).toBe(true);
   });
 });

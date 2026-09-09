@@ -21,7 +21,7 @@ export function registerUpdateHelpCommands(
       "Update the jenkins-cli binary (alias: upgrade)",
       configureUpdateOptions,
       async (argv) => {
-        await dependencies.runTrackedCommand("update", argv, async () => {
+        await dependencies.runCommand("update", argv, async () => {
           await runUpdate({
             currentVersion: options.version,
             tag: optionalString(argv.tag),

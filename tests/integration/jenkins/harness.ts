@@ -1,6 +1,6 @@
 import { shellEscape } from "../../../src/shell-escape";
 import { expect } from "bun:test";
-import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { runNativeExecutable } from "../../helpers.native-executable";
@@ -309,8 +309,6 @@ function cliEnv(
     JENKINS_URL: jenkinsUrl,
     JENKINS_USER: process.env.JENKINS_INTEGRATION_USER,
     JENKINS_API_TOKEN: process.env.JENKINS_INTEGRATION_TOKEN,
-    JENKINS_ANALYTICS_DISABLED: "true",
-    JENKINS_ERROR_REPORTING_DISABLED: "true",
     NO_COLOR: "1",
     ...envOverrides,
   };
@@ -499,4 +497,13 @@ export async function waitForNewBuild(
 export function parseJson<T = Record<string, unknown>>(result: CliResult): T {
   expect(result.stderr).toBe("");
   return JSON.parse(result.stdout) as T;
+}
+
+export function cliLogFiles(home: string, kind: "api" | "error"): string[] {
+  const directory = join(home, ".config", "jenkins-cli");
+  const pattern = new RegExp(`^${kind}-\\d{4}-\\d{2}-\\d{2}\\.log$`);
+  return readdirSync(directory)
+    .filter((file) => pattern.test(file))
+    .toSorted()
+    .map((file) => join(directory, file));
 }

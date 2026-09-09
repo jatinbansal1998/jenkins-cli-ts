@@ -68,6 +68,25 @@ const REPORT: BuildTestReport = {
 };
 
 describe("JenkinsClient.getTestReport", () => {
+  test.each(["TypeError", "AbortError"])(
+    "preserves the original %s when classifying transport errors",
+    async (name) => {
+      const transport = new Error("synthetic report transport failure");
+      transport.name = name;
+      globalThis.fetch = mock(async () => {
+        throw transport;
+      }) as unknown as typeof fetch;
+      const error = await client()
+        .getTestReport(BUILD_URL)
+        .catch((caught: unknown) => caught);
+      expect(error).toBeInstanceOf(CliError);
+      expect((error as CliError).code).toBe("TEST_REPORT_TRANSPORT_ERROR");
+      const cause = (error as Error).cause;
+      expect(cause).toBeInstanceOf(CliError);
+      expect((cause as Error).cause).toBe(transport);
+    },
+  );
+
   test("fetches counts only for summary mode", async () => {
     const fetchMock = installResponse({
       failCount: 1,

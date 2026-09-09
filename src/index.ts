@@ -4,7 +4,7 @@ import { confirm, isCancel } from "@clack/prompts";
 import type { Argv } from "yargs";
 import yargs from "yargs/yargs";
 import { hideBin } from "yargs/helpers";
-import { runWithAnalytics, updateAnalyticsContext } from "./analytics";
+
 import { CliError, getScriptName, handleCliError, printHint } from "./cli";
 import {
   parseArtifactFilters as parseArtifactFiltersValue,
@@ -28,17 +28,14 @@ import type {
   CommandRegistrationDependencies,
   ContextArgv,
   ContextualCommandArgv,
-  TrackedArgv,
+  CommandArgv,
 } from "./cli/registration-types";
 import { printCliIntro } from "./cli-intro";
 import { runUpdate } from "./commands/update";
 import { loadEnv, getDebugDefault, resolveApiToken } from "./env";
-import {
-  captureUnexpectedError,
-  initializeDefaultErrorReporting,
-} from "./error-reporting";
+
 import { JenkinsClient } from "./jenkins/client";
-import { pruneOldApiLogs, setDebugMode } from "./logger";
+import { logCliError, pruneOldLogs, setDebugMode } from "./logger";
 import {
   enforceMinimumVersionFromCache,
   kickOffMinimumVersionRefresh,
@@ -97,8 +94,8 @@ async function main(): Promise<void> {
   kickOffAutoUpdate(VERSION, rawArgs);
 
   const dependencies: CommandRegistrationDependencies = {
-    runTrackedCommand,
-    runTrackedCommandWithContext,
+    runCommand,
+    runCommandWithContext,
   };
   let parser: Argv = yargs(rawArgs)
     .scriptName(scriptName)
@@ -233,7 +230,7 @@ async function promptForDeferredUpdate(
     return { pendingPromptIntroVersion: undefined };
   } catch (error) {
     handleCliError(error);
-    await captureUnexpectedError(error);
+
     printHint("Continuing with the requested command.");
     return { pendingPromptIntroVersion: pendingVersion };
   }
@@ -257,7 +254,6 @@ function loadContextEnv(argv?: ContextArgv): ReturnType<typeof loadEnv> {
 
 async function buildContext(
   env: ReturnType<typeof loadEnv>,
-  argv?: ContextArgv,
 ): Promise<CommandContext> {
   // Resolve keychain-backed tokens transparently for downstream API calls.
   const apiToken = await resolveApiToken(env);
@@ -269,11 +265,7 @@ async function buildContext(
     useCrumb: env.useCrumb,
     folderDepth: env.folderDepth,
   });
-  updateAnalyticsContext({
-    used_profile: Boolean(env.profileName),
-    used_auth_override: hasCredentialOverrides(argv),
-    use_crumb: env.useCrumb,
-  });
+
   return { env, client };
 }
 
@@ -288,12 +280,12 @@ async function prepareContext(
   // Automatically migrate an eligible plaintext profile before command work.
   // Non-interactive runs stay silent to preserve structured output contracts.
   await maybeMigrateToken({ env, report: interactive });
-  return await buildContext(env, argv);
+  return await buildContext(env);
 }
 
-async function runTrackedCommand(
+async function runCommand(
   command: string,
-  argv: TrackedArgv | undefined,
+  argv: CommandArgv | undefined,
   action: (helpers: {
     showIntro: (target?: string) => void;
     interactive: boolean;
@@ -323,13 +315,7 @@ async function runTrackedCommand(
       pendingUpdateVersion: pendingPromptIntroVersion,
     });
   };
-  await runWithAnalytics(
-    {
-      command,
-      interactive,
-    },
-    async () => action({ showIntro, interactive }),
-  );
+  await action({ showIntro, interactive });
 }
 
 const JSON_COMMANDS = new Set([
@@ -357,9 +343,7 @@ const JSON_COMMANDS = new Set([
   "update",
 ]);
 
-async function runTrackedCommandWithContext<
-  TArgv extends ContextualCommandArgv,
->(
+async function runCommandWithContext<TArgv extends ContextualCommandArgv>(
   command: string,
   argv: TArgv,
   action: (
@@ -369,7 +353,7 @@ async function runTrackedCommandWithContext<
     },
   ) => Promise<void>,
 ): Promise<void> {
-  await runTrackedCommand(command, argv, async ({ showIntro, interactive }) => {
+  await runCommand(command, argv, async ({ showIntro, interactive }) => {
     try {
       const context = await prepareContext(argv, showIntro, interactive);
       await action({
@@ -379,11 +363,13 @@ async function runTrackedCommandWithContext<
       });
     } catch (error) {
       if (argv.json) {
+        logCliError(error);
         emitJsonError(toJsonError(error));
         process.exitCode ||= 1;
         return;
       }
       if (argv.jsonl) {
+        logCliError(error);
         emitJsonLine({ type: "error", error: toJsonError(error) });
         process.exitCode ||= 1;
         return;
@@ -397,15 +383,6 @@ function isInteractiveTerminal(): boolean {
   return Boolean(process.stdin.isTTY) && Boolean(process.stdout.isTTY);
 }
 
-function hasCredentialOverrides(argv: ContextArgv | undefined): boolean {
-  return (
-    typeof argv?.url === "string" ||
-    typeof argv?.user === "string" ||
-    typeof argv?.token === "string" ||
-    typeof argv?.apiToken === "string"
-  );
-}
-
 // Bun currently reports import.meta.main as false in compiled Windows
 // executables (oven-sh/bun#30084). Build scripts replace this marker with true
 // so the compiled CLI still runs, while source imports retain normal
@@ -414,27 +391,37 @@ const shouldRunCli =
   import.meta.main ||
   (typeof __COMPILED_ENTRYPOINT__ !== "undefined" && __COMPILED_ENTRYPOINT__);
 
+function reportError(error: unknown): void {
+  const rawArgs = hideBin(process.argv);
+  if (isJsonOutputRequested(rawArgs)) {
+    logCliError(error);
+    emitJsonError(toJsonError(error));
+  } else if (isJsonLinesOutputRequested(rawArgs)) {
+    logCliError(error);
+    emitJsonLine({ type: "error", error: toJsonError(error) });
+  } else {
+    handleCliError(error);
+  }
+  process.exitCode = 1;
+}
+
+function fatalError(error: unknown): void {
+  reportError(error);
+  process.exit(1);
+}
+
 if (shouldRunCli) {
-  await initializeDefaultErrorReporting();
+  process.on("uncaughtException", fatalError);
+  process.on("unhandledRejection", fatalError);
+
   process.stdout.on("error", (error) => {
     if ((error as NodeJS.ErrnoException).code === "EPIPE") {
       process.exit(0);
     }
     throw error;
   });
-  // Exit handlers must be synchronous; pruneOldApiLogs is. This also runs
+  // Exit handlers must be synchronous; pruneOldLogs is. This also runs
   // after explicit process.exit() calls (e.g. yargs --help).
-  process.on("exit", () => pruneOldApiLogs());
-  await main().catch(async (error) => {
-    const rawArgs = hideBin(process.argv);
-    if (isJsonOutputRequested(rawArgs)) {
-      emitJsonError(toJsonError(error));
-    } else if (isJsonLinesOutputRequested(rawArgs)) {
-      emitJsonLine({ type: "error", error: toJsonError(error) });
-    } else {
-      handleCliError(error);
-    }
-    process.exitCode = 1;
-    await captureUnexpectedError(error);
-  });
+  process.on("exit", () => pruneOldLogs());
+  await main().catch(reportError);
 }

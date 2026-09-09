@@ -11,14 +11,14 @@ import { runLogin } from "../commands/login";
 import { addJsonOption, optionalString } from "./options";
 import type {
   CommandRegistrationDependencies,
-  RunTrackedCommand,
+  RunCommand,
 } from "./registration-types";
 
 export function registerAuthCommands(
   parser: Argv,
   dependencies: CommandRegistrationDependencies,
 ): Argv {
-  const { runTrackedCommand } = dependencies;
+  const { runCommand } = dependencies;
 
   return parser
     .command(
@@ -30,14 +30,14 @@ export function registerAuthCommands(
             "login",
             "Save Jenkins credentials",
             configureLoginOptions,
-            createLoginHandler("auth:login", runTrackedCommand),
+            createLoginHandler("auth:login", runCommand),
           )
           .command(
             "status",
             "Validate credentials against Jenkins",
             addJsonOption,
             async (argv) => {
-              await runTrackedCommand("auth:status", argv, async () => {
+              await runCommand("auth:status", argv, async () => {
                 await runAuthStatus({
                   profile: optionalString(argv.profile),
                   url: optionalString(argv.url),
@@ -54,7 +54,7 @@ export function registerAuthCommands(
             "List stored credential profiles",
             addJsonOption,
             async (argv) => {
-              await runTrackedCommand("auth:list", argv, async () => {
+              await runCommand("auth:list", argv, async () => {
                 await runAuthList(undefined, undefined, Boolean(argv.json));
               });
             },
@@ -68,7 +68,7 @@ export function registerAuthCommands(
                 describe: "Profile name",
               }),
             async (argv) => {
-              await runTrackedCommand("auth:use", argv, async () => {
+              await runCommand("auth:use", argv, async () => {
                 await runAuthUse(optionalString(argv.name) ?? "");
               });
             },
@@ -78,7 +78,7 @@ export function registerAuthCommands(
             "Show which credentials would be used",
             addJsonOption,
             async (argv) => {
-              await runTrackedCommand("auth:current", argv, async () => {
+              await runCommand("auth:current", argv, async () => {
                 await runAuthCurrent({
                   profile: optionalString(argv.profile),
                   url: optionalString(argv.url),
@@ -104,7 +104,7 @@ export function registerAuthCommands(
                   describe: "New profile name",
                 }),
             async (argv) => {
-              await runTrackedCommand("auth:rename", argv, async () => {
+              await runCommand("auth:rename", argv, async () => {
                 await runAuthRename(
                   optionalString(argv.old) ?? "",
                   optionalString(argv.new) ?? "",
@@ -122,18 +122,14 @@ export function registerAuthCommands(
                 describe: "Delete every stored profile",
               }),
             async (argv) => {
-              await runTrackedCommand(
-                "auth:logout",
-                argv,
-                async ({ showIntro }) => {
-                  showIntro();
-                  await runAuthLogout({
-                    profile: optionalString(argv.profile),
-                    all: Boolean(argv.all),
-                    nonInteractive: Boolean(argv.nonInteractive),
-                  });
-                },
-              );
+              await runCommand("auth:logout", argv, async ({ showIntro }) => {
+                showIntro();
+                await runAuthLogout({
+                  profile: optionalString(argv.profile),
+                  all: Boolean(argv.all),
+                  nonInteractive: Boolean(argv.nonInteractive),
+                });
+              });
             },
           )
           .demandCommand(
@@ -146,7 +142,7 @@ export function registerAuthCommands(
       "login",
       "Save Jenkins credentials (compatibility alias for auth login)",
       configureLoginOptions,
-      createLoginHandler("login", runTrackedCommand),
+      createLoginHandler("login", runCommand),
     );
 }
 
@@ -187,7 +183,7 @@ function configureLoginOptions(yargsInstance: Argv): Argv {
 
 function createLoginHandler(
   command: "auth:login" | "login",
-  runTrackedCommand: RunTrackedCommand,
+  runCommand: RunCommand,
 ) {
   return async (argv: {
     _?: unknown;
@@ -203,7 +199,7 @@ function createLoginHandler(
     protected?: unknown;
     banner?: unknown;
   }): Promise<void> => {
-    await runTrackedCommand(command, argv, async ({ showIntro }) => {
+    await runCommand(command, argv, async ({ showIntro }) => {
       showIntro();
       await runLogin({
         url: optionalString(argv.url),

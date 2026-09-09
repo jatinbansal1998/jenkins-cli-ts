@@ -1,17 +1,17 @@
 /**
- * File-based API logger.
- * Logs Jenkins API requests to ~/.config/jenkins-cli/api-<date>.log when
- * debug mode is enabled. Includes headers and body when available;
- * credential headers are redacted. Files older than the retention window
- * are pruned on CLI shutdown.
+ * Local error stacks and opt-in API metadata logs, retained for seven days.
+ * Error details are preserved except for registered API tokens and Basic credentials.
+ * API credential headers are redacted;
+ * request and response bodies are omitted. Nothing is uploaded.
  */
 import fs from "node:fs";
 import path from "node:path";
 import { resolveUserHome } from "./user-home";
+import packageJson from "../package.json";
 
 const CONFIG_DIR = path.join(resolveUserHome(), ".config", "jenkins-cli");
 const LEGACY_LOG_FILE = path.join(CONFIG_DIR, "api.log");
-const DATED_LOG_FILE_PATTERN = /^api-(\d{4}-\d{2}-\d{2})\.log$/;
+const DATED_LOG_FILE_PATTERN = /^(?:api|error)-(\d{4}-\d{2}-\d{2})\.log$/;
 const LOG_RETENTION_DAYS = 7;
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -37,6 +37,22 @@ export function isDebugMode(): boolean {
   return debugMode;
 }
 
+const redactedSecrets = new Set<string>();
+let secretPattern: RegExp | undefined;
+
+export function registerRedactedSecret(secret: string): void {
+  if (!secret || redactedSecrets.has(secret)) return;
+  redactedSecrets.add(secret);
+  // Mask the longest match so an overlapping token cannot leave a suffix exposed.
+  secretPattern = new RegExp(
+    [...redactedSecrets]
+      .toSorted((a, b) => b.length - a.length)
+      .map((value) => RegExp.escape(value))
+      .join("|"),
+    "g",
+  );
+}
+
 function ensureConfigDir(): void {
   if (!fs.existsSync(CONFIG_DIR)) {
     fs.mkdirSync(CONFIG_DIR, { recursive: true, mode: 0o700 });
@@ -47,17 +63,26 @@ function getTimestamp(): string {
   return new Date().toISOString();
 }
 
-/** UTC-dated log path, matching the UTC timestamps inside the entries. */
-function getLogFilePath(): string {
-  return path.join(CONFIG_DIR, `api-${getTimestamp().slice(0, 10)}.log`);
-}
-
-function safeAppendLine(line: string): void {
+function appendLogFile(kind: "api" | "error", payload: string): void {
+  ensureConfigDir();
+  const descriptor = fs.openSync(
+    path.join(CONFIG_DIR, `${kind}-${getTimestamp().slice(0, 10)}.log`),
+    fs.constants.O_APPEND |
+      fs.constants.O_CREAT |
+      fs.constants.O_WRONLY |
+      (fs.constants.O_NOFOLLOW ?? 0) |
+      (fs.constants.O_NONBLOCK ?? 0),
+    0o600,
+  );
   try {
-    ensureConfigDir();
-    fs.appendFileSync(getLogFilePath(), line, { mode: 0o600 });
-  } catch {
-    // Best-effort logging; never fail the caller.
+    if (!fs.fstatSync(descriptor).isFile()) return;
+    fs.fchmodSync(descriptor, 0o600);
+    fs.appendFileSync(
+      descriptor,
+      secretPattern ? payload.replaceAll(secretPattern, "<redacted>") : payload,
+    );
+  } finally {
+    fs.closeSync(descriptor);
   }
 }
 
@@ -70,11 +95,11 @@ function removeFileQuietly(filePath: string): void {
 }
 
 /**
- * Delete API log files older than the retention window. Runs on CLI
+ * Delete API and error log files older than the retention window. Runs on CLI
  * shutdown, so it is synchronous and best-effort (exit handlers cannot
  * await, and cleanup must never fail the process).
  */
-export function pruneOldApiLogs(now = Date.now()): void {
+export function pruneOldLogs(now = Date.now()): void {
   const cutoff = now - LOG_RETENTION_DAYS * DAY_MS;
   let entries: string[];
   try {
@@ -83,6 +108,10 @@ export function pruneOldApiLogs(now = Date.now()): void {
     return;
   }
   for (const entry of entries) {
+    if (entry === "analytics-id") {
+      removeFileQuietly(path.join(CONFIG_DIR, entry));
+      continue;
+    }
     const match = DATED_LOG_FILE_PATTERN.exec(entry);
     if (!match) {
       continue;
@@ -102,6 +131,28 @@ export function pruneOldApiLogs(now = Date.now()): void {
     }
   } catch {
     // Missing legacy log is the normal case.
+  }
+}
+
+export function logCliError(error: unknown): void {
+  try {
+    const entries: string[] = [];
+    const seen = new Set<Error>();
+    let current = error;
+    while (current instanceof Error && !seen.has(current) && seen.size < 8) {
+      seen.add(current);
+      entries.push(current.stack || `${current.name}: ${current.message}`);
+      current = current.cause;
+      if (current instanceof Error && !seen.has(current) && seen.size < 8)
+        entries.push("Caused by");
+    }
+    if (entries.length === 0) entries.push(String(error));
+    appendLogFile(
+      "error",
+      `[${getTimestamp()}] jenkins-cli ${packageJson.version}\n${entries.join("\n")}\n\n`,
+    );
+  } catch {
+    // Disk failures must not mask the original command failure.
   }
 }
 
@@ -133,13 +184,6 @@ function normalizeHeaders(headers?: LogHeaders): Array<[string, string]> {
   return entries;
 }
 
-function indentLines(text: string, indent: string): string {
-  return text
-    .split("\n")
-    .map((line) => `${indent}${line}`)
-    .join("\n");
-}
-
 function formatHeadersBlock(headers?: LogHeaders): string | null {
   const entries = normalizeHeaders(headers);
   if (entries.length === 0) {
@@ -152,14 +196,6 @@ function formatHeadersBlock(headers?: LogHeaders): string | null {
   return `Headers:\n${lines.join("\n")}`;
 }
 
-function formatBodyBlock(body: string | null | undefined): string | null {
-  if (body === null || body === undefined) {
-    return null;
-  }
-  const rendered = body === "" ? "<empty>" : body;
-  return `Body:\n${indentLines(rendered, "  ")}`;
-}
-
 function logBlock(lines: Array<string | null>): void {
   if (!debugMode) {
     return;
@@ -168,7 +204,11 @@ function logBlock(lines: Array<string | null>): void {
   if (!payload) {
     return;
   }
-  safeAppendLine(`${payload}\n\n`);
+  try {
+    appendLogFile("api", `${payload}\n\n`);
+  } catch {
+    // Disk failures must not affect the request.
+  }
 }
 
 /**
@@ -178,12 +218,12 @@ export function logApiRequest(
   method: string,
   url: string,
   headers?: LogHeaders,
-  body?: string | null,
+  hasBody = false,
 ): void {
   logBlock([
     `[${getTimestamp()}] REQUEST ${method} ${url}`,
     formatHeadersBlock(headers),
-    formatBodyBlock(body),
+    hasBody ? "Body:\n  <omitted>" : null,
   ]);
 }
 
@@ -195,12 +235,10 @@ export function logApiResponse(
   url: string,
   status: number,
   headers?: LogHeaders,
-  body?: string | null,
 ): void {
   logBlock([
     `[${getTimestamp()}] RESPONSE ${method} ${url} -> ${status}`,
     formatHeadersBlock(headers),
-    formatBodyBlock(body),
   ]);
 }
 
@@ -212,12 +250,10 @@ export function logApiError(
   url: string,
   status: number,
   headers?: LogHeaders,
-  body?: string | null,
 ): void {
   logBlock([
     `[${getTimestamp()}] ERROR ${method} ${url} -> HTTP ${status}`,
     formatHeadersBlock(headers),
-    formatBodyBlock(body),
   ]);
 }
 

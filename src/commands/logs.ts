@@ -1,5 +1,6 @@
+import { logCliError } from "../logger";
 import { confirm, isCancel, select, text } from "../clack";
-import { markAnalyticsPollingCommand } from "../analytics";
+
 import { resolveBuildSelector } from "../build-selector";
 import { CliError, printHint } from "../cli";
 import type { EnvConfig } from "../env";
@@ -149,6 +150,7 @@ export async function runLogs(options: LogsOptions): Promise<void> {
       );
       return;
     } catch (error) {
+      logCliError(error);
       emitJsonLine({ type: "error", error: toJsonError(error) }, options.write);
       process.exitCode ||= 1;
       return;
@@ -193,9 +195,6 @@ async function runLogsCore(
     return { cancelled: true, buildUrl: target.buildUrl };
   }
   const outputEmitter = createPostProcessingEmitter(emitter, effective);
-  if (effective.follow) {
-    markAnalyticsPollingCommand();
-  }
 
   if (!options.jsonl) {
     printHint(`Reading logs for ${target.jobLabel}.`);

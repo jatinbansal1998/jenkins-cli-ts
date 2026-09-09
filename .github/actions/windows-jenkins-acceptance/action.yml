@@ -30,8 +30,6 @@ runs:
         WINDOWS_ACCEPTANCE_EXPECTED_CREDENTIAL_BACKEND: ${{ inputs.expected-credential-backend }}
         WINDOWS_ACCEPTANCE_TOOL_CACHE: ${{ inputs.tool-cache }}
         NO_COLOR: "1"
-        JENKINS_ANALYTICS_DISABLED: "true"
-        JENKINS_ERROR_REPORTING_DISABLED: "true"
       run: |
         $ErrorActionPreference = "Stop"
         if (Test-Path variable:PSNativeCommandUseErrorActionPreference) {

@@ -14,14 +14,11 @@ import {
   select,
   text,
 } from "../clack";
-import {
-  markAnalyticsPollingCommand,
-  runInteractiveSubcommandWithAnalytics,
-} from "../analytics";
+
 import {
   CliError,
   getScriptName,
-  printError,
+  handleCliError,
   printHint,
   printOk,
 } from "../cli";
@@ -361,22 +358,18 @@ export async function runBuild(options: BuildOptions): Promise<BuildRunResult> {
       returnToCaller: Boolean(options.returnToCaller),
       performAction: async (action): Promise<ActionEffectResult> => {
         if (action === "watch") {
-          const finalStatus = await runInteractiveSubcommandWithAnalytics(
-            "wait",
-            () =>
-              runMenuAction(
-                async () =>
-                  watchBuildStatus({
-                    client: options.client,
-                    env: options.env,
-                    jobUrl: resolvedJobUrl,
-                    jobLabel: displayJob,
-                    buildUrl: activeBuild.buildUrl,
-                    buildNumber: activeBuild.buildNumber,
-                    queueUrl: activeBuild.queueUrl,
-                  }),
-                "action_error",
-              ),
+          const finalStatus = await runMenuAction(
+            async () =>
+              watchBuildStatus({
+                client: options.client,
+                env: options.env,
+                jobUrl: resolvedJobUrl,
+                jobLabel: displayJob,
+                buildUrl: activeBuild.buildUrl,
+                buildNumber: activeBuild.buildNumber,
+                queueUrl: activeBuild.queueUrl,
+              }),
+            "action_error",
           );
           if (typeof finalStatus === "string") {
             return finalStatus;
@@ -400,173 +393,152 @@ export async function runBuild(options: BuildOptions): Promise<BuildRunResult> {
         }
 
         if (action === "logs") {
-          return await runInteractiveSubcommandWithAnalytics("logs", () =>
-            runMenuAction(async (): Promise<ActionEffectResult> => {
-              await deps.runLogs({
-                client: options.client,
-                env: options.env,
-                buildUrl: activeBuild.buildUrl,
-                queueUrl: activeBuild.queueUrl,
-                jobUrl:
-                  !activeBuild.buildUrl && !activeBuild.queueUrl
-                    ? resolvedJobUrl
-                    : undefined,
-                nonInteractive: false,
-              });
-              return "action_ok";
-            }, "action_error"),
-          );
+          return await runMenuAction(async (): Promise<ActionEffectResult> => {
+            await deps.runLogs({
+              client: options.client,
+              env: options.env,
+              buildUrl: activeBuild.buildUrl,
+              queueUrl: activeBuild.queueUrl,
+              jobUrl:
+                !activeBuild.buildUrl && !activeBuild.queueUrl
+                  ? resolvedJobUrl
+                  : undefined,
+              nonInteractive: false,
+            });
+            return "action_ok";
+          }, "action_error");
         }
 
         if (action === "history") {
-          return await runInteractiveSubcommandWithAnalytics("history", () =>
-            runMenuAction(async (): Promise<ActionEffectResult> => {
-              const historyResult = await deps.runHistory({
-                client: options.client,
-                env: options.env,
-                jobUrl: resolvedJobUrl,
-                nonInteractive: false,
-              });
-              if (historyResult.activeBuild) {
-                activeBuild = {
-                  buildUrl: historyResult.activeBuild.buildUrl,
-                  buildNumber: historyResult.activeBuild.buildNumber,
-                  queueUrl: historyResult.activeBuild.queueUrl,
-                };
-              }
-              return "action_ok";
-            }, "action_error"),
-          );
+          return await runMenuAction(async (): Promise<ActionEffectResult> => {
+            const historyResult = await deps.runHistory({
+              client: options.client,
+              env: options.env,
+              jobUrl: resolvedJobUrl,
+              nonInteractive: false,
+            });
+            if (historyResult.activeBuild) {
+              activeBuild = {
+                buildUrl: historyResult.activeBuild.buildUrl,
+                buildNumber: historyResult.activeBuild.buildNumber,
+                queueUrl: historyResult.activeBuild.queueUrl,
+              };
+            }
+            return "action_ok";
+          }, "action_error");
         }
 
         if (action === "pending_inputs") {
-          return await runInteractiveSubcommandWithAnalytics("input", () =>
-            runMenuAction(async (): Promise<ActionEffectResult> => {
-              await deps.runPendingInputsMenu({
-                client: options.client,
-                env: options.env,
-                jobLabel: displayJob,
-                jobUrl: resolvedJobUrl,
-                buildUrl: activeBuild.buildUrl,
-                queueUrl: activeBuild.queueUrl,
-              });
-              return "action_ok";
-            }, "action_error"),
-          );
+          return await runMenuAction(async (): Promise<ActionEffectResult> => {
+            await deps.runPendingInputsMenu({
+              client: options.client,
+              env: options.env,
+              jobLabel: displayJob,
+              jobUrl: resolvedJobUrl,
+              buildUrl: activeBuild.buildUrl,
+              queueUrl: activeBuild.queueUrl,
+            });
+            return "action_ok";
+          }, "action_error");
         }
 
         if (action === "cancel") {
-          return await runInteractiveSubcommandWithAnalytics("cancel", () =>
-            runMenuAction(async (): Promise<ActionEffectResult> => {
-              const cancelTarget = resolveCancelTarget(activeBuild);
-              await deps.runCancel({
-                client: options.client,
-                env: options.env,
-                buildUrl: cancelTarget.buildUrl,
-                queueUrl: cancelTarget.queueUrl,
-                jobUrl:
-                  !cancelTarget.buildUrl && !cancelTarget.queueUrl
-                    ? resolvedJobUrl
-                    : undefined,
-                nonInteractive: false,
-              });
-              return "action_ok";
-            }, "action_error"),
-          );
+          return await runMenuAction(async (): Promise<ActionEffectResult> => {
+            const cancelTarget = resolveCancelTarget(activeBuild);
+            await deps.runCancel({
+              client: options.client,
+              env: options.env,
+              buildUrl: cancelTarget.buildUrl,
+              queueUrl: cancelTarget.queueUrl,
+              jobUrl:
+                !cancelTarget.buildUrl && !cancelTarget.queueUrl
+                  ? resolvedJobUrl
+                  : undefined,
+              nonInteractive: false,
+            });
+            return "action_ok";
+          }, "action_error");
         }
 
         if (action === "rerun") {
-          return await runInteractiveSubcommandWithAnalytics<ActionEffectResult>(
-            "rerun",
-            async (): Promise<ActionEffectResult> => {
-              const rerunResult = await options.client.triggerBuild(
-                resolvedJobUrl,
-                params,
-              );
-              activeBuild = {
-                buildUrl: rerunResult.buildUrl,
-                buildNumber: rerunResult.buildNumber,
-                queueUrl: rerunResult.queueUrl,
-              };
-
-              const branchValue = params[branchParam];
-              if (branchValue) {
-                try {
-                  await deps.recordBranchSelection({
-                    env: options.env,
-                    jobUrl: resolvedJobUrl,
-                    branch: branchValue,
-                  });
-                } catch {
-                  // Ignore cache write failures for build success.
-                }
-              }
-              await deps.recordRecentJob({
+          const rerunResult = await options.client.triggerBuild(
+            resolvedJobUrl,
+            params,
+          );
+          activeBuild = {
+            buildUrl: rerunResult.buildUrl,
+            buildNumber: rerunResult.buildNumber,
+            queueUrl: rerunResult.queueUrl,
+          };
+          const branchValue = params[branchParam];
+          if (branchValue) {
+            try {
+              await deps.recordBranchSelection({
                 env: options.env,
                 jobUrl: resolvedJobUrl,
+                branch: branchValue,
               });
-
-              if (rerunResult.buildUrl) {
-                printOk(`Build started at ${rerunResult.buildUrl}.`);
-              } else if (rerunResult.queueUrl) {
-                printOk(`Build queued for ${displayJob}.`);
-              } else {
-                printOk(`Build triggered for ${displayJob}.`);
-              }
-              const tipParams = splitParamsForTip({
-                params,
-                branchParam,
-              });
-              printNonInteractiveBuildTip({
-                scriptName: getScriptName(),
-                jobUrl: resolvedJobUrl,
-                branch: tipParams.branch,
-                defaultBranch: tipParams.defaultBranch,
-                customParams: tipParams.customParams,
-                branchParam,
-              });
-              return "action_ok";
-            },
-          );
+            } catch {
+              // Ignore cache write failures for build success.
+            }
+          }
+          await deps.recordRecentJob({
+            env: options.env,
+            jobUrl: resolvedJobUrl,
+          });
+          if (rerunResult.buildUrl) {
+            printOk(`Build started at ${rerunResult.buildUrl}.`);
+          } else if (rerunResult.queueUrl) {
+            printOk(`Build queued for ${displayJob}.`);
+          } else {
+            printOk(`Build triggered for ${displayJob}.`);
+          }
+          const tipParams = splitParamsForTip({
+            params,
+            branchParam,
+          });
+          printNonInteractiveBuildTip({
+            scriptName: getScriptName(),
+            jobUrl: resolvedJobUrl,
+            branch: tipParams.branch,
+            defaultBranch: tipParams.defaultBranch,
+            customParams: tipParams.customParams,
+            branchParam,
+          });
+          return "action_ok";
         }
 
         if (action === "rerun_last") {
-          return await runInteractiveSubcommandWithAnalytics<ActionEffectResult>(
-            "rerun-last",
-            async (): Promise<ActionEffectResult> => {
-              const rerun = await rerunLastBuildForJob({
-                client: options.client,
-                env: options.env,
-                jobUrl: resolvedJobUrl,
-                jobLabel: displayJob,
-              });
-              activeBuild = {
-                buildUrl: rerun.result.buildUrl,
-                buildNumber: rerun.result.buildNumber,
-                queueUrl: rerun.result.queueUrl,
-              };
-
-              printRerunResult({
-                jobLabel: displayJob,
-                jobUrl: resolvedJobUrl,
-                source: "last build",
-                rerun,
-              });
-              const tipParams = splitParamsForTip({
-                params: rerun.params,
-                branchParam,
-              });
-              printNonInteractiveBuildTip({
-                scriptName: getScriptName(),
-                jobUrl: resolvedJobUrl,
-                branch: tipParams.branch,
-                defaultBranch: tipParams.defaultBranch,
-                customParams: tipParams.customParams,
-                branchParam,
-              });
-              return "action_ok";
-            },
-          );
+          const rerun = await rerunLastBuildForJob({
+            client: options.client,
+            env: options.env,
+            jobUrl: resolvedJobUrl,
+            jobLabel: displayJob,
+          });
+          activeBuild = {
+            buildUrl: rerun.result.buildUrl,
+            buildNumber: rerun.result.buildNumber,
+            queueUrl: rerun.result.queueUrl,
+          };
+          printRerunResult({
+            jobLabel: displayJob,
+            jobUrl: resolvedJobUrl,
+            source: "last build",
+            rerun,
+          });
+          const tipParams = splitParamsForTip({
+            params: rerun.params,
+            branchParam,
+          });
+          printNonInteractiveBuildTip({
+            scriptName: getScriptName(),
+            jobUrl: resolvedJobUrl,
+            branch: tipParams.branch,
+            defaultBranch: tipParams.defaultBranch,
+            customParams: tipParams.customParams,
+            branchParam,
+          });
+          return "action_ok";
         }
 
         return "action_error";
@@ -800,7 +772,6 @@ async function watchBuildStatusStructured(options: {
   cancelled?: boolean;
   cancelIssued?: boolean;
 }> {
-  markAnalyticsPollingCommand();
   let buildUrl = options.buildUrl;
   let buildNumber = options.buildNumber;
   while (true) {
@@ -1092,7 +1063,7 @@ async function watchBuildStatus(options: {
 }> {
   const deps = activeBuildDeps;
   const pollIntervalMs = DEFAULT_WATCH_INTERVAL_MS;
-  markAnalyticsPollingCommand();
+
   const useSpinner = Boolean(process.stdout.isTTY) && !options.nonInteractive;
   const statusSpinner = useSpinner ? deps.spinner() : null;
   const cancelSignal = createWatchControlSignal();
@@ -1173,16 +1144,7 @@ async function watchBuildStatus(options: {
           if (statusSpinner) {
             statusSpinner.stop("Cancel failed.");
           }
-          if (error instanceof CliError) {
-            printError(error.message);
-            for (const hint of error.hints) {
-              printHint(hint);
-            }
-          } else {
-            printError(
-              error instanceof Error ? error.message : "Unexpected error.",
-            );
-          }
+          handleCliError(error);
           if (statusSpinner) {
             statusSpinner.start(watchPrompt);
           }

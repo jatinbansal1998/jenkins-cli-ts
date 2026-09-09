@@ -9,6 +9,7 @@
  * Following the repo convention, the emit helpers accept an optional `write`
  * callback so tests can capture stdout without spying on `process.stdout`.
  */
+import { logCliError } from "./logger";
 import { CliError } from "./cli";
 import type {
   ArtifactEntry,
@@ -290,6 +291,7 @@ export async function runJsonCommand<T>(
     const data = await run();
     emitJsonSuccess(command, data, write);
   } catch (error) {
+    logCliError(error);
     emitJsonError(toJsonError(error), write);
     if (!process.exitCode) {
       process.exitCode = 1;

@@ -388,10 +388,9 @@ describe("profile delete compatibility", () => {
     expect(deps.config()?.profiles.work).toBeDefined();
   });
 
-  test("preserves debug and analyticsDisabled through a delete", async () => {
+  test("preserves debug through a delete", async () => {
     const config = baseConfig();
     config.debug = true;
-    config.analyticsDisabled = true;
     const deps = makeDeps(config);
     await runProfileDelete(
       { name: "home", nonInteractive: true },
@@ -399,7 +398,6 @@ describe("profile delete compatibility", () => {
       () => {},
     );
     expect(deps.config()?.debug).toBe(true);
-    expect(deps.config()?.analyticsDisabled).toBe(true);
   });
 
   test("rejects an unknown profile with available names", async () => {

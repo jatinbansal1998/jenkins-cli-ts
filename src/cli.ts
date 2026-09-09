@@ -3,14 +3,20 @@
  * Provides standardized output prefixes (OK:, ERROR:, HINT:) for easy parsing.
  */
 import path from "node:path";
+import { logCliError } from "./logger";
 
 /** Structured error with optional hints for user guidance. */
 export class CliError extends Error {
   public readonly hints: string[];
   public readonly code?: string;
 
-  constructor(message: string, hints: string[] = [], code?: string) {
-    super(message);
+  constructor(
+    message: string,
+    hints: string[] = [],
+    code?: string,
+    options?: ErrorOptions,
+  ) {
+    super(message, options);
     this.name = "CliError";
     this.hints = hints;
     this.code = code;
@@ -43,6 +49,7 @@ export function printHint(message: string): void {
 }
 
 export function handleCliError(err: unknown): void {
+  logCliError(err);
   if (err instanceof CliError) {
     printError(err.message);
     for (const hint of err.hints) {

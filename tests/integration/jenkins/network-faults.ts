@@ -1,7 +1,13 @@
 import { describe, expect, test } from "bun:test";
 import { join } from "node:path";
 import { mkdir, readdir, rm } from "node:fs/promises";
-import { invokeCli, jenkinsUrl, parseJson, withCliHome } from "./harness";
+import {
+  cliLogFiles,
+  invokeCli,
+  jenkinsUrl,
+  parseJson,
+  withCliHome,
+} from "./harness";
 
 const api = process.env.JENKINS_INTEGRATION_TOXIPROXY_URL;
 type Toxic = { type: string; attributes: Record<string, number> };
@@ -86,6 +92,14 @@ export function registerNetworkFaultTests(): void {
               }
               if (fault.type === "limit_data") {
                 expect(result.output).toContain("Invalid JSON response");
+              }
+              const logFiles = cliLogFiles(home, "error");
+              expect(logFiles.length).toBeGreaterThan(0);
+              for (const file of logFiles) {
+                const errorLog = await Bun.file(file).text();
+                expect(errorLog).toContain("Caused by");
+                expect(errorLog).toMatch(/\s+at .+:\d+:\d+/);
+                await rm(file);
               }
               await proxy.clear();
               const recovered = await invokeCli(home, ["nodes", "--json"], env);

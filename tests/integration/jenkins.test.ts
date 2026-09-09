@@ -3,6 +3,7 @@ import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { registerNetworkFaultTests } from "./jenkins/network-faults";
 import {
+  cliLogFiles,
   integrationEnabled,
   integrationCliExecutable,
   integrationRuntimeDir,
@@ -118,6 +119,90 @@ describe.skipIf(!integrationEnabled)(
             .output,
         ).toContain("Job state: DISABLED");
       });
+    }, 30_000);
+
+    test("masks credentials echoed by a proxy around real Jenkins failures", async () => {
+      const token = process.env.JENKINS_INTEGRATION_READER_TOKEN!;
+      const user =
+        process.env.JENKINS_INTEGRATION_READER_USER ?? "integration-reader";
+      const encoded = Buffer.from(`${user}:${token}`).toString("base64");
+      let deniedRequests = 0;
+      const proxy = Bun.serve({
+        hostname: "127.0.0.1",
+        port: 0,
+        async fetch(request) {
+          const incoming = new URL(request.url);
+          const target = new URL(jenkinsUrl!);
+          target.pathname = incoming.pathname;
+          target.search = incoming.search;
+          const headers = new Headers(request.headers);
+          headers.delete("host");
+          const response = await fetch(target, {
+            method: request.method,
+            headers,
+            body: ["GET", "HEAD"].includes(request.method)
+              ? undefined
+              : await request.arrayBuffer(),
+            redirect: "manual",
+          });
+          const body = await response.arrayBuffer();
+          const responseHeaders = new Headers(response.headers);
+          responseHeaders.delete("content-length");
+          responseHeaders.delete("content-encoding");
+          if (response.status !== 403)
+            return new Response(body, {
+              status: response.status,
+              headers: responseHeaders,
+            });
+          deniedRequests++;
+          const echo = `token=${token}; Authorization: ${request.headers.get("authorization")}; diagnostic=keep-this-detail`;
+          return new Response(echo, {
+            status: 403,
+            headers: { "Content-Type": "text/plain", "X-Proxy-Detail": echo },
+          });
+        },
+      });
+      try {
+        await withCliHome(async (home) => {
+          const root = `${proxy.url.origin}/jenkins`;
+          const result = await invokeCli(
+            home,
+            [
+              "build",
+              "--job-url",
+              `${root}/job/cli-no-params/`,
+              "--non-interactive",
+              "--debug",
+              "--json",
+            ],
+            {
+              JENKINS_URL: root,
+              JENKINS_USER: user,
+              JENKINS_API_TOKEN: token,
+            },
+          );
+          expect(result.exitCode).toBe(1);
+          expect(deniedRequests).toBeGreaterThan(0);
+          expect(
+            parseJson<{ error: { message: string } }>(result).error.message,
+          ).toContain("diagnostic=keep-this-detail");
+          for (const kind of ["api", "error"] as const) {
+            const files = cliLogFiles(home, kind);
+            expect(files.length).toBeGreaterThan(0);
+            const log = (
+              await Promise.all(files.map((file) => Bun.file(file).text()))
+            ).join("\n");
+            expect(log).not.toContain(token);
+            expect(log).not.toContain(encoded);
+            expect(log).toContain(
+              "token=<redacted>; Authorization: Basic <redacted>; diagnostic=keep-this-detail",
+            );
+            if (kind === "error") expect(log).toMatch(/\s+at .+:\d+:\d+/);
+          }
+        });
+      } finally {
+        await proxy.stop(true);
+      }
     }, 30_000);
 
     test("keeps expanded JSON and JSONL contracts pure against real Jenkins", async () => {
@@ -857,6 +942,58 @@ describe.skipIf(!integrationEnabled)(
         }>(mixedRun);
         expect(mixedBuild.data.result).toBe("UNSTABLE");
 
+        const delayedReport = Bun.serve({
+          hostname: "127.0.0.1",
+          port: 0,
+          idleTimeout: 30,
+          async fetch(request) {
+            const incoming = new URL(request.url);
+            if (incoming.pathname.endsWith("/testReport/api/json")) {
+              await Bun.sleep(11_000);
+              return new Response("delayed test report");
+            }
+            const response = await fetch(
+              new URL(incoming.pathname + incoming.search, jenkinsUrl),
+              { headers: request.headers },
+            );
+            const headers = new Headers(response.headers);
+            headers.delete("content-length");
+            headers.delete("content-encoding");
+            return new Response(await response.arrayBuffer(), {
+              status: response.status,
+              headers,
+            });
+          },
+        });
+        try {
+          const root = `${delayedReport.url.origin}/jenkins`;
+          const reportFailure = await invokeCli(
+            home,
+            [
+              "tests",
+              "--build-url",
+              `${root}/job/cli-test-results/${mixedBuild.data.buildNumber}/`,
+              "--json",
+            ],
+            { JENKINS_URL: root },
+          );
+          expect(reportFailure.exitCode).toBe(1);
+          expect(parseJson(reportFailure)).toMatchObject({
+            error: { code: "TEST_REPORT_TRANSPORT_ERROR" },
+          });
+          const errorLog = (
+            await Promise.all(
+              cliLogFiles(home, "error").map((file) => Bun.file(file).text()),
+            )
+          ).join("\n");
+          expect(errorLog).toContain(
+            "Caused by\nCliError: Request timed out while trying to fetch test report.",
+          );
+          expect(errorLog.match(/Caused by\n/g)).toHaveLength(2);
+        } finally {
+          await delayedReport.stop(true);
+        }
+
         const summary = parseJson<{
           data: {
             build: { number: number; url: string; result: string };
@@ -1211,6 +1348,7 @@ describe.skipIf(!integrationEnabled)(
         const secret = "integration-secret-value";
         const build = await runCli(home, [
           "build",
+          "--debug",
           "--job-url",
           jobUrl,
           "--param",
@@ -1228,6 +1366,19 @@ describe.skipIf(!integrationEnabled)(
         expect(build.output).toMatch(/Build (?:queued|started)/);
         expect(build.output).toContain("SUCCESS");
         expect(build.output).not.toContain(secret);
+        const apiLog = (
+          await Promise.all(
+            cliLogFiles(home, "api").map((file) => Bun.file(file).text()),
+          )
+        ).join("\n");
+        expect(apiLog).toContain("REQUEST GET ");
+        expect(apiLog).toContain("REQUEST POST ");
+        expect(apiLog).toContain("RESPONSE POST ");
+        expect(apiLog).toContain("Body:\n  <omitted>");
+        expect(apiLog).not.toContain(secret);
+        expect(apiLog).not.toContain("default-secret");
+        expect(apiLog).not.toContain("default-message");
+        expect(apiLog).not.toContain(message);
 
         const status = parseJson<{
           data: { build: { number: number; url: string } };
@@ -1567,6 +1718,16 @@ describe.skipIf(!integrationEnabled)(
           "Jenkins returned HTTP 403 while trying to trigger build:",
         );
         expect(denied.output).not.toContain(readerToken);
+        const errorLog = (
+          await Promise.all(
+            cliLogFiles(home, "error").map((file) => Bun.file(file).text()),
+          )
+        ).join("\n");
+        expect(errorLog).toContain(
+          "CliError: Jenkins returned HTTP 403 while trying to trigger build:",
+        );
+        expect(errorLog).toMatch(/\s+at .+:\d+:\d+/);
+        expect(errorLog).not.toContain(readerToken);
 
         await runCli(home, ["auth", "use", "reader"], withoutCredentialEnv);
         expect(
@@ -3275,7 +3436,6 @@ async function writeProtectedProfile(home: string): Promise<void> {
             protected: true,
           },
         },
-        analyticsDisabled: true,
       },
       null,
       2,

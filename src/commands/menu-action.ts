@@ -3,7 +3,7 @@
  * history). Keeping it in one place is what lets a protected-profile block
  * return the user to the current action menu instead of unwinding the flow.
  */
-import { CliError, printError, printHint } from "../cli";
+import { CliError, handleCliError } from "../cli";
 import { PROFILE_PROTECTED_CODE } from "../env";
 import type { ActionEffectResult } from "../flows/types";
 
@@ -12,10 +12,7 @@ export function printMenuActionError(error: unknown): void {
   if (!(error instanceof CliError)) {
     throw error;
   }
-  printError(error.message);
-  for (const hint of error.hints) {
-    printHint(hint);
-  }
+  handleCliError(error);
 }
 
 /**

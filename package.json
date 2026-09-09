@@ -24,15 +24,12 @@
     "test:coverage": "bun test --isolate --coverage --coverage-reporter=text --coverage-reporter=lcov",
     "test:load:jenkins": "bun scripts/test-jenkins-integration.ts --load",
     "test:network:jenkins": "bun scripts/test-jenkins-integration.ts --network",
-    "sentry:smoke": "bun scripts/verify-sentry.ts",
-    "sentry:smoke:build": "bun scripts/build-sentry-smoke.ts",
     "test:integration:jenkins": "bun scripts/run-with-linux-keyring.ts -- bun scripts/test-jenkins-integration.ts",
     "test:mutation": "bun scripts/test-mutation.ts",
     "test:mutation:jenkins": "bun scripts/run-with-linux-keyring.ts -- bun scripts/test-jenkins-integration.ts --mutation",
     "format": "prettier . --write"
   },
   "devDependencies": {
-    "@sentry/cli": "3.6.2",
     "@types/bun": "1.4.1",
     "@types/semver": "^7.8.0",
     "@types/yargs": "^17.0.35",
@@ -47,7 +44,6 @@
   "dependencies": {
     "@clack/core": "1.4.3",
     "@clack/prompts": "^1.7.0",
-    "@sentry/bun": "^10.67.0",
     "cross-keychain": "^1.1.0",
     "semver": "^7.8.5",
     "yargs": "^18.0.0",

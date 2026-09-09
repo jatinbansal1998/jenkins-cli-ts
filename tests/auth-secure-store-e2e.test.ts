@@ -127,7 +127,6 @@ function runCli(
       JENKINS_URL: undefined,
       JENKINS_USER: undefined,
       JENKINS_API_TOKEN: undefined,
-      JENKINS_ANALYTICS_DISABLED: "true",
       TS_KEYRING_BACKEND: undefined,
       ...env,
     },

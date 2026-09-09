@@ -32,7 +32,7 @@ export function registerBuildCommands(
   dependencies: CommandRegistrationDependencies,
   rawArgs: string[],
 ): Argv {
-  const { runTrackedCommandWithContext } = dependencies;
+  const { runCommandWithContext } = dependencies;
 
   return parser
     .command(
@@ -40,32 +40,28 @@ export function registerBuildCommands(
       "Trigger a Jenkins build (alias: deploy)",
       configureBuildOptions,
       async (argv) => {
-        await runTrackedCommandWithContext(
-          "build",
-          argv,
-          async ({ env, client }) => {
-            const branchParamExplicitlyPassed =
-              wasBranchParamExplicitlyPassed(rawArgs);
-            const watchExplicitlyPassed = wasWatchExplicitlyPassed(rawArgs);
-            await runBuild({
-              client,
-              env,
-              job: optionalString(argv.job),
-              jobUrl: optionalString(argv.jobUrl),
-              branch: optionalString(argv.branch),
-              customParams: parseBuildCustomParams(argv.param),
-              branchParam: branchParamExplicitlyPassed
-                ? optionalString(argv.branchParam)
-                : env.branchParamDefault,
-              defaultBranch:
-                Boolean(argv.nonInteractive || argv.json) &&
-                (Boolean(argv.withoutParams) || Boolean(argv.defaultBranch)),
-              nonInteractive: Boolean(argv.nonInteractive || argv.json),
-              watch: watchExplicitlyPassed ? Boolean(argv.watch) : undefined,
-              json: Boolean(argv.json),
-            });
-          },
-        );
+        await runCommandWithContext("build", argv, async ({ env, client }) => {
+          const branchParamExplicitlyPassed =
+            wasBranchParamExplicitlyPassed(rawArgs);
+          const watchExplicitlyPassed = wasWatchExplicitlyPassed(rawArgs);
+          await runBuild({
+            client,
+            env,
+            job: optionalString(argv.job),
+            jobUrl: optionalString(argv.jobUrl),
+            branch: optionalString(argv.branch),
+            customParams: parseBuildCustomParams(argv.param),
+            branchParam: branchParamExplicitlyPassed
+              ? optionalString(argv.branchParam)
+              : env.branchParamDefault,
+            defaultBranch:
+              Boolean(argv.nonInteractive || argv.json) &&
+              (Boolean(argv.withoutParams) || Boolean(argv.defaultBranch)),
+            nonInteractive: Boolean(argv.nonInteractive || argv.json),
+            watch: watchExplicitlyPassed ? Boolean(argv.watch) : undefined,
+            json: Boolean(argv.json),
+          });
+        });
       },
     )
     .command(
@@ -79,24 +75,20 @@ export function registerBuildCommands(
           ),
         ).epilog(BUILD_METADATA_HELP),
       async (argv) => {
-        await runTrackedCommandWithContext(
-          "status",
-          argv,
-          async ({ env, client }) => {
-            const watchExplicitlyPassed = wasWatchExplicitlyPassed(rawArgs);
-            await runStatus({
-              client,
-              env,
-              job: optionalString(argv.job),
-              jobUrl: optionalString(argv.jobUrl),
-              build: typeof argv.build === "number" ? argv.build : undefined,
-              buildUrl: optionalString(argv.buildUrl),
-              nonInteractive: Boolean(argv.nonInteractive || argv.json),
-              watch: watchExplicitlyPassed ? Boolean(argv.watch) : undefined,
-              json: Boolean(argv.json),
-            });
-          },
-        );
+        await runCommandWithContext("status", argv, async ({ env, client }) => {
+          const watchExplicitlyPassed = wasWatchExplicitlyPassed(rawArgs);
+          await runStatus({
+            client,
+            env,
+            job: optionalString(argv.job),
+            jobUrl: optionalString(argv.jobUrl),
+            build: typeof argv.build === "number" ? argv.build : undefined,
+            buildUrl: optionalString(argv.buildUrl),
+            nonInteractive: Boolean(argv.nonInteractive || argv.json),
+            watch: watchExplicitlyPassed ? Boolean(argv.watch) : undefined,
+            json: Boolean(argv.json),
+          });
+        });
       },
     )
     .command(
@@ -111,7 +103,7 @@ export function registerBuildCommands(
           }),
         ).epilog(BUILD_METADATA_HELP),
       async (argv) => {
-        await runTrackedCommandWithContext(
+        await runCommandWithContext(
           "history",
           argv,
           async ({ env, client }) => {
@@ -133,25 +125,21 @@ export function registerBuildCommands(
       "Wait for a Jenkins build to finish",
       configureWaitOptions,
       async (argv) => {
-        await runTrackedCommandWithContext(
-          "wait",
-          argv,
-          async ({ env, client }) => {
-            await runWait({
-              client,
-              env,
-              job: optionalString(argv.job),
-              jobUrl: optionalString(argv.jobUrl),
-              build: typeof argv.build === "number" ? argv.build : undefined,
-              buildUrl: optionalString(argv.buildUrl),
-              queueUrl: optionalString(argv.queueUrl),
-              interval: optionalString(argv.interval),
-              timeout: optionalString(argv.timeout),
-              nonInteractive: Boolean(argv.nonInteractive || argv.json),
-              json: Boolean(argv.json),
-            });
-          },
-        );
+        await runCommandWithContext("wait", argv, async ({ env, client }) => {
+          await runWait({
+            client,
+            env,
+            job: optionalString(argv.job),
+            jobUrl: optionalString(argv.jobUrl),
+            build: typeof argv.build === "number" ? argv.build : undefined,
+            buildUrl: optionalString(argv.buildUrl),
+            queueUrl: optionalString(argv.queueUrl),
+            interval: optionalString(argv.interval),
+            timeout: optionalString(argv.timeout),
+            nonInteractive: Boolean(argv.nonInteractive || argv.json),
+            json: Boolean(argv.json),
+          });
+        });
       },
     )
     .command(
@@ -159,36 +147,31 @@ export function registerBuildCommands(
       "Stream Jenkins build logs",
       configureLogsOptions,
       async (argv) => {
-        await runTrackedCommandWithContext(
-          "logs",
-          argv,
-          async ({ env, client }) => {
-            await runLogs({
-              client,
-              env,
-              job: optionalString(argv.job),
-              jobUrl: optionalString(argv.jobUrl),
-              build: typeof argv.build === "number" ? argv.build : undefined,
-              buildUrl: optionalString(argv.buildUrl),
-              queueUrl: optionalString(argv.queueUrl),
-              follow:
-                typeof argv.follow === "boolean" ? argv.follow : undefined,
-              poll: optionalString(argv.poll),
-              tail: typeof argv.tail === "number" ? argv.tail : undefined,
-              since: optionalString(argv.since),
-              stage: optionalString(argv.stage),
-              stageId: optionalString(argv.stageId),
-              failed: Boolean(argv.failed),
-              plain: Boolean(argv.plain),
-              noTimestamps: argv.timestamps === false,
-              grep: optionalString(argv.grep),
-              context:
-                typeof argv.context === "number" ? argv.context : undefined,
-              nonInteractive: Boolean(argv.nonInteractive || argv.jsonl),
-              jsonl: Boolean(argv.jsonl),
-            });
-          },
-        );
+        await runCommandWithContext("logs", argv, async ({ env, client }) => {
+          await runLogs({
+            client,
+            env,
+            job: optionalString(argv.job),
+            jobUrl: optionalString(argv.jobUrl),
+            build: typeof argv.build === "number" ? argv.build : undefined,
+            buildUrl: optionalString(argv.buildUrl),
+            queueUrl: optionalString(argv.queueUrl),
+            follow: typeof argv.follow === "boolean" ? argv.follow : undefined,
+            poll: optionalString(argv.poll),
+            tail: typeof argv.tail === "number" ? argv.tail : undefined,
+            since: optionalString(argv.since),
+            stage: optionalString(argv.stage),
+            stageId: optionalString(argv.stageId),
+            failed: Boolean(argv.failed),
+            plain: Boolean(argv.plain),
+            noTimestamps: argv.timestamps === false,
+            grep: optionalString(argv.grep),
+            context:
+              typeof argv.context === "number" ? argv.context : undefined,
+            nonInteractive: Boolean(argv.nonInteractive || argv.jsonl),
+            jsonl: Boolean(argv.jsonl),
+          });
+        });
       },
     )
     .command(
@@ -203,23 +186,19 @@ export function registerBuildCommands(
           describe: "Show failing test cases, messages, and stack traces",
         }),
       async (argv) => {
-        await runTrackedCommandWithContext(
-          "tests",
-          argv,
-          async ({ env, client }) => {
-            await runTests({
-              client,
-              env,
-              job: optionalString(argv.job),
-              jobUrl: optionalString(argv.jobUrl),
-              build: typeof argv.build === "number" ? argv.build : undefined,
-              buildUrl: optionalString(argv.buildUrl),
-              failed: Boolean(argv.failed),
-              nonInteractive: Boolean(argv.nonInteractive || argv.json),
-              json: Boolean(argv.json),
-            });
-          },
-        );
+        await runCommandWithContext("tests", argv, async ({ env, client }) => {
+          await runTests({
+            client,
+            env,
+            job: optionalString(argv.job),
+            jobUrl: optionalString(argv.jobUrl),
+            build: typeof argv.build === "number" ? argv.build : undefined,
+            buildUrl: optionalString(argv.buildUrl),
+            failed: Boolean(argv.failed),
+            nonInteractive: Boolean(argv.nonInteractive || argv.json),
+            json: Boolean(argv.json),
+          });
+        });
       },
     )
     .command(
@@ -240,7 +219,7 @@ export function registerBuildCommands(
             describe: "Include each change's affected file paths",
           }),
       async (argv) => {
-        await runTrackedCommandWithContext(
+        await runCommandWithContext(
           "changes",
           argv,
           async ({ env, client }) => {
@@ -265,7 +244,7 @@ export function registerBuildCommands(
       "List or download build artifacts",
       configureArtifactsOptions,
       async (argv) => {
-        await runTrackedCommandWithContext(
+        await runCommandWithContext(
           "artifacts",
           argv,
           async ({ env, client }) => {

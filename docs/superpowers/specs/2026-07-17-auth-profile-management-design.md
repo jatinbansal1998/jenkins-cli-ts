@@ -25,12 +25,11 @@ operations as the new `auth` commands so their behavior cannot drift.
 ## Shared profile operations
 
 Move list, selection, rename, and deletion behavior behind a focused profile
-management module. The command handlers own argument parsing, confirmation,
-text output, and analytics. The shared operations own config validation,
+management module. The command handlers own argument parsing, confirmation, and
+text output. The shared operations own config validation,
 secure-store changes, default-profile selection, rollback, and result data.
 
-Every config update preserves all top-level settings, including `debug` and
-`analyticsDisabled`. Profile names use the existing normalization rules.
+Every config update preserves all top-level settings, including `debug`. Profile names use the existing normalization rules.
 
 ## Command behavior
 
@@ -126,17 +125,12 @@ restores the original config/store state where possible and reports any
 rollback failure. The implementation must not leave an unreported duplicate or
 orphaned token.
 
-## Output, errors, and analytics
+## Output and errors
 
 Successful mutating commands print the affected profile name or count and the
 resulting active profile when one remains. Failures use `CliError` with a
-specific cause and remediation; secrets are excluded from messages, debug
-logs, and analytics.
-
-Track the canonical commands independently as `auth:list`, `auth:use`,
-`auth:current`, `auth:rename`, and `auth:logout`. Existing compatibility
-commands retain their `profile:*` analytics names. Do not record profile names,
-controller URLs, usernames, tokens, or secure-store accounts.
+specific cause and remediation; secrets are excluded from messages and debug
+logs.
 
 ## Testing and documentation
 
@@ -152,8 +146,8 @@ Add focused tests for:
 - Plaintext and keychain rename, active-profile rename, name collision, missing
   source token, and rollback paths.
 - Compatibility routing for `profile list`, `profile use`, and `profile delete`.
-- Preservation of `debug`, `analyticsDisabled`, and unrelated profiles.
-- Auth help, root help, and secret-free analytics.
+- Preservation of `debug` and unrelated profiles.
+- Auth help, root help, and secret-free output.
 
 Update the README credential and command reference sections. Document that
 logout removes local credentials but does not revoke the Jenkins-side token.

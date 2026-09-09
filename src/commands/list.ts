@@ -2,7 +2,7 @@
  * List command implementation.
  * Displays all cached Jenkins jobs with optional search filtering.
  */
-import { runInteractiveSubcommandWithAnalytics } from "../analytics";
+
 import { printOk } from "../cli";
 import { runMenuAction } from "./menu-action";
 import type { EnvConfig } from "../env";
@@ -190,50 +190,27 @@ async function performListAction(
     selectedJob,
   };
 
-  switch (action) {
-    case "build":
-      return await runInteractiveSubcommandWithAnalytics("build", () =>
-        runMenuAction(() => runBuildAction(context), "action_error"),
-      );
-    case "view_params":
-      return await runInteractiveSubcommandWithAnalytics("params", () =>
-        runMenuAction(() => runViewParamsAction(context), "action_error"),
-      );
-    case "status":
-      return await runInteractiveSubcommandWithAnalytics("status", () =>
-        runMenuAction(() => runStatusAction(context), "action_error"),
-      );
-    case "history":
-      return await runInteractiveSubcommandWithAnalytics("history", () =>
-        runMenuAction(() => runHistoryAction(context), "action_error"),
-      );
-    case "watch":
-      return await runInteractiveSubcommandWithAnalytics("wait", () =>
-        runMenuAction(() => runWatchAction(context), "action_error"),
-      );
-    case "logs":
-      return await runInteractiveSubcommandWithAnalytics("logs", () =>
-        runMenuAction(() => runLogsAction(context), "action_error"),
-      );
-    case "pending_inputs":
-      return await runInteractiveSubcommandWithAnalytics("input", () =>
-        runMenuAction(() => runPendingInputsAction(context), "action_error"),
-      );
-    case "cancel":
-      return await runInteractiveSubcommandWithAnalytics("cancel", () =>
-        runMenuAction(() => runCancelAction(context), "action_error"),
-      );
-    case "rerun":
-      return await runInteractiveSubcommandWithAnalytics("rerun", () =>
-        runMenuAction(() => runRerunAction(context), "action_error"),
-      );
-    case "rerun_last":
-      return await runInteractiveSubcommandWithAnalytics("rerun-last", () =>
-        runMenuAction(() => runRerunLastBuildAction(context), "action_error"),
-      );
-    default:
-      return "action_error";
-  }
+  const handlers: Record<
+    string,
+    (context: ListActionContext) => Promise<ActionEffectResult>
+  > = {
+    build: runBuildAction,
+    view_params: runViewParamsAction,
+    status: runStatusAction,
+    history: runHistoryAction,
+    watch: runWatchAction,
+    logs: runLogsAction,
+    pending_inputs: runPendingInputsAction,
+    cancel: runCancelAction,
+    rerun: runRerunAction,
+    rerun_last: runRerunLastBuildAction,
+  };
+  const handler = Object.hasOwn(handlers, action)
+    ? handlers[action]
+    : undefined;
+  return handler
+    ? await runMenuAction(() => handler(context), "action_error")
+    : "action_error";
 }
 
 async function runBuildAction(

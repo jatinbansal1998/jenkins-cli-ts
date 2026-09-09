@@ -8,16 +8,14 @@ import { JOB_CACHE_REFRESH_COMMAND } from "../jobs";
 import { addJobOptions, addJsonOption, optionalString } from "./options";
 import type {
   CommandRegistrationDependencies,
-  RunTrackedCommandWithContext,
+  RunCommandWithContext,
 } from "./registration-types";
 
 export function registerJobCommands(
   parser: Argv,
   dependencies: CommandRegistrationDependencies,
 ): Argv {
-  const listHandler = createListHandler(
-    dependencies.runTrackedCommandWithContext,
-  );
+  const listHandler = createListHandler(dependencies.runCommandWithContext);
 
   // Internal: the detached worker `loadJobs` spawns for a stale cache.
   parser.command(JOB_CACHE_REFRESH_COMMAND, false, {}, async () => {
@@ -37,7 +35,7 @@ export function registerJobCommands(
       "Show parameter definitions for a Jenkins job",
       (yargsInstance) => addJsonOption(addJobOptions(yargsInstance)),
       async (argv) => {
-        await dependencies.runTrackedCommandWithContext(
+        await dependencies.runCommandWithContext(
           "params",
           argv,
           async ({ env, client }) => {
@@ -59,7 +57,7 @@ export function registerJobCommands(
       "Print a job or folder's raw config.xml",
       addJobOptions,
       async (argv) => {
-        await dependencies.runTrackedCommandWithContext(
+        await dependencies.runCommandWithContext(
           "config",
           argv,
           async ({ env, client }) => {
@@ -98,7 +96,7 @@ export function registerJobCommands(
             }),
         ),
       async (argv) => {
-        await dependencies.runTrackedCommandWithContext(
+        await dependencies.runCommandWithContext(
           "create",
           argv,
           async ({ env, client }) => {
@@ -142,9 +140,7 @@ function configureListOptions(yargsInstance: Argv): Argv {
     });
 }
 
-function createListHandler(
-  runTrackedCommandWithContext: RunTrackedCommandWithContext,
-) {
+function createListHandler(runCommandWithContext: RunCommandWithContext) {
   return async (argv: {
     _?: unknown;
     $0?: unknown;
@@ -162,20 +158,16 @@ function createListHandler(
     folderDepth?: unknown;
     confirmProtected?: unknown;
   }): Promise<void> => {
-    await runTrackedCommandWithContext(
-      "list",
-      argv,
-      async ({ env, client }) => {
-        await runList({
-          client,
-          env,
-          search: optionalString(argv.search),
-          refresh: Boolean(argv.refresh),
-          activeOnly: Boolean(argv.activeOnly),
-          nonInteractive: Boolean(argv.nonInteractive),
-          json: Boolean(argv.json),
-        });
-      },
-    );
+    await runCommandWithContext("list", argv, async ({ env, client }) => {
+      await runList({
+        client,
+        env,
+        search: optionalString(argv.search),
+        refresh: Boolean(argv.refresh),
+        activeOnly: Boolean(argv.activeOnly),
+        nonInteractive: Boolean(argv.nonInteractive),
+        json: Boolean(argv.json),
+      });
+    });
   };
 }

@@ -1,11 +1,12 @@
 import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
 import fs from "node:fs";
+import path from "node:path";
+import { resolveUserHome } from "../src/user-home";
 import { JenkinsClient } from "../src/jenkins/client";
 import { setDebugMode } from "../src/logger";
 
 let fetchSpy: ReturnType<typeof spyOn<typeof globalThis, "fetch">>;
 let appendSpy: ReturnType<typeof spyOn<typeof fs, "appendFileSync">>;
-let existsSpy: ReturnType<typeof spyOn<typeof fs, "existsSync">>;
 
 beforeEach(() => {
   fetchSpy = spyOn(globalThis, "fetch").mockImplementation((async () =>
@@ -28,14 +29,15 @@ beforeEach(() => {
       ),
     )) as unknown as typeof fetch);
   appendSpy = spyOn(fs, "appendFileSync").mockImplementation(() => undefined);
-  existsSpy = spyOn(fs, "existsSync").mockImplementation(() => true);
+  fs.mkdirSync(path.join(resolveUserHome(), ".config", "jenkins-cli"), {
+    recursive: true,
+  });
 });
 
 afterEach(() => {
   setDebugMode(false);
   fetchSpy.mockRestore();
   appendSpy.mockRestore();
-  existsSpy.mockRestore();
 });
 
 describe("JenkinsClient parameter discovery", () => {

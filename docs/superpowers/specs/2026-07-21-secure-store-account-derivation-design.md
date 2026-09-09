@@ -101,7 +101,7 @@ profiles can log in again; plaintext profiles such as the reported
 `dev/stage 2` profile will migrate normally using the new account.
 
 Account derivation is synchronous and does not expose the canonical payload,
-profile name, controller URL, username, token, or account through analytics.
+profile name, controller URL, username, token, or account through diagnostic output.
 Existing secure-store errors and verified-write/rollback behavior remain
 unchanged.
 

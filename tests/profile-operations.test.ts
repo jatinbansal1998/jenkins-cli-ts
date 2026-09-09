@@ -56,7 +56,6 @@ function twoProfileConfig(): JenkinsConfig {
     version: 2,
     defaultProfile: "work",
     debug: true,
-    analyticsDisabled: true,
     profiles: {
       work: {
         jenkinsUrl: URL_A,
@@ -159,7 +158,6 @@ describe("selectProfile", () => {
     const written = harness.config();
     expect(written?.defaultProfile).toBe("home");
     expect(written?.debug).toBe(true);
-    expect(written?.analyticsDisabled).toBe(true);
     expect(Object.keys(written?.profiles ?? {})).toEqual(["work", "home"]);
     expect(written?.profiles.home?.protected).toBeTrue();
   });
@@ -201,7 +199,6 @@ describe("setProfileProtection", () => {
     });
     expect(harness.config()?.profiles.work).toEqual(originalWork);
     expect(harness.config()?.debug).toBeTrue();
-    expect(harness.config()?.analyticsDisabled).toBeTrue();
   });
 
   test("does not rewrite an unchanged profile", async () => {
@@ -249,7 +246,6 @@ describe("deleteProfilesStrict", () => {
     expect(Object.keys(written?.profiles ?? {})).toEqual(["home"]);
     expect(written?.defaultProfile).toBe("home");
     expect(written?.debug).toBe(true);
-    expect(written?.analyticsDisabled).toBe(true);
   });
 
   test("succeeds when the keychain token is already absent", async () => {
@@ -374,7 +370,6 @@ describe("deleteProfilesStrict", () => {
     const written = harness.config();
     expect(written?.profiles.home).toEqual(config.profiles.home);
     expect(written?.debug).toBe(true);
-    expect(written?.analyticsDisabled).toBe(true);
   });
 });
 
@@ -396,7 +391,6 @@ describe("deleteAllProfiles", () => {
     expect(harness.store.size).toBe(0);
     expect(harness.config()?.profiles).toEqual({});
     expect(harness.config()?.debug).toBe(true);
-    expect(harness.config()?.analyticsDisabled).toBe(true);
   });
 
   test("restores already-deleted entries when a later deletion fails", async () => {
@@ -510,7 +504,6 @@ describe("renameProfile", () => {
     expect(written?.profiles.personal?.protected).toBeTrue();
     expect(written?.defaultProfile).toBe("work");
     expect(written?.debug).toBe(true);
-    expect(written?.analyticsDisabled).toBe(true);
   });
 
   test("renames the default profile reference when the source is active", async () => {

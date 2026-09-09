@@ -21,7 +21,6 @@ jobs:
       tag_name: ${{ steps.resolve_release_inputs.outputs.tag_name }}
     env:
       HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
-      SENTRY_ENVIRONMENT: github-actions
     steps:
       - name: Resolve release inputs
         id: resolve_release_inputs

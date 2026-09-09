@@ -37,8 +37,8 @@ async function parseJobCommand(
 ): Promise<Record<string, unknown>> {
   let parsedArgv: Record<string, unknown> | undefined;
   const dependencies = {
-    runTrackedCommand: async () => undefined,
-    runTrackedCommandWithContext: async (_command, argv) => {
+    runCommand: async () => undefined,
+    runCommandWithContext: async (_command, argv) => {
       parsedArgv = argv;
     },
   } as CommandRegistrationDependencies;
