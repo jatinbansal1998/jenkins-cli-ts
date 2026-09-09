@@ -145,10 +145,17 @@ describe.skipIf(!integrationEnabled)(
               : await request.arrayBuffer(),
             redirect: "manual",
           });
-          if (response.status !== 403) return response;
+          const body = await response.arrayBuffer();
+          const responseHeaders = new Headers(response.headers);
+          responseHeaders.delete("content-length");
+          responseHeaders.delete("content-encoding");
+          if (response.status !== 403)
+            return new Response(body, {
+              status: response.status,
+              headers: responseHeaders,
+            });
           deniedRequests++;
           const echo = `token=${token}; Authorization: ${request.headers.get("authorization")}; diagnostic=keep-this-detail`;
-          await response.arrayBuffer();
           return new Response(echo, {
             status: 403,
             headers: { "Content-Type": "text/plain", "X-Proxy-Detail": echo },
