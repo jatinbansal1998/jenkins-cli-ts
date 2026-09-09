@@ -633,6 +633,7 @@ export class JenkinsClient {
           error.message,
           error.hints,
           "TEST_REPORT_TRANSPORT_ERROR",
+          { cause: error },
         );
       }
       throw error;

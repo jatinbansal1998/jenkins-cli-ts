@@ -942,6 +942,58 @@ describe.skipIf(!integrationEnabled)(
         }>(mixedRun);
         expect(mixedBuild.data.result).toBe("UNSTABLE");
 
+        const delayedReport = Bun.serve({
+          hostname: "127.0.0.1",
+          port: 0,
+          idleTimeout: 30,
+          async fetch(request) {
+            const incoming = new URL(request.url);
+            if (incoming.pathname.endsWith("/testReport/api/json")) {
+              await Bun.sleep(11_000);
+              return new Response("delayed test report");
+            }
+            const response = await fetch(
+              new URL(incoming.pathname + incoming.search, jenkinsUrl),
+              { headers: request.headers },
+            );
+            const headers = new Headers(response.headers);
+            headers.delete("content-length");
+            headers.delete("content-encoding");
+            return new Response(await response.arrayBuffer(), {
+              status: response.status,
+              headers,
+            });
+          },
+        });
+        try {
+          const root = `${delayedReport.url.origin}/jenkins`;
+          const reportFailure = await invokeCli(
+            home,
+            [
+              "tests",
+              "--build-url",
+              `${root}/job/cli-test-results/${mixedBuild.data.buildNumber}/`,
+              "--json",
+            ],
+            { JENKINS_URL: root },
+          );
+          expect(reportFailure.exitCode).toBe(1);
+          expect(parseJson(reportFailure)).toMatchObject({
+            error: { code: "TEST_REPORT_TRANSPORT_ERROR" },
+          });
+          const errorLog = (
+            await Promise.all(
+              cliLogFiles(home, "error").map((file) => Bun.file(file).text()),
+            )
+          ).join("\n");
+          expect(errorLog).toContain(
+            "Caused by\nCliError: Request timed out while trying to fetch test report.",
+          );
+          expect(errorLog.match(/Caused by\n/g)).toHaveLength(2);
+        } finally {
+          await delayedReport.stop(true);
+        }
+
         const summary = parseJson<{
           data: {
             build: { number: number; url: string; result: string };
