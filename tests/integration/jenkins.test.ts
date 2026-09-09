@@ -3,6 +3,7 @@ import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { registerNetworkFaultTests } from "./jenkins/network-faults";
 import {
+  cliLogFiles,
   integrationEnabled,
   integrationCliExecutable,
   integrationRuntimeDir,
@@ -1229,14 +1230,11 @@ describe.skipIf(!integrationEnabled)(
         expect(build.output).toMatch(/Build (?:queued|started)/);
         expect(build.output).toContain("SUCCESS");
         expect(build.output).not.toContain(secret);
-        const apiLog = await Bun.file(
-          join(
-            home,
-            ".config",
-            "jenkins-cli",
-            `api-${new Date().toISOString().slice(0, 10)}.log`,
-          ),
-        ).text();
+        const apiLog = (
+          await Promise.all(
+            cliLogFiles(home, "api").map((file) => Bun.file(file).text()),
+          )
+        ).join("\n");
         expect(apiLog).toContain("REQUEST GET ");
         expect(apiLog).toContain("REQUEST POST ");
         expect(apiLog).toContain("RESPONSE POST ");
@@ -1584,14 +1582,11 @@ describe.skipIf(!integrationEnabled)(
           "Jenkins returned HTTP 403 while trying to trigger build:",
         );
         expect(denied.output).not.toContain(readerToken);
-        const errorLog = await Bun.file(
-          join(
-            home,
-            ".config",
-            "jenkins-cli",
-            `error-${new Date().toISOString().slice(0, 10)}.log`,
-          ),
-        ).text();
+        const errorLog = (
+          await Promise.all(
+            cliLogFiles(home, "error").map((file) => Bun.file(file).text()),
+          )
+        ).join("\n");
         expect(errorLog).toContain(
           "CliError: Jenkins returned HTTP 403 while trying to trigger build:",
         );

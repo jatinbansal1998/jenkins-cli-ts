@@ -1,4 +1,12 @@
-import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
+import {
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  spyOn,
+  test,
+  setSystemTime,
+} from "bun:test";
 import fs from "node:fs";
 import { toJsonError } from "../src/json-output";
 import path from "node:path";
@@ -20,6 +28,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  setSystemTime();
   setDebugMode(false);
   appendSpy.mockRestore();
 });
@@ -74,16 +83,17 @@ describe("api logger", () => {
     expect(payload).not.toContain("JSESSIONID");
   });
 
-  test("writes to a UTC-dated log file created with 0600 permissions", () => {
+  test("keeps the UTC write date and 0600 permissions across midnight", () => {
     setDebugMode(true);
 
+    setSystemTime(new Date("2026-01-01T23:59:59.999Z"));
     logApiResponse("GET", "https://jenkins.example.com/api/json", 200, {
       "Set-Cookie": "JSESSIONID=abc",
     });
 
     expect(appendSpy).toHaveBeenCalledTimes(1);
-    const today = new Date().toISOString().slice(0, 10);
-    const filePath = path.join(configDir, `api-${today}.log`);
+    setSystemTime(new Date("2026-01-02T00:00:00.000Z"));
+    const filePath = path.join(configDir, "api-2026-01-01.log");
     expect(fs.existsSync(filePath)).toBeTrue();
     if (process.platform !== "win32")
       expect(fs.statSync(filePath).mode & 0o777).toBe(0o600);
