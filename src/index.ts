@@ -35,7 +35,7 @@ import { runUpdate } from "./commands/update";
 import { loadEnv, getDebugDefault, resolveApiToken } from "./env";
 
 import { JenkinsClient } from "./jenkins/client";
-import { pruneOldLogs, setDebugMode } from "./logger";
+import { logCliError, pruneOldLogs, setDebugMode } from "./logger";
 import {
   enforceMinimumVersionFromCache,
   kickOffMinimumVersionRefresh,
@@ -363,11 +363,13 @@ async function runCommandWithContext<TArgv extends ContextualCommandArgv>(
       });
     } catch (error) {
       if (argv.json) {
+        logCliError(error);
         emitJsonError(toJsonError(error));
         process.exitCode ||= 1;
         return;
       }
       if (argv.jsonl) {
+        logCliError(error);
         emitJsonLine({ type: "error", error: toJsonError(error) });
         process.exitCode ||= 1;
         return;
@@ -389,8 +391,22 @@ const shouldRunCli =
   import.meta.main ||
   (typeof __COMPILED_ENTRYPOINT__ !== "undefined" && __COMPILED_ENTRYPOINT__);
 
+function reportError(error: unknown): void {
+  const rawArgs = hideBin(process.argv);
+  if (isJsonOutputRequested(rawArgs)) {
+    logCliError(error);
+    emitJsonError(toJsonError(error));
+  } else if (isJsonLinesOutputRequested(rawArgs)) {
+    logCliError(error);
+    emitJsonLine({ type: "error", error: toJsonError(error) });
+  } else {
+    handleCliError(error);
+  }
+  process.exitCode = 1;
+}
+
 function fatalError(error: unknown): void {
-  handleCliError(error);
+  reportError(error);
   process.exit(1);
 }
 
@@ -407,15 +423,5 @@ if (shouldRunCli) {
   // Exit handlers must be synchronous; pruneOldLogs is. This also runs
   // after explicit process.exit() calls (e.g. yargs --help).
   process.on("exit", () => pruneOldLogs());
-  await main().catch((error) => {
-    const rawArgs = hideBin(process.argv);
-    if (isJsonOutputRequested(rawArgs)) {
-      emitJsonError(toJsonError(error));
-    } else if (isJsonLinesOutputRequested(rawArgs)) {
-      emitJsonLine({ type: "error", error: toJsonError(error) });
-    } else {
-      handleCliError(error);
-    }
-    process.exitCode = 1;
-  });
+  await main().catch(reportError);
 }

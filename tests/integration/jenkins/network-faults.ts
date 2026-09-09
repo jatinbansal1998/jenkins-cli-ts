@@ -87,6 +87,24 @@ export function registerNetworkFaultTests(): void {
               if (fault.type === "limit_data") {
                 expect(result.output).toContain("Invalid JSON response");
               }
+              const errorLog = await Bun.file(
+                join(
+                  home,
+                  ".config",
+                  "jenkins-cli",
+                  `error-${new Date().toISOString().slice(0, 10)}.log`,
+                ),
+              ).text();
+              expect(errorLog).toContain("Caused by");
+              expect(errorLog).toMatch(/\s+at .+:\d+:\d+/);
+              await rm(
+                join(
+                  home,
+                  ".config",
+                  "jenkins-cli",
+                  `error-${new Date().toISOString().slice(0, 10)}.log`,
+                ),
+              );
               await proxy.clear();
               const recovered = await invokeCli(home, ["nodes", "--json"], env);
               expect(recovered.exitCode, recovered.output).toBe(0);

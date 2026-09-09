@@ -1,3 +1,4 @@
+import { logCliError } from "../logger";
 import { resolveBuildSelector } from "../build-selector";
 import {
   CliError,
@@ -193,6 +194,7 @@ async function runWaitJson(options: WaitOptions): Promise<WaitResult> {
     emitJsonSuccess("wait", data, write);
     return result;
   } catch (error) {
+    logCliError(error);
     emitJsonError(toJsonError(error), write);
     if (!process.exitCode) {
       process.exitCode = 1;

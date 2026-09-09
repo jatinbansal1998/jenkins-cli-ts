@@ -190,48 +190,27 @@ async function performListAction(
     selectedJob,
   };
 
-  switch (action) {
-    case "build":
-      return await runMenuAction(() => runBuildAction(context), "action_error");
-    case "view_params":
-      return await runMenuAction(
-        () => runViewParamsAction(context),
-        "action_error",
-      );
-    case "status":
-      return await runMenuAction(
-        () => runStatusAction(context),
-        "action_error",
-      );
-    case "history":
-      return await runMenuAction(
-        () => runHistoryAction(context),
-        "action_error",
-      );
-    case "watch":
-      return await runMenuAction(() => runWatchAction(context), "action_error");
-    case "logs":
-      return await runMenuAction(() => runLogsAction(context), "action_error");
-    case "pending_inputs":
-      return await runMenuAction(
-        () => runPendingInputsAction(context),
-        "action_error",
-      );
-    case "cancel":
-      return await runMenuAction(
-        () => runCancelAction(context),
-        "action_error",
-      );
-    case "rerun":
-      return await runMenuAction(() => runRerunAction(context), "action_error");
-    case "rerun_last":
-      return await runMenuAction(
-        () => runRerunLastBuildAction(context),
-        "action_error",
-      );
-    default:
-      return "action_error";
-  }
+  const handlers: Record<
+    string,
+    (context: ListActionContext) => Promise<ActionEffectResult>
+  > = {
+    build: runBuildAction,
+    view_params: runViewParamsAction,
+    status: runStatusAction,
+    history: runHistoryAction,
+    watch: runWatchAction,
+    logs: runLogsAction,
+    pending_inputs: runPendingInputsAction,
+    cancel: runCancelAction,
+    rerun: runRerunAction,
+    rerun_last: runRerunLastBuildAction,
+  };
+  const handler = Object.hasOwn(handlers, action)
+    ? handlers[action]
+    : undefined;
+  return handler
+    ? await runMenuAction(() => handler(context), "action_error")
+    : "action_error";
 }
 
 async function runBuildAction(

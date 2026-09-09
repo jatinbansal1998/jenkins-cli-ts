@@ -1,4 +1,3 @@
-import { logCliError } from "./logger";
 /**
  * Structured JSON output helpers for the read commands (`--json`).
  *
@@ -10,6 +9,7 @@ import { logCliError } from "./logger";
  * Following the repo convention, the emit helpers accept an optional `write`
  * callback so tests can capture stdout without spying on `process.stdout`.
  */
+import { logCliError } from "./logger";
 import { CliError } from "./cli";
 import type {
   ArtifactEntry,
@@ -263,7 +263,6 @@ export function emitJsonLine(
 
 /** Convert an arbitrary thrown value into a stable JSON error body. */
 export function toJsonError(error: unknown): JsonErrorBody {
-  logCliError(error);
   if (error instanceof CliError) {
     return { message: error.message, code: error.code ?? "CLI_ERROR" };
   }
@@ -292,6 +291,7 @@ export async function runJsonCommand<T>(
     const data = await run();
     emitJsonSuccess(command, data, write);
   } catch (error) {
+    logCliError(error);
     emitJsonError(toJsonError(error), write);
     if (!process.exitCode) {
       process.exitCode = 1;

@@ -508,7 +508,7 @@ function describeRestoreFailures(failedProfiles: string[]): string[] {
 }
 
 /**
- * Rebuilds the full config payload for a write, preserving every top-level
+ * Rebuilds the config payload with updated profiles and default selection.
  */
 function buildConfigPayload(
   config: JenkinsConfig | undefined,

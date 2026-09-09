@@ -747,6 +747,8 @@ export class JenkinsClient {
         throw new CliError(
           `Request timed out while trying to download artifact ${relativePath}.`,
           [`Check your network and that ${this.baseUrl} is reachable.`],
+          undefined,
+          { cause: error },
         );
       }
       const errorMsg = error instanceof Error ? error.message : "Unknown error";
@@ -755,6 +757,8 @@ export class JenkinsClient {
       throw new CliError(
         `Network error while trying to download artifact ${relativePath}.`,
         [`Check your network and that ${this.baseUrl} is reachable.`],
+        undefined,
+        { cause: error },
       );
     } finally {
       cleanup();
@@ -1430,10 +1434,13 @@ export class JenkinsClient {
 
     try {
       return (await response.json()) as T;
-    } catch {
-      throw new CliError(`Invalid JSON response while trying to ${context}.`, [
-        "Try again, or verify your Jenkins server is healthy.",
-      ]);
+    } catch (error) {
+      throw new CliError(
+        `Invalid JSON response while trying to ${context}.`,
+        ["Try again, or verify your Jenkins server is healthy."],
+        undefined,
+        { cause: error },
+      );
     }
   }
 
@@ -1451,11 +1458,8 @@ export class JenkinsClient {
     context: string,
   ): Promise<Response> {
     const method = options.method ?? "GET";
-    // Request bodies can contain build parameters and secrets.
-    const requestBody =
-      options.body === undefined || options.body === null ? null : "<omitted>";
-
-    logApiRequest(method, url, options.headers, requestBody);
+    // Send the real body to Jenkins; only its presence reaches the debug logger.
+    logApiRequest(method, url, options.headers, options.body != null);
 
     const { controller, cleanup } = withTimeout(this.timeoutMs);
     try {
@@ -1484,17 +1488,23 @@ export class JenkinsClient {
       if (error instanceof Error && error.name === "AbortError") {
         logNetworkError(method, url, "TIMEOUT");
 
-        throw new CliError(`Request timed out while trying to ${context}.`, [
-          `Check your network and that ${this.baseUrl} is reachable.`,
-        ]);
+        throw new CliError(
+          `Request timed out while trying to ${context}.`,
+          [`Check your network and that ${this.baseUrl} is reachable.`],
+          undefined,
+          { cause: error },
+        );
       }
 
       const errorMsg = error instanceof Error ? error.message : "Unknown error";
       logNetworkError(method, url, errorMsg);
 
-      throw new CliError(`Network error while trying to ${context}.`, [
-        `Check your network and that ${this.baseUrl} is reachable.`,
-      ]);
+      throw new CliError(
+        `Network error while trying to ${context}.`,
+        [`Check your network and that ${this.baseUrl} is reachable.`],
+        undefined,
+        { cause: error },
+      );
     } finally {
       cleanup();
     }

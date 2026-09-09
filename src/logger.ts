@@ -1,9 +1,7 @@
 /**
- * Local API and error logger.
- * Logs Jenkins API requests to ~/.config/jenkins-cli/api-<date>.log when
- * debug mode is enabled. Includes headers and body when available;
- * credential headers are redacted. Files older than the retention window
- * are pruned on CLI shutdown.
+ * Local error stacks and opt-in API metadata logs, retained for seven days.
+ * Error messages are preserved in full. API credential headers are redacted;
+ * request and response bodies are omitted. Nothing is uploaded.
  */
 import fs from "node:fs";
 import path from "node:path";
@@ -48,17 +46,23 @@ function getTimestamp(): string {
   return new Date().toISOString();
 }
 
-/** UTC-dated log path, matching the UTC timestamps inside the entries. */
-function getLogFilePath(): string {
-  return path.join(CONFIG_DIR, `api-${getTimestamp().slice(0, 10)}.log`);
-}
-
-function safeAppendLine(line: string): void {
+function appendLogFile(kind: "api" | "error", payload: string): void {
+  ensureConfigDir();
+  const descriptor = fs.openSync(
+    path.join(CONFIG_DIR, `${kind}-${getTimestamp().slice(0, 10)}.log`),
+    fs.constants.O_APPEND |
+      fs.constants.O_CREAT |
+      fs.constants.O_WRONLY |
+      (fs.constants.O_NOFOLLOW ?? 0) |
+      (fs.constants.O_NONBLOCK ?? 0),
+    0o600,
+  );
   try {
-    ensureConfigDir();
-    fs.appendFileSync(getLogFilePath(), line, { mode: 0o600 });
-  } catch {
-    // Best-effort logging; never fail the caller.
+    if (!fs.fstatSync(descriptor).isFile()) return;
+    fs.fchmodSync(descriptor, 0o600);
+    fs.appendFileSync(descriptor, payload);
+  } finally {
+    fs.closeSync(descriptor);
   }
 }
 
@@ -84,6 +88,10 @@ export function pruneOldLogs(now = Date.now()): void {
     return;
   }
   for (const entry of entries) {
+    if (entry === "analytics-id") {
+      removeFileQuietly(path.join(CONFIG_DIR, entry));
+      continue;
+    }
     const match = DATED_LOG_FILE_PATTERN.exec(entry);
     if (!match) {
       continue;
@@ -106,9 +114,7 @@ export function pruneOldLogs(now = Date.now()): void {
   }
 }
 
-const loggedErrors = new WeakSet<Error>();
 export function logCliError(error: unknown): void {
-  if (error instanceof Error && loggedErrors.has(error)) return;
   try {
     const entries: string[] = [];
     const seen = new Set<Error>();
@@ -121,25 +127,10 @@ export function logCliError(error: unknown): void {
         entries.push("Caused by");
     }
     if (entries.length === 0) entries.push(String(error));
-    ensureConfigDir();
-    const descriptor = fs.openSync(
-      path.join(CONFIG_DIR, `error-${getTimestamp().slice(0, 10)}.log`),
-      fs.constants.O_APPEND |
-        fs.constants.O_CREAT |
-        fs.constants.O_WRONLY |
-        (fs.constants.O_NOFOLLOW ?? 0) |
-        (fs.constants.O_NONBLOCK ?? 0),
-      0o600,
+    appendLogFile(
+      "error",
+      `[${getTimestamp()}] jenkins-cli ${packageJson.version}\n${entries.join("\n")}\n\n`,
     );
-    try {
-      fs.appendFileSync(
-        descriptor,
-        `[${getTimestamp()}] jenkins-cli ${packageJson.version}\n${entries.join("\n")}\n\n`,
-      );
-    } finally {
-      fs.closeSync(descriptor);
-    }
-    if (error instanceof Error) loggedErrors.add(error);
   } catch {
     // Disk failures must not mask the original command failure.
   }
@@ -173,13 +164,6 @@ function normalizeHeaders(headers?: LogHeaders): Array<[string, string]> {
   return entries;
 }
 
-function indentLines(text: string, indent: string): string {
-  return text
-    .split("\n")
-    .map((line) => `${indent}${line}`)
-    .join("\n");
-}
-
 function formatHeadersBlock(headers?: LogHeaders): string | null {
   const entries = normalizeHeaders(headers);
   if (entries.length === 0) {
@@ -192,14 +176,6 @@ function formatHeadersBlock(headers?: LogHeaders): string | null {
   return `Headers:\n${lines.join("\n")}`;
 }
 
-function formatBodyBlock(body: string | null | undefined): string | null {
-  if (body === null || body === undefined) {
-    return null;
-  }
-  const rendered = body === "" ? "<empty>" : body;
-  return `Body:\n${indentLines(rendered, "  ")}`;
-}
-
 function logBlock(lines: Array<string | null>): void {
   if (!debugMode) {
     return;
@@ -208,7 +184,11 @@ function logBlock(lines: Array<string | null>): void {
   if (!payload) {
     return;
   }
-  safeAppendLine(`${payload}\n\n`);
+  try {
+    appendLogFile("api", `${payload}\n\n`);
+  } catch {
+    // Disk failures must not affect the request.
+  }
 }
 
 /**
@@ -218,12 +198,12 @@ export function logApiRequest(
   method: string,
   url: string,
   headers?: LogHeaders,
-  body?: string | null,
+  hasBody = false,
 ): void {
   logBlock([
     `[${getTimestamp()}] REQUEST ${method} ${url}`,
     formatHeadersBlock(headers),
-    formatBodyBlock(body),
+    hasBody ? "Body:\n  <omitted>" : null,
   ]);
 }
 

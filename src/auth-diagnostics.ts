@@ -192,7 +192,7 @@ export async function probeJenkinsIdentity(
     headers.Authorization = `Basic ${encoded}`;
   }
 
-  logApiRequest("GET", requestUrl, headers, null);
+  logApiRequest("GET", requestUrl, headers);
   const { controller, cleanup } = withTimeout(
     deps.timeoutMs ?? AUTH_PROBE_TIMEOUT_MS,
   );

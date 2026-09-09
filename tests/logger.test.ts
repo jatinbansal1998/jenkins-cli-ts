@@ -1,6 +1,8 @@
 import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
 import fs from "node:fs";
+import { toJsonError } from "../src/json-output";
 import path from "node:path";
+import { resolveUserHome } from "../src/user-home";
 import {
   logApiError,
   logApiRequest,
@@ -10,17 +12,16 @@ import {
 } from "../src/logger";
 
 let appendSpy: ReturnType<typeof spyOn<typeof fs, "appendFileSync">>;
-let existsSpy: ReturnType<typeof spyOn<typeof fs, "existsSync">>;
+const configDir = path.join(resolveUserHome(), ".config", "jenkins-cli");
 
 beforeEach(() => {
   appendSpy = spyOn(fs, "appendFileSync").mockImplementation(() => undefined);
-  existsSpy = spyOn(fs, "existsSync").mockImplementation(() => true);
+  fs.mkdirSync(configDir, { recursive: true });
 });
 
 afterEach(() => {
   setDebugMode(false);
   appendSpy.mockRestore();
-  existsSpy.mockRestore();
 });
 
 function appendedPayload(): string {
@@ -28,6 +29,12 @@ function appendedPayload(): string {
 }
 
 describe("api logger", () => {
+  test("converts JSON errors without writing a log", () => {
+    expect(toJsonError(new Error("synthetic conversion")).message).toBe(
+      "synthetic conversion",
+    );
+    expect(appendSpy).not.toHaveBeenCalled();
+  });
   test("writes nothing when debug mode is disabled", () => {
     setDebugMode(false);
 
@@ -52,7 +59,7 @@ describe("api logger", () => {
         Cookie: "JSESSIONID=abc",
         Accept: "application/json",
       },
-      "payload",
+      true,
     );
 
     expect(appendSpy).toHaveBeenCalledTimes(1);
@@ -61,6 +68,7 @@ describe("api logger", () => {
     expect(payload).toContain("Jenkins-Crumb: <redacted>");
     expect(payload).toContain("Cookie: <redacted>");
     expect(payload).toContain("Accept: application/json");
+    expect(payload).toContain("Body:\n  <omitted>");
     expect(payload).not.toContain("dXNlcjp0b2tlbg==");
     expect(payload).not.toContain("crumb-secret");
     expect(payload).not.toContain("JSESSIONID");
@@ -74,10 +82,11 @@ describe("api logger", () => {
     });
 
     expect(appendSpy).toHaveBeenCalledTimes(1);
-    const [filePath, , appendOptions] = appendSpy.mock.calls[0] ?? [];
     const today = new Date().toISOString().slice(0, 10);
-    expect(String(filePath).endsWith(`api-${today}.log`)).toBeTrue();
-    expect(appendOptions).toEqual({ mode: 0o600 });
+    const filePath = path.join(configDir, `api-${today}.log`);
+    expect(fs.existsSync(filePath)).toBeTrue();
+    if (process.platform !== "win32")
+      expect(fs.statSync(filePath).mode & 0o777).toBe(0o600);
     expect(appendedPayload()).toContain("Set-Cookie: <redacted>");
   });
 });

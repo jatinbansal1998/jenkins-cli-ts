@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import {
+  chmodSync,
   mkdirSync,
   mkdtempSync,
   rmSync,
@@ -288,6 +289,11 @@ describe("compiled CLI local error logs", () => {
                 contents: (await Bun.file(path).text()).replace(
                   "await main().catch(",
                   `await (async () => {
+            if (process.argv.includes("--api")) {
+              const logger = await import("./logger");
+              logger.setDebugMode(true);
+              logger.logApiRequest("POST", "https://synthetic.invalid/job/example", { Authorization: "synthetic-header-secret" }, true);
+            }
             const error = new TypeError("synthetic failure token=local-detail", { cause: new Error("synthetic cause") });
             if (process.argv.includes("--uncaught")) { setTimeout(() => { throw error; }, 0); return; }
             if (process.argv.includes("--rejection")) { void Promise.reject(error); return; }
@@ -362,6 +368,58 @@ describe("compiled CLI local error logs", () => {
     expect(readdirSync(h.dir)).toEqual([h.log.split(/[\\/]/).at(-1)!]);
   });
 
+  test.skipIf(process.platform === "win32")(
+    "protects existing API logs and refuses symlink targets",
+    async () => {
+      const h = makeErrorHome();
+      const apiLog = join(h.dir, `api-${date(0)}.log`);
+      writeFileSync(apiLog, "previous entry\n");
+      chmodSync(apiLog, 0o644);
+      await runErrorFixture(h.home, ["--api"]);
+      expect(statSync(apiLog).mode & 0o777).toBe(0o600);
+      expect(readFileSync(apiLog, "utf8")).toContain("Body:\n  <omitted>");
+      expect(readFileSync(apiLog, "utf8")).not.toContain(
+        "synthetic-header-secret",
+      );
+      rmSync(apiLog);
+      const target = join(h.home, "api-target.txt");
+      writeFileSync(target, "untouched");
+      symlinkSync(target, apiLog);
+      await runErrorFixture(h.home, ["--api"]);
+      expect(readFileSync(target, "utf8")).toBe("untouched");
+    },
+  );
+
+  test("persists the original cause from a real failed Jenkins request", async () => {
+    const h = makeErrorHome();
+    const controller = Bun.serve({
+      port: 0,
+      fetch: () => new Response("invalid-json"),
+    });
+    try {
+      const result = await runNativeExecutable({
+        executable,
+        args: ["list", "--json", "--non-interactive"],
+        env: {
+          ...process.env,
+          HOME: h.home,
+          JENKINS_URL: controller.url.toString(),
+          JENKINS_USER: "synthetic-user",
+          JENKINS_API_TOKEN: "synthetic-token",
+        },
+      });
+      expect(result.exitCode).toBe(1);
+      expect(JSON.parse(result.stdout).error.message).toContain(
+        "Invalid JSON response",
+      );
+      const log = readFileSync(h.log, "utf8");
+      expect(log).toContain("Caused by\nSyntaxError:");
+      expect(log).toMatch(/\s+at .+:\d+:\d+/);
+    } finally {
+      await controller.stop(true);
+    }
+  });
+
   test.each(["--json", "--jsonl"])(
     "preserves structured output for %s",
     async (flag) => {
@@ -374,6 +432,34 @@ describe("compiled CLI local error logs", () => {
       });
       expect(result.stderr).toBe("");
       expectLog(h.log);
+    },
+  );
+
+  test.each([
+    ["--uncaught", "--json"],
+    ["--uncaught", "--jsonl"],
+    ["--rejection", "--json"],
+    ["--rejection", "--jsonl"],
+  ])("preserves structured fatal output for %s %s", async (fatal, format) => {
+    const h = makeErrorHome();
+    const result = await runErrorFixture(h.home, [fatal, format]);
+    expect(result.exitCode).toBe(1);
+    expect(JSON.parse(result.stdout).error.message).toBe(
+      "synthetic failure token=local-detail",
+    );
+    expect(result.stderr).toBe("");
+    expectLog(h.log);
+  });
+
+  test.skipIf(process.platform === "win32")(
+    "tightens permissions on an existing error log",
+    async () => {
+      const h = makeErrorHome();
+      writeFileSync(h.log, "previous entry\n");
+      chmodSync(h.log, 0o644);
+      await runErrorFixture(h.home);
+      expectLog(h.log);
+      expect(readFileSync(h.log, "utf8")).toContain("previous entry");
     },
   );
 
@@ -390,7 +476,11 @@ describe("compiled CLI local error logs", () => {
 
   test("prunes expired error and API files while retaining the seven-day window and unrelated files", async () => {
     const h = makeErrorHome();
-    const expired = [`error-${date(8)}.log`, `api-${date(8)}.log`];
+    const expired = [
+      `error-${date(8)}.log`,
+      `api-${date(8)}.log`,
+      "analytics-id",
+    ];
     const retained = [
       `error-${date(7)}.log`,
       `error-${date(1)}.log`,

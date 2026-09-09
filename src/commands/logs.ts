@@ -1,3 +1,4 @@
+import { logCliError } from "../logger";
 import { confirm, isCancel, select, text } from "../clack";
 
 import { resolveBuildSelector } from "../build-selector";
@@ -149,6 +150,7 @@ export async function runLogs(options: LogsOptions): Promise<void> {
       );
       return;
     } catch (error) {
+      logCliError(error);
       emitJsonLine({ type: "error", error: toJsonError(error) }, options.write);
       process.exitCode ||= 1;
       return;

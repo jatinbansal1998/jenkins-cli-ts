@@ -1596,6 +1596,7 @@ describe.skipIf(!integrationEnabled)(
           "CliError: Jenkins returned HTTP 403 while trying to trigger build:",
         );
         expect(errorLog).toMatch(/\s+at .+:\d+:\d+/);
+        expect(errorLog).not.toContain(readerToken);
 
         await runCli(home, ["auth", "use", "reader"], withoutCredentialEnv);
         expect(

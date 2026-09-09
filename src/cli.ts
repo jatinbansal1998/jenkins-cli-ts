@@ -10,8 +10,13 @@ export class CliError extends Error {
   public readonly hints: string[];
   public readonly code?: string;
 
-  constructor(message: string, hints: string[] = [], code?: string) {
-    super(message);
+  constructor(
+    message: string,
+    hints: string[] = [],
+    code?: string,
+    options?: ErrorOptions,
+  ) {
+    super(message, options);
     this.name = "CliError";
     this.hints = hints;
     this.code = code;

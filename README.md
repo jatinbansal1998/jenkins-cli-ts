@@ -406,11 +406,14 @@ The CLI collects no usage analytics and sends no automatic error reports.
 Errors are written locally to `~/.config/jenkins-cli/error-YYYY-MM-DD.log`,
 including CLI version, full error messages, stacks, and error causes, even without
 `--debug`. Error logs are not redacted automatically and can contain sensitive
-values from exception messages. Review and redact them before sharing.
+values from exception messages, including details returned by Jenkins or a proxy.
+Review and redact them before sharing.
 
 Logs rotate daily in UTC. Files older than seven days are removed when the CLI
 exits; cleanup runs the next time you use the CLI, not in a background service.
-New log files use owner-only permissions on Unix. Logging failures do not
+Both log writers enforce owner-only file permissions on Unix, including existing
+files, and refuse file symlinks. Legacy analytics IDs are removed on shutdown.
+Logging failures do not
 replace the command's original error or change its exit status.
 
 Use `--debug` for existing API diagnostics in `api-YYYY-MM-DD.log`. Review any

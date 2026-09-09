@@ -1,8 +1,8 @@
-import { logCliError } from "../logger";
 /**
  * Status command implementation.
  * Shows the last build status (number, result, URL) for a job.
  */
+import { logCliError } from "../logger";
 import { autocomplete, confirm, isCancel, select, text } from "../clack";
 
 import { resolveBuildSelector } from "../build-selector";
