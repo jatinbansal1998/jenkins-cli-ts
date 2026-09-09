@@ -1,8 +1,3 @@
-/**
- * Job caching and fuzzy matching.
- * Caches jobs locally in an OS-specific cache directory and provides
- * natural language search with scoring for job lookups.
- */
 import { mkdir, open, rename, rm } from "node:fs/promises";
 import { createHash, randomUUID } from "node:crypto";
 import path from "node:path";
@@ -16,7 +11,6 @@ import { selfInvocation } from "./self-invocation";
 import type { JenkinsJob, JenkinsJobLastBuild } from "./types/jenkins";
 import { resolveUserHome } from "./user-home";
 
-/** Cached job data with metadata. */
 type CachedJob = JenkinsJob & {
   branches?: string[];
 };
@@ -107,14 +101,12 @@ export function getSuggestedJobs(
     .map((match) => match.job);
 }
 
-/** The slice of EnvConfig the job cache needs; also the background refresh payload. */
 export type JobCacheEnv = Pick<
   EnvConfig,
   "jenkinsUrl" | "jenkinsUser" | "jenkinsApiToken" | "useCrumb" | "folderDepth"
 >;
 
 const CACHE_TTL_MS = 24 * 60 * 60 * 1000;
-/** A refresh that has not finished within this window is assumed dead. */
 const REFRESH_LOCK_TTL_MS = 10 * 60 * 1000;
 export const JOB_CACHE_REFRESH_ENV = "JENKINS_CLI_JOB_CACHE_REFRESH";
 export const JOB_CACHE_REFRESH_COMMAND = "refresh-job-cache";
@@ -146,11 +138,6 @@ export function setJobsDepsForTesting(
   };
 }
 
-/**
- * Serves the cached job list. A missing or mismatched cache is fetched
- * synchronously; a stale one is returned as-is while a detached CLI process
- * refreshes it, so the caller never waits on Jenkins for data it already has.
- */
 export async function loadJobs(options: {
   client: JenkinsClient;
   env: JobCacheEnv;
@@ -213,11 +200,6 @@ async function fetchAndCacheJobs(
   return jobs;
 }
 
-/**
- * Spawns `jenkins-cli refresh-job-cache` detached from this process. A lock
- * file next to the cache stops concurrent commands from each spawning their
- * own refresh. Failures are swallowed: the stale cache is still usable.
- */
 async function scheduleBackgroundRefresh(env: JobCacheEnv): Promise<void> {
   try {
     await mkdir(CACHE_DIR, { recursive: true });
@@ -236,7 +218,6 @@ async function scheduleBackgroundRefresh(env: JobCacheEnv): Promise<void> {
       { [JOB_CACHE_REFRESH_ENV]: JSON.stringify(payload) },
     );
   } catch {
-    // Best-effort only.
   }
 }
 
@@ -250,11 +231,6 @@ function getRefreshLockPath(jenkinsUrl: string): string {
   return `${getJobCachePath(jenkinsUrl)}.refreshing`;
 }
 
-/**
- * Exclusive create makes the check and the claim one operation, so parallel
- * commands cannot both win. A lock older than its TTL belongs to a worker
- * that died and is removed before one retry.
- */
 async function acquireRefreshLock(lockPath: string): Promise<boolean> {
   for (let attempt = 0; attempt < 2; attempt += 1) {
     try {
