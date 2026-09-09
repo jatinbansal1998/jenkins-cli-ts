@@ -295,9 +295,6 @@ Command-specific options:
 
   config/env:
     ${ENV_KEYS.JENKINS_USE_CRUMB} / useCrumb  Enable Jenkins CSRF crumb usage [default: disabled]
-    ${ENV_KEYS.JENKINS_POSTHOG_API_KEY}       Enable analytics with a custom PostHog project token
-    ${ENV_KEYS.JENKINS_POSTHOG_HOST}          Override the PostHog host
-    ${ENV_KEYS.JENKINS_ANALYTICS_DISABLED}    true disables analytics, false enables bundled analytics
 
   update / upgrade:
     [tag]                  Install a specific version tag (e.g. v0.2.4)

@@ -1,5 +1,5 @@
 /**
- * File-based API logger.
+ * Local API and error logger.
  * Logs Jenkins API requests to ~/.config/jenkins-cli/api-<date>.log when
  * debug mode is enabled. Includes headers and body when available;
  * credential headers are redacted. Files older than the retention window
@@ -8,10 +8,11 @@
 import fs from "node:fs";
 import path from "node:path";
 import { resolveUserHome } from "./user-home";
+import packageJson from "../package.json";
 
 const CONFIG_DIR = path.join(resolveUserHome(), ".config", "jenkins-cli");
 const LEGACY_LOG_FILE = path.join(CONFIG_DIR, "api.log");
-const DATED_LOG_FILE_PATTERN = /^api-(\d{4}-\d{2}-\d{2})\.log$/;
+const DATED_LOG_FILE_PATTERN = /^(?:api|error)-(\d{4}-\d{2}-\d{2})\.log$/;
 const LOG_RETENTION_DAYS = 7;
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -70,11 +71,11 @@ function removeFileQuietly(filePath: string): void {
 }
 
 /**
- * Delete API log files older than the retention window. Runs on CLI
+ * Delete API and error log files older than the retention window. Runs on CLI
  * shutdown, so it is synchronous and best-effort (exit handlers cannot
  * await, and cleanup must never fail the process).
  */
-export function pruneOldApiLogs(now = Date.now()): void {
+export function pruneOldLogs(now = Date.now()): void {
   const cutoff = now - LOG_RETENTION_DAYS * DAY_MS;
   let entries: string[];
   try {
@@ -102,6 +103,45 @@ export function pruneOldApiLogs(now = Date.now()): void {
     }
   } catch {
     // Missing legacy log is the normal case.
+  }
+}
+
+const loggedErrors = new WeakSet<Error>();
+export function logCliError(error: unknown): void {
+  if (error instanceof Error && loggedErrors.has(error)) return;
+  try {
+    const entries: string[] = [];
+    const seen = new Set<Error>();
+    let current = error;
+    while (current instanceof Error && !seen.has(current) && seen.size < 8) {
+      seen.add(current);
+      entries.push(current.stack || `${current.name}: ${current.message}`);
+      current = current.cause;
+      if (current instanceof Error && !seen.has(current) && seen.size < 8)
+        entries.push("Caused by");
+    }
+    if (entries.length === 0) entries.push(String(error));
+    ensureConfigDir();
+    const descriptor = fs.openSync(
+      path.join(CONFIG_DIR, `error-${getTimestamp().slice(0, 10)}.log`),
+      fs.constants.O_APPEND |
+        fs.constants.O_CREAT |
+        fs.constants.O_WRONLY |
+        (fs.constants.O_NOFOLLOW ?? 0) |
+        (fs.constants.O_NONBLOCK ?? 0),
+      0o600,
+    );
+    try {
+      fs.appendFileSync(
+        descriptor,
+        `[${getTimestamp()}] jenkins-cli ${packageJson.version}\n${entries.join("\n")}\n\n`,
+      );
+    } finally {
+      fs.closeSync(descriptor);
+    }
+    if (error instanceof Error) loggedErrors.add(error);
+  } catch {
+    // Disk failures must not mask the original command failure.
   }
 }
 

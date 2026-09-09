@@ -1,7 +1,7 @@
 import type { EnvConfig } from "../env";
 import type { JenkinsClient } from "../jenkins/client";
 
-export type TrackedArgv = {
+export type CommandArgv = {
   [key: string]: unknown;
   nonInteractive?: unknown;
   banner?: unknown;
@@ -20,27 +20,25 @@ export type ContextArgv = {
   confirmProtected?: unknown;
 };
 
-export type ContextualCommandArgv = ContextArgv & TrackedArgv;
+export type ContextualCommandArgv = ContextArgv & CommandArgv;
 
 export type CommandContext = {
   env: EnvConfig;
   client: JenkinsClient;
 };
 
-type TrackedCommandHelpers = {
+type CommandHelpers = {
   showIntro: (target?: string) => void;
   interactive: boolean;
 };
 
-export type RunTrackedCommand = (
+export type RunCommand = (
   command: string,
-  argv: TrackedArgv | undefined,
-  action: (helpers: TrackedCommandHelpers) => Promise<void>,
+  argv: CommandArgv | undefined,
+  action: (helpers: CommandHelpers) => Promise<void>,
 ) => Promise<void>;
 
-export type RunTrackedCommandWithContext = <
-  TArgv extends ContextualCommandArgv,
->(
+export type RunCommandWithContext = <TArgv extends ContextualCommandArgv>(
   command: string,
   argv: TArgv,
   action: (
@@ -52,6 +50,6 @@ export type RunTrackedCommandWithContext = <
 ) => Promise<void>;
 
 export type CommandRegistrationDependencies = {
-  runTrackedCommand: RunTrackedCommand;
-  runTrackedCommandWithContext: RunTrackedCommandWithContext;
+  runCommand: RunCommand;
+  runCommandWithContext: RunCommandWithContext;
 };

@@ -6,9 +6,6 @@ on:
 permissions:
   contents: read
 
-env:
-  SENTRY_ENVIRONMENT: github-actions
-
 jobs:
   quality:
     name: Lint and typecheck

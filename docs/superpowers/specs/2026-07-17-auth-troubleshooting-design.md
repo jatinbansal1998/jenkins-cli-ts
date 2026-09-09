@@ -54,7 +54,7 @@ queue, cancellation, or administration endpoints.
 
 Unknown requested profiles and incomplete direct credentials are reported as
 configuration failures with targeted remediation. Secrets are never included
-in diagnostics, errors, analytics, or debug output.
+in diagnostics, errors, or debug output.
 
 For a configured profile, token inspection is separate from the network probe:
 
@@ -146,13 +146,6 @@ Map failures to specific, actionable conclusions:
 Do not print token values, Basic authorization data, redirect query strings, or
 raw response bodies. Normal debug logging must preserve the existing
 authorization and cookie redaction behavior.
-
-## Analytics
-
-Track `auth:login`, legacy `login`, and `auth:status` as distinct command names
-without recording controller URLs, usernames, profile names, token details,
-redirect destinations, Jenkins users, or Jenkins versions. Existing coarse
-command outcome and Jenkins API health fields may be reused.
 
 ## Testing and documentation
 

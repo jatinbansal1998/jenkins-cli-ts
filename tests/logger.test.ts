@@ -5,7 +5,7 @@ import {
   logApiError,
   logApiRequest,
   logApiResponse,
-  pruneOldApiLogs,
+  pruneOldLogs,
   setDebugMode,
 } from "../src/logger";
 
@@ -92,7 +92,7 @@ describe("api logger", () => {
   });
 });
 
-describe("pruneOldApiLogs", () => {
+describe("pruneOldLogs", () => {
   const now = Date.parse("2026-07-09T12:00:00.000Z");
   const cutoff = now - 7 * 24 * 60 * 60 * 1000;
 
@@ -127,7 +127,7 @@ describe("pruneOldApiLogs", () => {
       "jenkins-cli-config.json",
     ]) as unknown as typeof fs.readdirSync);
 
-    pruneOldApiLogs(now);
+    pruneOldLogs(now);
 
     expect(removedBasenames()).toEqual(["api-2026-07-01.log"]);
   });
@@ -137,7 +137,7 @@ describe("pruneOldApiLogs", () => {
       mtimeMs: cutoff - 1,
     })) as unknown as typeof fs.statSync);
 
-    pruneOldApiLogs(now);
+    pruneOldLogs(now);
 
     expect(removedBasenames()).toEqual(["api.log"]);
   });
@@ -147,7 +147,7 @@ describe("pruneOldApiLogs", () => {
       mtimeMs: cutoff + 1,
     })) as unknown as typeof fs.statSync);
 
-    pruneOldApiLogs(now);
+    pruneOldLogs(now);
 
     expect(rmSpy).not.toHaveBeenCalled();
   });
@@ -157,6 +157,6 @@ describe("pruneOldApiLogs", () => {
       throw new Error("EACCES");
     });
 
-    expect(() => pruneOldApiLogs(now)).not.toThrow();
+    expect(() => pruneOldLogs(now)).not.toThrow();
   });
 });

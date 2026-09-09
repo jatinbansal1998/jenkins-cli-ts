@@ -1,3 +1,4 @@
+import { logCliError } from "./logger";
 /**
  * Structured JSON output helpers for the read commands (`--json`).
  *
@@ -262,6 +263,7 @@ export function emitJsonLine(
 
 /** Convert an arbitrary thrown value into a stable JSON error body. */
 export function toJsonError(error: unknown): JsonErrorBody {
+  logCliError(error);
   if (error instanceof CliError) {
     return { message: error.message, code: error.code ?? "CLI_ERROR" };
   }

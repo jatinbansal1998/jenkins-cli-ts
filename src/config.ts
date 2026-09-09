@@ -69,7 +69,6 @@ export type JenkinsConfig = {
   defaultProfile?: string;
   profiles: Record<string, JenkinsProfileConfig>;
   debug?: boolean;
-  analyticsDisabled?: boolean;
 };
 
 export type LoadedConfig = {
@@ -218,9 +217,6 @@ export async function writeConfigFile(input: ConfigFileInput): Promise<string> {
       : typeof current.debug === "boolean"
         ? { debug: current.debug }
         : {}),
-    ...(typeof current.analyticsDisabled === "boolean"
-      ? { analyticsDisabled: current.analyticsDisabled }
-      : {}),
   };
 
   return await writeConfig(payload);
@@ -300,9 +296,6 @@ function parseConfigContents(
   const debug = parseBooleanLike(
     record.debug ?? record[ENV_KEYS.JENKINS_DEBUG],
   );
-  const analyticsDisabled = parseBooleanLike(
-    record.analyticsDisabled ?? record[ENV_KEYS.JENKINS_ANALYTICS_DISABLED],
-  );
 
   return {
     config: {
@@ -310,7 +303,6 @@ function parseConfigContents(
       profiles,
       ...(defaultProfile ? { defaultProfile } : {}),
       ...(debug !== undefined ? { debug } : {}),
-      ...(analyticsDisabled !== undefined ? { analyticsDisabled } : {}),
     },
     legacyDetected: Boolean(legacyProfile),
   };
@@ -472,9 +464,6 @@ function normalizeConfigForWrite(config: JenkinsConfig): JenkinsConfig {
     profiles,
     ...(defaultProfile ? { defaultProfile } : {}),
     ...(typeof config.debug === "boolean" ? { debug: config.debug } : {}),
-    ...(typeof config.analyticsDisabled === "boolean"
-      ? { analyticsDisabled: config.analyticsDisabled }
-      : {}),
   };
 }
 

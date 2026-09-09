@@ -1567,6 +1567,18 @@ describe.skipIf(!integrationEnabled)(
           "Jenkins returned HTTP 403 while trying to trigger build:",
         );
         expect(denied.output).not.toContain(readerToken);
+        const errorLog = await Bun.file(
+          join(
+            home,
+            ".config",
+            "jenkins-cli",
+            `error-${new Date().toISOString().slice(0, 10)}.log`,
+          ),
+        ).text();
+        expect(errorLog).toContain(
+          "CliError: Jenkins returned HTTP 403 while trying to trigger build:",
+        );
+        expect(errorLog).toMatch(/\s+at .+:\d+:\d+/);
 
         await runCli(home, ["auth", "use", "reader"], withoutCredentialEnv);
         expect(
@@ -3275,7 +3287,6 @@ async function writeProtectedProfile(home: string): Promise<void> {
             protected: true,
           },
         },
-        analyticsDisabled: true,
       },
       null,
       2,

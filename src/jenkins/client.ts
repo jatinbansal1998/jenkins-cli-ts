@@ -9,7 +9,7 @@ import { mkdirSync } from "node:fs";
 import { rm } from "node:fs/promises";
 import { dirname } from "node:path";
 import { CliError } from "../cli";
-import { recordJenkinsApiCall, recordJenkinsApiFailure } from "../analytics";
+
 import { normalizeJobParameterDefinitions } from "../job-parameters";
 import { normalizePendingInputActions } from "../pipeline-inputs";
 import {
@@ -350,11 +350,6 @@ export class JenkinsClient {
       context,
     );
     if (!response.ok) {
-      recordJenkinsApiFailure({
-        operation: toAnalyticsOperation(context),
-        errorType: "http_error",
-        httpStatus: response.status,
-      });
       await this.raiseHttpError(response, context);
     }
     return await response.text();
@@ -380,12 +375,6 @@ export class JenkinsClient {
         : {}),
     });
     if (!response.ok) {
-      recordJenkinsApiFailure({
-        operation: toAnalyticsOperation(context),
-        errorType: "http_error",
-        httpStatus: response.status,
-        retryAttempted: this.useCrumb && response.status === 403,
-      });
       await this.raiseHttpError(response, context);
     }
     return this.withJob(parentUrl, `job/${encodeURIComponent(options.name)}/`);
@@ -739,7 +728,6 @@ export class JenkinsClient {
     const url = this.withJob(buildUrl, `artifact/${encodedPath}`);
     const headers: Record<string, string> = { Authorization: this.authHeader };
 
-    recordJenkinsApiCall();
     logApiRequest("GET", url, headers);
 
     const { controller, cleanup } = withTimeout(this.timeoutMs);
@@ -755,10 +743,7 @@ export class JenkinsClient {
     } catch (error) {
       if (error instanceof Error && error.name === "AbortError") {
         logNetworkError("GET", url, "TIMEOUT");
-        recordJenkinsApiFailure({
-          operation: "download_artifact",
-          errorType: "timeout",
-        });
+
         throw new CliError(
           `Request timed out while trying to download artifact ${relativePath}.`,
           [`Check your network and that ${this.baseUrl} is reachable.`],
@@ -766,10 +751,7 @@ export class JenkinsClient {
       }
       const errorMsg = error instanceof Error ? error.message : "Unknown error";
       logNetworkError("GET", url, errorMsg);
-      recordJenkinsApiFailure({
-        operation: "download_artifact",
-        errorType: "network_error",
-      });
+
       throw new CliError(
         `Network error while trying to download artifact ${relativePath}.`,
         [`Check your network and that ${this.baseUrl} is reachable.`],
@@ -780,11 +762,7 @@ export class JenkinsClient {
 
     if (!response.ok) {
       logApiError("GET", url, response.status, response.headers);
-      recordJenkinsApiFailure({
-        operation: "download_artifact",
-        errorType: "http_error",
-        httpStatus: response.status,
-      });
+
       await this.raiseHttpError(response, `download artifact ${relativePath}`);
     }
     logApiResponse("GET", url, response.status, response.headers);
@@ -954,19 +932,9 @@ export class JenkinsClient {
       context,
     );
     if (isRedirect(response)) {
-      recordJenkinsApiFailure({
-        operation: toAnalyticsOperation(context),
-        errorType: "http_error",
-        httpStatus: response.status,
-      });
       throw loginRedirectError(context);
     }
     if (response.status === 404) {
-      recordJenkinsApiFailure({
-        operation: toAnalyticsOperation(context),
-        errorType: "http_error",
-        httpStatus: response.status,
-      });
       throw new CliError(
         `Jenkins returned HTTP 404 while trying to ${context}; this build does not expose Pipeline input actions.`,
         [
@@ -976,11 +944,6 @@ export class JenkinsClient {
       );
     }
     if (!response.ok) {
-      recordJenkinsApiFailure({
-        operation: toAnalyticsOperation(context),
-        errorType: "http_error",
-        httpStatus: response.status,
-      });
       await this.raiseHttpError(response, context);
     }
 
@@ -988,11 +951,6 @@ export class JenkinsClient {
     const contentType =
       response.headers.get("content-type")?.toLowerCase() ?? "";
     if (isHtmlBody(contentType, body)) {
-      recordJenkinsApiFailure({
-        operation: toAnalyticsOperation(context),
-        errorType: "invalid_json",
-        httpStatus: response.status,
-      });
       throw new CliError(
         `Unexpected Jenkins response while trying to ${context}: received an HTML page instead of JSON.`,
         [
@@ -1005,11 +963,6 @@ export class JenkinsClient {
     try {
       data = JSON.parse(body);
     } catch {
-      recordJenkinsApiFailure({
-        operation: toAnalyticsOperation(context),
-        errorType: "invalid_json",
-        httpStatus: response.status,
-      });
       throw new CliError(
         `Invalid JSON response while trying to ${context}.`,
         ["Try again, or verify your Jenkins server is healthy."],
@@ -1017,11 +970,6 @@ export class JenkinsClient {
       );
     }
     if (!Array.isArray(data)) {
-      recordJenkinsApiFailure({
-        operation: toAnalyticsOperation(context),
-        errorType: "invalid_json",
-        httpStatus: response.status,
-      });
       throw new CliError(
         `Unexpected Jenkins response while trying to ${context}: expected a JSON array.`,
         [],
@@ -1093,11 +1041,6 @@ export class JenkinsClient {
       return { outcome: "unconfirmed", reason: error.message };
     }
     if (isRedirect(response)) {
-      recordJenkinsApiFailure({
-        operation: toAnalyticsOperation(context),
-        errorType: "http_error",
-        httpStatus: response.status,
-      });
       const location = response.headers.get("location");
       return {
         outcome: "rejected",
@@ -1116,11 +1059,7 @@ export class JenkinsClient {
         body = await response.text();
       } catch (error) {
         const timedOut = controller.signal.aborted;
-        recordJenkinsApiFailure({
-          operation: toAnalyticsOperation(context),
-          errorType: timedOut ? "timeout" : "network_error",
-          httpStatus: response.status,
-        });
+
         return {
           outcome: "unconfirmed",
           reason: `the HTTP ${response.status} response body could not be read while trying to ${context} (${timedOut ? `body did not finish within ${this.timeoutMs}ms` : error instanceof Error && error.message ? error.message : "read failed"})`,
@@ -1129,11 +1068,6 @@ export class JenkinsClient {
       const contentType =
         response.headers.get("content-type")?.toLowerCase() ?? "";
       if (isHtmlBody(contentType, body)) {
-        recordJenkinsApiFailure({
-          operation: toAnalyticsOperation(context),
-          errorType: "invalid_json",
-          httpStatus: response.status,
-        });
         return {
           outcome: "rejected",
           httpStatus: response.status,
@@ -1143,12 +1077,7 @@ export class JenkinsClient {
       }
       return { outcome: "accepted" };
     }
-    recordJenkinsApiFailure({
-      operation: toAnalyticsOperation(context),
-      errorType: "http_error",
-      httpStatus: response.status,
-      retryAttempted: this.useCrumb && response.status === 403,
-    });
+
     // The abort signal also bounds this read; a stalled error body yields no
     // detail rather than a hang.
     const detail = await readJenkinsErrorDetail(response);
@@ -1279,11 +1208,6 @@ export class JenkinsClient {
       context,
     );
     if (!response.ok) {
-      recordJenkinsApiFailure({
-        operation: toAnalyticsOperation(context),
-        errorType: "http_error",
-        httpStatus: response.status,
-      });
       await this.raiseHttpError(response, context);
     }
 
@@ -1352,12 +1276,6 @@ export class JenkinsClient {
     });
 
     if (!response.ok) {
-      recordJenkinsApiFailure({
-        operation: "trigger_build",
-        errorType: "http_error",
-        httpStatus: response.status,
-        retryAttempted: this.useCrumb && response.status === 403,
-      });
       await this.raiseHttpError(response, "trigger build");
     }
 
@@ -1393,12 +1311,6 @@ export class JenkinsClient {
   ): Promise<void> {
     const response = await this.sendPostWithCrumbRetry({ url, context, body });
     if (!response.ok) {
-      recordJenkinsApiFailure({
-        operation: toAnalyticsOperation(context),
-        errorType: "http_error",
-        httpStatus: response.status,
-        retryAttempted: this.useCrumb && response.status === 403,
-      });
       await this.raiseHttpError(response, context);
     }
   }
@@ -1490,11 +1402,7 @@ export class JenkinsClient {
       if (response.status === 404 || response.status === 403) {
         return null;
       }
-      recordJenkinsApiFailure({
-        operation: "fetch_crumb",
-        errorType: "http_error",
-        httpStatus: response.status,
-      });
+
       await this.raiseHttpError(response, "fetch crumb");
     }
 
@@ -1517,21 +1425,12 @@ export class JenkinsClient {
     );
 
     if (!response.ok) {
-      recordJenkinsApiFailure({
-        operation: toAnalyticsOperation(context),
-        errorType: "http_error",
-        httpStatus: response.status,
-      });
       await this.raiseHttpError(response, context);
     }
 
     try {
       return (await response.json()) as T;
     } catch {
-      recordJenkinsApiFailure({
-        operation: toAnalyticsOperation(context),
-        errorType: "invalid_json",
-      });
       throw new CliError(`Invalid JSON response while trying to ${context}.`, [
         "Try again, or verify your Jenkins server is healthy.",
       ]);
@@ -1550,7 +1449,6 @@ export class JenkinsClient {
     options: RequestInit,
     retriesLeft: number,
     context: string,
-    attemptedRetry = false,
   ): Promise<Response> {
     const method = options.method ?? "GET";
     // POST bodies can contain build parameters and secrets. Never persist them
@@ -1561,7 +1459,7 @@ export class JenkinsClient {
           ? null
           : "<omitted>"
         : this.serializeRequestBody(options.body);
-    recordJenkinsApiCall();
+
     logApiRequest(method, url, options.headers, requestBody);
 
     const { controller, cleanup } = withTimeout(this.timeoutMs);
@@ -1598,22 +1496,12 @@ export class JenkinsClient {
       return response;
     } catch (error) {
       if (retriesLeft > 0) {
-        return this.fetchWithTimeout(
-          url,
-          options,
-          retriesLeft - 1,
-          context,
-          true,
-        );
+        return this.fetchWithTimeout(url, options, retriesLeft - 1, context);
       }
 
       if (error instanceof Error && error.name === "AbortError") {
         logNetworkError(method, url, "TIMEOUT");
-        recordJenkinsApiFailure({
-          operation: toAnalyticsOperation(context),
-          errorType: "timeout",
-          retryAttempted: attemptedRetry,
-        });
+
         throw new CliError(`Request timed out while trying to ${context}.`, [
           `Check your network and that ${this.baseUrl} is reachable.`,
         ]);
@@ -1621,11 +1509,7 @@ export class JenkinsClient {
 
       const errorMsg = error instanceof Error ? error.message : "Unknown error";
       logNetworkError(method, url, errorMsg);
-      recordJenkinsApiFailure({
-        operation: toAnalyticsOperation(context),
-        errorType: "network_error",
-        retryAttempted: attemptedRetry,
-      });
+
       throw new CliError(`Network error while trying to ${context}.`, [
         `Check your network and that ${this.baseUrl} is reachable.`,
       ]);
@@ -1974,10 +1858,6 @@ function normalizeUrl(value: string): string {
 
 function runningBuildDisplayName(build: RunningBuildSummary): string {
   return build.fullJobName?.trim() || build.jobName;
-}
-
-function toAnalyticsOperation(context: string): string {
-  return context.trim().replaceAll(/\s+/g, "_");
 }
 
 function normalizeTestReport(

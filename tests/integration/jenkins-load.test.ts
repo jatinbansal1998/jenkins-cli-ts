@@ -145,8 +145,6 @@ describe.skipIf(process.env.JENKINS_INTEGRATION_LOAD !== "1")(
                     JENKINS_URL: jenkinsUrl,
                     JENKINS_USER: process.env.JENKINS_INTEGRATION_USER,
                     JENKINS_API_TOKEN: process.env.JENKINS_INTEGRATION_TOKEN,
-                    JENKINS_ANALYTICS_DISABLED: "true",
-                    JENKINS_ERROR_REPORTING_DISABLED: "true",
                     NO_COLOR: "1",
                   };
                   const child = Bun.spawn({

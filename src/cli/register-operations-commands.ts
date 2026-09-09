@@ -24,7 +24,7 @@ export function registerOperationsCommands(
   parser: Argv,
   dependencies: CommandRegistrationDependencies,
 ): Argv {
-  const { runTrackedCommand, runTrackedCommandWithContext } = dependencies;
+  const { runCommand, runCommandWithContext } = dependencies;
 
   return parser
     .command(
@@ -32,7 +32,7 @@ export function registerOperationsCommands(
       "List running builds and open one in the browser",
       addJsonOption,
       async (argv) => {
-        await runTrackedCommandWithContext("run", argv, async ({ client }) => {
+        await runCommandWithContext("run", argv, async ({ client }) => {
           await runRunningBuilds({
             client,
             nonInteractive: Boolean(argv.nonInteractive || argv.json),
@@ -51,23 +51,19 @@ export function registerOperationsCommands(
           ),
         ),
       async (argv) => {
-        await runTrackedCommandWithContext(
-          "cancel",
-          argv,
-          async ({ env, client }) => {
-            await runCancel({
-              client,
-              env,
-              job: optionalString(argv.job),
-              jobUrl: optionalString(argv.jobUrl),
-              build: typeof argv.build === "number" ? argv.build : undefined,
-              buildUrl: optionalString(argv.buildUrl),
-              queueUrl: optionalString(argv.queueUrl),
-              nonInteractive: Boolean(argv.nonInteractive || argv.json),
-              json: Boolean(argv.json),
-            });
-          },
-        );
+        await runCommandWithContext("cancel", argv, async ({ env, client }) => {
+          await runCancel({
+            client,
+            env,
+            job: optionalString(argv.job),
+            jobUrl: optionalString(argv.jobUrl),
+            build: typeof argv.build === "number" ? argv.build : undefined,
+            buildUrl: optionalString(argv.buildUrl),
+            queueUrl: optionalString(argv.queueUrl),
+            nonInteractive: Boolean(argv.nonInteractive || argv.json),
+            json: Boolean(argv.json),
+          });
+        });
       },
     )
     .command(
@@ -81,19 +77,15 @@ export function registerOperationsCommands(
           }),
         ),
       async (argv) => {
-        await runTrackedCommandWithContext(
-          "queue",
-          argv,
-          async ({ env, client }) => {
-            await runQueue({
-              client,
-              env,
-              job: optionalString(argv.job),
-              nonInteractive: Boolean(argv.nonInteractive || argv.json),
-              json: Boolean(argv.json),
-            });
-          },
-        );
+        await runCommandWithContext("queue", argv, async ({ env, client }) => {
+          await runQueue({
+            client,
+            env,
+            job: optionalString(argv.job),
+            nonInteractive: Boolean(argv.nonInteractive || argv.json),
+            json: Boolean(argv.json),
+          });
+        });
       },
     )
     .command(
@@ -108,19 +100,15 @@ export function registerOperationsCommands(
           }),
         ),
       async (argv) => {
-        await runTrackedCommandWithContext(
-          "nodes",
-          argv,
-          async ({ env, client }) => {
-            await runNodes({
-              client,
-              env,
-              offlineOnly: Boolean(argv.offlineOnly),
-              nonInteractive: Boolean(argv.nonInteractive || argv.json),
-              json: Boolean(argv.json),
-            });
-          },
-        );
+        await runCommandWithContext("nodes", argv, async ({ env, client }) => {
+          await runNodes({
+            client,
+            env,
+            offlineOnly: Boolean(argv.offlineOnly),
+            nonInteractive: Boolean(argv.nonInteractive || argv.json),
+            json: Boolean(argv.json),
+          });
+        });
       },
     )
     .command(
@@ -131,22 +119,18 @@ export function registerOperationsCommands(
           addBuildUrlOption(addBuildOption(addJobOptions(yargsInstance))),
         ),
       async (argv) => {
-        await runTrackedCommandWithContext(
-          "rerun",
-          argv,
-          async ({ env, client }) => {
-            await runRerun({
-              client,
-              env,
-              job: optionalString(argv.job),
-              jobUrl: optionalString(argv.jobUrl),
-              build: typeof argv.build === "number" ? argv.build : undefined,
-              buildUrl: optionalString(argv.buildUrl),
-              nonInteractive: Boolean(argv.nonInteractive || argv.json),
-              json: Boolean(argv.json),
-            });
-          },
-        );
+        await runCommandWithContext("rerun", argv, async ({ env, client }) => {
+          await runRerun({
+            client,
+            env,
+            job: optionalString(argv.job),
+            jobUrl: optionalString(argv.jobUrl),
+            build: typeof argv.build === "number" ? argv.build : undefined,
+            buildUrl: optionalString(argv.buildUrl),
+            nonInteractive: Boolean(argv.nonInteractive || argv.json),
+            json: Boolean(argv.json),
+          });
+        });
       },
     )
     .command(
@@ -166,7 +150,7 @@ export function registerOperationsCommands(
       async (argv) => {
         const action = optionalString(argv.action) ?? "";
         const name = optionalString(argv.name);
-        await runTrackedCommand(
+        await runCommand(
           `profile:${action || "unknown"}`,
           argv,
           async ({ showIntro }) => {

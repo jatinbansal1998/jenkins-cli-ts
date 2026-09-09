@@ -15,8 +15,8 @@ describe("list command registration", () => {
   test("list and the default command use the same parsed options and handler", async () => {
     const calls: Array<{ command: string; argv: Record<string, unknown> }> = [];
     const dependencies = {
-      runTrackedCommand: async () => undefined,
-      runTrackedCommandWithContext: async (command, argv) => {
+      runCommand: async () => undefined,
+      runCommandWithContext: async (command, argv) => {
         calls.push({ command, argv });
       },
     } as CommandRegistrationDependencies;

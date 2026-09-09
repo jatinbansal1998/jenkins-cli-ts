@@ -1,3 +1,4 @@
+import { logCliError } from "../logger";
 import { CliError, printError, printHint, printOk } from "../cli";
 import { resolveBuildSelector } from "../build-selector";
 import { assertProtectedMutationAllowed, type EnvConfig } from "../env";
@@ -237,6 +238,7 @@ async function cancelBuildBatch(
       printOk(`Cancellation requested for build: ${build.buildUrl}`);
       requested.push(build);
     } catch (error) {
+      logCliError(error);
       failed++;
       printError(`Failed to cancel ${build.label}: ${errorMessage(error)}`);
     }
@@ -255,6 +257,7 @@ async function cancelBuildBatch(
       });
       succeeded++;
     } catch (error) {
+      logCliError(error);
       failed++;
       printError(
         `Failed while waiting for ${build.label}: ${errorMessage(error)}`,

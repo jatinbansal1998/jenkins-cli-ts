@@ -1,5 +1,5 @@
 import { confirm, isCancel, select, text } from "../clack";
-import { markAnalyticsPollingCommand } from "../analytics";
+
 import { resolveBuildSelector } from "../build-selector";
 import { CliError, printHint } from "../cli";
 import type { EnvConfig } from "../env";
@@ -194,7 +194,6 @@ async function runLogsCore(
   }
   const outputEmitter = createPostProcessingEmitter(emitter, effective);
   if (effective.follow) {
-    markAnalyticsPollingCommand();
   }
 
   if (!options.jsonl) {

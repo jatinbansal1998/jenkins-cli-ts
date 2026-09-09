@@ -1,6 +1,11 @@
-import { markAnalyticsPollingCommand } from "../analytics";
 import { resolveBuildSelector } from "../build-selector";
-import { CliError, printError, printHint, printOk } from "../cli";
+import {
+  CliError,
+  handleCliError,
+  printError,
+  printHint,
+  printOk,
+} from "../cli";
 import type { EnvConfig } from "../env";
 import type { JenkinsClient } from "../jenkins/client";
 import {
@@ -80,8 +85,6 @@ export async function runWait(options: WaitOptions): Promise<WaitResult> {
     return await runWaitJson(options);
   }
 
-  markAnalyticsPollingCommand();
-
   const intervalMs = parseOptionalDurationMs(
     options.interval,
     DEFAULT_WATCH_INTERVAL_MS,
@@ -125,8 +128,6 @@ async function runWaitJson(options: WaitOptions): Promise<WaitResult> {
   const write = options.write;
   const startedAt = Date.now();
   try {
-    markAnalyticsPollingCommand();
-
     const intervalMs = parseOptionalDurationMs(
       options.interval,
       DEFAULT_WATCH_INTERVAL_MS,
@@ -417,16 +418,7 @@ export async function waitForBuild(options: {
           if (statusSpinner) {
             statusSpinner.stop("Cancel failed.");
           }
-          if (error instanceof CliError) {
-            printError(error.message);
-            for (const hint of error.hints) {
-              printHint(hint);
-            }
-          } else {
-            printError(
-              error instanceof Error ? error.message : "Unexpected error.",
-            );
-          }
+          handleCliError(error);
           if (statusSpinner) {
             statusSpinner.start(watchPrompt);
           }

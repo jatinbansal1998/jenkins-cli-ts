@@ -1,7 +1,7 @@
 /**
  * Shared profile management operations behind the `auth` command group and the
  * compatibility `profile` commands. Command handlers own argument parsing,
- * confirmation prompts, text output, and analytics; this module owns config
+ * confirmation prompts and text output; this module owns config
  * validation, secure-store changes, default-profile selection, rollback, and
  * result data.
  *
@@ -509,7 +509,6 @@ function describeRestoreFailures(failedProfiles: string[]): string[] {
 
 /**
  * Rebuilds the full config payload for a write, preserving every top-level
- * setting (including `debug` and `analyticsDisabled`).
  */
 function buildConfigPayload(
   config: JenkinsConfig | undefined,
@@ -521,9 +520,6 @@ function buildConfigPayload(
     profiles,
     ...(defaultProfile ? { defaultProfile } : {}),
     ...(typeof config?.debug === "boolean" ? { debug: config.debug } : {}),
-    ...(typeof config?.analyticsDisabled === "boolean"
-      ? { analyticsDisabled: config.analyticsDisabled }
-      : {}),
   };
 }
 

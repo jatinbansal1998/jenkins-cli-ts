@@ -8,7 +8,7 @@
  * an action that merely disappeared is reported as `unknown`: another user, a
  * timeout, or a build cancellation could have settled it.
  */
-import { updateAnalyticsContext } from "../analytics";
+
 import { resolveBuildSelector } from "../build-selector";
 import { CliError, printOk } from "../cli";
 import { assertProtectedMutationAllowed, type EnvConfig } from "../env";
@@ -69,24 +69,6 @@ type SettleResult =
   | { kind: "declined" }
   | { kind: "cancelled" };
 
-/** Coarse, privacy-safe outcome recorded on the analytics session. */
-type InputOutcome =
-  | "listed"
-  | "approved"
-  | "aborted"
-  | "declined"
-  | "cancelled"
-  | "confirmation_required"
-  | "not_pending"
-  | "stale"
-  | "unsupported_parameters"
-  | "parameters_unknown"
-  | "permission_denied"
-  | "crumb_rejected"
-  | "login_redirect"
-  | "rejected"
-  | "unknown";
-
 const BACK_VALUE = "__jenkins_cli_input_back__";
 
 let activeInputDeps = inputDeps;
@@ -107,7 +89,7 @@ export async function runInputList(options: InputListOptions): Promise<void> {
         const actions = await options.client.listPendingInputActions(
           target.buildUrl,
         );
-        recordInputOutcome("listed");
+
         return {
           build: jsonPendingInputBuild(target),
           actions: actions.map(jsonPendingInputAction),
@@ -120,7 +102,7 @@ export async function runInputList(options: InputListOptions): Promise<void> {
 
   const target = await resolveInputBuild(options);
   const actions = await options.client.listPendingInputActions(target.buildUrl);
-  recordInputOutcome("listed");
+
   printPendingInputs(target, actions);
 }
 
@@ -143,7 +125,6 @@ async function runInputMutation(
   assertProtectedMutationAllowed(options.env);
   const nonInteractive = options.nonInteractive || Boolean(options.json);
   if (nonInteractive && !options.yes) {
-    recordInputOutcome("confirmation_required");
     throw new CliError(
       `Refusing to ${operation} a pending input without confirmation.`,
       [
@@ -250,7 +231,7 @@ export async function runPendingInputsMenu(options: {
     const actions = await options.client.listPendingInputActions(
       target.buildUrl,
     );
-    recordInputOutcome("listed");
+
     if (actions.length === 0) {
       printOk(`No pending input actions for ${buildLabel(target)}.`);
       return;
@@ -412,7 +393,6 @@ async function selectPendingInput(options: {
   );
   const label = buildLabel(options.target);
   if (actions.length === 0) {
-    recordInputOutcome("not_pending");
     throw new CliError(
       `No pending input actions for ${label}.`,
       [
@@ -428,7 +408,6 @@ async function selectPendingInput(options: {
   if (requestedId) {
     const match = actions.find((action) => action.id === requestedId);
     if (!match) {
-      recordInputOutcome("not_pending");
       throw new CliError(
         `No pending input action with id "${sanitizeInputText(requestedId)}" on ${label}.`,
         [`Pending ids: ${actions.map(displayId).join(", ")}.`],
@@ -495,11 +474,9 @@ async function settlePendingInput(options: {
       action: options.action,
     });
     if (answer === "cancelled") {
-      recordInputOutcome("cancelled");
       return { kind: "cancelled" };
     }
     if (answer === "no") {
-      recordInputOutcome("declined");
       return { kind: "declined" };
     }
   }
@@ -530,7 +507,6 @@ async function settlePendingInput(options: {
 
   const submission = await client.submitPendingInput({ url, operation });
   if (submission.outcome === "accepted") {
-    recordInputOutcome(operation === "approve" ? "approved" : "aborted");
     return {
       kind: "settled",
       receipt: {
@@ -593,7 +569,6 @@ function unknownOutcomeError(
   reason: string,
   stillPending: boolean | undefined,
 ): CliError {
-  recordInputOutcome("unknown");
   return new CliError(
     `The ${operation} request for input "${displayId(action)}" on ${buildLabel(target)} could not be confirmed: ${reason}`,
     [
@@ -610,7 +585,6 @@ function unknownOutcomeError(
 
 function assertParameterlessApproval(action: PendingInputAction): void {
   if (action.parameters === null) {
-    recordInputOutcome("parameters_unknown");
     throw new CliError(
       `Jenkins did not report whether input "${displayId(action)}" requires parameters, so it cannot be approved from the CLI.`,
       [
@@ -620,7 +594,6 @@ function assertParameterlessApproval(action: PendingInputAction): void {
     );
   }
   if (action.parameters.length > 0) {
-    recordInputOutcome("unsupported_parameters");
     throw new CliError(
       `Input "${displayId(action)}" requires ${action.parameters.length} parameter${action.parameters.length === 1 ? "" : "s"} (${action.parameters.map((parameter) => parameter.name).join(", ")}); parameterized approval is not supported by the CLI.`,
       [
@@ -651,7 +624,6 @@ function staleActionError(
   operation: InputOperation,
   submission?: Extract<PendingInputSubmission, { outcome: "rejected" }>,
 ): CliError {
-  recordInputOutcome("stale");
   const rejection = submission
     ? ` Jenkins rejected this ${operation} with HTTP ${submission.httpStatus}${submission.detail ? ` (${submission.detail})` : ""}.`
     : "";
@@ -672,7 +644,6 @@ function rejectionError(
   const where = `input "${displayId(action)}" on ${buildLabel(target)}`;
   const inspect = inspectInJenkinsHint(action, target);
   if (submission.kind === "redirect") {
-    recordInputOutcome("login_redirect");
     return new CliError(
       `The Jenkins API request was redirected to another page while trying to ${operation} ${where}; nothing was submitted.`,
       [
@@ -682,7 +653,6 @@ function rejectionError(
     );
   }
   if (submission.kind === "html_page") {
-    recordInputOutcome("login_redirect");
     return new CliError(
       `Unexpected Jenkins response while trying to ${operation} ${where}: received an HTML page instead of a Jenkins response, so the input was not settled by this command.`,
       [
@@ -693,7 +663,6 @@ function rejectionError(
     );
   }
   if (/crumb/i.test(detail)) {
-    recordInputOutcome("crumb_rejected");
     return new CliError(
       `Jenkins rejected the ${operation} for ${where} with HTTP ${submission.httpStatus} because the CSRF crumb was missing or invalid.`,
       [
@@ -703,7 +672,6 @@ function rejectionError(
     );
   }
   if (/you need to (be|have)/i.test(detail)) {
-    recordInputOutcome("permission_denied");
     return new CliError(
       `Jenkins denied the ${operation} for ${where}: ${detail}`,
       [
@@ -718,7 +686,7 @@ function rejectionError(
   if (/already been given|does not have an Input with an ID/i.test(detail)) {
     return staleActionError(action.id, target, operation, submission);
   }
-  recordInputOutcome("rejected");
+
   return new CliError(
     `Jenkins returned HTTP ${submission.httpStatus} while trying to ${operation} ${where}${detail ? `: ${detail}` : "."}`,
     [
@@ -848,8 +816,4 @@ function jsonPendingInputBuild(
     building: target.building,
     result: target.result,
   };
-}
-
-function recordInputOutcome(outcome: InputOutcome): void {
-  updateAnalyticsContext({ input_outcome: outcome });
 }

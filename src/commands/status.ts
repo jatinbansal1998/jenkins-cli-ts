@@ -1,9 +1,10 @@
+import { logCliError } from "../logger";
 /**
  * Status command implementation.
  * Shows the last build status (number, result, URL) for a job.
  */
 import { autocomplete, confirm, isCancel, select, text } from "../clack";
-import { runInteractiveSubcommandWithAnalytics } from "../analytics";
+
 import { resolveBuildSelector } from "../build-selector";
 import { CliError, printHint, printOk } from "../cli";
 import { runMenuAction } from "./menu-action";
@@ -194,20 +195,16 @@ export async function runStatus(options: StatusOptions): Promise<void> {
           return "action_error";
         }
         if (action === "watch") {
-          const result = await runInteractiveSubcommandWithAnalytics(
-            "wait",
-            () =>
-              runMenuAction(
-                async () =>
-                  runWait({
-                    client: options.client,
-                    env: options.env,
-                    jobUrl: primaryTarget.jobUrl,
-                    nonInteractive: false,
-                    suppressExitCode: true,
-                  }),
-                "action_error",
-              ),
+          const result = await runMenuAction(
+            async () =>
+              runWait({
+                client: options.client,
+                env: options.env,
+                jobUrl: primaryTarget.jobUrl,
+                nonInteractive: false,
+                suppressExitCode: true,
+              }),
+            "action_error",
           );
           if (typeof result === "string") {
             return result;
@@ -215,99 +212,85 @@ export async function runStatus(options: StatusOptions): Promise<void> {
           return result.cancelled ? "watch_cancelled" : "action_ok";
         }
         if (action === "logs") {
-          return await runInteractiveSubcommandWithAnalytics("logs", () =>
-            runMenuAction(async (): Promise<ActionEffectResult> => {
-              await runLogs({
-                client: options.client,
-                env: options.env,
-                jobUrl: primaryTarget.jobUrl,
-                nonInteractive: false,
-              });
-              return "action_ok";
-            }, "action_error"),
-          );
+          return await runMenuAction(async (): Promise<ActionEffectResult> => {
+            await runLogs({
+              client: options.client,
+              env: options.env,
+              jobUrl: primaryTarget.jobUrl,
+              nonInteractive: false,
+            });
+            return "action_ok";
+          }, "action_error");
         }
         if (action === "history") {
-          return await runInteractiveSubcommandWithAnalytics("history", () =>
-            runMenuAction(async (): Promise<ActionEffectResult> => {
-              await runHistory({
-                client: options.client,
-                env: options.env,
-                jobUrl: primaryTarget.jobUrl,
-                nonInteractive: false,
-              });
-              return "action_ok";
-            }, "action_error"),
-          );
+          return await runMenuAction(async (): Promise<ActionEffectResult> => {
+            await runHistory({
+              client: options.client,
+              env: options.env,
+              jobUrl: primaryTarget.jobUrl,
+              nonInteractive: false,
+            });
+            return "action_ok";
+          }, "action_error");
         }
         if (action === "pending_inputs") {
-          return await runInteractiveSubcommandWithAnalytics("input", () =>
-            runMenuAction(async (): Promise<ActionEffectResult> => {
-              await runPendingInputsMenu({
-                client: options.client,
-                env: options.env,
-                jobUrl: primaryTarget.jobUrl,
-                buildUrl: displayedBuildUrls.get(primaryTarget.jobUrl),
-                jobLabel: primaryTarget.jobLabel,
-              });
-              return "action_ok";
-            }, "action_error"),
-          );
+          return await runMenuAction(async (): Promise<ActionEffectResult> => {
+            await runPendingInputsMenu({
+              client: options.client,
+              env: options.env,
+              jobUrl: primaryTarget.jobUrl,
+              buildUrl: displayedBuildUrls.get(primaryTarget.jobUrl),
+              jobLabel: primaryTarget.jobLabel,
+            });
+            return "action_ok";
+          }, "action_error");
         }
         if (action === "cancel") {
-          return await runInteractiveSubcommandWithAnalytics("cancel", () =>
-            runMenuAction(async (): Promise<ActionEffectResult> => {
-              await runCancel({
-                client: options.client,
-                env: options.env,
-                jobUrl: primaryTarget.jobUrl,
-                nonInteractive: false,
-              });
-              return "action_ok";
-            }, "action_error"),
-          );
+          return await runMenuAction(async (): Promise<ActionEffectResult> => {
+            await runCancel({
+              client: options.client,
+              env: options.env,
+              jobUrl: primaryTarget.jobUrl,
+              nonInteractive: false,
+            });
+            return "action_ok";
+          }, "action_error");
         }
         if (action === "rerun") {
-          return await runInteractiveSubcommandWithAnalytics("rerun", () =>
-            runMenuAction(async (): Promise<ActionEffectResult> => {
-              await runRerun({
-                client: options.client,
-                env: options.env,
-                jobUrl: primaryTarget.jobUrl,
-                nonInteractive: false,
-              });
-              return "action_ok";
-            }, "action_error"),
-          );
+          return await runMenuAction(async (): Promise<ActionEffectResult> => {
+            await runRerun({
+              client: options.client,
+              env: options.env,
+              jobUrl: primaryTarget.jobUrl,
+              nonInteractive: false,
+            });
+            return "action_ok";
+          }, "action_error");
         }
         if (action === "rerun_last") {
-          return await runInteractiveSubcommandWithAnalytics("rerun-last", () =>
-            runMenuAction(async (): Promise<ActionEffectResult> => {
-              await runRerunLastBuild({
-                client: options.client,
-                env: options.env,
-                jobUrl: primaryTarget.jobUrl,
-                nonInteractive: false,
-              });
-              return "action_ok";
-            }, "action_error"),
-          );
+          return await runMenuAction(async (): Promise<ActionEffectResult> => {
+            await runRerunLastBuild({
+              client: options.client,
+              env: options.env,
+              jobUrl: primaryTarget.jobUrl,
+              nonInteractive: false,
+            });
+            return "action_ok";
+          }, "action_error");
         }
         if (action === "build") {
-          return await runInteractiveSubcommandWithAnalytics("build", () =>
-            runMenuAction(async (): Promise<ActionEffectResult> => {
-              const buildResult = await runBuild({
-                client: options.client,
-                env: options.env,
-                jobUrl: primaryTarget.jobUrl,
-                branchParam: options.env.branchParamDefault,
-                defaultBranch: false,
-                nonInteractive: false,
-                returnToCaller: true,
-              });
-              return buildResult.rootRequested ? "root" : "action_ok";
-            }, "action_error"),
-          );
+          return await runMenuAction(async (): Promise<ActionEffectResult> => {
+            const buildResult = await runBuild({
+              client: options.client,
+              env: options.env,
+              jobUrl: primaryTarget.jobUrl,
+              branchParam: options.env.branchParamDefault,
+              defaultBranch: false,
+              nonInteractive: false,
+              returnToCaller: true,
+            });
+            return buildResult.rootRequested ? "root" : "action_ok";
+          }, "action_error");
         }
         return "action_error";
       },
@@ -516,6 +499,7 @@ async function readJobDisabled(
   try {
     return await client.getJobDisabled(jobUrl);
   } catch (error) {
+    logCliError(error);
     printHint(
       `Could not determine job state: ${
         error instanceof Error ? error.message : String(error)

@@ -37,7 +37,7 @@ export function registerInputCommands(
   parser: Argv,
   dependencies: CommandRegistrationDependencies,
 ): Argv {
-  const { runTrackedCommandWithContext } = dependencies;
+  const { runCommandWithContext } = dependencies;
 
   return parser.command(
     "input",
@@ -49,7 +49,7 @@ export function registerInputCommands(
           "List pending input actions for one build",
           addInputTargetOptions,
           async (argv) => {
-            await runTrackedCommandWithContext(
+            await runCommandWithContext(
               "input:list",
               argv,
               async ({ env, client }) => {
@@ -73,7 +73,7 @@ export function registerInputCommands(
           "Approve a parameterless pending input action",
           addInputMutationOptions,
           async (argv) => {
-            await runTrackedCommandWithContext(
+            await runCommandWithContext(
               "input:approve",
               argv,
               async ({ env, client }) => {
@@ -99,7 +99,7 @@ export function registerInputCommands(
           "Abort a pending input action",
           addInputMutationOptions,
           async (argv) => {
-            await runTrackedCommandWithContext(
+            await runCommandWithContext(
               "input:abort",
               argv,
               async ({ env, client }) => {

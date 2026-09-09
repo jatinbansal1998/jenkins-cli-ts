@@ -1,6 +1,6 @@
 import { withTimeout } from "./with-timeout";
 import { normalizeOptionalString } from "./strings";
-import { recordJenkinsApiCall, recordJenkinsApiFailure } from "./analytics";
+
 import {
   CONFIG_FILE,
   readConfigSync,
@@ -192,7 +192,6 @@ export async function probeJenkinsIdentity(
     headers.Authorization = `Basic ${encoded}`;
   }
 
-  recordJenkinsApiCall();
   logApiRequest("GET", requestUrl, headers, null);
   const { controller, cleanup } = withTimeout(
     deps.timeoutMs ?? AUTH_PROBE_TIMEOUT_MS,
@@ -217,15 +216,12 @@ export async function probeJenkinsIdentity(
 
     const common = responseMetadata(response);
     if (response.status === 401) {
-      recordHttpProbeFailure(response.status);
       return { kind: "unauthorized", ...common };
     }
     if (response.status === 403) {
-      recordHttpProbeFailure(response.status);
       return { kind: "forbidden", ...common };
     }
     if (response.status >= 300 && response.status < 400) {
-      recordHttpProbeFailure(response.status);
       return {
         kind: "redirect",
         ...common,
@@ -236,7 +232,6 @@ export async function probeJenkinsIdentity(
       };
     }
     if (response.status !== 200) {
-      recordHttpProbeFailure(response.status);
       return {
         kind: "unexpected-response",
         ...common,
@@ -246,7 +241,6 @@ export async function probeJenkinsIdentity(
 
     const body = await response.text();
     if (isHtml(common.contentType, body)) {
-      recordInvalidJsonProbeFailure(response.status);
       return {
         kind: "unexpected-response",
         ...common,
@@ -258,7 +252,6 @@ export async function probeJenkinsIdentity(
     try {
       identity = JSON.parse(body);
     } catch {
-      recordInvalidJsonProbeFailure(response.status);
       return {
         kind: "unexpected-response",
         ...common,
@@ -286,17 +279,11 @@ export async function probeJenkinsIdentity(
   } catch (error) {
     if (isAbortError(error)) {
       logNetworkError("GET", requestUrl, "TIMEOUT");
-      recordJenkinsApiFailure({
-        operation: "auth_status",
-        errorType: "timeout",
-      });
+
       return { kind: "timeout" };
     }
     logNetworkError("GET", requestUrl, "NETWORK_ERROR");
-    recordJenkinsApiFailure({
-      operation: "auth_status",
-      errorType: "network_error",
-    });
+
     return { kind: "network-error" };
   } finally {
     cleanup();
@@ -687,22 +674,6 @@ function sanitizedResponseHeaders(
     );
   }
   return sanitized;
-}
-
-function recordHttpProbeFailure(httpStatus: number): void {
-  recordJenkinsApiFailure({
-    operation: "auth_status",
-    errorType: "http_error",
-    httpStatus,
-  });
-}
-
-function recordInvalidJsonProbeFailure(httpStatus: number): void {
-  recordJenkinsApiFailure({
-    operation: "auth_status",
-    errorType: "invalid_json",
-    httpStatus,
-  });
 }
 
 function isHtml(contentType: string | undefined, body: string): boolean {

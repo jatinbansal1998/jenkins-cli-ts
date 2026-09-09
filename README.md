@@ -31,9 +31,7 @@ keychain.
   - [Read-Only Profiles](#read-only-profiles)
   - [Credential Selection Order](#credential-selection-order)
   - [Environment Variable Fallback](#environment-variable-fallback)
-  - [Analytics](#analytics)
-  - [Error Reporting](#error-reporting)
-  - [Privacy Guardrails](#privacy-guardrails)
+  - [Privacy and local error logs](#privacy-and-local-error-logs)
 - [Usage](#usage)
   - [JSON Output](#json-output---json)
   - [JSON Lines Log Streaming](#json-lines-log-streaming---jsonl)
@@ -402,38 +400,22 @@ Single-account fallback only:
 - `JENKINS_API_TOKEN`
 - Optional: `JENKINS_USE_CRUMB` (`true` to enable; default: disabled)
 
-### Analytics
+### Privacy and local error logs
 
-- Analytics is disabled by default.
-- Set `"analyticsDisabled": false` in `~/.config/jenkins-cli/jenkins-cli-config.json` to enable the bundled PostHog analytics.
-- Default analytics host is the managed reverse proxy: `https://t.jatinbansal.com`
-- Optional: `JENKINS_POSTHOG_API_KEY` to enable analytics with a custom PostHog project token
-- Optional: `JENKINS_POSTHOG_HOST` to override the PostHog host
-- Optional: `JENKINS_ANALYTICS_DISABLED=false` to enable analytics from env using the bundled token
-- Optional: `JENKINS_ANALYTICS_DISABLED=true` to force-disable analytics entirely
-- Optional config: set `"analyticsDisabled": true` to force-disable analytics entirely
+The CLI collects no usage analytics and sends no automatic error reports.
+Errors are written locally to `~/.config/jenkins-cli/error-YYYY-MM-DD.log`,
+including CLI version, full error messages, stacks, and error causes, even without
+`--debug`. Error logs are not redacted automatically and can contain sensitive
+values from exception messages. Review and redact them before sharing.
 
-### Error Reporting
+Logs rotate daily in UTC. Files older than seven days are removed when the CLI
+exits; cleanup runs the next time you use the CLI, not in a background service.
+New log files use owner-only permissions on Unix. Logging failures do not
+replace the command's original error or change its exit status.
 
-- Unexpected internal errors are reported to Sentry by default. Expected CLI validation, Jenkins API, network, timeout, and cancellation errors are not reported.
-- Set `JENKINS_ERROR_REPORTING_DISABLED=true` to disable Sentry error reporting entirely.
-- Optional: `SENTRY_DSN` overrides the bundled public Sentry DSN. Setting it to an empty value also disables reporting.
-- Optional: `SENTRY_ENVIRONMENT` overrides the default `production` environment used by built releases.
-- Project GitHub Actions workflows set `SENTRY_ENVIRONMENT=github-actions` so CI events are identifiable separately.
-- Sentry captures uncaught exceptions and unhandled promise rejections in addition to errors propagated through the CLI's main execution path. Unhandled rejections retain a nonzero exit status.
-- Error reporting is best-effort. Transport failures stay silent and do not replace the original error or turn a failed command into a successful exit.
-- Run `SENTRY_ENVIRONMENT=local-smoke bun run sentry:smoke` for an intentional live verification event. The command refuses to run against the `production` environment.
-- The manually dispatched `Sentry Smoke Test` workflow builds a standalone Bun smoke binary, sends manual and globally uncaught failures, then verifies both through Sentry CLI. Its `SENTRY_AUTH_TOKEN` GitHub secret is available only to the verification step. Restrict the token to the `jenkins-cli` project with only the read-only `project:read` scope required by Sentry's project event-list endpoint; do not grant write, admin, release, or organization scopes.
-
-### Privacy Guardrails
-
-- Analytics never sends Jenkins usernames, API tokens, Jenkins URLs, job names, job URLs, build URLs, queue URLs, branch names, raw search text, build parameter names or values, or log output.
-- Authentication diagnostics also exclude profile names, token-storage details,
-  redirect destinations, effective Jenkins users, and Jenkins versions from
-  analytics.
-- Analytics only sends anonymous install ID, CLI version, command names, interactivity/TTY flags, high-level outcomes, exact command durations in milliseconds, and coarse Jenkins API health counts.
-- Sentry receives only unexpected exception details and privacy-safe runtime tags: CLI version, build target, Bun version, OS platform, and architecture.
-- SDK-side collection of users, hostnames, command arguments, requests, headers, bodies, query parameters, breadcrumbs, logs, metrics, tracing, local variables, and source context is disabled. Home-directory paths and URLs in exception details are redacted before sending. Sentry may still derive coarse geographic data from the transport IP according to the project's server-side privacy settings.
+Use `--debug` for existing API diagnostics in `api-YYYY-MM-DD.log`. Review any
+logs before attaching them to a [GitHub issue](https://github.com/jatinbansal1998/jenkins-cli-ts/issues).
+Nothing is uploaded automatically. Update checks still contact GitHub.
 
 ## Usage
 
@@ -1108,7 +1090,7 @@ Output is bounded to `--limit` changes across all SCM groups (default 20).
 successful empty result — note that Jenkins change sets only contain commits
 new since the previous build, so re-running the same commit yields no changes;
 use the `revisions[]` field on `status`/`history` to verify what was checked
-out. Commit data never reaches analytics or error reporting.
+out. Commit data is not uploaded for diagnostics.
 
 ### Artifacts
 
@@ -1461,7 +1443,7 @@ headers, credentials, or full command arguments are recorded. Reports mark
 missing or malformed traces with `complete: false` and `auditError`;
 incomplete audits fail even in observation mode. The Jenkins-only
 tests fail on any destination other than their controller/proxy endpoints.
-They disable analytics/error reporting and seed a current minimum-version
+They seed a current minimum-version
 policy cache with automatic updates disabled.
 
 A separate `mode: "observe"` report runs `nodes` with a fresh profile and records

@@ -92,7 +92,7 @@ afterEach(() => {
 });
 
 describe("writeConfigFile", () => {
-  test("preserves useCrumb, debug, and analyticsDisabled from existing config", async () => {
+  test("preserves useCrumb and debug from existing config", async () => {
     fileContents.set(
       CONFIG_FILE,
       JSON.stringify({
@@ -101,7 +101,6 @@ describe("writeConfigFile", () => {
         jenkinsApiToken: "old-token",
         useCrumb: true,
         debug: false,
-        analyticsDisabled: true,
       }),
     );
 
@@ -117,7 +116,6 @@ describe("writeConfigFile", () => {
     expect(payload.defaultProfile).toBe("default");
     expect(payload.profiles.default.useCrumb).toBeTrue();
     expect(payload.debug).toBeFalse();
-    expect(payload.analyticsDisabled).toBeTrue();
     expect(payload.profiles.default.jenkinsUrl).toBe(
       "https://jenkins.example.com",
     );
