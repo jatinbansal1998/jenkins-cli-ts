@@ -1525,7 +1525,6 @@ Commands print `OK:` on success.
 - Build flow walkthrough: `docs/flow/build-flow.md`
 - Prompt architecture and dependencies: `docs/flow/prompt-system.md`
 - Interactive state diagrams: `docs/tui-state-diagrams.md`
-- Fuzzy job search: `fuzzy-search-docs/FUZZY_SEARCH_ALGORITHM.md`
 
 ## Notes
 
