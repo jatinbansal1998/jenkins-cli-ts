@@ -30,7 +30,7 @@
     "format": "prettier . --write"
   },
   "devDependencies": {
-    "@types/bun": "1.4.1",
+    "@types/bun": "1.4.2",
     "@types/semver": "^7.8.0",
     "@types/yargs": "^17.0.35",
     "husky": "^9.1.7",
