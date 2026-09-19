@@ -7,11 +7,9 @@ import { GITHUB_REPO_URL } from "../src/github-constants";
 import { fetchLatestRelease } from "../src/github/api-wrapper";
 const realUpdate = await import("../src/update");
 const {
-  clearPendingUpdateState,
   compareVersions,
   downloadAndInstall,
   extractInstalledBinaryVersionOutput,
-  getDeferredUpdatePromptVersion,
   getPreferredUpdateCommand,
   getReleaseInstallDecision,
   isHomebrewManagedPath,
@@ -22,7 +20,6 @@ const {
   resolveExecutablePath,
   resolveReleaseAsset,
   resolveUpdateChannel,
-  withPendingUpdateState,
 } = realUpdate;
 
 const realFetch = globalThis.fetch;
@@ -137,9 +134,7 @@ describe("update helpers", () => {
         },
       ],
     });
-    expect(asset).toEqual({
-      url: `https://example.com/${platformName}`,
-    });
+    expect(asset).toBe(`https://example.com/${platformName}`);
   });
 
   test("resolveReleaseAsset does not fall back to a generic jenkins-cli asset", () => {
@@ -177,10 +172,7 @@ describe("update helpers", () => {
         },
         currentVersion: "v1.2.3",
       }),
-    ).toEqual({
-      shouldInstall: true,
-      reason: "newer-version",
-    });
+    ).toBe(true);
   });
 
   test("getReleaseInstallDecision skips same-version reinstall for native binaries", () => {
@@ -198,10 +190,7 @@ describe("update helpers", () => {
         },
         currentVersion: "v1.2.3",
       }),
-    ).toEqual({
-      shouldInstall: false,
-      reason: "up-to-date",
-    });
+    ).toBe(false);
   });
 
   test("resolveExecutablePath throws for source runs", () => {
@@ -272,68 +261,6 @@ describe("update helpers", () => {
         process.argv[1] = prevArgv;
       }
     }
-  });
-});
-
-describe("deferred update state helpers", () => {
-  test("withPendingUpdateState sets pending version metadata", () => {
-    const nowIso = "2026-01-01T00:00:00.000Z";
-    const next = withPendingUpdateState({}, "v1.2.3", nowIso);
-    expect(next.pendingVersion).toBe("v1.2.3");
-    expect(next.pendingDetectedAt).toBe(nowIso);
-  });
-
-  test("withPendingUpdateState clears dismissal for a new version", () => {
-    const next = withPendingUpdateState(
-      {
-        pendingVersion: "v1.2.3",
-        pendingDetectedAt: "2026-01-01T00:00:00.000Z",
-        dismissedVersion: "v1.2.3",
-      },
-      "v1.2.4",
-      "2026-01-02T00:00:00.000Z",
-    );
-    expect(next.dismissedVersion).toBeUndefined();
-  });
-
-  test("clearPendingUpdateState removes pending and dismissed metadata", () => {
-    const cleared = clearPendingUpdateState({
-      pendingVersion: "v1.2.3",
-      pendingDetectedAt: "2026-01-01T00:00:00.000Z",
-      dismissedVersion: "v1.2.3",
-      updateChannel: "stable",
-    });
-    expect(cleared.pendingVersion).toBeUndefined();
-    expect(cleared.pendingDetectedAt).toBeUndefined();
-    expect(cleared.dismissedVersion).toBeUndefined();
-    expect(cleared.updateChannel).toBe("stable");
-  });
-
-  test("getDeferredUpdatePromptVersion returns pending newer version", () => {
-    const pending = getDeferredUpdatePromptVersion(
-      { pendingVersion: "v1.2.3" },
-      "v1.2.2",
-    );
-    expect(pending).toBe("v1.2.3");
-  });
-
-  test("getDeferredUpdatePromptVersion returns null for dismissed version", () => {
-    const pending = getDeferredUpdatePromptVersion(
-      {
-        pendingVersion: "v1.2.3",
-        dismissedVersion: "v1.2.3",
-      },
-      "v1.2.2",
-    );
-    expect(pending).toBeNull();
-  });
-
-  test("getDeferredUpdatePromptVersion returns null for non-newer version", () => {
-    const pending = getDeferredUpdatePromptVersion(
-      { pendingVersion: "v1.2.3" },
-      "v1.2.3",
-    );
-    expect(pending).toBeNull();
   });
 });
 

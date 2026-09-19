@@ -5,7 +5,6 @@ import { CliError, printHint, printOk } from "../cli";
 import { UPDATE_COMMAND_BREW } from "../cli-constants";
 import { fetchLatestRelease } from "../github/api-wrapper";
 import {
-  clearPendingUpdateState,
   describeInstalledBinary,
   downloadAndInstall,
   fetchReleaseByTag,
@@ -19,7 +18,6 @@ import {
   resolveUpdateChannel,
   resolveExecutablePath,
   type UpdateState,
-  withPendingUpdateState,
   writeUpdateState,
 } from "../update";
 import {
@@ -84,7 +82,7 @@ export async function runUpdate(options: UpdateOptions): Promise<void> {
       channel: updateChannel,
     });
     const nowIso = new Date().toISOString();
-    const installDecision = getReleaseInstallDecision({
+    const shouldInstall = getReleaseInstallDecision({
       release: latest,
       currentVersion: options.currentVersion,
     });
@@ -92,15 +90,12 @@ export async function runUpdate(options: UpdateOptions): Promise<void> {
       ...effectiveState,
       lastCheckedAt: nowIso,
     };
-    if (!installDecision.shouldInstall) {
+    await writeUpdateState(checkedState);
+    if (!shouldInstall) {
       printOk(`Already on latest version (${options.currentVersion}).`);
-      await writeUpdateState(clearPendingUpdateState(checkedState));
     } else {
       printOk(`Latest version is ${latest.tag_name}.`);
       printHint(`Run \`${preferredUpdateCommand}\` to install it.`);
-      await writeUpdateState(
-        withPendingUpdateState(checkedState, latest.tag_name, nowIso),
-      );
     }
     printUpdatePreferences(effectiveState);
     return;
@@ -115,19 +110,19 @@ export async function runUpdate(options: UpdateOptions): Promise<void> {
         currentVersion: options.currentVersion,
         channel: updateChannel,
       });
-  const installDecision = requestedVersion
-    ? undefined
+  const shouldInstall = requestedVersion
+    ? true
     : getReleaseInstallDecision({
         release,
         currentVersion: options.currentVersion,
       });
 
-  if (!requestedVersion && installDecision && !installDecision.shouldInstall) {
+  if (!shouldInstall) {
     printOk(`Already on latest version (${options.currentVersion}).`);
     return;
   }
 
-  const asset = resolveReleaseAsset(release);
+  const assetUrl = resolveReleaseAsset(release);
   const targetPath = resolveExecutablePath();
   if (isHomebrewManagedPath(targetPath)) {
     throw new CliError(
@@ -140,7 +135,7 @@ export async function runUpdate(options: UpdateOptions): Promise<void> {
       ],
     );
   }
-  await downloadAndInstall(asset.url, targetPath, options.currentVersion);
+  await downloadAndInstall(assetUrl, targetPath, options.currentVersion);
 
   await recordSuccessfulUpdate(release.tag_name);
   const installedBinaryDescription =
@@ -177,23 +172,17 @@ async function runUpdateCheckJson(
     currentVersion: options.currentVersion,
     channel,
   });
-  const installDecision = getReleaseInstallDecision({
+  const shouldInstall = getReleaseInstallDecision({
     release: latest,
     currentVersion: options.currentVersion,
   });
   const checkedAt = new Date().toISOString();
-  const checkedState = { ...effectiveState, lastCheckedAt: checkedAt };
-  await writeUpdateState(
-    installDecision.shouldInstall
-      ? withPendingUpdateState(checkedState, latest.tag_name, checkedAt)
-      : clearPendingUpdateState(checkedState),
-  );
+  await writeUpdateState({ ...effectiveState, lastCheckedAt: checkedAt });
   return {
     currentVersion: options.currentVersion,
     latestVersion: latest.tag_name,
-    updateAvailable: installDecision.shouldInstall,
+    updateAvailable: shouldInstall,
     channel,
-    installReason: installDecision.reason,
     checkedAt,
   };
 }
@@ -205,7 +194,7 @@ function printUpdatePreferences(state: UpdateState): void {
 async function recordSuccessfulUpdate(version: string): Promise<void> {
   const state = await readUpdateState();
   await writeUpdateState({
-    ...clearPendingUpdateState(state),
+    ...state,
     lastCheckedAt: new Date().toISOString(),
     lastNotifiedVersion: version,
   });

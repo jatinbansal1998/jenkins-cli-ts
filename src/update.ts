@@ -138,58 +138,11 @@ export type UpdateState = {
   updateChannel?: UpdateChannel;
   lastCheckedAt?: string;
   lastNotifiedVersion?: string;
-  pendingVersion?: string;
-  pendingDetectedAt?: string;
-  dismissedVersion?: string;
   minAllowedVersion?: string;
   minAllowedMessage?: string;
   minAllowedFetchedAt?: string;
   minAllowedSourceUrl?: string;
 };
-
-export function clearPendingUpdateState(state: UpdateState): UpdateState {
-  return {
-    ...state,
-    pendingVersion: undefined,
-    pendingDetectedAt: undefined,
-    dismissedVersion: undefined,
-  };
-}
-
-export function withPendingUpdateState(
-  state: UpdateState,
-  version: string,
-  detectedAt: string,
-): UpdateState {
-  const samePendingVersion = state.pendingVersion === version;
-  return {
-    ...state,
-    pendingVersion: version,
-    pendingDetectedAt: samePendingVersion
-      ? (state.pendingDetectedAt ?? detectedAt)
-      : detectedAt,
-    dismissedVersion:
-      state.dismissedVersion === version ? state.dismissedVersion : undefined,
-  };
-}
-
-export function getDeferredUpdatePromptVersion(
-  state: UpdateState,
-  currentVersion: string,
-): string | null {
-  const pendingVersion = state.pendingVersion?.trim();
-  if (!pendingVersion) {
-    return null;
-  }
-  const comparison = compareVersions(pendingVersion, currentVersion);
-  if (comparison === null || comparison <= 0) {
-    return null;
-  }
-  if (state.dismissedVersion === pendingVersion) {
-    return null;
-  }
-  return pendingVersion;
-}
 
 export function normalizeVersionTag(input: string): string {
   const trimmed = input.trim();
@@ -301,22 +254,11 @@ export async function fetchReleaseByTag(
   return await fetchReleaseByTagFromGitHub(normalized, options);
 }
 
-type ResolvedReleaseAsset = {
-  url: string;
-};
-
-type ReleaseInstallDecision = {
-  shouldInstall: boolean;
-  reason: "newer-version" | "up-to-date";
-};
-
-export function resolveReleaseAsset(
-  release: ReleaseInfo,
-): ResolvedReleaseAsset {
+export function resolveReleaseAsset(release: ReleaseInfo): string {
   const assetName = resolveAssetName();
   const platformAsset = release.assets.find((item) => item.name === assetName);
   if (platformAsset) {
-    return { url: platformAsset.browser_download_url };
+    return platformAsset.browser_download_url;
   }
 
   throw new CliError(
@@ -331,21 +273,12 @@ export function resolveReleaseAsset(
 export function getReleaseInstallDecision(options: {
   release: ReleaseInfo;
   currentVersion: string;
-}): ReleaseInstallDecision {
+}): boolean {
   const comparison = compareVersions(
     options.release.tag_name,
     options.currentVersion,
   );
-  if (comparison === null || comparison > 0) {
-    return {
-      shouldInstall: true,
-      reason: "newer-version",
-    };
-  }
-  return {
-    shouldInstall: false,
-    reason: "up-to-date",
-  };
+  return comparison === null || comparison > 0;
 }
 
 export function extractInstalledBinaryVersionOutput(
@@ -485,24 +418,19 @@ async function runAutoUpdate(currentVersion: string): Promise<void> {
 
     const updateCommand = getPreferredUpdateCommand();
     const homebrewManaged = updateCommand === UPDATE_COMMAND_BREW;
-    const installDecision = getReleaseInstallDecision({
+    const shouldInstall = getReleaseInstallDecision({
       release,
       currentVersion,
     });
-    if (!installDecision.shouldInstall) {
-      await writeUpdateState(clearPendingUpdateState(nextState));
+    if (!shouldInstall) {
+      await writeUpdateState(nextState);
       return;
     }
-    const pendingState = withPendingUpdateState(
-      nextState,
-      release.tag_name,
-      nowIso,
-    );
     if (
       (homebrewManaged || process.platform === "win32") &&
       state.lastNotifiedVersion === release.tag_name
     ) {
-      await writeUpdateState(pendingState);
+      await writeUpdateState(nextState);
       return;
     }
     if (homebrewManaged) {
@@ -510,25 +438,25 @@ async function runAutoUpdate(currentVersion: string): Promise<void> {
         `New version available: ${release.tag_name}. Run \`${updateCommand}\`.`,
       );
       await writeUpdateState({
-        ...pendingState,
+        ...nextState,
         lastNotifiedVersion: release.tag_name,
       });
       return;
     }
     if (process.platform !== "win32") {
       try {
-        const asset = resolveReleaseAsset(release);
+        const assetUrl = resolveReleaseAsset(release);
         const targetPath = resolveExecutablePath();
-        await downloadAndInstall(asset.url, targetPath, currentVersion);
+        await downloadAndInstall(assetUrl, targetPath, currentVersion);
         const installedBinaryDescription =
           describeInstalledBinary(targetPath) ?? release.tag_name;
         printHint(`Auto-updated jenkins-cli: ${installedBinaryDescription}.`);
         await writeUpdateState({
-          ...clearPendingUpdateState(pendingState),
+          ...nextState,
           lastNotifiedVersion: release.tag_name,
         });
       } catch {
-        await writeUpdateState(pendingState);
+        await writeUpdateState(nextState);
       }
       return;
     }
@@ -538,7 +466,7 @@ async function runAutoUpdate(currentVersion: string): Promise<void> {
     );
 
     await writeUpdateState({
-      ...pendingState,
+      ...nextState,
       lastNotifiedVersion: release.tag_name,
     });
   } catch {

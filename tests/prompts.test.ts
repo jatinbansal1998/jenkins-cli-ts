@@ -7,13 +7,12 @@ describe("cli intro", () => {
       showAsciiBanner: true,
       version: "0.7.4",
       target: "host: jenkins.example.com | profile: work",
-      pendingUpdateVersion: "0.7.5",
     });
 
     expect(message).toContain("███████");
     expect(message).toContain("CLI | v0.7.4");
     expect(message).toContain("host: jenkins.example.com | profile: work");
-    expect(message).toContain("Update available: v0.7.5");
+    expect(message).not.toContain("Update available");
   });
 
   test("falls back to a plain title when the banner is disabled", () => {
