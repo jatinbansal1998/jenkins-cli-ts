@@ -20,6 +20,13 @@ describe("Windows Jenkins acceptance backend contract", () => {
     },
   );
 
+  test("post-merge skips version-bump commits that the release workflow already covers", async () => {
+    const workflow = await Bun.file(".github/workflows/post-merge.yml").text();
+    expect(workflow).toContain(
+      "if: ${{ !startsWith(github.event.head_commit.message, 'chore: release v') }}",
+    );
+  });
+
   test("release validation verifies standalone assets through windows", async () => {
     const workflow = await Bun.file(".github/workflows/release.yml").text();
 

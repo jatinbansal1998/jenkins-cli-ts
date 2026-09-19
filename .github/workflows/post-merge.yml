@@ -21,4 +21,6 @@ permissions:
 
 jobs:
   ci:
+    # Release tags already test, build, and validate binaries against Jenkins.
+    if: ${{ !startsWith(github.event.head_commit.message, 'chore: release v') }}
     uses: ./.github/workflows/ci.yml
