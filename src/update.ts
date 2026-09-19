@@ -1,7 +1,6 @@
-import os from "node:os";
 import path from "node:path";
 import { readFileSync } from "node:fs";
-import { chmod, copyFile, mkdir, mkdtemp, rename, rm } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, rename, rm } from "node:fs/promises";
 import parseSemver from "semver/functions/parse";
 import { lock } from "proper-lockfile";
 import {
@@ -331,14 +330,18 @@ export async function downloadAndInstall(
   currentVersion: string,
   signal?: AbortSignal,
 ): Promise<void> {
-  const tempDir = await mkdtemp(path.join(os.tmpdir(), "jenkins-cli-"));
-  const isWindows = process.platform === "win32";
-  const tempFile = path.join(
-    tempDir,
-    isWindows ? "jenkins-cli.exe" : "jenkins-cli",
-  );
+  let tempDir: string | undefined;
   let keepDownload = false;
   try {
+    // Stage on the target filesystem so replacing the executable is atomic.
+    tempDir = await mkdtemp(
+      path.join(path.dirname(targetPath), ".jenkins-cli-update-"),
+    );
+    const isWindows = process.platform === "win32";
+    const tempFile = path.join(
+      tempDir,
+      isWindows ? "jenkins-cli.exe" : "jenkins-cli",
+    );
     const response = await downloadReleaseAsset({
       assetUrl,
       currentVersion,
@@ -359,24 +362,18 @@ export async function downloadAndInstall(
     }
 
     await chmod(tempFile, 0o755);
-    try {
-      await rename(tempFile, targetPath);
-    } catch (error) {
-      const err = error as NodeJS.ErrnoException;
-      if (err.code === "EXDEV") {
-        await copyFile(tempFile, targetPath);
-        await chmod(targetPath, 0o755);
-      } else if (err.code === "EACCES" || err.code === "EPERM") {
-        throw new CliError("Permission denied while updating the CLI.", [
-          `Check permissions for ${targetPath}.`,
-          "Try reinstalling with the install script.",
-        ]);
-      } else {
-        throw err;
-      }
+    await rename(tempFile, targetPath);
+  } catch (error) {
+    const err = error as NodeJS.ErrnoException;
+    if (err.code === "EACCES" || err.code === "EPERM") {
+      throw new CliError("Permission denied while updating the CLI.", [
+        `Check permissions for ${targetPath}.`,
+        "Try reinstalling with the install script.",
+      ]);
     }
+    throw error;
   } finally {
-    if (!keepDownload) {
+    if (tempDir && !keepDownload) {
       await rm(tempDir, { recursive: true, force: true });
     }
   }

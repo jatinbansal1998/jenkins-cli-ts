@@ -121,7 +121,9 @@ test.each([
         );
       }
       expect(
-        (await readdir(home)).filter((name) => name.startsWith("jenkins-cli-")),
+        (await readdir(fixtureDir)).filter((name) =>
+          name.startsWith(".jenkins-cli-update-"),
+        ),
       ).toEqual([]);
     } finally {
       clearTimeout(timer);
