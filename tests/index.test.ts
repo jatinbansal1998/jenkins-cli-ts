@@ -266,30 +266,9 @@ describe("cli argument routing", () => {
     expect(result.output).toContain("Run with --help to see usage.");
   });
 
-  test("profile use without a name fails with a targeted error", () => {
-    const result = runCli(["profile", "use", "--non-interactive"]);
-    expect(result.exitCode).toBe(1);
-    expect(result.output).toContain("Missing required <name> for profile use.");
-  });
-
   test("build rejects --job together with --job-url", () => {
     const result = runCli([
       "build",
-      "--non-interactive",
-      "--job",
-      "api",
-      "--job-url",
-      "http://127.0.0.1:9/job/api",
-    ]);
-    expect(result.exitCode).toBe(1);
-    expect(result.output).toContain(
-      "Provide either --job or --job-url, not both.",
-    );
-  });
-
-  test("deploy alias routes to the build command", () => {
-    const result = runCli([
-      "deploy",
       "--non-interactive",
       "--job",
       "api",
@@ -356,17 +335,6 @@ describe("cli argument routing", () => {
     ]);
     expect(result.exitCode).toBe(1);
     expect(result.output).toContain("Invalid --build-url value.");
-  });
-
-  test("update rejects conflicting --check and --enable-auto flags", () => {
-    const result = runCli([
-      "update",
-      "--check",
-      "--enable-auto",
-      "--non-interactive",
-    ]);
-    expect(result.exitCode).toBe(1);
-    expect(result.output).toContain("mutually exclusive");
   });
 });
 

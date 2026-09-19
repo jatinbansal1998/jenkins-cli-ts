@@ -32,7 +32,7 @@ type CommandHelpers = {
   interactive: boolean;
 };
 
-export type RunCommand = (
+type RunCommand = (
   command: string,
   argv: CommandArgv | undefined,
   action: (helpers: CommandHelpers) => Promise<void>,

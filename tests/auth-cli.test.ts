@@ -46,17 +46,27 @@ describe("auth CLI routing and help", () => {
   test("uses the product name for source and compiled Bun entry points", () => {
     expect(getScriptName("/workspace/src/index.ts")).toBe("jenkins-cli");
     expect(getScriptName("/snapshot/index.js")).toBe("jenkins-cli");
+    expect(getScriptName("/Users/me/.local/bin/jenkins-cli")).toBe(
+      "jenkins-cli",
+    );
+    expect(getScriptName("/$bunfs/root/jenkins-cli-darwin-arm64")).toBe(
+      "jenkins-cli",
+    );
+    expect(getScriptName("/tmp/jenkins-cli-linux-x64-musl")).toBe(
+      "jenkins-cli",
+    );
+    expect(getScriptName("jenkins-cli-windows-x64.exe")).toBe("jenkins-cli");
+    expect(getScriptName("/opt/my-wrapper")).toBe("my-wrapper");
   });
 
-  test("primary help lists the auth command and compatibility login alias", () => {
+  test("primary help lists the auth command", () => {
     const result = runCli(["--help"]);
 
     expect(result.exitCode).toBe(0);
     expect(result.output).toContain("jenkins-cli auth");
     expect(result.output).toContain("Authentication commands: login, status,");
-    expect(result.output).toContain("jenkins-cli login");
-    expect(result.output).toContain("compatibility");
-    expect(result.output).toContain("alias for auth login");
+    expect(result.output).not.toContain("jenkins-cli login");
+    expect(result.output).not.toContain("alias for auth login");
   });
 
   test("auth help lists login and status subcommands", () => {
@@ -67,9 +77,8 @@ describe("auth CLI routing and help", () => {
     expect(result.output).toContain("jenkins-cli auth status");
   });
 
-  test("auth login and legacy login expose the same command options", () => {
+  test("auth login help documents credential options", () => {
     const canonical = runCli(["auth", "login", "--help"]);
-    const legacy = runCli(["login", "--help"]);
 
     for (const option of [
       "--url",
@@ -80,21 +89,16 @@ describe("auth CLI routing and help", () => {
       "--keychain",
     ]) {
       expect(canonical.output).toContain(option);
-      expect(legacy.output).toContain(option);
     }
 
     expect(canonical.output.match(/--api-token/g)).toHaveLength(1);
-    expect(legacy.output.match(/--api-token/g)).toHaveLength(1);
   });
 
-  test("auth login and legacy login route to the same implementation", () => {
+  test("auth login fails fast without --url in non-interactive mode", () => {
     const canonical = runCli(["auth", "login", "--non-interactive"]);
-    const legacy = runCli(["login", "--non-interactive"]);
 
     expect(canonical.exitCode).toBe(1);
-    expect(legacy.exitCode).toBe(1);
     expect(canonical.output).toContain("Missing required --url.");
-    expect(legacy.output).toContain("Missing required --url.");
   });
 
   test("auth status renders known configuration fields before failing", () => {

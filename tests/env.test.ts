@@ -85,11 +85,31 @@ function runLoadEnv(params: {
 }
 
 describe("loadEnv useCrumb parsing", () => {
-  test("defaults useCrumb to false", () => {
+  test("defaults useCrumb to true", () => {
     withTempHome((homeDir) => {
       const result = runLoadEnv({ homeDir });
       expect(result.exitCode).toBe(0);
       expect(result.payload.ok).toBeTrue();
+      expect(result.payload.env?.useCrumb).toBeTrue();
+    });
+  });
+
+  test("honors useCrumb=false from config", () => {
+    withTempHome((homeDir) => {
+      writeConfig(homeDir, {
+        defaultProfile: "default",
+        profiles: {
+          default: {
+            jenkinsUrl: "https://config-jenkins.example.com",
+            jenkinsUser: "config-user",
+            jenkinsApiToken: "config-token",
+            useCrumb: false,
+          },
+        },
+      });
+
+      const result = runLoadEnv({ homeDir });
+      expect(result.exitCode).toBe(0);
       expect(result.payload.env?.useCrumb).toBeFalse();
     });
   });
@@ -164,8 +184,8 @@ describe("loadEnv useCrumb parsing", () => {
 
   test("parses env string variants", () => {
     withTempHome((homeDir) => {
-      const truthy = ["true", "TRUE", "1"];
-      const falsy = ["false", "FALSE", "0", "random-value", ""];
+      const truthy = ["true", "TRUE", "1", "random-value", ""];
+      const falsy = ["false", "FALSE", "0"];
 
       for (const value of truthy) {
         const result = runLoadEnv({

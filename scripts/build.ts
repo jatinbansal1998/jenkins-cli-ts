@@ -19,8 +19,6 @@ import { tmpdir } from "node:os";
 import { createHash } from "node:crypto";
 import {
   HOMEBREW_RELEASE_TARGETS,
-  LEGACY_BUNDLE_ASSET_NAME,
-  LEGACY_BUNDLE_BUILD_TARGET,
   NATIVE_RELEASE_TARGETS,
 } from "../src/release-targets";
 import { embedCrossKeychainAssets } from "./build-plugins";
@@ -58,26 +56,6 @@ async function tar(srcFile: string, destTarGz: string): Promise<void> {
 // ---------------------------------------------------------------------------
 
 await mkdir(DIST, { recursive: true });
-
-// Bun's bundler always tree-shakes. Marking the package as side-effect free in
-// package.json lets it prune unused internal modules more aggressively.
-// JS bundle (legacy fallback for users with Bun installed)
-const bundleStart = performance.now();
-const bundleResult = await Bun.build({
-  entrypoints: [ENTRY],
-  outdir: DIST,
-  naming: "jenkins-cli-bundle",
-  target: "bun",
-  plugins: [embedCrossKeychainAssets],
-  sourcemap: "inline",
-  define: { __BUILD_TARGET__: JSON.stringify(LEGACY_BUNDLE_BUILD_TARGET) },
-});
-
-if (!bundleResult.success) {
-  console.error("❌ Bundle build failed:", bundleResult.logs);
-  process.exit(1);
-}
-console.log(`✅ bundle  (${(performance.now() - bundleStart).toFixed(0)}ms)`);
 
 // Cross-compile all platform executables in parallel
 const results = await Promise.allSettled(
@@ -121,7 +99,7 @@ if (failures.length > 0) {
   process.exit(1);
 }
 
-console.log(`\n🎉 All ${NATIVE_RELEASE_TARGETS.length + 1} builds complete`);
+console.log(`\n🎉 All ${NATIVE_RELEASE_TARGETS.length} builds complete`);
 
 if (!RELEASE) process.exit(0);
 
@@ -146,13 +124,6 @@ if (pkg.version !== tagVersion) {
   );
   process.exit(1);
 }
-
-// Legacy cross-platform bundle (old update clients look for "jenkins-cli")
-await copyFile(
-  join(DIST, "jenkins-cli-bundle"),
-  join(DIST, LEGACY_BUNDLE_ASSET_NAME),
-);
-await chmod(join(DIST, LEGACY_BUNDLE_ASSET_NAME), 0o755);
 
 // Make all platform binaries executable
 for (const { assetName } of NATIVE_RELEASE_TARGETS) {
@@ -224,7 +195,6 @@ console.log("  🍺 homebrew-jenkins-cli.rb");
 const checksumFiles = [
   ...NATIVE_RELEASE_TARGETS.map((target) => target.assetName),
   ...HOMEBREW_RELEASE_TARGETS.map((target) => target.homebrewTarballName),
-  LEGACY_BUNDLE_ASSET_NAME,
   "homebrew-jenkins-cli.rb",
 ];
 

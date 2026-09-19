@@ -70,25 +70,18 @@ describe("list command registration", () => {
 });
 
 describe("command aliases", () => {
-  test("all compatibility aliases expose their canonical command surface", () => {
-    for (const [canonical, alias, option] of [
-      [["build"], ["deploy"], "--without-params"],
-      [["history"], ["builds"], "--offset"],
-      [["update"], ["upgrade"], "--enable-auto-install"],
-      [["auth", "login"], ["login"], "--keychain"],
-    ] as const) {
-      const canonicalHelp = runCli([...canonical, "--help"]);
-      const aliasHelp = runCli([...alias, "--help"]);
-
-      expect(canonicalHelp.exitCode).toBe(0);
-      expect(aliasHelp.exitCode).toBe(0);
-      expect(canonicalHelp.output).toContain(option);
-      expect(aliasHelp.output).toContain(option);
-    }
-
+  test("-v matches --version", () => {
     const longVersion = runCli(["--version"]);
     const shortVersion = runCli(["-v"]);
     expect(shortVersion).toEqual(longVersion);
+  });
+
+  test("dropped compatibility commands are unknown", () => {
+    for (const command of ["login", "deploy", "builds", "upgrade", "profile"]) {
+      const result = runCli([command, "--non-interactive"]);
+      expect(result.exitCode).toBe(1);
+      expect(result.output).toContain(`Unknown argument: ${command}`);
+    }
   });
 });
 
@@ -125,10 +118,7 @@ describe("structured output registration", () => {
       ["auth", "use", "work"],
       ["auth", "rename", "old", "new"],
       ["auth", "logout"],
-      ["login"],
-      ["profile", "list"],
       ["logs"],
-      ["help"],
     ]) {
       const result = runCli([...command, "--json", "--non-interactive"]);
       expect(result.exitCode).toBe(1);
@@ -139,16 +129,11 @@ describe("structured output registration", () => {
     expect(
       runCli(["auth", "login", "--json", "--non-interactive"]).output,
     ).toContain("'auth login' does not support --json");
-    expect(
-      runCli(["profile", "list", "--json", "--non-interactive"]).output,
-    ).toContain("'profile list' does not support --json");
   });
 
   test("keeps structured errors for explicit boolean syntax and help shortcuts", () => {
     for (const args of [
       ["auth", "login", "--json=true", "--non-interactive"],
-      ["help", "--json=true"],
-      ["help", "--full", "--json"],
       ["does-not-exist", "--json=true"],
     ]) {
       const result = runCli(args);

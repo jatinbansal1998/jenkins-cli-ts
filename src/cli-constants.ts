@@ -7,13 +7,5 @@ export const CLI_FLAGS = {
   NON_INTERACTIVE_CAMEL: "--nonInteractive",
 } as const;
 
-const UPDATE_COMMAND_ALIASES = ["update", "upgrade"] as const;
-
 export const UPDATE_COMMAND_SELF = "jenkins-cli update";
 export const UPDATE_COMMAND_BREW = "brew upgrade jenkins-cli";
-
-export function isUpdateCommandAlias(value: string): boolean {
-  return UPDATE_COMMAND_ALIASES.includes(
-    value as (typeof UPDATE_COMMAND_ALIASES)[number],
-  );
-}

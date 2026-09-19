@@ -172,13 +172,6 @@ describe("compiled CLI", () => {
     expect(current.output).toContain("Source:           Default profile");
     expect(current.output).toContain("Profile:          work");
     expect(current.output).not.toContain("secret-token");
-
-    const compatibility = await runCompiled(
-      ["profile", "list", "--non-interactive"],
-      home,
-    );
-    expect(compatibility.exitCode).toBe(0);
-    expect(compatibility.output).toBe(list.output);
   });
 
   test("ignores a malformed cached minimum version", async () => {
@@ -219,7 +212,7 @@ describe("compiled CLI", () => {
       writeFileSync(
         join(home, ".config", "jenkins-cli", "update-state.json"),
         JSON.stringify({
-          autoUpdate: false,
+          lastCheckedAt: new Date().toISOString(),
           minAllowedVersion: "0.0.0",
           minAllowedFetchedAt: new Date().toISOString(),
         }),
@@ -250,7 +243,7 @@ describe("compiled CLI", () => {
   });
 
   test("handles offline validation errors through the compiled entry point", async () => {
-    const login = await runCompiled(["login", "--non-interactive"]);
+    const login = await runCompiled(["auth", "login", "--non-interactive"]);
     expect(login.exitCode).toBe(1);
     expect(login.output).toContain("ERROR: Missing required --url.");
 

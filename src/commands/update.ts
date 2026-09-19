@@ -1,15 +1,13 @@
 /**
  * Update command implementation.
  */
-import { BUILD_TARGET } from "../build-target";
 import { CliError, printHint, printOk } from "../cli";
+import { withTimeout } from "../with-timeout";
 import { UPDATE_COMMAND_BREW } from "../cli-constants";
-import { fetchLatestRelease } from "../github/api-wrapper";
+import { fetchLatestRelease, fetchReleaseByTag } from "../github/api-wrapper";
 import {
-  clearPendingUpdateState,
   describeInstalledBinary,
   downloadAndInstall,
-  fetchReleaseByTag,
   getReleaseInstallDecision,
   getPreferredUpdateCommand,
   isHomebrewManagedPath,
@@ -20,8 +18,7 @@ import {
   resolveUpdateChannel,
   resolveExecutablePath,
   type UpdateState,
-  withPendingUpdateState,
-  writeUpdateState,
+  patchUpdateState,
 } from "../update";
 import {
   type JsonUpdateCheck,
@@ -33,206 +30,155 @@ type UpdateOptions = {
   currentVersion: string;
   tag?: string;
   check?: boolean;
-  enableAuto?: boolean;
-  disableAuto?: boolean;
-  enableAutoInstall?: boolean;
-  disableAutoInstall?: boolean;
   channel?: string;
   json?: boolean;
   write?: JsonWrite;
 };
 
 export async function runUpdate(options: UpdateOptions): Promise<void> {
-  if (options.json) {
-    await runJsonCommand("update", async () => runUpdateCheckJson(options), {
-      write: options.write,
-    });
-    return;
-  }
-  const preferredUpdateCommand = getPreferredUpdateCommand();
-  const homebrewManaged = preferredUpdateCommand === UPDATE_COMMAND_BREW;
-  const requestedChannel =
-    typeof options.channel === "string"
-      ? parseUpdateChannel(options.channel)
-      : undefined;
-
-  if (options.enableAuto && options.disableAuto) {
-    throw new CliError("Cannot use --enable-auto and --disable-auto together.");
-  }
-  if (options.enableAutoInstall && options.disableAutoInstall) {
-    throw new CliError(
-      "Cannot use --enable-auto-install and --disable-auto-install together.",
-    );
-  }
-  if (options.check && options.tag) {
-    throw new CliError("Cannot use --check with a version tag.");
-  }
-  if (options.channel && !requestedChannel) {
-    throw new CliError(`Unknown update channel "${options.channel}".`, [
-      "Use one of: stable, prerelease.",
-    ]);
-  }
-
-  const state = await readUpdateState();
-  const nextState: UpdateState = { ...state };
-  if (requestedChannel) {
-    nextState.updateChannel = requestedChannel;
-  }
-
-  const hasSettingsChange =
-    options.enableAuto ||
-    options.disableAuto ||
-    options.enableAutoInstall ||
-    options.disableAutoInstall ||
-    requestedChannel !== undefined;
-
-  if (hasSettingsChange) {
-    if (options.enableAutoInstall && homebrewManaged) {
-      throw new CliError(
-        "Auto-install is not supported for Homebrew-managed installs.",
-        [`Use \`${UPDATE_COMMAND_BREW}\` to apply updates.`],
+  const { controller, cleanup } = withTimeout(5 * 60_000);
+  // The updater owns this deadline so it survives the foreground CLI exiting.
+  // Allow cancellation to remove temporary downloads before forcing termination.
+  const exitDeadline = setTimeout(() => process.exit(1), 5 * 60_000 + 5_000);
+  exitDeadline.unref();
+  try {
+    if (options.json) {
+      await runJsonCommand(
+        "update",
+        async () => runUpdateCheckJson(options, controller.signal),
+        {
+          write: options.write,
+        },
       );
+      return;
     }
+    const preferredUpdateCommand = getPreferredUpdateCommand();
+    const requestedChannel =
+      typeof options.channel === "string"
+        ? parseUpdateChannel(options.channel)
+        : undefined;
 
-    if (options.enableAutoInstall && process.platform === "win32") {
-      throw new CliError("Auto-install is not yet supported on Windows.", [
-        "In-place binary replacement is not reliable on Windows.",
-        "Use `jenkins-cli update` to download updates manually.",
+    if (options.check && options.tag) {
+      throw new CliError("Cannot use --check with a version tag.");
+    }
+    if (options.channel && !requestedChannel) {
+      throw new CliError(`Unknown update channel "${options.channel}".`, [
+        "Use one of: stable, prerelease.",
       ]);
     }
 
-    if (options.enableAuto) {
-      nextState.autoUpdate = true;
-    }
-    if (options.disableAuto) {
-      nextState.autoUpdate = false;
-      nextState.autoInstall = false;
-    }
-    if (options.enableAutoInstall) {
-      nextState.autoInstall = true;
-      nextState.autoUpdate = true;
-    }
-    if (options.disableAutoInstall) {
-      nextState.autoInstall = false;
+    const state = await readUpdateState();
+    if (requestedChannel) {
+      state.updateChannel = requestedChannel;
+      await patchUpdateState({ updateChannel: requestedChannel });
+      if (!options.check && !options.tag) {
+        printUpdateChannel(state);
+        return;
+      }
     }
 
-    await writeUpdateState(nextState);
-    if (!options.check && !options.tag) {
-      printUpdatePreferences(nextState);
-      return;
-    }
-  }
-
-  const effectiveState = hasSettingsChange ? nextState : state;
-  const updateChannel = resolveUpdateChannel(effectiveState);
-
-  if (options.check) {
-    const latest = await fetchLatestRelease({
-      currentVersion: options.currentVersion,
-      channel: updateChannel,
-    });
-    const nowIso = new Date().toISOString();
-    const installDecision = getReleaseInstallDecision({
-      release: latest,
-      currentVersion: options.currentVersion,
-      currentBuildTarget: BUILD_TARGET,
-      allowNativeBinaryMigration: !homebrewManaged,
-    });
-    const checkedState: UpdateState = {
-      ...effectiveState,
-      lastCheckedAt: nowIso,
-    };
-    if (!installDecision.shouldInstall) {
-      printOk(`Already on latest version (${options.currentVersion}).`);
-      await writeUpdateState(clearPendingUpdateState(checkedState));
+    const updateChannel = resolveUpdateChannel(state);
+    const requestedVersion = options.tag?.trim();
+    console.log(`Current version: ${options.currentVersion}`);
+    if (requestedVersion) {
+      console.log(
+        `Checking for version ${normalizeVersionTag(requestedVersion)}...`,
+      );
+    } else if (updateChannel === "prerelease") {
+      console.log("Checking for updates on prerelease channel...");
     } else {
-      printOk(`Latest version is ${latest.tag_name}.`);
-      printHint(
-        installDecision.reason === "native-binary-migration"
-          ? `Run \`${preferredUpdateCommand}\` to replace the generic bundle with the native binary for this platform.`
-          : `Run \`${preferredUpdateCommand}\` to install it.`,
-      );
-      await writeUpdateState(
-        withPendingUpdateState(checkedState, latest.tag_name, nowIso),
-      );
+      console.log("Checking for updates to latest version...");
     }
-    printUpdatePreferences(effectiveState);
-    return;
-  }
 
-  const requestedVersion = options.tag?.trim();
-  const release = requestedVersion
-    ? await fetchReleaseByTag(normalizeVersionTag(requestedVersion), {
+    if (options.check) {
+      const latest = await fetchLatestRelease({
         currentVersion: options.currentVersion,
-      })
-    : await fetchLatestRelease({
-        currentVersion: options.currentVersion,
+        signal: controller.signal,
         channel: updateChannel,
       });
-  const installDecision = requestedVersion
-    ? undefined
-    : getReleaseInstallDecision({
-        release,
+      const nowIso = new Date().toISOString();
+      const shouldInstall = getReleaseInstallDecision({
+        release: latest,
         currentVersion: options.currentVersion,
-        currentBuildTarget: BUILD_TARGET,
-        allowNativeBinaryMigration: !homebrewManaged,
       });
+      await patchUpdateState({ lastCheckedAt: nowIso });
+      if (!shouldInstall) {
+        printOk(`Already on latest version (${options.currentVersion}).`);
+      } else {
+        printOk(`Latest version is ${latest.tag_name}.`);
+        printHint(`Run \`${preferredUpdateCommand}\` to install it.`);
+      }
+      printUpdateChannel(state);
+      return;
+    }
 
-  if (!requestedVersion && installDecision && !installDecision.shouldInstall) {
-    printOk(`Already on latest version (${options.currentVersion}).`);
-    return;
-  }
+    const release = requestedVersion
+      ? await fetchReleaseByTag(normalizeVersionTag(requestedVersion), {
+          currentVersion: options.currentVersion,
+          signal: controller.signal,
+        })
+      : await fetchLatestRelease({
+          currentVersion: options.currentVersion,
+          signal: controller.signal,
+          channel: updateChannel,
+        });
+    const shouldInstall = requestedVersion
+      ? true
+      : getReleaseInstallDecision({
+          release,
+          currentVersion: options.currentVersion,
+        });
 
-  const asset = resolveReleaseAsset(release);
-  const targetPath = resolveExecutablePath();
-  if (isHomebrewManagedPath(targetPath)) {
-    throw new CliError(
-      "This jenkins-cli installation is managed by Homebrew.",
-      [
-        `Use \`${UPDATE_COMMAND_BREW}\` to update.`,
-        requestedVersion
-          ? "Installing a specific tag is not supported via Homebrew installs."
-          : "Homebrew keeps the installed binary and metadata in sync.",
-      ],
-    );
-  }
-  await downloadAndInstall(asset.url, targetPath, options.currentVersion);
+    if (!shouldInstall) {
+      printOk(`Already on latest version (${options.currentVersion}).`);
+      return;
+    }
 
-  await recordSuccessfulUpdate(release.tag_name);
-  const installedBinaryDescription =
-    describeInstalledBinary(targetPath) ?? release.tag_name;
-  printOk(`Updated jenkins-cli: ${installedBinaryDescription}.`);
-  if (installDecision?.reason === "native-binary-migration") {
-    printHint(
-      "Replaced the generic bundle with the native binary for this platform.",
+    const assetUrl = resolveReleaseAsset(release);
+    const targetPath = resolveExecutablePath();
+    if (isHomebrewManagedPath(targetPath)) {
+      throw new CliError(
+        "This jenkins-cli installation is managed by Homebrew.",
+        [
+          `Use \`${UPDATE_COMMAND_BREW}\` to update.`,
+          requestedVersion
+            ? "Installing a specific tag is not supported via Homebrew installs."
+            : "Homebrew keeps the installed binary and metadata in sync.",
+        ],
+      );
+    }
+    const targetVersion = release.tag_name.replace(/^v/, "");
+    console.log(`Updating to ${targetVersion}...`);
+    await downloadAndInstall(
+      assetUrl,
+      targetPath,
+      options.currentVersion,
+      controller.signal,
     );
-  }
-  if (asset.isLegacyBundle) {
-    printHint(
-      "Native binary not available for this platform/version. Installed the generic jenkins-cli bundle instead.",
+
+    await recordSuccessfulUpdate(release.tag_name);
+    const installedBinaryDescription =
+      describeInstalledBinary(targetPath) ?? targetVersion;
+    printOk(
+      `Successfully updated from ${options.currentVersion} to version ${installedBinaryDescription}.`,
     );
-    printHint("Bun must be installed on this machine to run this CLI.");
+  } finally {
+    cleanup();
+    clearTimeout(exitDeadline);
   }
 }
 
 async function runUpdateCheckJson(
   options: UpdateOptions,
+  signal: AbortSignal,
 ): Promise<JsonUpdateCheck> {
   if (!options.check) {
     throw new CliError("--json is supported only with update --check.", [
       "Pass --check to inspect update availability without installing.",
     ]);
   }
-  if (
-    options.tag ||
-    options.enableAuto ||
-    options.disableAuto ||
-    options.enableAutoInstall ||
-    options.disableAutoInstall
-  ) {
-    throw new CliError(
-      "--json --check cannot be combined with a version tag or settings changes.",
-    );
+  if (options.tag) {
+    throw new CliError("--json --check cannot be combined with a version tag.");
   }
   const requestedChannel =
     typeof options.channel === "string"
@@ -251,46 +197,32 @@ async function runUpdateCheckJson(
   const latest = await fetchLatestRelease({
     currentVersion: options.currentVersion,
     channel,
+    signal,
   });
-  const preferredUpdateCommand = getPreferredUpdateCommand();
-  const installDecision = getReleaseInstallDecision({
+  const shouldInstall = getReleaseInstallDecision({
     release: latest,
     currentVersion: options.currentVersion,
-    currentBuildTarget: BUILD_TARGET,
-    allowNativeBinaryMigration: preferredUpdateCommand !== UPDATE_COMMAND_BREW,
   });
   const checkedAt = new Date().toISOString();
-  const checkedState = { ...effectiveState, lastCheckedAt: checkedAt };
-  await writeUpdateState(
-    installDecision.shouldInstall
-      ? withPendingUpdateState(checkedState, latest.tag_name, checkedAt)
-      : clearPendingUpdateState(checkedState),
-  );
+  await patchUpdateState({
+    ...(requestedChannel ? { updateChannel: requestedChannel } : {}),
+    lastCheckedAt: checkedAt,
+  });
   return {
     currentVersion: options.currentVersion,
     latestVersion: latest.tag_name,
-    updateAvailable: installDecision.shouldInstall,
+    updateAvailable: shouldInstall,
     channel,
-    installReason: installDecision.reason,
     checkedAt,
   };
 }
 
-function printUpdatePreferences(state: UpdateState): void {
-  const autoUpdateEnabled = state.autoUpdate !== false;
-  const autoInstallEnabled = state.autoInstall === true;
-  const updateChannel = resolveUpdateChannel(state);
-  printOk(
-    `Auto-update checks: ${autoUpdateEnabled ? "enabled (notify only)" : "disabled"}.`,
-  );
-  printOk(`Auto-install: ${autoInstallEnabled ? "enabled" : "disabled"}.`);
-  printOk(`Update channel: ${updateChannel}.`);
+function printUpdateChannel(state: UpdateState): void {
+  printOk(`Update channel: ${resolveUpdateChannel(state)}.`);
 }
 
 async function recordSuccessfulUpdate(version: string): Promise<void> {
-  const state = await readUpdateState();
-  await writeUpdateState({
-    ...clearPendingUpdateState(state),
+  await patchUpdateState({
     lastCheckedAt: new Date().toISOString(),
     lastNotifiedVersion: version,
   });

@@ -65,11 +65,12 @@ Scripting and AI agents:
   Pass --non-interactive to disable every prompt and fail fast; --json/--jsonl imply it.
   --json: list, params, build, status, history, wait, tests, changes, artifacts,
           run, cancel, create, queue, nodes, rerun, input list/approve/abort,
-          auth status/list/current, and update --check.
+          auth status/list/current, update --check, and help.
   --jsonl: logs.
   Output lines are prefixed OK: (success), ERROR: (failure), HINT: (guidance).
   Exit code is 0 on success and 1 on any error.
   Run "$0 help --full" to print every command's full option reference at once.
+  Run "$0 help --json" for the same catalog as one JSON document.
   Unsupported --json combinations fail with a clear message, never an unknown flag.
 
 Command-specific options:
@@ -99,7 +100,7 @@ Command-specific options:
     --json              Output one creation receipt (implies non-interactive)
     Exactly one of --config or --copy-from is required.
 
-  build / deploy:
+  build:
     [job-name]             Job name or description
     --job <text>           Job name or description
     --job-url <url>        Full Jenkins job URL
@@ -119,7 +120,7 @@ Command-specific options:
     --watch          Watch selected build until completion [default: false]
     --json           Output a single JSON document (implies non-interactive)
 
-  history / builds:
+  history:
     [job-name]       Job name or description
     --job <text>     Job name or description
     --job-url <url>  Full Jenkins job URL
@@ -235,7 +236,7 @@ Command-specific options:
     only supports parameterless inputs; parameterized inputs must be approved
     in Jenkins, but can still be aborted here.
 
-  auth login / login:
+  auth login:
     --url <url>            Jenkins base URL
     --user <name>          Jenkins username
     --token <token>        Jenkins API token
@@ -264,13 +265,9 @@ Command-specific options:
     auth logout --all            Delete all profiles (logout never revokes the
                                  Jenkins-side API token)
 
-  profile (compatibility):
-    list            List configured profiles (same as auth list)
-    use <name>      Set default profile (same as auth use)
-    delete <name>   Delete a profile (same as auth logout --profile)
-
   help:
     --full  Print every command's full option reference [default: false]
+    --json  Output the command catalog as one JSON document
 
   global auth overrides (any command):
     --profile <name>  Use a named profile from config
@@ -285,7 +282,7 @@ Command-specific options:
                          (never persisted)
     Make a profile read-only with "auth login --protected" (interactive login
     asks and defaults to no) or by setting "protected": true in the config file.
-    Blocked without the flag: build/deploy, cancel, create, rerun, rerun last
+    Blocked without the flag: build, cancel, create, rerun, rerun last
     build, input approve/abort, and the same actions reached from
     list/build/status/history menus. Everything that only reads (list, params,
     status, wait, logs, tests, changes, history, queue, nodes, artifacts,
@@ -294,16 +291,12 @@ Command-specific options:
     non-zero; with --json they emit one document with code PROFILE_PROTECTED.
 
   config/env:
-    ${ENV_KEYS.JENKINS_USE_CRUMB} / useCrumb  Enable Jenkins CSRF crumb usage [default: disabled]
+    ${ENV_KEYS.JENKINS_USE_CRUMB} / useCrumb  Jenkins CSRF crumb usage [default: enabled]
 
-  update / upgrade:
+  update:
     [tag]                  Install a specific version tag (e.g. v0.2.4)
     --check                Check for updates; do not install [default: false]
     --channel <name>       Set update channel (stable or prerelease)
-    --enable-auto          Enable daily update checks (notify only)
-    --disable-auto         Disable daily update checks
-    --enable-auto-install  Enable auto-install of updates
-    --disable-auto-install Disable auto-install of updates
     --json                  Output update check data (requires --check)
 
 Cache directory: ${getJobCacheDir()}

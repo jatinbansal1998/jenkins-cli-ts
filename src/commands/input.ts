@@ -666,7 +666,7 @@ function rejectionError(
     return new CliError(
       `Jenkins rejected the ${operation} for ${where} with HTTP ${submission.httpStatus} because the CSRF crumb was missing or invalid.`,
       [
-        'Enable crumb usage with JENKINS_USE_CRUMB=true (or "useCrumb": true in the profile) and retry.',
+        "CSRF crumbs are on by default. If this profile set useCrumb to false, remove that or set JENKINS_USE_CRUMB=true and retry.",
       ],
       "JENKINS_CRUMB_REJECTED",
     );

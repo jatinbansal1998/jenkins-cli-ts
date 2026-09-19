@@ -8,1541 +8,164 @@
 [![built with Bun](https://img.shields.io/badge/built%20with-Bun-F9F1E5?logo=bun&logoColor=000)](https://bun.sh)
 [![License: MIT](https://img.shields.io/github/license/jatinbansal1998/jenkins-cli-ts?color=green)](LICENSE)
 
-Single-binary Jenkins CLI for triggering builds, streaming logs, and managing
-multiple profiles from the terminal. No Java needed. Works interactively with
-fuzzy job search, watch mode, and macOS notifications, and in scripts through
-parseable `OK:`/`HINT:` output and `--json` receipts. Tokens live in your OS
-keychain.
-
-## Table of Contents
-
-- [Demo](#demo)
-- [Install](#install)
-  - [Homebrew](#homebrew)
-  - [Alternative install methods](#alternative-install-methods)
-  - [Upgrade](#upgrade)
-- [Supported Features](#supported-features)
-- [Quick Start](#quick-start)
-- [Setup](#setup)
-  - [Config File](#config-file)
-  - [Add Credentials](#add-credentials)
-  - [Secure Token Storage](#secure-token-storage)
-  - [Manage Profiles](#manage-profiles)
-  - [Read-Only Profiles](#read-only-profiles)
-  - [Credential Selection Order](#credential-selection-order)
-  - [Environment Variable Fallback](#environment-variable-fallback)
-  - [Privacy and local error logs](#privacy-and-local-error-logs)
-- [Usage](#usage)
-  - [JSON Output](#json-output---json)
-  - [JSON Lines Log Streaming](#json-lines-log-streaming---jsonl)
-  - [Authentication Troubleshooting](#authentication-troubleshooting)
-  - [List Jobs](#list-jobs)
-  - [Trigger Builds](#trigger-builds)
-  - [Check Status](#check-status)
-  - [Build History](#build-history)
-  - [Wait For Completion](#wait-for-completion)
-  - [Stream Logs](#stream-logs)
-  - [Build Changes](#build-changes)
-  - [Artifacts](#artifacts)
-  - [Cancel Work](#cancel-work)
-  - [Pending Pipeline Inputs](#pending-pipeline-inputs)
-  - [Running Builds](#running-builds)
-  - [Queue](#queue)
-  - [Nodes](#nodes)
-  - [Rerun Failed Builds](#rerun-failed-builds)
-  - [Item Config and Creation](#item-config-and-creation)
-- [Update](#update)
-- [Development](#development)
-- [Docs](#docs)
-- [Notes](#notes)
-
-## Demo
+Build jobs, stream logs, inspect results, and manage multiple Jenkins profiles
+from your terminal. Interactive job search and menus for daily use; JSON output
+for scripts and agents. Ships as a native executable. No Java or Bun required.
 
 ![Jenkins CLI demo](docs/media/jenkins-cli-demo.gif)
 
 ## Install
 
-Installs the latest supported native `jenkins-cli` binary to your PATH
-(defaults to `$HOME/.local/bin`). Bun is not required on the target machine.
+On macOS or Linux:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/jatinbansal1998/jenkins-cli-ts/main/install | bash
-# or
-wget -qO- https://raw.githubusercontent.com/jatinbansal1998/jenkins-cli-ts/main/install | bash
 ```
 
-### Homebrew
+The installer puts `jenkins-cli` in `~/.local/bin`. Add that directory to your
+`PATH` if needed.
+
+With Homebrew:
 
 ```bash
 brew tap jatinbansal1998/tap
 brew install jatinbansal1998/tap/jenkins-cli
 ```
 
-### Alternative install methods
+Native binaries for macOS and Linux (x64/arm64, including Linux musl) and Windows
+(x64) are also available from [GitHub Releases](https://github.com/jatinbansal1998/jenkins-cli-ts/releases).
 
-<details>
-<summary>Custom install directory</summary>
+Upgrade standalone installs with `jenkins-cli update`, or Homebrew installs with
+`brew upgrade jenkins-cli`. On Windows, download the new executable from Releases.
 
-```bash
-JENKINS_CLI_INSTALL_DIR="$HOME/.local/bin" curl -fsSL https://raw.githubusercontent.com/jatinbansal1998/jenkins-cli-ts/main/install | bash
-JENKINS_CLI_INSTALL_DIR="$HOME/.local/bin" wget -qO- https://raw.githubusercontent.com/jatinbansal1998/jenkins-cli-ts/main/install | bash
-```
-
-</details>
-
-<details>
-<summary>Older versions, Alpine, and maintainer notes</summary>
-
-Older versions are not installed through the script. If you need an older
-release, download it manually from GitHub Releases.
-
-On minimal Alpine images, if the installer falls back to the legacy Bun bundle
-before a native musl binary is available, it may need `bash` and `unzip` to
-bootstrap Bun. The script will try `apk add --no-cache bash unzip` when it can.
-
-Maintainers: see `docs/homebrew.md` for tap publishing steps.
-
-</details>
-
-### Upgrade
-
-For Homebrew installs:
+## Quick start
 
 ```bash
-brew upgrade jenkins-cli
-```
-
-For standalone installs, use the built-in updater (see [Update](#update)).
-
-## Supported Features
-
-| Feature                     | Supported | Notes                                                               |
-| --------------------------- | --------- | ------------------------------------------------------------------- |
-| Multi-profile configuration | Yes       | Store multiple Jenkins profiles and switch the default profile      |
-| Job listing and search      | Yes       | Cached job listing with refresh and natural-language search         |
-| Build triggers              | Yes       | Discovers common parameters and supports branch/default/custom runs |
-| Status and watch mode       | Yes       | Track the latest build and watch until completion                   |
-| Build history               | Yes       | Jenkins-style recent build history table                            |
-| Queue visibility            | Yes       | Inspect the build queue, filter by job, and cancel or open items    |
-| Node/agent visibility       | Yes       | List agents with status, executor usage, and labels                 |
-| Running build actions       | Yes       | List, open, or batch-cancel live running builds                     |
-| Logs, cancel, and rerun     | Yes       | Inspect recent logs and manage existing builds                      |
-| Pending Pipeline inputs     | Yes       | List, approve, or abort `input` steps waiting on one exact build    |
-| Artifacts                   | Yes       | List build artifacts and stream them to disk, preserving paths      |
-| Item config and creation    | Yes       | Print an item's config.xml; create items from a file or by copy     |
-| One-off credentials         | Yes       | Override profile config with `--url`, `--user`, and `--token`       |
-| Read-only profiles          | Yes       | Block builds, cancels, and reruns unless `--confirm-protected`      |
-| Script-friendly output      | Yes       | Parseable `OK:` and `HINT:` output for automation                   |
-
-## Quick Start
-
-```bash
-jenkins-cli auth login --profile work --url https://jenkins.example.com --user ci --token <token>
-jenkins-cli auth status --profile work
-jenkins-cli list --profile work
-jenkins-cli build --job "api-prod" --branch main --profile work
-```
-
-## Setup
-
-### Config File
-
-`~/.config/jenkins-cli/jenkins-cli-config.json`
-
-```json
-{
-  "version": 2,
-  "defaultProfile": "work",
-  "profiles": {
-    "work": {
-      "jenkinsUrl": "https://jenkins.example.com",
-      "jenkinsUser": "your-username",
-      "jenkinsApiToken": "your-token",
-      "branchParam": "BRANCH",
-      "useCrumb": false
-    }
-  },
-  "debug": false
-}
-```
-
-### Add Credentials
-
-```bash
-jenkins-cli auth login
 jenkins-cli auth login --profile work
-jenkins-cli auth login --profile prod --url https://jenkins-prod.example.com --user ci --token <token>
-```
-
-`jenkins-cli login` remains supported as a compatibility alias for
-`jenkins-cli auth login`.
-
-Interactive login offers to open the browser twice:
-
-1. After the Jenkins URL, it offers to open the Jenkins home page so you can
-   sign in and confirm your Jenkins username.
-2. After the username, it offers to open that user's Jenkins Security page
-   (`/user/<username>/security/`) so you can create an API token before the
-   token prompt appears.
-
-Declining is the default for both questions, and both are skipped entirely with
-`--non-interactive`.
-
-### Secure Token Storage
-
-When an OS-native secret store is available, `auth login` stores the API token
-in the keychain via `cross-keychain` instead of writing it in plaintext to the
-config file:
-
-- **macOS** — the login Keychain.
-- **Linux** — the Secret Service / libsecret keyring (e.g. GNOME Keyring or
-  KWallet). Install with `sudo apt-get install libsecret-tools` on
-  Debian/Ubuntu if needed.
-- **Windows** — Windows Credential Manager.
-
-For keychain-backed profiles the config file only holds a sentinel instead of
-the secret:
-
-```json
-{
-  "profiles": {
-    "work": {
-      "jenkinsUrl": "https://jenkins.example.com",
-      "jenkinsUser": "your-username",
-      "jenkinsApiToken": "@keychain",
-      "tokenStorage": "keychain"
-    }
-  }
-}
-```
-
-The token is resolved transparently on every command. If the keyring is locked
-or the entry is missing, the CLI prints a `HINT:` explaining how to re-run
-`auth login` and fails gracefully rather than sending an empty token.
-After a secure login, the CLI shows profile-based usage instructions and does
-not echo the token or suggest exporting credentials into the shell.
-
-Behavior notes:
-
-- **Fallback:** if no secure store is available (e.g. a headless box with no
-  keyring, or `secret-tool` not installed), the token is written to the config
-  file in plaintext and a one-line `HINT:` is printed. The profile remains
-  eligible for automatic migration if secure storage becomes available later.
-- **`--no-keychain`:** pass this flag to `auth login` to force plaintext
-  storage in the config file even when a keychain is available. This explicit
-  preference also disables automatic migration for that profile.
-- **Existing profiles:** plaintext profiles keep working unchanged. A profile
-  is migrated automatically once a secure store is available and the token can
-  be written and read back successfully.
-- **`auth logout` / `profile delete`** remove the matching keychain entry with
-  strict semantics: the secure-store entry is deleted and verified absent
-  before the config is updated, and a failed config write restores the entry.
-
-#### Automatic secure-store migration
-
-If you upgrade without re-running `auth login`, the CLI automatically attempts
-to move an existing plaintext profile token into the secure store the next time
-that profile is used.
-
-- The token is written to the secure store and **read back to verify the
-  round-trip**. Only then is plaintext replaced with the sentinel.
-- If the secure store is unavailable, locked, fails verification, or the config
-  cannot be updated, the plaintext profile remains active.
-- Non-interactive and JSON commands migrate silently so their output contracts
-  remain unchanged.
-- Profiles created with `--no-keychain` are left in plaintext by explicit
-  request.
-
-```bash
-jenkins-cli auth login --profile work                 # keychain when available
-jenkins-cli auth login --profile work --no-keychain   # force plaintext config
-```
-
-### Manage Profiles
-
-The canonical profile management commands live under `auth`:
-
-```bash
-jenkins-cli auth list                 # list profiles with URL, user, and token storage
-jenkins-cli auth use prod             # set the default profile
-jenkins-cli auth current              # show which credentials would be used (no network request)
-jenkins-cli auth rename work corp     # rename a profile (moves its keychain token)
-jenkins-cli auth logout               # delete the active profile's local credentials
-jenkins-cli auth logout --profile work
-jenkins-cli auth logout --all         # delete every stored profile
-```
-
-- `auth current` resolves credentials locally using the normal precedence
-  (direct `--url --user --token`, explicit `--profile`, default profile, then
-  environment variables) and never contacts Jenkins or prints the token. Use
-  `auth status` for the network-backed authentication check.
-- `auth logout` asks for confirmation unless `--non-interactive` is passed. It
-  deletes the profile from the config and its matching secure-store entry.
-- **Logout removes local credentials only.** The API token itself is not
-  revoked at the Jenkins controller — Jenkins exposes no general token
-  revocation operation to these credentials. To revoke the token, delete it
-  from your Jenkins user configuration page.
-
-The original `profile` commands remain supported and route through the same
-operations:
-
-```bash
-jenkins-cli profile list
-jenkins-cli profile use prod
-jenkins-cli profile delete work
-```
-
-### Read-Only Profiles
-
-Mark a profile read-only so builds, cancels, and reruns against that controller
-need an explicit acknowledgement first:
-
-```bash
-jenkins-cli auth login --profile release --protected     # set
-jenkins-cli auth login --profile release --no-protected  # clear
-```
-
-On a profile that already exists this is a config-only toggle, including with
-`--non-interactive`: it does not prompt for, resolve, migrate, or rewrite the
-stored URL, user, token, or token-storage preference.
-
-A normal `auth login` (no `--protected`/`--no-protected`) asks "Make this
-profile read-only? (blocks builds, cancels, reruns)" and defaults to **no**.
-Already read-only profiles default to yes, so a re-login never silently drops
-protection.
-
-The flag is stored as `protected` on the profile, and can also be edited
-directly:
-
-```json
-{
-  "version": 2,
-  "defaultProfile": "release",
-  "profiles": {
-    "release": {
-      "jenkinsUrl": "https://jenkins-release.example.com",
-      "jenkinsUser": "ci-bot",
-      "jenkinsApiToken": "@keychain",
-      "tokenStorage": "keychain",
-      "protected": true
-    }
-  }
-}
-```
-
-Only literal `true` makes the profile read-only; a missing or `false` value
-behaves exactly as before. Credential updates, renames, and keychain migration
-preserve the flag; only an explicit `--no-protected` clears it.
-
-Pass `--confirm-protected` on any command to allow writes for that run only. It
-is never persisted and never prompted for, so interactive and non-interactive
-callers share the same rule:
-
-```bash
-jenkins-cli build api --branch main --confirm-protected
-jenkins-cli --confirm-protected            # interactive session allowed to write
-```
-
-| Action                                                               | Read-only profile without `--confirm-protected` |
-| -------------------------------------------------------------------- | ----------------------------------------------- |
-| `build` / `deploy`                                                   | Blocked                                         |
-| `cancel` (queued item or running build, including the watch `c` key) | Blocked                                         |
-| `rerun`, rerun last build, rerun with the same inputs                | Blocked                                         |
-| `create` (from config.xml or by copy)                                | Blocked                                         |
-| `input approve` / `input abort` (even with `--yes`)                  | Blocked                                         |
-| The same actions in `list`, `build`, `status`, `history` menus       | Blocked                                         |
-| `list`, `params`, `status`, `wait`, `logs`, `tests`, `history`       | Allowed                                         |
-| `input list`                                                         | Allowed                                         |
-| `queue`, `nodes`, `run`, `artifacts` (including download)            | Allowed                                         |
-| `auth` / profile management and browser navigation                   | Allowed                                         |
-
-One-off credentials do not bypass this: if `--url` resolves to the same
-controller as a read-only profile, the target stays read-only. Matching is by
-normalized controller URL only. Environment-variable credentials are not tied
-to a configured profile and remain unrestricted.
-
-Interactive sessions stay usable: a blocked action prints the error and returns
-to the same action menu, so you can pick a read action or restart with
-`--confirm-protected`.
-
-A blocked run exits non-zero:
-
-```text
-ERROR: Profile "release" is read-only.
-HINT: Re-run with --confirm-protected to allow builds, cancels, creates, reruns, and input approvals or aborts.
-```
-
-With `--json` it emits exactly one document:
-
-```json
-{
-  "ok": false,
-  "error": {
-    "message": "Profile \"release\" is read-only.",
-    "code": "PROFILE_PROTECTED"
-  }
-}
-```
-
-### Credential Selection Order
-
-- If you pass `--url --user --token`, those one-off credentials are used for that command.
-- Else if you pass `--profile`, that profile is used and env credentials are ignored.
-- Else the CLI uses `defaultProfile`.
-- If no profiles exist, the CLI falls back to environment variables.
-
-### Environment Variable Fallback
-
-Single-account fallback only:
-
-- `JENKINS_URL` (e.g., `https://jenkins.example.com`)
-- `JENKINS_USER`
-- `JENKINS_API_TOKEN`
-- Optional: `JENKINS_USE_CRUMB` (`true` to enable; default: disabled)
-
-### Privacy and local error logs
-
-The CLI collects no usage analytics and sends no automatic error reports.
-Errors are written locally to `~/.config/jenkins-cli/error-YYYY-MM-DD.log`,
-including CLI version, full error messages, stacks, and error causes, even without
-`--debug`. Active API tokens and their Basic-auth encodings are masked in both
-error and API log files. Other error details remain intact and can contain sensitive
-values from exception messages, including details returned by Jenkins or a proxy.
-Review and redact them before sharing.
-
-Logs rotate daily in UTC. Files older than seven days are removed when the CLI
-exits; cleanup runs the next time you use the CLI, not in a background service.
-Both log writers enforce owner-only file permissions on Unix, including existing
-files, and refuse file symlinks. Legacy analytics IDs are removed on shutdown.
-Logging failures do not
-replace the command's original error or change its exit status.
-
-Use `--debug` for existing API diagnostics in `api-YYYY-MM-DD.log`. Review any
-logs before attaching them to a [GitHub issue](https://github.com/jatinbansal1998/jenkins-cli-ts/issues).
-Nothing is uploaded automatically. Update checks still contact GitHub.
-
-## Usage
-
-If you have not installed the global CLI, replace `jenkins-cli` with
-`bun run src/index.ts`.
-
-### Output Format Notes
-
-- Commands return parseable output prefixed with `OK:` and `HINT:` where relevant.
-- Running `jenkins-cli` with no command defaults to `list`.
-- Interactive commands show a compact intro with the CLI version and effective
-  Jenkins target. Use `--banner` to add the ASCII banner for a single run.
-
-#### JSON Output (`--json`)
-
-Automation-relevant read and mutation commands accept `--json`:
-
-- `--json` prints **exactly one JSON document** to stdout and nothing else — no
-  intro, no `OK:`/`HINT:` lines, no prompts, no spinner. Hints and warnings, if
-  any, go to stderr.
-- `--json` implies `--non-interactive`: the command never prompts and fails fast.
-- `build --json --watch` waits and returns the final result in the same
-  one-document receipt. Other streaming output uses `logs --jsonl`.
-
-| Command                                                           | Structured mode | `data` summary                                            |
-| ----------------------------------------------------------------- | --------------- | --------------------------------------------------------- |
-| `list`, `params`, `status`, `history`, `wait`, `tests`, `changes` | `--json`        | Existing compatible read contracts and test summaries     |
-| `queue`, `nodes`, `run`, `artifacts`                              | `--json`        | Normalized collections; empty results are `[]`            |
-| `auth status`, `auth list`, `auth current`                        | `--json`        | Credential diagnostics without tokens                     |
-| `update --check`                                                  | `--json`        | Current/latest version and update decision                |
-| `build`, `cancel`, `rerun`                                        | `--json`        | Canonical queue/build/source/target receipts              |
-| `input list`                                                      | `--json`        | Exact build identity plus pending actions (`[]` if none)  |
-| `input approve`, `input abort` (with `--yes`)                     | `--json`        | Receipt with a confirmed `approved`/`aborted` disposition |
-| `create`                                                          | `--json`        | Creation receipt: `name`, `url`, optional `copiedFrom`    |
-| `logs`                                                            | `--jsonl`       | Ordered `start`, `chunk`, `complete`, or `error` events   |
-
-Commands without a structured contract still recognize `--json` and return a
-clear unsupported-output error instead of treating the flag as unknown.
-
-Success envelope:
-
-```json
-{ "ok": true, "command": "<name>", "data": <command-specific> }
-```
-
-Error envelope (also written to stdout, with a non-zero exit code):
-
-```json
-{ "ok": false, "error": { "message": "<message>", "code": "<code>" } }
-```
-
-Every build object shares the same camelCase shape across `status`, `history`,
-and `wait`:
-
-```json
-{
-  "number": 42,
-  "url": "https://jenkins.example.com/job/api/42/",
-  "result": "SUCCESS",
-  "building": false,
-  "durationMs": 12000,
-  "overheadMs": 4000,
-  "timestampMs": 1700000000000,
-  "estimatedDurationMs": 11000,
-  "queueTimeMs": 250,
-  "branch": "main",
-  "revisions": [
-    {
-      "repo": "api",
-      "remoteUrl": "https://github.com/acme/api.git",
-      "remoteUrls": ["https://github.com/acme/api.git"],
-      "branch": "refs/remotes/origin/main",
-      "sha": "a1b2c3d4e5f67890a1b2c3d4e5f67890a1b2c3d4"
-    }
-  ],
-  "parameters": [{ "name": "BRANCH", "value": "main" }],
-  "stages": [{ "name": "Build", "status": "SUCCESS", "durationMs": 8000 }],
-  "triggeredBy": "Jane Doe"
-}
-```
-
-`overheadMs` is time inside the build not attributed to any stage, typically
-agent startup and post-build actions. It is present whenever `stages[]` is
-present and equals `durationMs - sum(stages[].durationMs)`, clamped to zero
-because overlapping parallel stages can make the naive sum exceed the build
-duration.
-
-`triggeredBy` comes from the build's cause action: the triggering user's
-display name, or Jenkins' cause description (minus the "Started by" prefix)
-for timer, SCM, and upstream triggers. Omitted when Jenkins reports no cause.
-
-`branch` is the configured branch parameter's value: a build input echoed back
-by Jenkins, not evidence of what was checked out. `revisions[]` is checkout
-evidence from git-plugin `BuildData` actions. `[]` means the build has no
-git-plugin checkout (for example, a clone performed by a shell step). The
-field is omitted entirely when the build's metadata could not be fetched, so
-an unknown checkout state is never reported as "no checkout".
-
-Multi-SCM builds can contain several revisions. Duplicate `BuildData` actions
-for the same checkout — same commit SHA with overlapping remote URLs, or with
-no remote URLs reported — are merged: remote URLs are unioned and the first
-reported branch wins. Distinct remotes checked out at the same commit stay
-separate entries. `remoteUrl` is the first remote URL Jenkins
-returned (response order, not configuration order) and `repo` is its basename
-— a convenience label that can collide when two repositories share a name, so
-select a revision by `remoteUrl` when exactness matters. `repo` and
-`remoteUrl` are omitted when Jenkins reports a checkout without remote URLs;
-`branch` is omitted when the plugin reports none and is otherwise the raw
-plugin string without normalization. Array order is best-effort, not
-contractual. Other fields that Jenkins does not return are omitted from the
-document.
-
-**`params`** — `data` is the normalized parameter-definition array. Sensitive
-parameters set `sensitive: true` and omit `defaultValue`:
-
-```bash
-jenkins-cli params --job "api-prod" --json
-jenkins-cli params --job-url "https://jenkins.example.com/job/api-prod/" --json
-```
-
-```json
-{
-  "ok": true,
-  "command": "params",
-  "data": [
-    {
-      "name": "DEPLOY_ENV",
-      "type": "choice",
-      "description": "Target environment",
-      "defaultValue": "staging",
-      "choices": ["dev", "staging", "prod"],
-      "sensitive": false
-    }
-  ]
-}
-```
-
-**`list`** — `data` is an array of cached jobs. `disabled` and `lastBuild` carry
-the job's activity state: `lastBuild` is `null` when the job has never been
-built, and both fields are omitted for jobs cached before activity metadata was
-collected (run `list --refresh` to fill them in):
-
-```bash
-jenkins-cli list --json
-```
-
-```json
-{
-  "ok": true,
-  "command": "list",
-  "data": [
-    {
-      "name": "api",
-      "fullName": "team/api",
-      "url": "https://jenkins.example.com/job/api",
-      "disabled": false,
-      "lastBuild": {
-        "number": 42,
-        "url": "https://jenkins.example.com/job/api/42/",
-        "result": "SUCCESS",
-        "building": false,
-        "timestampMs": 1767225600000,
-        "durationMs": 12000,
-        "estimatedDurationMs": 11000
-      }
-    }
-  ]
-}
-```
-
-**`status`** — `data` is `{ job, build }` (`build` is `null` when the job has no
-builds):
-
-```bash
-jenkins-cli status --json --job-url https://jenkins.example.com/job/api/
-```
-
-```json
-{
-  "ok": true,
-  "command": "status",
-  "data": {
-    "job": "https://jenkins.example.com/job/api",
-    "jobState": "ENABLED",
-    "build": {
-      "number": 42,
-      "url": "https://jenkins.example.com/job/api/42/",
-      "result": "SUCCESS",
-      "building": false,
-      "durationMs": 12000,
-      "timestampMs": 1700000000000,
-      "revisions": []
-    }
-  }
-}
-```
-
-`jobState` is `ENABLED` or `DISABLED` when Jenkins exposes the job's current
-state. It is independent of the latest build's `result` and is also returned
-when `build` is `null`.
-
-**`history` / `builds`** — `data` is an array of builds (most recent first):
-
-```bash
-jenkins-cli history --json --job-url https://jenkins.example.com/job/api/
-```
-
-```json
-{
-  "ok": true,
-  "command": "history",
-  "data": [
-    {
-      "number": 42,
-      "url": "https://jenkins.example.com/job/api/42/",
-      "result": "FAILURE",
-      "building": false,
-      "durationMs": 75000,
-      "branch": "main",
-      "revisions": [
-        {
-          "repo": "api",
-          "remoteUrl": "https://github.com/acme/api.git",
-          "remoteUrls": ["https://github.com/acme/api.git"],
-          "branch": "origin/main",
-          "sha": "a1b2c3d4e5f67890a1b2c3d4e5f67890a1b2c3d4"
-        }
-      ]
-    }
-  ]
-}
-```
-
-**`wait`** — `data` is `{ result, build, waitedMs }`. The document is emitted on
-every terminal path, and the exit code reflects the outcome: `0` success, `1`
-non-success, `124` timeout, `130` interrupted.
-
-```bash
-jenkins-cli wait --json --build-url https://jenkins.example.com/job/api/42/
-```
-
-```json
-{
-  "ok": true,
-  "command": "wait",
-  "data": {
-    "result": "SUCCESS",
-    "build": {
-      "number": 42,
-      "url": "https://jenkins.example.com/job/api/42/",
-      "result": "SUCCESS",
-      "building": false,
-      "durationMs": 12000,
-      "branch": "main",
-      "revisions": [
-        {
-          "repo": "api",
-          "remoteUrl": "https://github.com/acme/api.git",
-          "remoteUrls": ["https://github.com/acme/api.git"],
-          "branch": "refs/remotes/origin/main",
-          "sha": "a1b2c3d4e5f67890a1b2c3d4e5f67890a1b2c3d4"
-        }
-      ],
-      "parameters": [{ "name": "BRANCH", "value": "main" }]
-    },
-    "waitedMs": 42000
-  }
-}
-```
-
-**Mutation receipts** — `build`, `cancel`, and `rerun` return canonical targets
-instead of human status lines:
-
-```bash
-jenkins-cli build --job api --branch main --json
-jenkins-cli cancel --queue-url https://jenkins.example.com/queue/item/17/ --json
-jenkins-cli rerun --job api --json
-```
-
-```json
-{
-  "ok": true,
-  "command": "build",
-  "data": {
-    "job": "api",
-    "jobUrl": "https://jenkins.example.com/job/api/",
-    "queueUrl": "https://jenkins.example.com/queue/item/17/",
-    "queueId": 17,
-    "queued": true
-  }
-}
-```
-
-#### JSON Lines Log Streaming (`--jsonl`)
-
-`logs --jsonl` emits one compact JSON event per line. Each line is independently
-valid JSON; raw log text is carried in `chunk.text`.
-
-```bash
-jenkins-cli logs --build-url https://jenkins.example.com/job/api/42/ --jsonl
-```
-
-```jsonl
-{"type":"start","buildUrl":"https://jenkins.example.com/job/api/42/","buildNumber":42,"offset":0}
-{"type":"chunk","offset":0,"nextOffset":128,"text":"Compiling...\n","more":true}
-{"type":"complete","buildUrl":"https://jenkins.example.com/job/api/42/","offset":128,"result":"SUCCESS"}
-```
-
-A mid-stream failure ends with an `error` event and a non-zero exit code.
-For Pipeline stage or node logs, `start`, `chunk`, and `complete` events also
-include an additive `stage` object containing the stable stage/node IDs, names,
-and display path.
-
-### Authentication Troubleshooting
-
-Check the active default profile, a named profile, or a complete set of direct
-credentials without triggering or modifying a build:
-
-```bash
 jenkins-cli auth status
-jenkins-cli auth status --profile prod
-jenkins-cli auth status --url https://jenkins.example.com --user ci --token <token>
+jenkins-cli
 ```
 
-The command follows the normal credential precedence: a complete direct
-`--url --user --token` set, then an explicit `--profile`, then the configured
-default profile, and finally environment variables when no profile exists. It
-performs one read-only `GET` to `/whoAmI/api/json`, never requests a crumb, and
-never writes configuration or secure-store data. Redirects are not followed,
-so credentials are not forwarded to an SSO or reverse-proxy login page.
+Login prompts for the Jenkins URL, username, and API token. The first profile
+becomes the default. Running `jenkins-cli` opens the job picker, where you can
+search jobs, start builds, inspect results, and view logs.
 
-For a purely local view of the same resolution — which source, profile,
-controller, username, and token storage would be used — run
-`jenkins-cli auth current`; it makes no network request at all.
-
-Successful authentication exits with status `0`:
-
-```text
-Profile:          work
-Controller:       https://jenkins.company.com
-Username:         jatin
-Token storage:    macOS Keychain
-Token present:    Yes
-Authenticated:    Yes
-Jenkins user:     jatin.bansal
-Jenkins version:  2.516.1
-
-OK: Authentication is working.
-```
-
-Every other result exits with status `1` after printing all fields that could
-be determined. Failures distinguish missing or inaccessible tokens, rejected
-credentials, denied identity access, anonymous responses, redirects, malformed
-responses, timeouts, and network/DNS/TLS errors:
-
-```text
-Profile:          work
-Controller:       https://jenkins.company.com
-Username:         jatin
-Token storage:    macOS Keychain
-Token present:    Yes
-Authenticated:    No
-Jenkins user:     Unknown
-Jenkins version:  2.516.1
-
-ERROR: Jenkins rejected the supplied credentials (HTTP 401).
-HINT: Check the username and API token, then run `jenkins-cli auth login` again.
-```
-
-When a token is missing or the secure store cannot be read, `auth status`
-still probes the controller anonymously. This separates controller
-reachability from credential availability without exposing a token, Basic
-authorization value, response body, or redirect query string.
-
-### List Jobs
-
-Uses the local cache by default:
+For a direct build:
 
 ```bash
-jenkins-cli list
+jenkins-cli build api --branch main --watch
 ```
 
-In interactive mode, `list` acts as a launcher:
-
-- Search and select a job
-- Run `Build`, `Status`, `Build history`, `Watch`, `Logs`, `Pending inputs`,
-  `Cancel`, or `Rerun`
-
-The cache is fetched automatically on first use and served instantly after
-that. Once it is older than 24 hours, commands keep using it and a detached
-`jenkins-cli` process refreshes it in the background (a `HINT:` on stderr says
-so), so the next command sees the new jobs. Force a blocking refresh when you
-need the current job list right now:
+## Common commands
 
 ```bash
 jenkins-cli list --refresh
+jenkins-cli params --job api
+jenkins-cli build api --param DEPLOY_ENV=staging --watch
+jenkins-cli status --job api
+jenkins-cli history --job api
+jenkins-cli logs --job api --build 42
+jenkins-cli tests --job api --build 42
+jenkins-cli artifacts --job api --build 42 --download --dest ./artifacts
 ```
 
-Search with natural language:
+Use `--job-url` or `--build-url` when you already have a Jenkins URL. Commands
+such as `status` and `logs` use the latest build unless you select one explicitly.
+
+| Task            | Commands                                                     |
+| --------------- | ------------------------------------------------------------ |
+| Monitor work    | `run`, `queue`, `nodes`, `wait`                              |
+| Inspect a build | `status`, `history`, `logs`, `tests`, `changes`, `artifacts` |
+| Change work     | `build`, `cancel`, `rerun`, `input approve`, `input abort`   |
+| Manage items    | `config`, `create`                                           |
+
+Find options and examples in the CLI:
 
 ```bash
-jenkins-cli list --search "api prod deploy"
+jenkins-cli --help
+jenkins-cli build --help
+jenkins-cli help --full
 ```
 
-Show jobs with at least one build unless Jenkins marks them disabled:
+## Profiles and credentials
 
 ```bash
-jenkins-cli list --active-only
+jenkins-cli auth login --profile prod
+jenkins-cli auth list
+jenkins-cli auth use work
+jenkins-cli auth current
+jenkins-cli status --job api --profile prod
 ```
 
-Disabled jobs are marked `<name> [disabled]` in terminal listings and job
-pickers. `--active-only` filters the cached snapshot; combine it with
-`--refresh` when the cache predates activity metadata.
+`auth current` shows which credentials would be used without contacting Jenkins.
+`auth status` checks authentication with Jenkins. `auth logout --profile work`
+removes local credentials; it does not revoke the token in Jenkins.
 
-Run any command against a specific profile:
+Tokens use macOS Keychain, Linux Secret Service, or Windows Credential Manager
+when available. If the secure store is unavailable, login warns and stores the
+token in plaintext in `~/.config/jenkins-cli/jenkins-cli-config.json`.
+`auth login --no-keychain` explicitly selects plaintext storage.
+
+Credentials come from a complete `--url --user --token` set, then an explicit
+`--profile`, then the default profile. With no configured profiles, the CLI uses
+`JENKINS_URL`, `JENKINS_USER`, and `JENKINS_API_TOKEN`.
+
+To block writes through a profile unless `--confirm-protected` is supplied:
 
 ```bash
-jenkins-cli list --profile prod
+jenkins-cli auth login --profile prod --protected
 ```
 
-Run any command with direct one-off credentials:
+CSRF crumbs are enabled by default. Controllers that do not need them can opt out
+with `JENKINS_USE_CRUMB=false` or `"useCrumb": false` in the profile.
+
+## Scripts and agents
+
+Use `--json` for structured output and `help --json` to discover supported
+commands and options:
 
 ```bash
-jenkins-cli list --url https://jenkins.example.com --user ci-user --token <token>
+jenkins-cli help --json
+jenkins-cli status --job api --json
+jenkins-cli build api --branch main --watch --json
+jenkins-cli logs --job api --build 42 --jsonl
 ```
 
-### Trigger Builds
-
-From the root `jenkins-cli` launcher, search for a job and choose **Build**.
-For a parameterized job the CLI reads authoritative Jenkins job metadata and
-offers **Configure parameters** or **Run with default parameters**. Configure
-mode uses text inputs for string/text parameters, confirms for booleans,
-Jenkins-provided options for choices, and masked inputs for passwords. A final
-summary is shown before the existing trigger/watch/post-build flow continues.
-
-The initially supported Jenkins types are string, text, boolean, choice, and
-password/secret parameters. Unknown plugin parameter types remain available as
-generic text inputs instead of blocking the build.
-
-Inspect a job without starting it:
-
-```bash
-jenkins-cli params --job "api-prod"
-jenkins-cli params --job-url "https://jenkins.example.com/job/api-prod/"
-jenkins-cli params --job "api-prod" --json
-```
-
-Trigger a build with a branch:
-
-```bash
-jenkins-cli build --job "api-prod" --branch main
-```
-
-Watch a build until completion (macOS notification on completion):
-
-```bash
-jenkins-cli build --job "api-prod" --branch main --watch
-```
-
-Press `Esc` to stop watching and return to the prompt.
-
-Trigger a build without passing branch parameters:
-
-```bash
-jenkins-cli build --job "api-prod" --without-params
-# useful for non-interactive usage too:
-jenkins-cli build --job-url "https://jenkins.example/job/api-prod/" --non-interactive --without-params
-```
-
-In interactive mode, choose **Run with default parameters** from the build mode prompt.
-
-Trigger a build with custom parameters:
-
-```bash
-jenkins-cli build --job "api-prod" --param DEPLOY_ENV=staging --param FORCE=true
-jenkins-cli build --job "api-prod" --param DEPLOY_ENV=staging --non-interactive
-```
-
-Trigger a build with both branch and custom parameters:
-
-```bash
-jenkins-cli build --job "api-prod" --branch main --param DEPLOY_ENV=staging
-```
-
-When Jenkins metadata is available, non-interactive builds validate recognized
-choice values and normalize common boolean forms (`true`/`false`, `yes`/`no`,
-`on`/`off`, and `1`/`0`). Unknown `--param` names are still sent for backward
-compatibility with a `HINT:` on stderr. `--non-interactive` and `--json` never
-prompt.
-
-Branch parameters keep the existing cached branch selection experience. A
-discovered parameter matching the configured branch parameter (usually
-`BRANCH`) uses that selector once; an explicit `--branch` wins and the CLI
-continues through the other discovered parameters.
-
-Secret parameter defaults are never displayed or returned in JSON. Entered
-secret values are masked and redacted from summaries and generated command
-tips. Jenkins request and response bodies are omitted from persistent debug
-logs so parameter secrets are not recorded there.
-
-If Jenkins reports no parameter definitions, or metadata discovery fails, the
-CLI falls back to the existing branch/custom/default build mode. Discovery
-failure prints a concise stderr hint, while genuinely non-parameterized jobs
-remain quiet. Authentication and permission errors still fail using the normal
-Jenkins error handling. Definitions are read from current job metadata only;
-previous builds are not inspected.
-
-In fallback interactive mode, build mode offers:
-
-- **Select a branch**
-- **Enter custom parameters**
-- **Run with default parameters**
-
-### Check Status
-
-Check status:
-
-```bash
-jenkins-cli status --job "api-prod"
-jenkins-cli status --job "api-prod" --build 184
-jenkins-cli status --build-url "https://jenkins.example.com/job/api-prod/184/"
-```
-
-With `--json`, `build.branch` is the configured branch parameter input, while
-`build.revisions[]` reports git-plugin checkouts with repository identity and
-commit SHA. Use `remoteUrl` (exact) or `repo` (basename, can collide) to
-select the intended checkout in a multi-SCM build.
-
-Watch the latest build status from status command:
-
-```bash
-jenkins-cli status --job "api-prod" --watch
-```
-
-### Build History
-
-Show recent build history in a Jenkins-style table:
-
-```bash
-jenkins-cli history --job "api-prod"
-jenkins-cli builds --job "api-prod"
-jenkins-cli history --job "api-prod" --offset 5
-```
-
-With `--json`, every history build has a `revisions[]` array using the same
-checkout-evidence contract as `status --json`.
-
-In interactive mode, build history lets you:
-
-- Page through builds 5 at a time
-- Rebuild a selected historical build with the same parameters
-- Continue into the same post-build action menu used by `build` after a rebuild
-- Open the selected build's URL
-- Jump into logs for the selected build
-- Inspect failed step and failure reason when Jenkins exposes them
-
-### Wait For Completion
-
-Wait for a build to finish:
-
-```bash
-jenkins-cli wait --job "api-prod" --timeout 30m --interval 5s
-jenkins-cli wait --job "api-prod" --build 184
-jenkins-cli wait --build-url "https://jenkins.example.com/job/api-prod/184/"
-jenkins-cli wait --queue-url "https://jenkins.example.com/queue/item/123/"
-```
-
-### Stream Logs
-
-Stream logs:
-
-```bash
-jenkins-cli logs --job "api-prod" --follow
-jenkins-cli logs --job "api-prod" --build 184 --no-follow
-jenkins-cli logs --job "api-prod" --follow --poll 1s
-jenkins-cli logs --build-url "https://jenkins.example.com/job/api-prod/184/" --no-follow
-jenkins-cli logs --job "api-prod" --tail 100 --no-follow
-jenkins-cli logs --job "api-prod" --tail 50 --follow
-jenkins-cli logs --job "api-prod" --since 30m --no-follow
-jenkins-cli logs --build-url "https://jenkins.example.com/job/api-prod/184/" --stage Test
-jenkins-cli logs --build-url "https://jenkins.example.com/job/api-prod/184/" --stage-id 42
-jenkins-cli logs --job "api-prod" --failed
-jenkins-cli logs --job "api-prod" --plain --no-timestamps --no-follow
-jenkins-cli logs --job "api-prod" --grep 'ERROR|WARN' --context 2 --no-follow
-```
-
-Logs follow by default when stdout is a terminal and return after one read when
-stdout is piped or redirected. Pass `--follow` or `--no-follow` to override the
-inferred default.
-
-`--tail` prints only the last N existing lines. Combined with `--follow`, it
-then streams new output from the exact Jenkins byte offset without repeating
-the tail. Without an explicit follow flag, logs follow when stdout is a terminal
-and read once when stdout is piped or redirected. Use `--follow` to keep a pipe
-streaming; `--no-follow` always reads once. `--since` accepts a duration (`30m`,
-`2h`, `1d`) or an ISO-8601 timestamp. It requires timestamp metadata from the
-Jenkins Timestamper plugin. If timestamp metadata is unavailable, the command
-reports that capability instead of guessing from the visible text.
-
-`--plain` strips ANSI escape sequences and Jenkins concealed metadata, and
-drops `[Pipeline]` framing lines entirely. `--no-timestamps` removes the
-leading bracketed timestamp (ISO-8601 or `HH:mm:ss`). `--grep` keeps only
-lines matching a JavaScript regular expression; `--context N` (requires
-`--grep`) also prints N lines around each match. Filters run after
-`--tail`/`--since` select the window, so `--tail 20 --grep x` means "matches
-within the last 20 raw lines", not "the last 20 matches". These filters
-cannot be combined with `--jsonl`, whose events report raw console text with
-exact byte offsets.
-
-Pipeline stage names must resolve uniquely. For repeated stage names or
-parallel branches, the error lists stable candidate IDs; pass `--stage-id` to
-select one deterministically. `--failed` selects the failed stage, prints its
-log-bearing nodes on stdout, and writes the stage/node reason to stderr.
-`--stage`, `--stage-id`, and `--failed` are mutually exclusive.
-
-Human log text is the only content written to stdout, so it can be redirected
-or piped safely. Selection hints, capability messages, and errors use stderr.
-Ctrl+C stops only the local follower (exit status 130 in non-interactive use);
-it never sends a cancel or stop request to Jenkins.
-
-With a TTY and no exact build, the Logs action lets you select the latest,
-running, or a recent build, then choose full logs, last N lines, a failed
-section, or a Pipeline stage. Running builds ask whether new output should be
-followed.
-
-### Test Results
-
-Summarize test results published by a compatible Jenkins test-report plugin.
-Without an exact selector, `tests` uses the selected job's latest completed
-build:
-
-```bash
-jenkins-cli tests --job "api-prod"
-jenkins-cli tests --job "api-prod" --build 184
-jenkins-cli tests --build-url "https://jenkins.example.com/job/api-prod/184/"
-jenkins-cli tests --build-url "https://jenkins.example.com/job/api-prod/184/" --failed
-jenkins-cli tests --job "api-prod" --json
-```
-
-The default request fetches summary counts only. `--failed` additionally prints
-each failing suite, class, case, duration, message, and complete multiline stack
-trace. JSON uses the standard success/error envelope and includes `failures`
-only when `--failed` is requested. A missing report, unavailable report
-capability, denied report, malformed response, and transport failure have
-distinct stable error codes.
-
-### Build Changes
-
-Explain why a build ran and which commits it contains. Without an exact
-selector, `changes` uses the selected job's latest build:
-
-```bash
-jenkins-cli changes --job "api-prod"
-jenkins-cli changes --job "api-prod" --build 184
-jenkins-cli changes --build-url "https://jenkins.example.com/job/api-prod/184/" --limit 50
-jenkins-cli changes --job "api-prod" --json
-```
-
-Human output starts with the build identity and its trigger causes, then groups
-changes by Jenkins change set. Git groups include the matched checkout repository
-when Jenkins `BuildData` identifies it. The CLI sorts changes by commit timestamp
-before applying the global limit, then renders the retained changes within their
-SCM groups. JSON carries `causes[]` (a stable `type` such as `user`, `upstream`,
-`timer`, `scm`, `remote`, `replay`, `rebuild`, or `cli`, with a conservative
-`other` fallback plus the display summary), `changeSets[]` (source kind, optional
-checkout revision metadata, and nested changes), and `pagination` (`limit`,
-`returned`, `total` when known, and a `truncated` flag).
-
-Output is bounded to `--limit` changes across all SCM groups (default 20).
-`--paths` additionally includes each change's affected file paths, capped at 100 per change with a
-`pathsTruncated` flag when Jenkins holds more. A valid build without SCM data is a
-successful empty result — note that Jenkins change sets only contain commits
-new since the previous build, so re-running the same commit yields no changes;
-use the `revisions[]` field on `status`/`history` to verify what was checked
-out. Commit data is not uploaded for diagnostics.
-
-### Artifacts
-
-List build artifacts (defaults to the latest completed build):
-
-```bash
-jenkins-cli artifacts --job "api-prod"
-jenkins-cli artifacts --job "api-prod" --build 184
-jenkins-cli artifacts --build-url "https://jenkins.example.com/job/api-prod/184/"
-```
-
-Download artifacts, preserving their `relativePath` subdirectories:
-
-```bash
-# Download every artifact to the current directory
-jenkins-cli artifacts --job "api-prod" --download
-
-# Download to a specific directory
-jenkins-cli artifacts --job "api-prod" --download --dest ./out
-
-# Download only specific artifacts (repeatable; overwrite with --force)
-jenkins-cli artifacts --job "api-prod" --download \
-  --artifact dist/app.js --artifact report.txt --force
-```
-
-Without `--download`, an interactive terminal offers a multi-select of
-artifacts and a destination prompt. In `--non-interactive` mode the command
-lists artifacts, or downloads them when `--download` is given. Existing files
-are never overwritten unless `--force` is passed, and downloads stream to disk
-rather than buffering in memory.
-
-### Cancel Work
-
-Cancel queued or running work:
-
-```bash
-jenkins-cli cancel
-jenkins-cli cancel --job "api-prod"
-jenkins-cli cancel --job "api-prod" --build 184
-jenkins-cli cancel --queue-url "https://jenkins.example.com/queue/item/123/"
-jenkins-cli cancel --build-url "https://jenkins.example.com/job/api-prod/184/"
-```
-
-With no target in interactive mode, `cancel` shows live running builds and
-supports selecting one, several, or all of them. You can also fall back to the
-existing cached job search. Explicit targets and non-interactive behavior are
-unchanged.
-
-### Pending Pipeline Inputs
-
-Discover, approve, or abort Pipeline `input` steps waiting on one exact build:
-
-```bash
-jenkins-cli input list --job deploy --build 128
-jenkins-cli input list --build-url "https://jenkins.example.com/job/deploy/128/" --json
-jenkins-cli input approve --job deploy --build 128 --id ReleaseProd
-jenkins-cli input abort --build-url "https://jenkins.example.com/job/deploy/128/" --id ReleaseProd --yes --json
-```
-
-`input list` shows the build identity plus each pending action's stable id,
-message, proceed caption, parameter requirements, and which approve/abort links
-Jenkins exposed. A build with no pending inputs returns a successful empty list;
-a build that cannot expose inputs (not a Pipeline run, or the Pipeline REST API
-and Pipeline Input Step plugins are missing) fails with
-`PIPELINE_INPUT_UNSUPPORTED` instead. Without `--build`/`--build-url`, the
-command targets the job's latest build.
-
-Approve and abort always confirm interactively, showing the build, the input
-message, and the requested action. Non-interactive runs, including `--json`,
-must pass `--yes`; `--non-interactive` or `--json` alone never submit. Only
-parameterless inputs can be approved from the CLI. A parameterized input fails
-with `INPUT_PARAMETERS_UNSUPPORTED` and a link to approve it in Jenkins, but
-aborting it still works. Read-only profiles block both mutations until
-`--confirm-protected` is passed; listing stays allowed.
-
-The action is re-read right before submission, and the CLI only uses the
-approve/abort URLs Jenkins returned after checking they stay under the build on
-the active controller. Success requires Jenkins to accept the POST. Stable
-error codes cover the other outcomes: `INPUT_ACTION_STALE` (settled by someone
-else), `INPUT_PERMISSION_DENIED`, `JENKINS_CRUMB_REJECTED`,
-`INPUT_SUBMISSION_REJECTED` (ambiguous rejection), `JENKINS_LOGIN_REDIRECT`,
-`INPUT_ACTION_NOT_FOUND`, `INPUT_ACTION_AMBIGUOUS`, `INPUT_NOT_PENDING`, and
-`INPUT_OUTCOME_UNKNOWN`. The last one means the POST was sent but no response
-arrived; the CLI re-reads pending inputs, never resubmits, and exits non-zero
-so you can inspect the build in Jenkins before acting again. An input that has
-merely disappeared is not treated as proof of your approval.
-
-The same discovery, confirmation, and safety rules apply to the `Pending inputs`
-action in the `list`, `build`, `status`, and `history` menus, including the bare
-`jenkins-cli` launcher. Cancelling a confirmation, a stale action, or a
-read-only-profile block returns you to the same build's menu.
-
-### Running Builds
-
-List live running builds and open one in the default browser:
-
-```bash
-jenkins-cli run
-jenkins-cli run --non-interactive
-```
-
-Interactive mode opens the selected build. Non-interactive mode prints every
-running build and its exact URL without launching a browser. If nothing is
-running, the command prints `OK: no running builds` and exits 0.
-
-### Queue
-
-Show the Jenkins build queue with humanized wait times and item state
-(blocked / stuck / buildable / waiting):
-
-```bash
-jenkins-cli queue
-jenkins-cli queue --job "api-prod"
-jenkins-cli queue --non-interactive
-```
-
-An empty queue prints `OK: queue is empty` and exits 0. When a single item is
-shown, the full `why` reason is printed below the table. In interactive mode you
-can select a queued item and:
-
-- Cancel the queued item (reuses the same logic as `cancel`)
-- Open the queue item URL
-
-Use `--non-interactive` to list only, which is handy for scripts.
-
-### Nodes
-
-Show Jenkins agents/executors with online/offline status, per-node executor
-usage, and labels:
-
-```bash
-jenkins-cli nodes
-jenkins-cli nodes --offline-only
-```
-
-The summary line reports total nodes, offline count, and busy/total executors,
-for example `OK: 12 nodes, 2 offline, 5/48 executors busy.`. Use
-`--offline-only` to show just the offline agents (useful for alerting scripts);
-the summary still reflects the whole fleet. This command is read-only.
-
-### Rerun Failed Builds
-
-Rerun from last failed build:
-
-```bash
-jenkins-cli rerun --job "api-prod"
-```
-
-Rerun one exact historical build with its original parameters:
-
-```bash
-jenkins-cli rerun --job "api-prod" --build 184
-jenkins-cli rerun --build-url "https://jenkins.example.com/job/api-prod/184/"
-```
-
-### Item Config and Creation
-
-Print a job or folder's raw config.xml to stdout:
-
-```bash
-jenkins-cli config --job "api-prod"
-jenkins-cli config --job-url "https://jenkins.example.com/job/team/job/api/" > config.xml
-```
-
-Create an item from a config.xml file, or by copying an existing job or
-folder. Exactly one of `--config` or `--copy-from` is required; `--copy-from`
-takes a job name (resolved like every other command) or a full job URL:
-
-```bash
-jenkins-cli create api-staging --config config.xml
-jenkins-cli create api-staging --copy-from "api-prod"
-jenkins-cli create api-staging --copy-from "api-prod" --folder-url "https://jenkins.example.com/job/team/" --json
-```
-
-**`create --json`** — `data` is a creation receipt:
-
-```json
-{
-  "ok": true,
-  "command": "create",
-  "data": {
-    "name": "api-staging",
-    "url": "https://jenkins.example.com/job/team/job/api-staging/",
-    "copiedFrom": "api-prod"
-  }
-}
-```
-
-Creation is a Jenkins write: read-only profiles block it unless
-`--confirm-protected` is passed.
-
-### Exact Build Selectors
-
-`status`, `wait`, `logs`, `changes`, `artifacts`, `cancel`, `rerun`, and the
-`input` commands share one exact build contract. Use `--build <positive-integer>` with exactly one of `--job` or
-`--job-url`, or use a complete numeric `--build-url` by itself. Exact selectors
-never fall back to a newer build. Direct job, build, and queue URLs must belong
-to the active Jenkins controller, including its configured context path.
-
-When no exact selector is supplied, existing defaults remain unchanged:
-`artifacts` uses the latest completed build, `rerun` uses the last failed build,
-and the other commands keep their documented latest/running behavior. Queue
-items remain separate targets until Jenkins assigns an executable build.
-
-## Update
-
-If installed with Homebrew, use:
-
-```bash
-brew upgrade jenkins-cli
-```
-
-`jenkins-cli update` is for standalone installs (for example via the install script).
-
-Update to the latest release (alias: `upgrade`):
-
-```bash
-jenkins-cli update
-jenkins-cli upgrade
-```
-
-Install a specific version:
-
-```bash
-jenkins-cli update vX.Y.Z
-```
-
-Check for updates without installing:
-
-```bash
-jenkins-cli update --check
-```
-
-Set the update channel:
-
-```bash
-jenkins-cli update --channel stable
-jenkins-cli update --channel prerelease
-```
-
-Auto-update checks (notify only):
-
-```bash
-jenkins-cli update --enable-auto
-jenkins-cli update --disable-auto
-```
-
-Auto-install updates:
-
-```bash
-jenkins-cli update --enable-auto-install
-jenkins-cli update --disable-auto-install
-```
-
-Auto-update defaults:
-
-- Notify-only checks are enabled by default.
-- Auto-install is disabled by default.
-- Update channel defaults to `stable`.
-- Stable channel only installs stable releases, even if a newer prerelease exists.
-- Prerelease channel installs whichever GitHub release is newest, using the release order from GitHub.
+`--json` disables prompts and writes one JSON document to stdout, with `ok`,
+`command`, and `data` on success or `ok: false` and `error` on failure. Log
+streaming uses `--jsonl` instead. Diagnostics go to stderr.
+
+For text output without prompts, pass `--non-interactive`. Pipeline input
+approval and abort also require `--yes` in non-interactive runs. `wait` exits
+with `0` on success, `1` on a non-success result, `124` on timeout, or `130` when
+interrupted.
+
+## Diagnostics and privacy
+
+Use `auth status` to diagnose credentials and `--debug` for API diagnostics.
+Local logs are stored in `~/.config/jenkins-cli/` as `error-YYYY-MM-DD.log` and
+`api-YYYY-MM-DD.log` and retained for seven days. Active API tokens are masked,
+but other error details can contain sensitive data. Review logs before sharing.
+
+No usage analytics or automatic error reports are sent. Update and minimum-version
+checks contact GitHub.
 
 ## Development
 
-### Dev Container
-
-For a no-local-setup workflow, open the repo in a devcontainer-capable editor
-such as VS Code, Cursor, or GitHub Codespaces and choose **Reopen in
-Container**. The container installs Bun and runs `bun install`
-automatically on first create.
-
-Once the container is ready, use the same Bun commands as local development:
-
-```bash
-bun run dev
-bun run test
-bun run build
-```
-
-### Local Development
-
-Install dependencies:
+Use [Bun](https://bun.sh), or open the repository in its dev container:
 
 ```bash
 bun install
-```
-
-Run the non-mutating verification command:
-
-```bash
+bun run dev
 bun run verify
-```
-
-It checks formatting, lint, types, unused code, the isolated Bun suite with
-coverage, and builds the local executable. It stops at the first failure.
-Reports and build output are generated, but tracked sources are not rewritten.
-Real Jenkins integration remains a separate command because it provisions a
-controller and takes longer.
-
-Run coverage separately:
-
-```bash
-bun run test:coverage
-```
-
-Bun prints line/function coverage and writes `coverage/lcov.info`. Test helpers
-and tooling scripts are excluded. This measures source exercised by the Bun
-test process, not code inside compiled CLI child processes. PR and post-merge
-Linux CI upload the report with test artifacts. No percentage threshold is
-enforced yet; inspect the report before choosing a baseline.
-
-Run lint:
-
-```bash
-bun run lint
-```
-
-Run the end-to-end suite against an ephemeral Jenkins LTS controller (Docker is
-required):
-
-```bash
 bun run test:integration:jenkins
 ```
 
-The command provisions a secured controller and test job on a random local
-port, tests the compiled CLI from authentication through artifact download,
-and removes the controller afterward. Set `JENKINS_TEST_IMAGE` to test against
-a different Jenkins image tag.
+`verify` checks formatting, lint, types, unused code, test coverage, and the build.
+The integration suite separately exercises the compiled CLI against disposable
+Jenkins. See [Testing](docs/testing.md) for prerequisites and focused suites.
 
-Linux integration also requires `strace`. Toxiproxy 2.12.0 is downloaded into
-the integration tool cache, copied into an owner-private temporary directory,
-SHA-256 verified again, and started on loopback. Linux
-and macOS run latency, reset, truncated-response and timeout scenarios against
-the compiled CLI. Build/create scenarios lose the response _after Jenkins
-commits_, then check request counts and server state for duplicate writes.
-The existing Windows acceptance remains separate; these fault scenarios and
-the load runner are currently Linux/macOS only.
-
-Run just network scenarios, including the Linux outbound-call inventory:
-
-```bash
-bun run test:network:jenkins
-bun run test:network:jenkins --mutation
-```
-
-Linux `strace` follows non-interactive CLI child processes and records socket
-destination IPs/ports, including failed connection attempts. Sanitized JSON
-reports live under `test-artifacts/jenkins-*/connections/`. No request bodies,
-headers, credentials, or full command arguments are recorded. Reports mark
-missing or malformed traces with `complete: false` and `auditError`;
-incomplete audits fail even in observation mode. The Jenkins-only
-tests fail on any destination other than their controller/proxy endpoints.
-They seed a current minimum-version
-policy cache with automatic updates disabled.
-
-A separate `mode: "observe"` report runs `nodes` with a fresh profile and records
-non-Jenkins destinations without failing on them. The application normally
-fetches `https://raw.githubusercontent.com/jatinbansal1998/jenkins-cli-ts/main/version-policy.json`
-when that cache is absent or stale. Review this inventory for other calls.
-Addresses alone do not prove which encrypted URL or library made a request.
-This is observation, not a firewall. Unconnected UDP, inherited sockets,
-interactive PTY sessions, the controller itself and tooling downloads are
-outside this audit. macOS/Windows do not get socket auditing.
-
-Run an opt-in load test on a newly provisioned disposable controller:
-
-```bash
-bun run test:load:jenkins
-JENKINS_LOAD_CONCURRENCY=8 JENKINS_LOAD_SECONDS=60 bun run test:load:jenkins
-```
-
-The runner seeds one synthetic build, audits serial probes, then runs concurrent
-compiled CLI processes sharing an isolated cache. It measures fresh and cached
-`list`, `status`, `history`, `queue`, and `nodes`, comparing every JSON response
-with its serial baseline. It checks the final cache and writes `load.json` with
-per-command p50/p95/p99, throughput, failures, binary digest and Docker controller
-CPU/memory samples plus each CLI process's CPU time and peak RSS. Serial setup
-and tracing are excluded from latency samples.
-Native macOS runs report resource sampling as unavailable.
-
-Defaults are four workers for 30 seconds, a 15-second process deadline, zero
-failed samples, and a 5-second p95 ceiling per command. Configure these with
-`JENKINS_LOAD_CONCURRENCY` (1–32), `JENKINS_LOAD_SECONDS` (1–600),
-`JENKINS_LOAD_TIMEOUT_MS` (100–120000), and `JENKINS_LOAD_P95_MS` (1–120000).
-The initial ceiling is a guardrail, not an established performance promise.
-Compare runs with the same workload and machine; this uses a small fixture,
-not a production-sized controller. Load traffic is read-only after seeding.
-
-The **Jenkins CLI load test** GitHub Actions workflow is manual-only and uploads
-the reports. PR/post-merge integration jobs upload the fault and connection
-reports automatically. Generated artifacts are gitignored.
-
-Run semantic mutation canaries against the Jenkins client unit tests:
-
-```bash
-bun run test:mutation
-```
-
-To inject the same protocol bugs into temporary copies of the CLI and require
-the real Jenkins flow to catch each one:
-
-```bash
-bun run test:mutation:jenkins
-```
-
-Apply fixes:
-
-```bash
-bun run lint:fix
-```
-
-Build and install the global CLI (symlinked):
-
-```bash
-bun run install:global
-```
-
-Update after changes:
-
-```bash
-bun run build
-```
-
-Commands print `OK:` on success.
-
-## Docs
-
-- Build flow walkthrough: `docs/flow/build-flow.md`
-- Prompt architecture and dependencies: `docs/flow/prompt-system.md`
-- Interactive state diagrams: `docs/tui-state-diagrams.md`
-
-## Notes
-
-- Job lists are cached in the OS cache directory and separated by Jenkins URL
-  (for example `jobs-<host>-<hash>.json`). A stale cache (over 24h) is
-  refreshed in the background; use `list --refresh` to refresh synchronously.
-  macOS: `~/Library/Caches/jenkins-cli/`, Linux:
-  `${XDG_CACHE_HOME:-~/.cache}/jenkins-cli/`, Windows:
-  `%LOCALAPPDATA%\jenkins-cli\`.
-- The first profile added becomes the default profile.
-- Legacy single-profile config is migrated automatically when profile data is read/written.
-- `deploy` is an alias for `build`.
-- `login` is a compatibility alias for `auth login`; new examples use
-  `auth login`.
-- `build`/`deploy` uses `buildWithParameters` when branch or custom parameters are
-  provided; otherwise it triggers Jenkins with no parameters.
-- CSRF crumb usage is disabled by default. Enable it with
-  `JENKINS_USE_CRUMB=true` or `useCrumb: true` in config when required by your Jenkins.
-- Use `--non-interactive` to disable prompts and fail fast.
-- `wait` exit codes: `0` success, `1` non-success, `124` timeout, `130`
-  interrupted.
+- [Build flow](docs/flow/build-flow.md)
+- [Prompt system](docs/flow/prompt-system.md)
+- [Interactive state diagrams](docs/tui-state-diagrams.md)
+- [Homebrew publishing](docs/homebrew.md)

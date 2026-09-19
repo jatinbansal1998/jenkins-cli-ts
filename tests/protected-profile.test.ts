@@ -346,7 +346,6 @@ describe("protected profile CLI output", () => {
   test("--json emits exactly one PROFILE_PROTECTED document and exits non-zero", () => {
     for (const args of [
       ["build", "--job-url", JOB_URL, "--json"],
-      ["deploy", "--job-url", JOB_URL, "--json"],
       ["cancel", "--build-url", `${JOB_URL}12/`, "--json"],
       ["rerun", "--job-url", JOB_URL, "--json"],
       ["input", "approve", "--build-url", `${JOB_URL}12/`, "--json", "--yes"],

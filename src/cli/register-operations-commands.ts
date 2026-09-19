@@ -1,12 +1,6 @@
 import type { Argv } from "yargs";
-import { CliError } from "../cli";
 import { runCancel } from "../commands/cancel";
 import { runNodes } from "../commands/nodes";
-import {
-  runProfileDelete,
-  runProfileList,
-  runProfileUse,
-} from "../commands/profile";
 import { runQueue } from "../commands/queue";
 import { runRerun } from "../commands/rerun";
 import { runRunningBuilds } from "../commands/run";
@@ -24,7 +18,7 @@ export function registerOperationsCommands(
   parser: Argv,
   dependencies: CommandRegistrationDependencies,
 ): Argv {
-  const { runCommand, runCommandWithContext } = dependencies;
+  const { runCommandWithContext } = dependencies;
 
   return parser
     .command(
@@ -131,62 +125,6 @@ export function registerOperationsCommands(
             json: Boolean(argv.json),
           });
         });
-      },
-    )
-    .command(
-      "profile <action> [name]",
-      "Manage Jenkins profiles",
-      (yargsInstance) =>
-        yargsInstance
-          .positional("action", {
-            type: "string",
-            describe: "Profile action",
-            choices: ["list", "use", "delete"],
-          })
-          .positional("name", {
-            type: "string",
-            describe: "Profile name (required for use/delete)",
-          }),
-      async (argv) => {
-        const action = optionalString(argv.action) ?? "";
-        const name = optionalString(argv.name);
-        await runCommand(
-          `profile:${action || "unknown"}`,
-          argv,
-          async ({ showIntro }) => {
-            switch (action) {
-              case "list":
-                await runProfileList();
-                return;
-              case "use":
-                if (!name) {
-                  throw new CliError(
-                    "Missing required <name> for profile use.",
-                    ["Run `jenkins-cli profile use <name>`."],
-                  );
-                }
-                await runProfileUse({ name });
-                return;
-              case "delete":
-                if (!name) {
-                  throw new CliError(
-                    "Missing required <name> for profile delete.",
-                    ["Run `jenkins-cli profile delete <name>`."],
-                  );
-                }
-                showIntro();
-                await runProfileDelete({
-                  name,
-                  nonInteractive: Boolean(argv.nonInteractive),
-                });
-                return;
-              default:
-                throw new CliError("Unknown profile action.", [
-                  "Use one of: list, use, delete.",
-                ]);
-            }
-          },
-        );
       },
     );
 }

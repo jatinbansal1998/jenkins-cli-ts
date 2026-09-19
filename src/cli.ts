@@ -4,6 +4,7 @@
  */
 import path from "node:path";
 import { logCliError } from "./logger";
+import { NATIVE_RELEASE_TARGETS } from "./release-targets";
 
 /** Structured error with optional hints for user guidance. */
 export class CliError extends Error {
@@ -24,6 +25,14 @@ export class CliError extends Error {
 }
 
 const DEFAULT_SCRIPT_NAME = "jenkins-cli";
+const PRODUCT_BINARY_NAMES = new Set([
+  DEFAULT_SCRIPT_NAME,
+  "index.ts",
+  "index.js",
+  ...NATIVE_RELEASE_TARGETS.map((target) =>
+    target.assetName.replace(/\.exe$/i, ""),
+  ),
+]);
 
 export function getScriptName(
   scriptPath: string | undefined = process.argv[1],
@@ -31,7 +40,8 @@ export function getScriptName(
   const rawScriptName = scriptPath
     ? path.basename(scriptPath)
     : DEFAULT_SCRIPT_NAME;
-  return rawScriptName === "index.ts" || rawScriptName === "index.js"
+  const withoutExe = rawScriptName.replace(/\.exe$/i, "");
+  return PRODUCT_BINARY_NAMES.has(withoutExe)
     ? DEFAULT_SCRIPT_NAME
     : rawScriptName;
 }

@@ -33,56 +33,6 @@ ensure_downloader() {
   exit 1
 }
 
-has_bun() {
-  command -v bun >/dev/null 2>&1
-}
-
-install_bun_bootstrap_tools() {
-  if command -v bash >/dev/null 2>&1 && command -v unzip >/dev/null 2>&1; then
-    return 0
-  fi
-
-  if command -v apk >/dev/null 2>&1 && [ "$(id -u 2>/dev/null || printf '1')" = "0" ]; then
-    print "Alpine detected. Installing bash and unzip so Bun can bootstrap..."
-    apk add --no-cache bash unzip
-    return $?
-  fi
-
-  return 1
-}
-
-ensure_bun() {
-  if has_bun; then
-    return 0
-  fi
-
-  print "Bun not found. Installing Bun for the legacy jenkins-cli fallback..."
-
-  if ! install_bun_bootstrap_tools; then
-    print "ERROR: Bun's installer requires bash and unzip."
-    print "HINT: On Alpine, run: apk add --no-cache bash unzip"
-    print "HINT: Or install Bun manually before running this script."
-    exit 1
-  fi
-
-  if command -v curl >/dev/null 2>&1; then
-    curl -fsSL https://bun.sh/install | bash
-  else
-    wget -qO- https://bun.sh/install | bash
-  fi
-
-  export BUN_INSTALL="${BUN_INSTALL:-$HOME/.bun}"
-  export PATH="$BUN_INSTALL/bin:$PATH"
-
-  if ! has_bun; then
-    print "ERROR: Bun was installed but is not available on PATH."
-    print "HINT: Open a new terminal or run: export PATH=\"$HOME/.bun/bin:\$PATH\""
-    exit 1
-  fi
-
-  print "Bun installed."
-}
-
 download_asset() {
   local url="$1"
   local out="$2"
@@ -149,8 +99,6 @@ ensure_downloader
 base_url="https://github.com/jatinbansal1998/jenkins-cli-ts/releases/latest/download"
 
 asset_name="$(detect_asset)"
-fallback_asset_name="jenkins-cli"
-used_fallback_asset=0
 
 tmp_dir="$(mktemp -d)"
 trap 'rm -rf "$tmp_dir"' EXIT
@@ -158,17 +106,9 @@ trap 'rm -rf "$tmp_dir"' EXIT
 tmp_file="$tmp_dir/jenkins-cli"
 url="$base_url/$asset_name"
 if ! download_asset "$url" "$tmp_file"; then
-  fallback_url="$base_url/$fallback_asset_name"
-  if download_asset "$fallback_url" "$tmp_file"; then
-    used_fallback_asset=1
-    print "HINT: Native binary $asset_name is not available in the latest release yet."
-    print "HINT: Falling back to the legacy jenkins-cli bundle."
-  else
-    print "ERROR: Failed to download Jenkins CLI from $url"
-    print "HINT: Also failed to download the legacy fallback from $fallback_url"
-    print "HINT: Download older versions manually from GitHub Releases."
-    exit 1
-  fi
+  print "ERROR: Failed to download Jenkins CLI from $url"
+  print "HINT: Download from GitHub Releases."
+  exit 1
 fi
 
 default_install_dir="$HOME/.local/bin"
@@ -181,10 +121,6 @@ print "Installed to $install_dir/jenkins-cli"
 installed_version="$("$install_dir/jenkins-cli" --version 2>/dev/null || true)"
 if [ -n "$installed_version" ]; then
   print "Installed jenkins-cli: $installed_version"
-fi
-if [ "$used_fallback_asset" -eq 1 ]; then
-  ensure_bun
-  print "HINT: Using the legacy jenkins-cli bundle until the native binary is published."
 fi
 
 case ":$PATH:" in

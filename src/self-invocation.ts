@@ -1,3 +1,7 @@
+export function isCompiledEntryPoint(script: string): boolean {
+  return script.startsWith("/$bunfs/") || script.includes("~BUN");
+}
+
 /**
  * Builds the command line to re-invoke this CLI. A compiled binary exposes its
  * embedded entry through Bun's virtual filesystem (/$bunfs on POSIX, B:\~BUN
@@ -6,9 +10,7 @@
  */
 export function selfInvocation(args: string[]): string[] {
   const script = process.argv[1];
-  const isCompiled =
-    !script || script.startsWith("/$bunfs/") || script.includes("~BUN");
-  if (isCompiled) {
+  if (!script || isCompiledEntryPoint(script)) {
     return [process.execPath, ...args];
   }
   return [process.execPath, script, ...args];

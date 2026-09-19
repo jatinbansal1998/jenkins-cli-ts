@@ -40,7 +40,6 @@ Users can install with `brew install jatinbansal1998/tap/jenkins-cli`.
 The release workflow (`.github/workflows/release.yml`) uploads native binaries,
 Homebrew tarballs, checksums, and the generated formula for each tagged release.
 
-- `jenkins-cli` (legacy bundle fallback for older update clients)
 - `jenkins-cli-<platform>.tar.gz`
 - `checksums.txt`
 - `homebrew-jenkins-cli.rb`

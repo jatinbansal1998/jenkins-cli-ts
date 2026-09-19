@@ -2877,17 +2877,13 @@ describe.skipIf(!integrationEnabled)(
       await withCliHome(async (home) => {
         const historyJobUrl = `${jenkinsUrl}/job/cli-history/`;
         for (let index = 0; index < 11; index++) {
-          await runCli(
-            home,
-            [
-              "build",
-              "--job-url",
-              historyJobUrl,
-              "--without-params",
-              "--watch",
-            ],
-            index === 0 ? { JENKINS_USE_CRUMB: "1" } : {},
-          );
+          await runCli(home, [
+            "build",
+            "--job-url",
+            historyJobUrl,
+            "--without-params",
+            "--watch",
+          ]);
         }
 
         const secondPage = await pollCli(
@@ -3195,13 +3191,15 @@ describe.skipIf(!integrationEnabled)(
           expect(await pendingIds(buildUrl)).toEqual(["ReleaseProd"]);
         }
 
-        // Approve with the crumb path enabled; the build then completes.
         const approved = parseJson(
-          await runCli(
-            home,
-            ["input", "approve", "--build-url", buildUrl, "--yes", "--json"],
-            { JENKINS_USE_CRUMB: "true" },
-          ),
+          await runCli(home, [
+            "input",
+            "approve",
+            "--build-url",
+            buildUrl,
+            "--yes",
+            "--json",
+          ]),
         );
         expect(approved).toMatchObject({
           ok: true,

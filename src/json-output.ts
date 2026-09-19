@@ -194,7 +194,6 @@ export type JsonUpdateCheck = {
   latestVersion: string;
   updateAvailable: boolean;
   channel: string;
-  installReason?: string;
   checkedAt: string;
 };
 

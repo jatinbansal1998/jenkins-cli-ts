@@ -11,9 +11,9 @@ const getPreferredUpdateCommandMock = mock(() => "jenkins-cli update");
 let updateState: Record<string, unknown> = {};
 
 const readUpdateStateMock = mock(async () => ({ ...updateState }));
-const writeUpdateStateMock = mock(
+const patchUpdateStateMock = mock(
   async (nextState: Record<string, unknown>) => {
-    updateState = { ...nextState };
+    updateState = { ...updateState, ...nextState };
   },
 );
 
@@ -37,14 +37,14 @@ beforeEach(() => {
   runUpdateMock.mockClear();
   getPreferredUpdateCommandMock.mockClear();
   readUpdateStateMock.mockClear();
-  writeUpdateStateMock.mockClear();
+  patchUpdateStateMock.mockClear();
   restoreMinimumVersionPolicyDeps = setMinimumVersionPolicyDepsForTesting({
     compareVersions,
     getPreferredUpdateCommand: getPreferredUpdateCommandMock,
     normalizeVersionTag,
     readUpdateState: readUpdateStateMock,
     runUpdate: runUpdateMock,
-    writeUpdateState: writeUpdateStateMock,
+    patchUpdateState: patchUpdateStateMock,
   });
 });
 
@@ -171,7 +171,7 @@ describe("minimum version policy", () => {
     await flushBackgroundTasks();
 
     expect(fetchMock).not.toHaveBeenCalled();
-    expect(writeUpdateStateMock).not.toHaveBeenCalled();
+    expect(patchUpdateStateMock).not.toHaveBeenCalled();
   });
 
   test("refresh stores latest valid policy", async () => {
@@ -224,7 +224,7 @@ describe("minimum version policy", () => {
     await flushBackgroundTasks();
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
-    expect(writeUpdateStateMock).not.toHaveBeenCalled();
+    expect(patchUpdateStateMock).not.toHaveBeenCalled();
     expect(updateState).toEqual(previousState);
   });
 });

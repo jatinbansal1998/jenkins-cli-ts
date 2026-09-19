@@ -28,6 +28,7 @@ type TimedRequestOptions = {
 };
 
 type GitHubReleaseRequestOptions = TimedRequestOptions & {
+  signal?: AbortSignal;
   currentVersion: string;
   channel?: "stable" | "prerelease";
 };
@@ -67,8 +68,10 @@ export async function fetchReleaseByTag(
 export async function downloadReleaseAsset(options: {
   assetUrl: string;
   currentVersion: string;
+  signal?: AbortSignal;
 }): Promise<Response> {
   const response = await fetch(options.assetUrl, {
+    signal: options.signal,
     headers: createGitHubHeaders({
       version: options.currentVersion,
     }),
@@ -142,7 +145,9 @@ async function fetchJson(
           Accept: "application/vnd.github+json",
         },
       }),
-      signal: controller.signal,
+      signal: options.signal
+        ? AbortSignal.any([options.signal, controller.signal])
+        : controller.signal,
     });
     if (!response.ok) {
       throw new CliError(

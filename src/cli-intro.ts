@@ -2,7 +2,6 @@ type CliIntroOptions = {
   showAsciiBanner: boolean;
   version?: string;
   target?: string;
-  pendingUpdateVersion?: string;
 };
 
 const ASCII_BANNER = [
@@ -37,13 +36,6 @@ export function formatCliIntro(options: CliIntroOptions): string {
   }
   if (metadata.length > 0) {
     lines.push(metadata.join(" | "));
-  }
-
-  const pendingUpdateVersion = normalizeVersionLabel(
-    options.pendingUpdateVersion,
-  );
-  if (pendingUpdateVersion) {
-    lines.push(`Update available: ${pendingUpdateVersion}`);
   }
 
   return lines.join("\n");
