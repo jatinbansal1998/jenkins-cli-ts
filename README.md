@@ -1305,6 +1305,18 @@ Install a specific version:
 jenkins-cli update vX.Y.Z
 ```
 
+Manual updates report each stage before waiting for the network:
+
+```text
+Current version: 0.8.16
+Checking for updates to latest version...
+Updating to 0.8.17...
+OK: Successfully updated from 0.8.16 to version 0.8.17 (bun-linux-x64).
+```
+
+Specific tags and prerelease channels are named in the check message. JSON update
+checks remain a single JSON response, and detached automatic updates remain silent.
+
 Check for updates without installing:
 
 ```bash

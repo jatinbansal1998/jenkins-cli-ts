@@ -78,6 +78,17 @@ export async function runUpdate(options: UpdateOptions): Promise<void> {
     }
 
     const updateChannel = resolveUpdateChannel(state);
+    const requestedVersion = options.tag?.trim();
+    console.log(`Current version: ${options.currentVersion}`);
+    if (requestedVersion) {
+      console.log(
+        `Checking for version ${normalizeVersionTag(requestedVersion)}...`,
+      );
+    } else if (updateChannel === "prerelease") {
+      console.log("Checking for updates on prerelease channel...");
+    } else {
+      console.log("Checking for updates to latest version...");
+    }
 
     if (options.check) {
       const latest = await fetchLatestRelease({
@@ -101,7 +112,6 @@ export async function runUpdate(options: UpdateOptions): Promise<void> {
       return;
     }
 
-    const requestedVersion = options.tag?.trim();
     const release = requestedVersion
       ? await fetchReleaseByTag(normalizeVersionTag(requestedVersion), {
           currentVersion: options.currentVersion,
@@ -137,6 +147,8 @@ export async function runUpdate(options: UpdateOptions): Promise<void> {
         ],
       );
     }
+    const targetVersion = release.tag_name.replace(/^v/, "");
+    console.log(`Updating to ${targetVersion}...`);
     await downloadAndInstall(
       assetUrl,
       targetPath,
@@ -146,8 +158,10 @@ export async function runUpdate(options: UpdateOptions): Promise<void> {
 
     await recordSuccessfulUpdate(release.tag_name);
     const installedBinaryDescription =
-      describeInstalledBinary(targetPath) ?? release.tag_name;
-    printOk(`Updated jenkins-cli: ${installedBinaryDescription}.`);
+      describeInstalledBinary(targetPath) ?? targetVersion;
+    printOk(
+      `Successfully updated from ${options.currentVersion} to version ${installedBinaryDescription}.`,
+    );
   } finally {
     cleanup();
     clearTimeout(exitDeadline);
