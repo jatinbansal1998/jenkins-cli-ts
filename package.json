@@ -1,6 +1,6 @@
 {
   "name": "jenkins-cli-ts",
-  "version": "0.8.16",
+  "version": "1.0.0-rc.1",
   "packageManager": "bun@1.4.2",
   "type": "module",
   "private": true,
