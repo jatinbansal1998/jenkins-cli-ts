@@ -151,6 +151,20 @@ describe("help --json", () => {
     expect(help?.json).toBe(true);
   }, 60_000);
 
+  test.each([
+    { args: ["--json", "help"] },
+    { args: ["--profile", "help", "--json", "help"] },
+    { args: ["--non-interactive", "--json", "help"] },
+  ])(
+    "accepts global options before help: %j",
+    ({ args }) => {
+      const result = runCli([...args]);
+      expect(result.exitCode).toBe(0);
+      expect(parseHelpCatalog(result.output).command).toBe("help");
+    },
+    60_000,
+  );
+
   test("help --full --json is the same catalog", () => {
     const plain = runCli(["help", "--json"]);
     const full = runCli(["help", "--full", "--json"]);

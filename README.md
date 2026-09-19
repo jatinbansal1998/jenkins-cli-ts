@@ -1318,8 +1318,10 @@ jenkins-cli update --channel stable
 jenkins-cli update --channel prerelease
 ```
 
-Standalone installs check GitHub in the background on a timer and install
-updates without blocking the command. Homebrew installs print a hint to run
+Standalone installs check GitHub at most once an hour during eligible commands.
+The release check has an 800 ms timeout. Available updates run silently in a
+detached `update <tag>` process, so a pending download does not hold the original
+command open. Homebrew installs print a hint to run
 `brew upgrade jenkins-cli`. Windows cannot replace a running binary in place,
 so it only prints a hint.
 

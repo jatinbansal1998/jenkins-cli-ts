@@ -1,20 +1,12 @@
 import type { Argv } from "yargs";
-import { CliError } from "../cli";
 import { runUpdate } from "../commands/update";
 import { optionalString } from "./options";
 import type { CommandRegistrationDependencies } from "./registration-types";
 
-type UpdateHelpRegistrationOptions = {
-  version: string;
-  printFullHelp: () => Promise<void>;
-  printJsonHelp: () => Promise<void>;
-  showRootHelp: () => void;
-};
-
 export function registerUpdateHelpCommands(
   parser: Argv,
   dependencies: CommandRegistrationDependencies,
-  options: UpdateHelpRegistrationOptions,
+  version: string,
 ): Argv {
   return parser
     .command(
@@ -24,7 +16,7 @@ export function registerUpdateHelpCommands(
       async (argv) => {
         await dependencies.runCommand("update", argv, async () => {
           await runUpdate({
-            currentVersion: options.version,
+            currentVersion: version,
             tag: optionalString(argv.tag),
             check: Boolean(argv.check),
             channel: optionalString(argv.channel),
@@ -43,20 +35,6 @@ export function registerUpdateHelpCommands(
           describe:
             "Print the complete option reference for every command in one output",
         }),
-      async (argv) => {
-        if (argv.jsonl) {
-          throw new CliError("'help' does not support --jsonl output.");
-        }
-        if (argv.json) {
-          await options.printJsonHelp();
-          return;
-        }
-        if (argv.full) {
-          await options.printFullHelp();
-          return;
-        }
-        options.showRootHelp();
-      },
     );
 }
 

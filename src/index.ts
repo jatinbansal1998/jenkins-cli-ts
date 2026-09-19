@@ -2,6 +2,7 @@
 /** CLI entry point for jenkins-cli. */
 import type { Argv } from "yargs";
 import yargs from "yargs/yargs";
+import parseArgs from "yargs-parser";
 import { hideBin } from "yargs/helpers";
 
 import { CliError, getScriptName, handleCliError } from "./cli";
@@ -13,6 +14,7 @@ import { printFullHelp, printJsonHelp } from "./cli/full-help";
 import { JSON_COMMANDS } from "./cli/json-commands";
 import { getRootHelpEpilog } from "./cli/help-epilog";
 import {
+  GLOBAL_OPTIONS,
   isJsonLinesOutputRequested,
   isJsonOutputRequested,
   optionalString,
@@ -66,16 +68,30 @@ declare const __COMPILED_ENTRYPOINT__: boolean | undefined;
 
 async function main(): Promise<void> {
   const rawArgs = hideBin(process.argv);
-  // yargs' built-in `help` command shadows a registered handler, so the
-  // aggregated reference is dispatched here before yargs parses.
-  if (rawArgs[0] === "help" && isJsonLinesOutputRequested(rawArgs)) {
+  // yargs treats a trailing positional "help" as --help before dispatching
+  // command handlers. Parse global option types before handling the catalog.
+  const helpRequest = parseArgs(rawArgs, {
+    boolean: [
+      ...Object.entries(GLOBAL_OPTIONS)
+        .filter(([, option]) => option.type === "boolean")
+        .map(([name]) => name),
+      "full",
+      "jsonl",
+      "help",
+      "h",
+      "version",
+      "v",
+    ],
+  });
+  const isHelpCommand = helpRequest._[0] === "help";
+  if (isHelpCommand && isJsonLinesOutputRequested(rawArgs)) {
     throw new CliError("'help' does not support --jsonl output.");
   }
-  if (rawArgs[0] === "help" && isJsonOutputRequested(rawArgs)) {
+  if (isHelpCommand && isJsonOutputRequested(rawArgs)) {
     await printJsonHelp(scriptName, VERSION);
     return;
   }
-  if (rawArgs[0] === "help" && rawArgs.includes("--full")) {
+  if (isHelpCommand && rawArgs.includes("--full")) {
     await printFullHelp(scriptName);
     return;
   }
@@ -91,54 +107,7 @@ async function main(): Promise<void> {
   let parser: Argv = yargs(rawArgs)
     .scriptName(scriptName)
     .usage("Usage: $0 [command] [options]")
-    .option("non-interactive", {
-      type: "boolean",
-      default: false,
-      describe: "Disable prompts and fail fast",
-    })
-    .option("banner", {
-      type: "boolean",
-      default: false,
-      describe: "Show the interactive ASCII intro banner",
-    })
-    .option("json", {
-      type: "boolean",
-      default: false,
-      describe:
-        "Output structured JSON when supported (implies non-interactive)",
-    })
-    .option("debug", {
-      type: "boolean",
-      describe:
-        "Log API requests and responses to api-<date>.log (kept for 7 days)",
-    })
-    .option("profile", {
-      type: "string",
-      describe: "Use credentials from a named profile in config",
-    })
-    .option("url", {
-      type: "string",
-      describe: "One-off Jenkins base URL override for this command",
-    })
-    .option("user", {
-      type: "string",
-      describe: "One-off Jenkins username override for this command",
-    })
-    .option("token", {
-      type: "string",
-      alias: "api-token",
-      describe: "One-off Jenkins API token override for this command",
-    })
-    .option("folder-depth", {
-      type: "number",
-      describe:
-        "Folder traversal depth for job discovery (default: 3, from config)",
-    })
-    .option("confirm-protected", {
-      type: "boolean",
-      describe:
-        "Allow builds, cancels, reruns, and input approvals on a read-only profile for this run",
-    })
+    .options(GLOBAL_OPTIONS)
     .middleware((argv) => {
       // Check if --debug or --no-debug was explicitly passed.
       const debugExplicitlyPassed = rawArgs.some(
@@ -157,12 +126,7 @@ async function main(): Promise<void> {
   parser = registerBuildCommands(parser, dependencies, rawArgs);
   parser = registerOperationsCommands(parser, dependencies);
   parser = registerInputCommands(parser, dependencies);
-  parser = registerUpdateHelpCommands(parser, dependencies, {
-    version: VERSION,
-    printFullHelp: () => printFullHelp(scriptName),
-    printJsonHelp: () => printJsonHelp(scriptName, VERSION),
-    showRootHelp: () => parser.showHelp("log"),
-  });
+  parser = registerUpdateHelpCommands(parser, dependencies, VERSION);
   parser = parser
     .version(
       "version",

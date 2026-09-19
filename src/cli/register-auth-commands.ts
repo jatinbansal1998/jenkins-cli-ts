@@ -9,10 +9,7 @@ import {
 import { runAuthStatus } from "../commands/auth-status";
 import { runLogin } from "../commands/login";
 import { addJsonOption, optionalString } from "./options";
-import type {
-  CommandRegistrationDependencies,
-  RunCommand,
-} from "./registration-types";
+import type { CommandRegistrationDependencies } from "./registration-types";
 
 export function registerAuthCommands(
   parser: Argv,
@@ -29,7 +26,24 @@ export function registerAuthCommands(
           "login",
           "Save Jenkins credentials",
           configureLoginOptions,
-          createLoginHandler(runCommand),
+          async (argv) => {
+            await runCommand("auth:login", argv, async ({ showIntro }) => {
+              showIntro();
+              await runLogin({
+                url: optionalString(argv.url),
+                user: optionalString(argv.user),
+                apiToken:
+                  optionalString(argv.token) ?? optionalString(argv.apiToken),
+                branchParam: optionalString(argv.branchParam),
+                profile: optionalString(argv.profile),
+                nonInteractive: Boolean(argv.nonInteractive),
+                noKeychain: argv.keychain === false,
+                ...(typeof argv.protected === "boolean"
+                  ? { protected: argv.protected }
+                  : {}),
+              });
+            });
+          },
         )
         .command(
           "status",
@@ -172,37 +186,4 @@ function configureLoginOptions(yargsInstance: Argv): Argv {
       describe:
         "Make the profile read-only: builds, cancels, and reruns then need --confirm-protected (use --no-protected to clear)",
     });
-}
-
-function createLoginHandler(runCommand: RunCommand) {
-  return async (argv: {
-    _?: unknown;
-    $0?: unknown;
-    url?: unknown;
-    user?: unknown;
-    token?: unknown;
-    apiToken?: unknown;
-    branchParam?: unknown;
-    profile?: unknown;
-    nonInteractive?: unknown;
-    keychain?: unknown;
-    protected?: unknown;
-    banner?: unknown;
-  }): Promise<void> => {
-    await runCommand("auth:login", argv, async ({ showIntro }) => {
-      showIntro();
-      await runLogin({
-        url: optionalString(argv.url),
-        user: optionalString(argv.user),
-        apiToken: optionalString(argv.token) ?? optionalString(argv.apiToken),
-        branchParam: optionalString(argv.branchParam),
-        profile: optionalString(argv.profile),
-        nonInteractive: Boolean(argv.nonInteractive),
-        noKeychain: argv.keychain === false,
-        ...(typeof argv.protected === "boolean"
-          ? { protected: argv.protected }
-          : {}),
-      });
-    });
-  };
 }

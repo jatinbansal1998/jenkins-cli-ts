@@ -1,5 +1,5 @@
 import { CliError } from "./cli";
-import { CLI_FLAGS, isUpdateCommandAlias } from "./cli-constants";
+import { CLI_FLAGS } from "./cli-constants";
 import { runUpdate } from "./commands/update";
 import { GITHUB_VERSION_POLICY_URL } from "./github-constants";
 import { fetchVersionPolicy } from "./github/api-wrapper";
@@ -204,7 +204,7 @@ function isUpdateCommand(rawArgs: string[]): boolean {
   const command = parsed._.find(
     (value): value is string => typeof value === "string",
   );
-  return typeof command === "string" && isUpdateCommandAlias(command);
+  return command === "update";
 }
 
 function isInteractive(rawArgs: string[]): boolean {

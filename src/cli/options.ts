@@ -1,5 +1,55 @@
-import type { Argv } from "yargs";
+import type { Argv, Options } from "yargs";
 import { CliError } from "../cli";
+
+export const GLOBAL_OPTIONS = {
+  "non-interactive": {
+    type: "boolean",
+    default: false,
+    describe: "Disable prompts and fail fast",
+  },
+  banner: {
+    type: "boolean",
+    default: false,
+    describe: "Show the interactive ASCII intro banner",
+  },
+  json: {
+    type: "boolean",
+    default: false,
+    describe: "Output structured JSON when supported (implies non-interactive)",
+  },
+  debug: {
+    type: "boolean",
+    describe:
+      "Log API requests and responses to api-<date>.log (kept for 7 days)",
+  },
+  profile: {
+    type: "string",
+    describe: "Use credentials from a named profile in config",
+  },
+  url: {
+    type: "string",
+    describe: "One-off Jenkins base URL override for this command",
+  },
+  user: {
+    type: "string",
+    describe: "One-off Jenkins username override for this command",
+  },
+  token: {
+    type: "string",
+    alias: "api-token",
+    describe: "One-off Jenkins API token override for this command",
+  },
+  "folder-depth": {
+    type: "number",
+    describe:
+      "Folder traversal depth for job discovery (default: 3, from config)",
+  },
+  "confirm-protected": {
+    type: "boolean",
+    describe:
+      "Allow builds, cancels, reruns, and input approvals on a read-only profile for this run",
+  },
+} satisfies Record<string, Options>;
 
 export function addJobOptions(yargsInstance: Argv): Argv {
   return yargsInstance

@@ -7,7 +7,6 @@ import {
   CLI_FLAGS,
   UPDATE_COMMAND_BREW,
   UPDATE_COMMAND_SELF,
-  isUpdateCommandAlias,
 } from "./cli-constants";
 import {
   isJsonLinesOutputRequested,
@@ -15,10 +14,10 @@ import {
 } from "./cli/options";
 import { CliError, printHint } from "./cli";
 import { CONFIG_DIR } from "./config";
+import { selfInvocation } from "./self-invocation";
 import {
   downloadReleaseAsset,
   fetchLatestRelease,
-  fetchReleaseByTag as fetchReleaseByTagFromGitHub,
   type GitHubReleaseInfo as ReleaseInfo,
 } from "./github/api-wrapper";
 import {
@@ -246,14 +245,6 @@ export function getPreferredUpdateCommand(): string {
     : UPDATE_COMMAND_SELF;
 }
 
-export async function fetchReleaseByTag(
-  tag: string,
-  options: { currentVersion: string; timeoutMs?: number },
-): Promise<ReleaseInfo> {
-  const normalized = normalizeVersionTag(tag);
-  return await fetchReleaseByTagFromGitHub(normalized, options);
-}
-
 export function resolveReleaseAsset(release: ReleaseInfo): string {
   const assetName = resolveAssetName();
   const platformAsset = release.assets.find((item) => item.name === assetName);
@@ -379,7 +370,7 @@ function shouldSkipAutoUpdate(rawArgs: string[]): boolean {
   if (rawArgs.some((arg) => skipFlags.has(arg))) {
     return true;
   }
-  return rawArgs.some((arg) => isUpdateCommandAlias(arg));
+  return rawArgs.includes("update");
 }
 
 export function kickOffAutoUpdate(
@@ -445,16 +436,15 @@ async function runAutoUpdate(currentVersion: string): Promise<void> {
     }
     if (process.platform !== "win32") {
       try {
-        const assetUrl = resolveReleaseAsset(release);
-        const targetPath = resolveExecutablePath();
-        await downloadAndInstall(assetUrl, targetPath, currentVersion);
-        const installedBinaryDescription =
-          describeInstalledBinary(targetPath) ?? release.tag_name;
-        printHint(`Auto-updated jenkins-cli: ${installedBinaryDescription}.`);
-        await writeUpdateState({
-          ...nextState,
-          lastNotifiedVersion: release.tag_name,
-        });
+        // Source checkouts cannot be replaced with a release binary.
+        resolveExecutablePath();
+        await writeUpdateState(nextState);
+        Bun.spawn({
+          cmd: selfInvocation(["update", release.tag_name]),
+          stdio: ["ignore", "ignore", "ignore"],
+          detached: true,
+          windowsHide: true,
+        }).unref();
       } catch {
         await writeUpdateState(nextState);
       }

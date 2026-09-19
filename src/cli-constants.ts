@@ -9,7 +9,3 @@ export const CLI_FLAGS = {
 
 export const UPDATE_COMMAND_SELF = "jenkins-cli update";
 export const UPDATE_COMMAND_BREW = "brew upgrade jenkins-cli";
-
-export function isUpdateCommandAlias(value: string): boolean {
-  return value === "update";
-}

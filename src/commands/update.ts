@@ -3,11 +3,10 @@
  */
 import { CliError, printHint, printOk } from "../cli";
 import { UPDATE_COMMAND_BREW } from "../cli-constants";
-import { fetchLatestRelease } from "../github/api-wrapper";
+import { fetchLatestRelease, fetchReleaseByTag } from "../github/api-wrapper";
 import {
   describeInstalledBinary,
   downloadAndInstall,
-  fetchReleaseByTag,
   getReleaseInstallDecision,
   getPreferredUpdateCommand,
   isHomebrewManagedPath,
@@ -58,23 +57,16 @@ export async function runUpdate(options: UpdateOptions): Promise<void> {
   }
 
   const state = await readUpdateState();
-  const nextState: UpdateState = { ...state };
   if (requestedChannel) {
-    nextState.updateChannel = requestedChannel;
-  }
-
-  const hasSettingsChange = requestedChannel !== undefined;
-
-  if (hasSettingsChange) {
-    await writeUpdateState(nextState);
+    state.updateChannel = requestedChannel;
+    await writeUpdateState(state);
     if (!options.check && !options.tag) {
-      printUpdatePreferences(nextState);
+      printUpdateChannel(state);
       return;
     }
   }
 
-  const effectiveState = hasSettingsChange ? nextState : state;
-  const updateChannel = resolveUpdateChannel(effectiveState);
+  const updateChannel = resolveUpdateChannel(state);
 
   if (options.check) {
     const latest = await fetchLatestRelease({
@@ -87,7 +79,7 @@ export async function runUpdate(options: UpdateOptions): Promise<void> {
       currentVersion: options.currentVersion,
     });
     const checkedState: UpdateState = {
-      ...effectiveState,
+      ...state,
       lastCheckedAt: nowIso,
     };
     await writeUpdateState(checkedState);
@@ -97,7 +89,7 @@ export async function runUpdate(options: UpdateOptions): Promise<void> {
       printOk(`Latest version is ${latest.tag_name}.`);
       printHint(`Run \`${preferredUpdateCommand}\` to install it.`);
     }
-    printUpdatePreferences(effectiveState);
+    printUpdateChannel(state);
     return;
   }
 
@@ -187,7 +179,7 @@ async function runUpdateCheckJson(
   };
 }
 
-function printUpdatePreferences(state: UpdateState): void {
+function printUpdateChannel(state: UpdateState): void {
   printOk(`Update channel: ${resolveUpdateChannel(state)}.`);
 }
 
