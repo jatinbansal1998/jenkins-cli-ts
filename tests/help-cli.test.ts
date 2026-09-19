@@ -1,5 +1,32 @@
 import { describe, expect, test } from "bun:test";
+import { FULL_HELP_COMMANDS } from "../src/cli/full-help";
+import {
+  commandPathSupportsJson,
+  commandPathSupportsJsonl,
+} from "../src/cli/json-commands";
+import packageJson from "../package.json";
 import { runCli } from "./helpers.cli";
+
+type HelpCatalogDocument = {
+  ok: boolean;
+  command: string;
+  data: {
+    version: string;
+    commands: Array<{
+      path: string[];
+      invocation: string;
+      json: boolean;
+      jsonl: boolean;
+      help: string;
+    }>;
+  };
+};
+
+function parseHelpCatalog(output: string): HelpCatalogDocument {
+  const line = output.split("\n").find((entry) => entry.startsWith('{"ok":'));
+  expect(line).toBeDefined();
+  return JSON.parse(line as string) as HelpCatalogDocument;
+}
 
 /**
  * Tests for the agent-friendly help surface: the enriched root help epilog
@@ -83,6 +110,71 @@ describe("root help for agents", () => {
   });
 });
 
+describe("help --json", () => {
+  test("emits one catalog document covering every command", () => {
+    const result = runCli(["help", "--json"]);
+
+    expect(result.exitCode).toBe(0);
+    const document = parseHelpCatalog(result.output);
+    expect(document).toMatchObject({
+      ok: true,
+      command: "help",
+      data: { version: packageJson.version },
+    });
+    expect(document.data.commands.map((entry) => entry.path)).toEqual(
+      FULL_HELP_COMMANDS,
+    );
+    for (const entry of document.data.commands) {
+      expect(entry.invocation).toBe(
+        ["jenkins-cli", ...entry.path, "--help"].join(" "),
+      );
+      expect(entry.json).toBe(commandPathSupportsJson(entry.path));
+      expect(entry.jsonl).toBe(commandPathSupportsJsonl(entry.path));
+      expect(entry.help.length).toBeGreaterThan(0);
+    }
+    const list = document.data.commands.find(
+      (entry) => entry.path.length === 1 && entry.path[0] === "list",
+    );
+    const logs = document.data.commands.find(
+      (entry) => entry.path.length === 1 && entry.path[0] === "logs",
+    );
+    const login = document.data.commands.find(
+      (entry) => entry.path.length === 2 && entry.path[1] === "login",
+    );
+    const help = document.data.commands.find(
+      (entry) => entry.path.length === 1 && entry.path[0] === "help",
+    );
+    expect(list?.json).toBe(true);
+    expect(logs?.jsonl).toBe(true);
+    expect(logs?.json).toBe(false);
+    expect(login?.json).toBe(false);
+    expect(help?.json).toBe(true);
+  }, 60_000);
+
+  test("help --full --json is the same catalog", () => {
+    const plain = runCli(["help", "--json"]);
+    const full = runCli(["help", "--full", "--json"]);
+    expect(plain.exitCode).toBe(0);
+    expect(full.exitCode).toBe(0);
+    const plainDoc = parseHelpCatalog(plain.output);
+    const fullDoc = parseHelpCatalog(full.output);
+    expect(fullDoc.data.version).toBe(plainDoc.data.version);
+    expect(fullDoc.data.commands.map((entry) => entry.path)).toEqual(
+      plainDoc.data.commands.map((entry) => entry.path),
+    );
+    expect(
+      fullDoc.data.commands.map((entry) => [entry.json, entry.jsonl]),
+    ).toEqual(plainDoc.data.commands.map((entry) => [entry.json, entry.jsonl]));
+  }, 60_000);
+
+  test("help --jsonl stays unsupported", () => {
+    const result = runCli(["help", "--jsonl"]);
+    expect(result.exitCode).toBe(1);
+    expect(result.output).toStartWith('{"type":"error","error":');
+    expect(result.output).toContain("does not support --jsonl");
+  });
+});
+
 describe("help --full", () => {
   test("aggregates every command's help into one document", () => {
     const result = runCli(["help", "--full"]);
@@ -102,6 +194,6 @@ describe("help --full", () => {
     expect(result.output).toContain("Delete every stored profile"); // logout --all
     expect(result.output).toContain("--without-params"); // build
     expect(result.output).toContain("--offline-only"); // nodes
-    expect(result.output).toContain("--enable-auto-install"); // update
+    expect(result.output).toContain("--channel"); // update
   }, 60_000);
 });

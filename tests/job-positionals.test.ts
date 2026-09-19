@@ -9,10 +9,8 @@ import { runCli } from "./helpers.cli";
 const jobCommands = [
   "params",
   "build",
-  "deploy",
   "status",
   "history",
-  "builds",
   "wait",
   "logs",
   "artifacts",

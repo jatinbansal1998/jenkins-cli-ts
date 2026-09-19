@@ -155,7 +155,7 @@ export async function resolveAuthCredentials(
         problem: "unknown-profile",
         problemMessage: `Profile "${requestedProfile}" is not configured.`,
         problemHints: [
-          "Run `jenkins-cli profile list` to see configured profiles.",
+          "Run `jenkins-cli auth list` to see configured profiles.",
           `Run \`jenkins-cli auth login --profile ${requestedProfile}\` to create it.`,
         ],
       };

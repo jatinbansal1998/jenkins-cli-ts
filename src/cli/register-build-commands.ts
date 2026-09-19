@@ -36,8 +36,8 @@ export function registerBuildCommands(
 
   return parser
     .command(
-      ["build [job-name]", "deploy [job-name]"],
-      "Trigger a Jenkins build (alias: deploy)",
+      "build [job-name]",
+      "Trigger a Jenkins build",
       configureBuildOptions,
       async (argv) => {
         await runCommandWithContext("build", argv, async ({ env, client }) => {
@@ -92,7 +92,7 @@ export function registerBuildCommands(
       },
     )
     .command(
-      ["history [job-name]", "builds [job-name]"],
+      "history [job-name]",
       "Show paginated build history for a job",
       (yargsInstance) =>
         addJsonOption(

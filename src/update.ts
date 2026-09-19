@@ -21,16 +21,11 @@ import {
   fetchReleaseByTag as fetchReleaseByTagFromGitHub,
   type GitHubReleaseInfo as ReleaseInfo,
 } from "./github/api-wrapper";
-import { BUILD_TARGET } from "./build-target";
 import {
-  isLegacyBundleBuildTarget,
   isSupportedRuntimeArch,
   isSupportedRuntimePlatform,
-  LEGACY_BUNDLE_ASSET_NAME,
   resolveNativeReleaseTarget,
 } from "./release-targets";
-
-export { isLegacyBundleBuildTarget } from "./release-targets";
 
 export function parseLddProbeOutput(text: string): boolean | null {
   const normalized = text.trim().toLowerCase();
@@ -94,42 +89,6 @@ function detectMusl(): boolean | null {
   } catch {}
 
   return null;
-}
-
-type UpdateRuntimeDeps = {
-  isBunAvailable: () => boolean;
-};
-
-function detectBunAvailable(): boolean {
-  try {
-    const proc = Bun.spawnSync({
-      cmd: ["bun", "--version"],
-      stdout: "pipe",
-      stderr: "pipe",
-    });
-    return proc.success;
-  } catch {
-    return false;
-  }
-}
-
-const defaultUpdateRuntimeDeps: UpdateRuntimeDeps = {
-  isBunAvailable: detectBunAvailable,
-};
-
-let updateRuntimeDeps = defaultUpdateRuntimeDeps;
-
-export function setUpdateRuntimeDepsForTesting(
-  overrides: Partial<UpdateRuntimeDeps>,
-): () => void {
-  updateRuntimeDeps = { ...defaultUpdateRuntimeDeps, ...overrides };
-  return () => {
-    updateRuntimeDeps = defaultUpdateRuntimeDeps;
-  };
-}
-
-function isBunAvailable(): boolean {
-  return updateRuntimeDeps.isBunAvailable();
 }
 
 export function resolveAssetName(): string {
@@ -346,12 +305,11 @@ export async function fetchReleaseByTag(
 
 type ResolvedReleaseAsset = {
   url: string;
-  isLegacyBundle: boolean;
 };
 
 type ReleaseInstallDecision = {
   shouldInstall: boolean;
-  reason: "newer-version" | "native-binary-migration" | "up-to-date";
+  reason: "newer-version" | "up-to-date";
 };
 
 export function resolveReleaseAsset(
@@ -360,26 +318,13 @@ export function resolveReleaseAsset(
   const assetName = resolveAssetName();
   const platformAsset = release.assets.find((item) => item.name === assetName);
   if (platformAsset) {
-    return {
-      url: platformAsset.browser_download_url,
-      isLegacyBundle: false,
-    };
-  }
-
-  const legacyAsset = release.assets.find(
-    (item) => item.name === LEGACY_BUNDLE_ASSET_NAME,
-  );
-  if (legacyAsset && isBunAvailable()) {
-    return {
-      url: legacyAsset.browser_download_url,
-      isLegacyBundle: true,
-    };
+    return { url: platformAsset.browser_download_url };
   }
 
   throw new CliError(
     `Release asset "${assetName}" not found for ${release.tag_name}.`,
     [
-      "Ensure the GitHub release includes either a platform-specific binary or the generic jenkins-cli bundle.",
+      "Ensure the GitHub release includes a platform-specific binary.",
       `Expected asset name: ${assetName}`,
     ],
   );
@@ -388,8 +333,6 @@ export function resolveReleaseAsset(
 export function getReleaseInstallDecision(options: {
   release: ReleaseInfo;
   currentVersion: string;
-  currentBuildTarget: string;
-  allowNativeBinaryMigration?: boolean;
 }): ReleaseInstallDecision {
   const comparison = compareVersions(
     options.release.tag_name,
@@ -401,30 +344,6 @@ export function getReleaseInstallDecision(options: {
       reason: "newer-version",
     };
   }
-  if (comparison < 0) {
-    return {
-      shouldInstall: false,
-      reason: "up-to-date",
-    };
-  }
-
-  if (
-    options.allowNativeBinaryMigration !== false &&
-    isLegacyBundleBuildTarget(options.currentBuildTarget)
-  ) {
-    try {
-      const asset = resolveReleaseAsset(options.release);
-      if (!asset.isLegacyBundle) {
-        return {
-          shouldInstall: true,
-          reason: "native-binary-migration",
-        };
-      }
-    } catch {
-      // Missing or incompatible native assets do not require a reinstall.
-    }
-  }
-
   return {
     shouldInstall: false,
     reason: "up-to-date",
@@ -532,13 +451,6 @@ function shouldSkipAutoUpdate(rawArgs: string[]): boolean {
   return rawArgs.some((arg) => isUpdateCommandAlias(arg));
 }
 
-export function shouldPromptForDeferredUpdate(rawArgs: string[]): boolean {
-  if (!process.stdin.isTTY || !process.stdout.isTTY) {
-    return false;
-  }
-  return !shouldSkipAutoUpdate(rawArgs);
-}
-
 export function kickOffAutoUpdate(
   currentVersion: string,
   rawArgs: string[],
@@ -552,11 +464,6 @@ export function kickOffAutoUpdate(
 async function runAutoUpdate(currentVersion: string): Promise<void> {
   try {
     const state = await readUpdateState();
-    const autoUpdateEnabled = state.autoUpdate !== false;
-    const autoInstallEnabled = state.autoInstall === true;
-    if (!autoUpdateEnabled) {
-      return;
-    }
     const lastChecked = state.lastCheckedAt
       ? Date.parse(state.lastCheckedAt)
       : NaN;
@@ -583,8 +490,6 @@ async function runAutoUpdate(currentVersion: string): Promise<void> {
     const installDecision = getReleaseInstallDecision({
       release,
       currentVersion,
-      currentBuildTarget: BUILD_TARGET,
-      allowNativeBinaryMigration: !homebrewManaged,
     });
     if (!installDecision.shouldInstall) {
       await writeUpdateState(clearPendingUpdateState(nextState));
@@ -601,9 +506,7 @@ async function runAutoUpdate(currentVersion: string): Promise<void> {
     }
     if (homebrewManaged) {
       printHint(
-        installDecision.reason === "native-binary-migration"
-          ? `A native binary is available for ${release.tag_name}. Run \`${updateCommand}\`.`
-          : `New version available: ${release.tag_name}. Run \`${updateCommand}\`.`,
+        `New version available: ${release.tag_name}. Run \`${updateCommand}\`.`,
       );
       await writeUpdateState({
         ...pendingState,
@@ -611,7 +514,7 @@ async function runAutoUpdate(currentVersion: string): Promise<void> {
       });
       return;
     }
-    if (autoInstallEnabled && process.platform !== "win32") {
+    if (process.platform !== "win32") {
       try {
         const asset = resolveReleaseAsset(release);
         const targetPath = resolveExecutablePath();
@@ -619,17 +522,6 @@ async function runAutoUpdate(currentVersion: string): Promise<void> {
         const installedBinaryDescription =
           describeInstalledBinary(targetPath) ?? release.tag_name;
         printHint(`Auto-updated jenkins-cli: ${installedBinaryDescription}.`);
-        if (installDecision.reason === "native-binary-migration") {
-          printHint(
-            "Replaced the generic bundle with the native binary for this platform.",
-          );
-        }
-        if (asset.isLegacyBundle) {
-          printHint(
-            "Native binary not available for this platform/version. Installed the generic jenkins-cli bundle instead.",
-          );
-          printHint("Bun must be installed on this machine to run this CLI.");
-        }
         await writeUpdateState({
           ...clearPendingUpdateState(pendingState),
           lastNotifiedVersion: release.tag_name,
@@ -641,9 +533,7 @@ async function runAutoUpdate(currentVersion: string): Promise<void> {
     }
 
     printHint(
-      installDecision.reason === "native-binary-migration"
-        ? `A native binary is available for ${release.tag_name}. Run \`${updateCommand}\`.`
-        : `New version available: ${release.tag_name}. Run \`${updateCommand}\`.`,
+      `New version available: ${release.tag_name}. Run \`${updateCommand}\`.`,
     );
 
     await writeUpdateState({

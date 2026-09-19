@@ -111,13 +111,13 @@ describe("auth profile management CLI", () => {
     }
   });
 
-  test("root help documents auth profile management and compatibility commands", () => {
+  test("root help documents auth profile management", () => {
     const result = runCli(makeHome(), ["--help"]);
 
     expect(result.exitCode).toBe(0);
     expect(result.output).toContain("auth profile management:");
     expect(result.output).toContain("auth logout --all");
-    expect(result.output).toContain("profile (compatibility):");
+    expect(result.output).not.toContain("profile (compatibility):");
   });
 
   test("auth list prints profiles with default marker and storage type", () => {
@@ -139,27 +139,13 @@ describe("auth profile management CLI", () => {
     expect(result.output).toContain("OK: No profiles configured.");
   });
 
-  test("profile list renders the same rows as auth list", () => {
-    const home = makeHome(TWO_PROFILE_CONFIG);
-    const canonical = runCli(home, ["auth", "list"]);
-    const compat = runCli(home, ["profile", "list"]);
-
-    expect(compat.exitCode).toBe(0);
-    expect(compat.output).toBe(canonical.output);
-  });
-
-  test("auth use switches the default profile and profile use matches", () => {
+  test("auth use switches the default profile", () => {
     const home = makeHome(TWO_PROFILE_CONFIG);
     const result = runCli(home, ["auth", "use", "home"]);
 
     expect(result.exitCode).toBe(0);
     expect(result.output).toContain('OK: Default profile set to "home".');
     expect(readHomeConfig(home).defaultProfile).toBe("home");
-
-    const compat = runCli(home, ["profile", "use", "work"]);
-    expect(compat.exitCode).toBe(0);
-    expect(compat.output).toContain('OK: Default profile set to "work".');
-    expect(readHomeConfig(home).defaultProfile).toBe("work");
   });
 
   test("auth use rejects an unknown profile with available names", () => {
@@ -300,17 +286,18 @@ describe("auth profile management CLI", () => {
     expect(result.output).toContain('ERROR: Profile "home" already exists.');
   });
 
-  test("profile delete routes through the strict deletion operation", () => {
+  test("auth logout --profile deletes the named profile", () => {
     const home = makeHome(TWO_PROFILE_CONFIG);
     const result = runCli(home, [
-      "profile",
-      "delete",
+      "auth",
+      "logout",
+      "--profile",
       "home",
       "--non-interactive",
     ]);
 
     expect(result.exitCode).toBe(0);
-    expect(result.output).toContain('OK: Deleted profile "home".');
+    expect(result.output).toContain('OK: Logged out profile "home".');
     expect(result.output).toContain('OK: Default profile is "work".');
 
     const config = readHomeConfig(home);

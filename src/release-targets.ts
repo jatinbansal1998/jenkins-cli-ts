@@ -11,9 +11,6 @@ type NativeReleaseTarget = {
   homebrewTarballName?: string;
 };
 
-export const LEGACY_BUNDLE_ASSET_NAME = "jenkins-cli";
-export const LEGACY_BUNDLE_BUILD_TARGET = "bun-bundle";
-
 export const NATIVE_RELEASE_TARGETS: NativeReleaseTarget[] = [
   {
     compileTarget: "bun-linux-x64",
@@ -114,8 +111,4 @@ export function resolveNativeReleaseTarget(options: {
         target.libc === undefined,
     ) ?? null
   );
-}
-
-export function isLegacyBundleBuildTarget(buildTarget: string): boolean {
-  return buildTarget.trim().toLowerCase() === LEGACY_BUNDLE_BUILD_TARGET;
 }

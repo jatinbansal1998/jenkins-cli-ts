@@ -1,6 +1,6 @@
 /**
- * Shared profile management operations behind the `auth` command group and the
- * compatibility `profile` commands. Command handlers own argument parsing,
+ * Shared profile management operations behind the `auth` command group.
+ * Command handlers own argument parsing,
  * confirmation prompts and text output; this module owns config
  * validation, secure-store changes, default-profile selection, rollback, and
  * result data.

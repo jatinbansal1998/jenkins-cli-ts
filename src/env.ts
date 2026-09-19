@@ -321,7 +321,7 @@ function findProtectedProfileNameForUrl(
 }
 
 function parseUseCrumb(value: string | boolean | undefined): boolean {
-  return parseBooleanFlag(value) ?? false;
+  return parseBooleanFlag(value) ?? true;
 }
 
 function resolveBranchParamDefault(profileBranchParam?: string): string {
@@ -341,7 +341,7 @@ function missingProfileError(
   requestedProfileName: string,
   availableProfiles: string[],
 ): CliError {
-  const hints: string[] = ["Run `jenkins-cli profile list` to view profiles."];
+  const hints: string[] = ["Run `jenkins-cli auth list` to view profiles."];
   if (availableProfiles.length > 0) {
     hints.push(`Available profiles: ${availableProfiles.join(", ")}.`);
   } else {

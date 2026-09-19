@@ -91,14 +91,10 @@ JENKINS_CLI_INSTALL_DIR="$HOME/.local/bin" wget -qO- https://raw.githubuserconte
 </details>
 
 <details>
-<summary>Older versions, Alpine, and maintainer notes</summary>
+<summary>Older versions and maintainer notes</summary>
 
 Older versions are not installed through the script. If you need an older
 release, download it manually from GitHub Releases.
-
-On minimal Alpine images, if the installer falls back to the legacy Bun bundle
-before a native musl binary is available, it may need `bash` and `unzip` to
-bootstrap Bun. The script will try `apk add --no-cache bash unzip` when it can.
 
 Maintainers: see `docs/homebrew.md` for tap publishing steps.
 
@@ -159,7 +155,7 @@ jenkins-cli build --job "api-prod" --branch main --profile work
       "jenkinsUser": "your-username",
       "jenkinsApiToken": "your-token",
       "branchParam": "BRANCH",
-      "useCrumb": false
+      "useCrumb": true
     }
   },
   "debug": false
@@ -173,9 +169,6 @@ jenkins-cli auth login
 jenkins-cli auth login --profile work
 jenkins-cli auth login --profile prod --url https://jenkins-prod.example.com --user ci --token <token>
 ```
-
-`jenkins-cli login` remains supported as a compatibility alias for
-`jenkins-cli auth login`.
 
 Interactive login offers to open the browser twice:
 
@@ -234,7 +227,7 @@ Behavior notes:
 - **Existing profiles:** plaintext profiles keep working unchanged. A profile
   is migrated automatically once a secure store is available and the token can
   be written and read back successfully.
-- **`auth logout` / `profile delete`** remove the matching keychain entry with
+- **`auth logout`** removes the matching keychain entry with
   strict semantics: the secure-store entry is deleted and verified absent
   before the config is updated, and a failed config write restores the entry.
 
@@ -282,15 +275,6 @@ jenkins-cli auth logout --all         # delete every stored profile
   revoked at the Jenkins controller — Jenkins exposes no general token
   revocation operation to these credentials. To revoke the token, delete it
   from your Jenkins user configuration page.
-
-The original `profile` commands remain supported and route through the same
-operations:
-
-```bash
-jenkins-cli profile list
-jenkins-cli profile use prod
-jenkins-cli profile delete work
-```
 
 ### Read-Only Profiles
 
@@ -398,7 +382,7 @@ Single-account fallback only:
 - `JENKINS_URL` (e.g., `https://jenkins.example.com`)
 - `JENKINS_USER`
 - `JENKINS_API_TOKEN`
-- Optional: `JENKINS_USE_CRUMB` (`true` to enable; default: disabled)
+- Optional: `JENKINS_USE_CRUMB` (`false` to disable CSRF crumbs; default: enabled)
 
 ### Privacy and local error logs
 
@@ -444,17 +428,18 @@ Automation-relevant read and mutation commands accept `--json`:
 - `build --json --watch` waits and returns the final result in the same
   one-document receipt. Other streaming output uses `logs --jsonl`.
 
-| Command                                                           | Structured mode | `data` summary                                            |
-| ----------------------------------------------------------------- | --------------- | --------------------------------------------------------- |
-| `list`, `params`, `status`, `history`, `wait`, `tests`, `changes` | `--json`        | Existing compatible read contracts and test summaries     |
-| `queue`, `nodes`, `run`, `artifacts`                              | `--json`        | Normalized collections; empty results are `[]`            |
-| `auth status`, `auth list`, `auth current`                        | `--json`        | Credential diagnostics without tokens                     |
-| `update --check`                                                  | `--json`        | Current/latest version and update decision                |
-| `build`, `cancel`, `rerun`                                        | `--json`        | Canonical queue/build/source/target receipts              |
-| `input list`                                                      | `--json`        | Exact build identity plus pending actions (`[]` if none)  |
-| `input approve`, `input abort` (with `--yes`)                     | `--json`        | Receipt with a confirmed `approved`/`aborted` disposition |
-| `create`                                                          | `--json`        | Creation receipt: `name`, `url`, optional `copiedFrom`    |
-| `logs`                                                            | `--jsonl`       | Ordered `start`, `chunk`, `complete`, or `error` events   |
+| Command                                                           | Structured mode | `data` summary                                             |
+| ----------------------------------------------------------------- | --------------- | ---------------------------------------------------------- |
+| `list`, `params`, `status`, `history`, `wait`, `tests`, `changes` | `--json`        | Existing compatible read contracts and test summaries      |
+| `queue`, `nodes`, `run`, `artifacts`                              | `--json`        | Normalized collections; empty results are `[]`             |
+| `auth status`, `auth list`, `auth current`                        | `--json`        | Credential diagnostics without tokens                      |
+| `update --check`                                                  | `--json`        | Current/latest version and update decision                 |
+| `build`, `cancel`, `rerun`                                        | `--json`        | Canonical queue/build/source/target receipts               |
+| `input list`                                                      | `--json`        | Exact build identity plus pending actions (`[]` if none)   |
+| `input approve`, `input abort` (with `--yes`)                     | `--json`        | Receipt with a confirmed `approved`/`aborted` disposition  |
+| `create`                                                          | `--json`        | Creation receipt: `name`, `url`, optional `copiedFrom`     |
+| `logs`                                                            | `--jsonl`       | Ordered `start`, `chunk`, `complete`, or `error` events    |
+| `help`                                                            | `--json`        | Command catalog: path, json/jsonl flags, and `--help` text |
 
 Commands without a structured contract still recognize `--json` and return a
 clear unsupported-output error instead of treating the flag as unknown.
@@ -621,7 +606,7 @@ jenkins-cli status --json --job-url https://jenkins.example.com/job/api/
 state. It is independent of the latest build's `result` and is also returned
 when `build` is `null`.
 
-**`history` / `builds`** — `data` is an array of builds (most recent first):
+**`history`** — `data` is an array of builds (most recent first):
 
 ```bash
 jenkins-cli history --json --job-url https://jenkins.example.com/job/api/
@@ -960,7 +945,6 @@ Show recent build history in a Jenkins-style table:
 
 ```bash
 jenkins-cli history --job "api-prod"
-jenkins-cli builds --job "api-prod"
 jenkins-cli history --job "api-prod" --offset 5
 ```
 
@@ -1309,11 +1293,10 @@ brew upgrade jenkins-cli
 
 `jenkins-cli update` is for standalone installs (for example via the install script).
 
-Update to the latest release (alias: `upgrade`):
+Update to the latest release:
 
 ```bash
 jenkins-cli update
-jenkins-cli upgrade
 ```
 
 Install a specific version:
@@ -1335,24 +1318,11 @@ jenkins-cli update --channel stable
 jenkins-cli update --channel prerelease
 ```
 
-Auto-update checks (notify only):
+Standalone installs check GitHub in the background on a timer and install
+updates without blocking the command. Homebrew installs print a hint to run
+`brew upgrade jenkins-cli`. Windows cannot replace a running binary in place,
+so it only prints a hint.
 
-```bash
-jenkins-cli update --enable-auto
-jenkins-cli update --disable-auto
-```
-
-Auto-install updates:
-
-```bash
-jenkins-cli update --enable-auto-install
-jenkins-cli update --disable-auto-install
-```
-
-Auto-update defaults:
-
-- Notify-only checks are enabled by default.
-- Auto-install is disabled by default.
 - Update channel defaults to `stable`.
 - Stable channel only installs stable releases, even if a newer prerelease exists.
 - Prerelease channel installs whichever GitHub release is newest, using the release order from GitHub.
@@ -1536,13 +1506,10 @@ Commands print `OK:` on success.
   `%LOCALAPPDATA%\jenkins-cli\`.
 - The first profile added becomes the default profile.
 - Legacy single-profile config is migrated automatically when profile data is read/written.
-- `deploy` is an alias for `build`.
-- `login` is a compatibility alias for `auth login`; new examples use
-  `auth login`.
-- `build`/`deploy` uses `buildWithParameters` when branch or custom parameters are
+- `build` uses `buildWithParameters` when branch or custom parameters are
   provided; otherwise it triggers Jenkins with no parameters.
-- CSRF crumb usage is disabled by default. Enable it with
-  `JENKINS_USE_CRUMB=true` or `useCrumb: true` in config when required by your Jenkins.
+- CSRF crumbs are sent on writes by default. Disable with
+  `JENKINS_USE_CRUMB=false` or `"useCrumb": false` in the profile.
 - Use `--non-interactive` to disable prompts and fail fast.
 - `wait` exit codes: `0` success, `1` non-success, `124` timeout, `130`
   interrupted.

@@ -1,16 +1,16 @@
 #!/usr/bin/env bun
 /** CLI entry point for jenkins-cli. */
-import { confirm, isCancel } from "@clack/prompts";
 import type { Argv } from "yargs";
 import yargs from "yargs/yargs";
 import { hideBin } from "yargs/helpers";
 
-import { CliError, getScriptName, handleCliError, printHint } from "./cli";
+import { CliError, getScriptName, handleCliError } from "./cli";
 import {
   parseArtifactFilters as parseArtifactFiltersValue,
   parseBuildCustomParams as parseBuildCustomParamsValue,
 } from "./cli/argument-values";
-import { printFullHelp } from "./cli/full-help";
+import { printFullHelp, printJsonHelp } from "./cli/full-help";
+import { JSON_COMMANDS } from "./cli/json-commands";
 import { getRootHelpEpilog } from "./cli/help-epilog";
 import {
   isJsonLinesOutputRequested,
@@ -31,7 +31,6 @@ import type {
   CommandArgv,
 } from "./cli/registration-types";
 import { printCliIntro } from "./cli-intro";
-import { runUpdate } from "./commands/update";
 import { loadEnv, getDebugDefault, resolveApiToken } from "./env";
 
 import { JenkinsClient } from "./jenkins/client";
@@ -42,13 +41,7 @@ import {
 } from "./min-version-policy";
 import { maybeMigrateToken } from "./token-migration";
 import { formatPromptTarget } from "./tui-target";
-import {
-  getDeferredUpdatePromptVersion,
-  kickOffAutoUpdate,
-  readUpdateState,
-  shouldPromptForDeferredUpdate,
-  writeUpdateState,
-} from "./update";
+import { kickOffAutoUpdate } from "./update";
 import { BUILD_TARGET } from "./build-target";
 import { emitJsonError, emitJsonLine, toJsonError } from "./json-output";
 import packageJson from "../package.json";
@@ -68,7 +61,6 @@ export function parseBuildCustomParams(
 
 const VERSION = packageJson.version;
 const scriptName = getScriptName();
-let pendingPromptIntroVersion: string | undefined;
 
 declare const __COMPILED_ENTRYPOINT__: boolean | undefined;
 
@@ -76,11 +68,12 @@ async function main(): Promise<void> {
   const rawArgs = hideBin(process.argv);
   // yargs' built-in `help` command shadows a registered handler, so the
   // aggregated reference is dispatched here before yargs parses.
-  if (rawArgs[0] === "help" && isJsonOutputRequested(rawArgs)) {
-    throw new CliError("'help' does not support --json output.");
-  }
   if (rawArgs[0] === "help" && isJsonLinesOutputRequested(rawArgs)) {
     throw new CliError("'help' does not support --jsonl output.");
+  }
+  if (rawArgs[0] === "help" && isJsonOutputRequested(rawArgs)) {
+    await printJsonHelp(scriptName, VERSION);
+    return;
   }
   if (rawArgs[0] === "help" && rawArgs.includes("--full")) {
     await printFullHelp(scriptName);
@@ -89,8 +82,6 @@ async function main(): Promise<void> {
 
   kickOffMinimumVersionRefresh({ currentVersion: VERSION });
   await enforceMinimumVersionFromCache({ currentVersion: VERSION, rawArgs });
-  const deferredUpdatePrompt = await promptForDeferredUpdate(VERSION, rawArgs);
-  pendingPromptIntroVersion = deferredUpdatePrompt.pendingPromptIntroVersion;
   kickOffAutoUpdate(VERSION, rawArgs);
 
   const dependencies: CommandRegistrationDependencies = {
@@ -169,6 +160,7 @@ async function main(): Promise<void> {
   parser = registerUpdateHelpCommands(parser, dependencies, {
     version: VERSION,
     printFullHelp: () => printFullHelp(scriptName),
+    printJsonHelp: () => printJsonHelp(scriptName, VERSION),
     showRootHelp: () => parser.showHelp("log"),
   });
   parser = parser
@@ -189,51 +181,6 @@ async function main(): Promise<void> {
     });
 
   await parser.parseAsync();
-}
-
-async function promptForDeferredUpdate(
-  currentVersion: string,
-  rawArgs: string[],
-): Promise<{
-  pendingPromptIntroVersion: string | undefined;
-}> {
-  if (!shouldPromptForDeferredUpdate(rawArgs)) {
-    return { pendingPromptIntroVersion: undefined };
-  }
-
-  const state = await readUpdateState();
-  const pendingVersion =
-    getDeferredUpdatePromptVersion(state, currentVersion) ?? undefined;
-  if (!pendingVersion) {
-    return { pendingPromptIntroVersion: pendingVersion };
-  }
-
-  const response = await confirm({
-    message: `A new jenkins-cli version (${pendingVersion}) is available. Update now?`,
-    initialValue: true,
-  });
-
-  if (isCancel(response) || !response) {
-    const nextState = {
-      ...state,
-      dismissedVersion: pendingVersion,
-    };
-    await writeUpdateState(nextState);
-    return {
-      pendingPromptIntroVersion:
-        getDeferredUpdatePromptVersion(nextState, currentVersion) ?? undefined,
-    };
-  }
-
-  try {
-    await runUpdate({ currentVersion });
-    return { pendingPromptIntroVersion: undefined };
-  } catch (error) {
-    handleCliError(error);
-
-    printHint("Continuing with the requested command.");
-    return { pendingPromptIntroVersion: pendingVersion };
-  }
 }
 
 function loadContextEnv(argv?: ContextArgv): ReturnType<typeof loadEnv> {
@@ -312,36 +259,10 @@ async function runCommand(
       showAsciiBanner: argv?.banner === true,
       version: VERSION,
       target,
-      pendingUpdateVersion: pendingPromptIntroVersion,
     });
   };
   await action({ showIntro, interactive });
 }
-
-const JSON_COMMANDS = new Set([
-  "list",
-  "params",
-  "build",
-  "status",
-  "history",
-  "wait",
-  "tests",
-  "changes",
-  "artifacts",
-  "run",
-  "cancel",
-  "create",
-  "queue",
-  "nodes",
-  "rerun",
-  "input:list",
-  "input:approve",
-  "input:abort",
-  "auth:status",
-  "auth:list",
-  "auth:current",
-  "update",
-]);
 
 async function runCommandWithContext<TArgv extends ContextualCommandArgv>(
   command: string,

@@ -1,5 +1,4 @@
 import { describe, expect, test } from "bun:test";
-import { CliError } from "../src/cli";
 import type { JenkinsConfig } from "../src/config";
 import { buildSecureStoreAccount } from "../src/secure-store";
 import {
@@ -10,11 +9,6 @@ import {
   runAuthUse,
   type AuthCommandDeps,
 } from "../src/commands/auth-profile";
-import {
-  runProfileDelete,
-  runProfileList,
-  runProfileUse,
-} from "../src/commands/profile";
 
 const URL_A = "https://jenkins-a.example.com";
 const URL_B = "https://jenkins-b.example.com";
@@ -85,14 +79,6 @@ describe("runAuthList", () => {
       `home  ${URL_B}  ci-home  plaintext`,
     ]);
   });
-
-  test("profile list renders the same information", async () => {
-    const authOut = collect();
-    const profileOut = collect();
-    await runAuthList(makeDeps(baseConfig()), authOut.write);
-    await runProfileList(makeDeps(baseConfig()), profileOut.write);
-    expect(profileOut.lines).toEqual(authOut.lines);
-  });
 });
 
 describe("runAuthUse", () => {
@@ -108,14 +94,6 @@ describe("runAuthUse", () => {
     const out = collect();
     await runAuthUse("work", makeDeps(baseConfig()), out.write);
     expect(out.lines).toEqual(['OK: Profile "work" is already the default.']);
-  });
-
-  test("profile use routes through the same operation", async () => {
-    const deps = makeDeps(baseConfig());
-    const out = collect();
-    await runProfileUse({ name: "home" }, deps, out.write);
-    expect(out.lines).toEqual(['OK: Default profile set to "home".']);
-    expect(deps.config()?.defaultProfile).toBe("home");
   });
 });
 
@@ -352,61 +330,5 @@ describe("runAuthRename", () => {
     const out = collect();
     await runAuthRename("home", " home ", makeDeps(baseConfig()), out.write);
     expect(out.lines).toEqual(['OK: Profile "home" already has that name.']);
-  });
-});
-
-describe("profile delete compatibility", () => {
-  test("uses the strict deletion operation and reports the next default", async () => {
-    const workAccount = buildSecureStoreAccount("work", URL_A);
-    const deps = makeDeps(baseConfig(), { [workAccount]: "secret" });
-    const out = collect();
-    await runProfileDelete(
-      { name: "work", nonInteractive: true },
-      deps,
-      out.write,
-    );
-    expect(out.lines).toEqual([
-      'OK: Deleted profile "work".',
-      'OK: Default profile is "home".',
-    ]);
-    expect(deps.config()?.profiles.work).toBeUndefined();
-  });
-
-  test("fails strictly when the secure store is inaccessible", async () => {
-    const deps = makeDeps(
-      baseConfig(),
-      {},
-      {
-        getToken: async () => {
-          throw new Error("keyring locked");
-        },
-      },
-    );
-    await expect(
-      runProfileDelete({ name: "work", nonInteractive: true }, deps, () => {}),
-    ).rejects.toThrow("Unable to access the OS secure store");
-    expect(deps.config()?.profiles.work).toBeDefined();
-  });
-
-  test("preserves debug through a delete", async () => {
-    const config = baseConfig();
-    config.debug = true;
-    const deps = makeDeps(config);
-    await runProfileDelete(
-      { name: "home", nonInteractive: true },
-      deps,
-      () => {},
-    );
-    expect(deps.config()?.debug).toBe(true);
-  });
-
-  test("rejects an unknown profile with available names", async () => {
-    const error = await runProfileDelete(
-      { name: "missing", nonInteractive: true },
-      makeDeps(baseConfig()),
-      () => {},
-    ).catch((e: unknown) => e);
-    expect(error).toBeInstanceOf(CliError);
-    expect((error as CliError).hints.join(" ")).toContain("work, home");
   });
 });
