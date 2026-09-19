@@ -17,7 +17,7 @@ import {
   resolveUpdateChannel,
   resolveExecutablePath,
   type UpdateState,
-  writeUpdateState,
+  patchUpdateState,
 } from "../update";
 import {
   type JsonUpdateCheck,
@@ -59,7 +59,7 @@ export async function runUpdate(options: UpdateOptions): Promise<void> {
   const state = await readUpdateState();
   if (requestedChannel) {
     state.updateChannel = requestedChannel;
-    await writeUpdateState(state);
+    await patchUpdateState({ updateChannel: requestedChannel });
     if (!options.check && !options.tag) {
       printUpdateChannel(state);
       return;
@@ -78,11 +78,7 @@ export async function runUpdate(options: UpdateOptions): Promise<void> {
       release: latest,
       currentVersion: options.currentVersion,
     });
-    const checkedState: UpdateState = {
-      ...state,
-      lastCheckedAt: nowIso,
-    };
-    await writeUpdateState(checkedState);
+    await patchUpdateState({ lastCheckedAt: nowIso });
     if (!shouldInstall) {
       printOk(`Already on latest version (${options.currentVersion}).`);
     } else {
@@ -169,7 +165,10 @@ async function runUpdateCheckJson(
     currentVersion: options.currentVersion,
   });
   const checkedAt = new Date().toISOString();
-  await writeUpdateState({ ...effectiveState, lastCheckedAt: checkedAt });
+  await patchUpdateState({
+    ...(requestedChannel ? { updateChannel: requestedChannel } : {}),
+    lastCheckedAt: checkedAt,
+  });
   return {
     currentVersion: options.currentVersion,
     latestVersion: latest.tag_name,
@@ -184,9 +183,7 @@ function printUpdateChannel(state: UpdateState): void {
 }
 
 async function recordSuccessfulUpdate(version: string): Promise<void> {
-  const state = await readUpdateState();
-  await writeUpdateState({
-    ...state,
+  await patchUpdateState({
     lastCheckedAt: new Date().toISOString(),
     lastNotifiedVersion: version,
   });

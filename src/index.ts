@@ -91,7 +91,7 @@ async function main(): Promise<void> {
     await printJsonHelp(scriptName, VERSION);
     return;
   }
-  if (isHelpCommand && rawArgs.includes("--full")) {
+  if (isHelpCommand && helpRequest.full === true) {
     await printFullHelp(scriptName);
     return;
   }

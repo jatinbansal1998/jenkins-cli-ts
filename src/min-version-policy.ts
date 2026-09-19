@@ -9,7 +9,7 @@ import {
   getPreferredUpdateCommand,
   normalizeVersionTag,
   readUpdateState,
-  writeUpdateState,
+  patchUpdateState,
 } from "./update";
 
 const POLICY_URL = GITHUB_VERSION_POLICY_URL;
@@ -22,7 +22,7 @@ type MinimumVersionPolicyDeps = {
   normalizeVersionTag: typeof normalizeVersionTag;
   readUpdateState: typeof readUpdateState;
   runUpdate: typeof runUpdate;
-  writeUpdateState: typeof writeUpdateState;
+  patchUpdateState: typeof patchUpdateState;
 };
 
 const defaultMinimumVersionPolicyDeps: MinimumVersionPolicyDeps = {
@@ -31,7 +31,7 @@ const defaultMinimumVersionPolicyDeps: MinimumVersionPolicyDeps = {
   normalizeVersionTag,
   readUpdateState,
   runUpdate,
-  writeUpdateState,
+  patchUpdateState,
 };
 
 let minimumVersionPolicyDeps = defaultMinimumVersionPolicyDeps;
@@ -130,8 +130,7 @@ async function refreshMinimumVersionPolicy(
       return;
     }
 
-    await minimumVersionPolicyDeps.writeUpdateState({
-      ...state,
+    await minimumVersionPolicyDeps.patchUpdateState({
       minAllowedVersion: policy.minVersion,
       minAllowedMessage: policy.message,
       minAllowedFetchedAt: new Date().toISOString(),

@@ -3,6 +3,7 @@ import path from "node:path";
 import { readFileSync } from "node:fs";
 import { chmod, copyFile, mkdir, mkdtemp, rename, rm } from "node:fs/promises";
 import parseSemver from "semver/functions/parse";
+import { lock } from "proper-lockfile";
 import {
   CLI_FLAGS,
   UPDATE_COMMAND_BREW,
@@ -197,10 +198,25 @@ export async function readUpdateState(): Promise<UpdateState> {
   }
 }
 
-export async function writeUpdateState(state: UpdateState): Promise<void> {
+export async function patchUpdateState(patch: UpdateState): Promise<void> {
   await mkdir(CONFIG_DIR, { recursive: true, mode: 0o700 });
-  const payload = `${JSON.stringify(state, null, 2)}\n`;
-  await Bun.write(UPDATE_STATE_FILE, payload);
+  const release = await lock(UPDATE_STATE_FILE, {
+    realpath: false,
+    retries: { retries: 12, minTimeout: 20, maxTimeout: 100 },
+  });
+  const temporaryPath = `${UPDATE_STATE_FILE}.${process.pid}.tmp`;
+  try {
+    const state = await readUpdateState();
+    const payload = `${JSON.stringify({ ...state, ...patch }, null, 2)}\n`;
+    await Bun.write(temporaryPath, payload, { mode: 0o600 });
+    await rename(temporaryPath, UPDATE_STATE_FILE);
+  } finally {
+    try {
+      await rm(temporaryPath, { force: true });
+    } finally {
+      await release();
+    }
+  }
 }
 
 export function resolveExecutablePath(): string {
@@ -402,10 +418,7 @@ async function runAutoUpdate(currentVersion: string): Promise<void> {
       timeoutMs: 800,
     });
     const nowIso = new Date().toISOString();
-    const nextState: UpdateState = {
-      ...state,
-      lastCheckedAt: nowIso,
-    };
+    const checkedState: UpdateState = { lastCheckedAt: nowIso };
 
     const updateCommand = getPreferredUpdateCommand();
     const homebrewManaged = updateCommand === UPDATE_COMMAND_BREW;
@@ -414,22 +427,22 @@ async function runAutoUpdate(currentVersion: string): Promise<void> {
       currentVersion,
     });
     if (!shouldInstall) {
-      await writeUpdateState(nextState);
+      await patchUpdateState(checkedState);
       return;
     }
     if (
       (homebrewManaged || process.platform === "win32") &&
       state.lastNotifiedVersion === release.tag_name
     ) {
-      await writeUpdateState(nextState);
+      await patchUpdateState(checkedState);
       return;
     }
     if (homebrewManaged) {
       printHint(
         `New version available: ${release.tag_name}. Run \`${updateCommand}\`.`,
       );
-      await writeUpdateState({
-        ...nextState,
+      await patchUpdateState({
+        ...checkedState,
         lastNotifiedVersion: release.tag_name,
       });
       return;
@@ -438,7 +451,7 @@ async function runAutoUpdate(currentVersion: string): Promise<void> {
       try {
         // Source checkouts cannot be replaced with a release binary.
         resolveExecutablePath();
-        await writeUpdateState(nextState);
+        await patchUpdateState(checkedState);
         Bun.spawn({
           cmd: selfInvocation(["update", release.tag_name]),
           stdio: ["ignore", "ignore", "ignore"],
@@ -446,7 +459,7 @@ async function runAutoUpdate(currentVersion: string): Promise<void> {
           windowsHide: true,
         }).unref();
       } catch {
-        await writeUpdateState(nextState);
+        await patchUpdateState(checkedState);
       }
       return;
     }
@@ -455,8 +468,8 @@ async function runAutoUpdate(currentVersion: string): Promise<void> {
       `New version available: ${release.tag_name}. Run \`${updateCommand}\`.`,
     );
 
-    await writeUpdateState({
-      ...nextState,
+    await patchUpdateState({
+      ...checkedState,
       lastNotifiedVersion: release.tag_name,
     });
   } catch {

@@ -190,6 +190,16 @@ describe("help --json", () => {
 });
 
 describe("help --full", () => {
+  test("honors explicit boolean values for --full", () => {
+    const enabled = runCli(["help", "--full=true"]);
+    expect(enabled.exitCode).toBe(0);
+    expect(enabled.output).toContain("\njenkins-cli auth login --help\n");
+
+    const disabled = runCli(["help", "--full", "false"]);
+    expect(disabled.exitCode).toBe(0);
+    expect(disabled.output).not.toContain("\njenkins-cli auth login --help\n");
+  }, 60_000);
+
   test("aggregates every command's help into one document", () => {
     const result = runCli(["help", "--full"]);
 
