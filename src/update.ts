@@ -51,6 +51,8 @@ function runProbe(cmd: string[]): { success: boolean; text: string } | null {
       cmd,
       stdout: "pipe",
       stderr: "pipe",
+      timeout: 5_000,
+      killSignal: "SIGKILL",
     });
     const text =
       new TextDecoder().decode(proc.stdout ?? undefined) +
@@ -308,7 +310,12 @@ export function describeInstalledBinary(executablePath: string): string | null {
       cmd: [executablePath, "--version"],
       stdout: "pipe",
       stderr: "pipe",
+      timeout: 5_000,
+      killSignal: "SIGKILL",
     });
+    if (!proc.success) {
+      return null;
+    }
     return extractInstalledBinaryVersionOutput(
       proc.stdout ?? undefined,
       proc.stderr ?? undefined,
@@ -322,6 +329,7 @@ export async function downloadAndInstall(
   assetUrl: string,
   targetPath: string,
   currentVersion: string,
+  signal?: AbortSignal,
 ): Promise<void> {
   const tempDir = await mkdtemp(path.join(os.tmpdir(), "jenkins-cli-"));
   const isWindows = process.platform === "win32";
@@ -329,15 +337,18 @@ export async function downloadAndInstall(
     tempDir,
     isWindows ? "jenkins-cli.exe" : "jenkins-cli",
   );
+  let keepDownload = false;
   try {
     const response = await downloadReleaseAsset({
       assetUrl,
       currentVersion,
+      signal,
     });
     const bytes = await response.bytes();
     await Bun.write(tempFile, bytes);
 
     if (isWindows) {
+      keepDownload = true;
       throw new CliError(
         "In-place updates are not yet perfectly supported on Windows.",
         [
@@ -365,7 +376,7 @@ export async function downloadAndInstall(
       }
     }
   } finally {
-    if (!isWindows) {
+    if (!keepDownload) {
       await rm(tempDir, { recursive: true, force: true });
     }
   }

@@ -3,9 +3,9 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
-test.skipIf(process.platform === "win32")(
-  "foreground exits while the detached update download is still pending",
-  async () => {
+test.skipIf(process.platform === "win32").each([false, true])(
+  "foreground exits before detached download, worker deadline enabled %s",
+  async (expireDownload) => {
     const home = await mkdtemp(join(tmpdir(), "jenkins-auto-update-"));
     const downloadStarted = Promise.withResolvers<void>();
     const releaseDownload = Promise.withResolvers<void>();
@@ -29,6 +29,9 @@ test.skipIf(process.platform === "win32")(
       `
       import { kickOffAutoUpdate, resolveAssetName } from ${JSON.stringify(resolve("src/update.ts"))};
       import { runUpdate } from ${JSON.stringify(resolve("src/commands/update.ts"))};
+      const nativeSetTimeout = globalThis.setTimeout;
+      globalThis.setTimeout = (callback, delay, ...args) => nativeSetTimeout(
+        callback, ${expireDownload} && delay === 300_000 ? 500 : delay, ...args);
       const nativeFetch = globalThis.fetch;
       globalThis.fetch = (url, options) => String(url).startsWith("https://api.github.com/")
         ? Promise.resolve(Response.json({ tag_name: "v99.0.0", assets: [{
@@ -73,8 +76,17 @@ test.skipIf(process.platform === "win32")(
         "foreground finished\n",
       );
       expect(await new Response(child.stderr).text()).toBe("");
-      releaseDownload.resolve();
-      await workerFinished.promise;
+      if (!expireDownload) {
+        releaseDownload.resolve();
+      }
+      clearTimeout(timeout);
+      const workerResult = await Promise.race([
+        workerFinished.promise.then(() => "finished"),
+        new Promise<string>((resolveTimeout) => {
+          timeout = setTimeout(() => resolveTimeout("still running"), 2500);
+        }),
+      ]);
+      expect(workerResult).toBe("finished");
     } finally {
       clearTimeout(timeout);
       releaseDownload.resolve();

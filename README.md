@@ -1321,7 +1321,12 @@ jenkins-cli update --channel prerelease
 Standalone installs check GitHub at most once an hour during eligible commands.
 The release check has an 800 ms timeout. Available updates run silently in a
 detached `update <tag>` process, so a pending download does not hold the original
-command open. Homebrew installs print a hint to run
+command open. Both automatic and manual updates have a shared five-minute deadline
+for release requests and downloads, including reading the response body. Cancellation
+removes temporary downloads; a watchdog exits after five minutes plus five seconds
+if the operation does not settle. Platform and installed-version probes are killed
+after five seconds. These deadlines belong to the updater, so they remain active
+after the original command exits. Homebrew installs print a hint to run
 `brew upgrade jenkins-cli`. Windows cannot replace a running binary in place,
 so it only prints a hint.
 
