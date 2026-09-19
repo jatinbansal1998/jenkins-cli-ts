@@ -221,6 +221,20 @@ describe("update helpers", () => {
     }
   });
 
+  test("resolveExecutablePath uses the real executable for Windows compiled entries", () => {
+    const prevArgv = process.argv[1];
+    process.argv[1] = "B:\\~BUN\\root\\fixture.ts";
+    try {
+      expect(resolveExecutablePath()).toBe(process.execPath);
+    } finally {
+      if (prevArgv === undefined) {
+        process.argv.splice(1, 1);
+      } else {
+        process.argv[1] = prevArgv;
+      }
+    }
+  });
+
   test("isHomebrewManagedPath detects Homebrew cellar path", () => {
     expect(
       isHomebrewManagedPath(

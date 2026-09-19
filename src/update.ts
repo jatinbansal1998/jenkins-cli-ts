@@ -14,7 +14,7 @@ import {
 } from "./cli/options";
 import { CliError, printHint } from "./cli";
 import { CONFIG_DIR } from "./config";
-import { selfInvocation } from "./self-invocation";
+import { isCompiledEntryPoint, selfInvocation } from "./self-invocation";
 import {
   downloadReleaseAsset,
   fetchLatestRelease,
@@ -226,9 +226,8 @@ export function resolveExecutablePath(): string {
     throw new CliError("Unable to determine the CLI path.");
   }
 
-  // Bun compiled binaries expose an embedded entrypoint (e.g. /$bunfs/root/...)
-  // in process.argv[1], whereas process.execPath points to the actual executable.
-  const resolved = argv1.startsWith("/$bunfs/")
+  // Compiled entrypoints live in Bun's virtual filesystem; execPath is on disk.
+  const resolved = isCompiledEntryPoint(argv1)
     ? process.execPath
     : path.resolve(argv1);
 
@@ -254,7 +253,7 @@ export function getPreferredUpdateCommand(): string {
   if (!argv1) {
     return UPDATE_COMMAND_SELF;
   }
-  const resolved = argv1.startsWith("/$bunfs/")
+  const resolved = isCompiledEntryPoint(argv1)
     ? process.execPath
     : path.resolve(argv1);
   return isHomebrewManagedPath(resolved)
