@@ -38,11 +38,11 @@ export async function withCliHome(
   try {
     const configDir = join(home, ".config", "jenkins-cli");
     mkdirSync(configDir, { recursive: true });
-    // Keep the documented GitHub policy/update checks out of Jenkins-only tests.
+    // Stamp lastCheckedAt so background auto-update does not hit GitHub.
     await Bun.write(
       join(configDir, "update-state.json"),
       JSON.stringify({
-        autoUpdate: false,
+        lastCheckedAt: new Date().toISOString(),
         minAllowedVersion: "0.0.0",
         minAllowedFetchedAt: new Date().toISOString(),
       }),

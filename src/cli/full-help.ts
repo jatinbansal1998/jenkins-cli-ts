@@ -79,7 +79,6 @@ export async function printFullHelp(scriptName: string): Promise<void> {
   );
 }
 
-/** One JSON document: version plus every command's help, json, and jsonl flags. */
 export async function printJsonHelp(
   scriptName: string,
   version: string,

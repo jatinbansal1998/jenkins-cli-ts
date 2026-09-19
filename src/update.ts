@@ -135,8 +135,6 @@ const UPDATE_STATE_FILE = path.join(CONFIG_DIR, "update-state.json");
 type UpdateChannel = "stable" | "prerelease";
 
 export type UpdateState = {
-  autoUpdate?: boolean;
-  autoInstall?: boolean;
   updateChannel?: UpdateChannel;
   lastCheckedAt?: string;
   lastNotifiedVersion?: string;

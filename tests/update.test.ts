@@ -301,12 +301,12 @@ describe("deferred update state helpers", () => {
       pendingVersion: "v1.2.3",
       pendingDetectedAt: "2026-01-01T00:00:00.000Z",
       dismissedVersion: "v1.2.3",
-      autoUpdate: true,
+      updateChannel: "stable",
     });
     expect(cleared.pendingVersion).toBeUndefined();
     expect(cleared.pendingDetectedAt).toBeUndefined();
     expect(cleared.dismissedVersion).toBeUndefined();
-    expect(cleared.autoUpdate).toBeTrue();
+    expect(cleared.updateChannel).toBe("stable");
   });
 
   test("getDeferredUpdatePromptVersion returns pending newer version", () => {

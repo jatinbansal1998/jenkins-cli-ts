@@ -212,7 +212,7 @@ describe("compiled CLI", () => {
       writeFileSync(
         join(home, ".config", "jenkins-cli", "update-state.json"),
         JSON.stringify({
-          autoUpdate: false,
+          lastCheckedAt: new Date().toISOString(),
           minAllowedVersion: "0.0.0",
           minAllowedFetchedAt: new Date().toISOString(),
         }),
