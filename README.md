@@ -329,7 +329,7 @@ jenkins-cli --confirm-protected            # interactive session allowed to writ
 
 | Action                                                               | Read-only profile without `--confirm-protected` |
 | -------------------------------------------------------------------- | ----------------------------------------------- |
-| `build` / `deploy`                                                   | Blocked                                         |
+| `build`                                                              | Blocked                                         |
 | `cancel` (queued item or running build, including the watch `c` key) | Blocked                                         |
 | `rerun`, rerun last build, rerun with the same inputs                | Blocked                                         |
 | `create` (from config.xml or by copy)                                | Blocked                                         |

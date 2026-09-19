@@ -500,7 +500,10 @@ async function runAutoUpdate(currentVersion: string): Promise<void> {
       release.tag_name,
       nowIso,
     );
-    if (state.lastNotifiedVersion === release.tag_name) {
+    if (
+      (homebrewManaged || process.platform === "win32") &&
+      state.lastNotifiedVersion === release.tag_name
+    ) {
       await writeUpdateState(pendingState);
       return;
     }
