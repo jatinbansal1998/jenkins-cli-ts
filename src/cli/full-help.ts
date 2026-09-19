@@ -1,3 +1,4 @@
+import { CliError } from "../cli";
 import { emitJsonSuccess } from "../json-output";
 import { selfInvocation } from "../self-invocation";
 import {
@@ -109,11 +110,17 @@ async function collectCommandHelp(
         stderr: "pipe",
         stdin: "ignore",
       });
-      const [stdout] = await Promise.all([
+      const [stdout, stderr, exitCode] = await Promise.all([
         new Response(child.stdout).text(),
         new Response(child.stderr).text(),
+        child.exited,
       ]);
-      await child.exited;
+      if (exitCode !== 0) {
+        throw new CliError(
+          `Failed to collect help for "${invocation}".`,
+          stderr.trim() ? [stderr.trim()] : [],
+        );
+      }
       return {
         path: commandPath,
         invocation,
