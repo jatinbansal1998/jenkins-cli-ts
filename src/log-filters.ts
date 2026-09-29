@@ -121,13 +121,28 @@ export function tailLogLines(text: string, count: number): FilteredLog {
       "Provide a positive integer number of lines, for example --tail 100.",
     ]);
   }
-  const lines = splitLogLines(text);
-  const start = Math.max(0, lines.length - count);
-  const skipped = lines.slice(0, start).join("");
+  const tail = text.slice(Math.max(0, lastLinesStart(text, count)));
   return {
-    text: lines.slice(start).join(""),
-    skippedBytes: Buffer.byteLength(skipped),
+    text: tail,
+    skippedBytes: Buffer.byteLength(text) - Buffer.byteLength(tail),
   };
+}
+
+// Scans back from the end with the same line endings as splitLogLines, so
+// only the kept lines are visited. Returns -1 when fewer than `count` lines
+// start after a line break.
+function lastLinesStart(text: string, count: number): number {
+  let found = 0;
+  // A break in the last position ends the final line; it starts none.
+  for (let index = text.length - 2; index >= 0; index--) {
+    const char = text[index];
+    const isBreak =
+      char === "\n" || (char === "\r" && text[index + 1] !== "\n");
+    if (isBreak && ++found === count) {
+      return index + 1;
+    }
+  }
+  return -1;
 }
 
 export function splitLogLines(text: string): string[] {

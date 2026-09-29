@@ -436,6 +436,17 @@ timestamps {
 ''', true))
 timestampedLogJob.save()
 
+// ~5MB of timestamped console output, far past the 64KB first tail window.
+def largeLogJob = jenkins.createProject(WorkflowJob.class, "cli-large-log")
+largeLogJob.setDefinition(new CpsFlowDefinition('''
+timestamps {
+  node {
+    sh "set +x; seq -f 'large-log-%05g padding-padding-padding-padding-padding-padding-padding-padding-padding-padding' 1 40000; echo large-log-last"
+  }
+}
+''', true))
+largeLogJob.save()
+
 def offlineAgent = new DumbSlave(
   "offline-agent",
   "/tmp/jenkins-cli-offline-agent",

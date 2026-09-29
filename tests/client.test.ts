@@ -1066,6 +1066,47 @@ describe("JenkinsClient build transport", () => {
     });
   });
 
+  test("probes the console size with HEAD instead of downloading the log", async () => {
+    const fetchMock = mock(async (_input: FetchInput, _init?: FetchInit) =>
+      Promise.resolve(
+        new Response(null, { headers: { "X-Text-Size": "30382218" } }),
+      ),
+    );
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+    const client = new JenkinsClient({
+      baseUrl: "https://jenkins.example.com",
+      user: "user",
+      apiToken: "token",
+    });
+
+    const size = await client.getConsoleTextSize(
+      "https://jenkins.example.com/job/my-job/9/",
+    );
+
+    expect(String(fetchMock.mock.calls[0]?.[0])).toBe(
+      "https://jenkins.example.com/job/my-job/9/logText/progressiveText",
+    );
+    expect(fetchMock.mock.calls[0]?.[1]?.method).toBe("HEAD");
+    expect(size).toBe(30_382_218);
+  });
+
+  test("treats a missing console size header as an empty log", async () => {
+    globalThis.fetch = mock(async () =>
+      Promise.resolve(new Response(null)),
+    ) as unknown as typeof fetch;
+    const client = new JenkinsClient({
+      baseUrl: "https://jenkins.example.com",
+      user: "user",
+      apiToken: "token",
+    });
+
+    expect(
+      await client.getConsoleTextSize(
+        "https://jenkins.example.com/job/my-job/9/",
+      ),
+    ).toBe(0);
+  });
+
   test("follows the raw Pipeline node console URL with byte offsets", async () => {
     const fetchMock = mock(async (_input: FetchInput) =>
       Promise.resolve(new Response("🚀\n", { headers: {} })),

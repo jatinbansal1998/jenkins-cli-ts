@@ -71,8 +71,10 @@ const mutations: Mutation[] = network
       {
         name: "requests JSON instead of progressive build logs",
         file: "src/jenkins/client.ts",
-        original: 'this.withJob(buildUrl, "logText/progressiveText")',
-        replacement: 'this.withJob(buildUrl, "api/json")',
+        original:
+          'getProgressiveLogChunk(\n      this.withJob(buildUrl, "logText/progressiveText")',
+        replacement:
+          'getProgressiveLogChunk(\n      this.withJob(buildUrl, "api/json")',
       },
       {
         name: "downloads artifacts without authentication",

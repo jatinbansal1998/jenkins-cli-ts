@@ -22,6 +22,15 @@ function client(stubs: Partial<JenkinsClient>): JenkinsClient {
   return stubs as JenkinsClient;
 }
 
+/** Serves an ASCII log from any offset, like progressiveText on a finished build. */
+function serveFrom(log: string) {
+  return mock(async (_url: string, offset: number) => ({
+    text: log.slice(offset),
+    nextStart: log.length,
+    hasMore: false,
+  }));
+}
+
 afterEach(() => {
   setLogsDependenciesForTesting(null);
   process.exitCode = 0;
@@ -64,7 +73,11 @@ describe("logs command", () => {
     });
 
     await runLogs({
-      client: client({ getBuildStatus, getConsoleChunk }),
+      client: client({
+        getBuildStatus,
+        getConsoleChunk,
+        getConsoleTextSize: mock(async () => Buffer.byteLength(existing)),
+      }),
       env,
       buildUrl,
       follow: true,
@@ -706,6 +719,7 @@ describe("logs command", () => {
             building: true,
           })),
           getPipelineDescription: mock(async () => null),
+          getConsoleTextSize: mock(async () => 11),
           getConsoleChunk: mock(async () => ({
             text: "first\nlast\n",
             nextStart: 11,
@@ -729,5 +743,203 @@ describe("logs command", () => {
     expect(output.join("")).toBe("last\n");
     expect(selectPrompt).toHaveBeenCalledTimes(2);
     expect(confirmPrompt).toHaveBeenCalledTimes(1);
+  });
+
+  describe("snapshot reads", () => {
+    type TimestampOptions = Parameters<
+      JenkinsClient["getConsoleTimestamps"]
+    >[1];
+    type JsonlChunk = {
+      type: string;
+      text: string;
+      offset: number;
+      nextOffset: number;
+      more: boolean;
+    };
+    const finished = mock(async () => ({
+      buildNumber: 9,
+      buildUrl,
+      building: false,
+      result: "SUCCESS",
+    }));
+    // 100-byte lines, so a line count maps to an exact byte count.
+    const largeLog = Array.from(
+      { length: 5_000 },
+      (_, index) => `${`line-${index}`.padEnd(99, ".")}\n`,
+    ).join("");
+
+    async function readJsonlChunks(
+      stubs: Partial<JenkinsClient>,
+      options: { tail?: number; since?: string },
+    ): Promise<JsonlChunk[]> {
+      const written: string[] = [];
+      await runLogs({
+        client: client({ getBuildStatus: finished, ...stubs }),
+        env,
+        buildUrl,
+        follow: false,
+        nonInteractive: true,
+        jsonl: true,
+        write: (value) => written.push(value),
+        ...options,
+      });
+      return written
+        .join("")
+        .split("\n")
+        .filter(Boolean)
+        .map((line) => JSON.parse(line) as JsonlChunk)
+        .filter((event) => event.type === "chunk");
+    }
+
+    test("reads a short tail from one window at the end of the log", async () => {
+      const getConsoleChunk = serveFrom(largeLog);
+
+      const chunks = await readJsonlChunks(
+        {
+          getConsoleChunk,
+          getConsoleTextSize: mock(async () => largeLog.length),
+        },
+        { tail: 3 },
+      );
+
+      expect(getConsoleChunk.mock.calls.map((call) => call[1])).toEqual([
+        largeLog.length - 64 * 1024,
+      ]);
+      expect(chunks).toEqual([
+        {
+          type: "chunk",
+          text: largeLog.slice(-300),
+          offset: largeLog.length - 300,
+          nextOffset: largeLog.length,
+          more: false,
+        },
+      ]);
+    });
+
+    test("grows the window until it holds every requested line", async () => {
+      const getConsoleChunk = serveFrom(largeLog);
+
+      const chunks = await readJsonlChunks(
+        {
+          getConsoleChunk,
+          getConsoleTextSize: mock(async () => largeLog.length),
+        },
+        { tail: 1_000 },
+      );
+
+      expect(getConsoleChunk.mock.calls.map((call) => call[1])).toEqual([
+        largeLog.length - 64 * 1024,
+        largeLog.length - 256 * 1024,
+      ]);
+      expect(chunks.map(({ text, offset }) => ({ text, offset }))).toEqual([
+        { text: largeLog.slice(-100_000), offset: largeLog.length - 100_000 },
+      ]);
+    });
+
+    test("does not trust a window that opens exactly on a line start", async () => {
+      // 64 KiB of 64-byte lines: the first window starts on a line boundary
+      // but cannot tell, so asking for every line must fall back to offset 0.
+      const aligned = Array.from(
+        { length: 2_048 },
+        (_, index) => `${`row-${index}`.padEnd(63, ".")}\n`,
+      ).join("");
+      const getConsoleChunk = serveFrom(aligned);
+
+      const chunks = await readJsonlChunks(
+        {
+          getConsoleChunk,
+          getConsoleTextSize: mock(async () => aligned.length),
+        },
+        { tail: 1_024 },
+      );
+
+      expect(getConsoleChunk.mock.calls.map((call) => call[1])).toEqual([
+        aligned.length - 64 * 1024,
+        0,
+      ]);
+      expect(chunks[0]?.text).toBe(aligned.slice(-64 * 1024));
+      expect(chunks[0]?.offset).toBe(aligned.length - 64 * 1024);
+    });
+
+    test("filters a finished build by timestamps without downloading its log", async () => {
+      const getConsoleChunk = mock();
+      const pending: (() => void)[] = [];
+      const getConsoleTimestamps = mock(
+        (_url: string, options: TimestampOptions) =>
+          new Promise<string>((resolve) => {
+            pending.push(() =>
+              resolve(
+                options?.currentTime
+                  ? "2026-08-01T12:10:00.000Z\n"
+                  : [
+                      "2026-08-01T11:00:00.000Z  old",
+                      "  [Pipeline] echo",
+                      "2026-08-01T12:05:00.000Z  new",
+                      "",
+                    ].join("\n"),
+              ),
+            );
+          }),
+      );
+      const getConsoleTextSize = mock(async () => 4_321);
+      const run = readJsonlChunks(
+        { getConsoleChunk, getConsoleTimestamps, getConsoleTextSize },
+        { since: "10m" },
+      );
+      while (getConsoleTimestamps.mock.calls.length < 2) {
+        await Bun.sleep(1);
+      }
+      // Both timestamp requests are in flight before either one answers.
+      for (const release of pending) {
+        release();
+      }
+
+      expect(await run).toEqual([
+        {
+          type: "chunk",
+          text: "new\n",
+          offset: 0,
+          nextOffset: 4_321,
+          more: false,
+        },
+      ]);
+      expect(getConsoleChunk).not.toHaveBeenCalled();
+      expect(getConsoleTimestamps.mock.calls.map((call) => call[1])).toEqual([
+        { currentTime: true },
+        { appendLog: true },
+      ]);
+    });
+
+    test("pins a running build's timestamps to the snapshot it follows from", async () => {
+      const existing = "old\nnew\npartial";
+      const getConsoleTimestamps = mock(
+        async (_url: string, _options: TimestampOptions) =>
+          [
+            "2026-08-01T11:00:00.000Z  old",
+            "2026-08-01T12:05:00.000Z  new",
+            "",
+          ].join("\n"),
+      );
+
+      const chunks = await readJsonlChunks(
+        {
+          getBuildStatus: mock(async () => ({
+            buildNumber: 9,
+            buildUrl,
+            building: true,
+          })),
+          getConsoleChunk: serveFrom(existing),
+          getConsoleTimestamps,
+        },
+        { since: "2026-08-01T12:00:00Z" },
+      );
+
+      expect(getConsoleTimestamps.mock.calls.map((call) => call[1])).toEqual([
+        { endLine: 2, appendLog: true },
+      ]);
+      expect(
+        chunks.map(({ text, nextOffset }) => ({ text, nextOffset })),
+      ).toEqual([{ text: "new\n", nextOffset: existing.length }]);
+    });
   });
 });

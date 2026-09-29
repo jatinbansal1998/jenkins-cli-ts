@@ -21,6 +21,23 @@ describe("log filters", () => {
     });
   });
 
+  test("tails with the same line endings as splitLogLines", () => {
+    expect(tailLogLines("a\rb\r\nc\n", 2)).toEqual({
+      text: "b\r\nc\n",
+      skippedBytes: 2,
+    });
+    expect(tailLogLines("a\nb\r", 1)).toEqual({ text: "b\r", skippedBytes: 2 });
+    expect(tailLogLines("only\n", 1)).toEqual({
+      text: "only\n",
+      skippedBytes: 0,
+    });
+    expect(tailLogLines("one\ntwo\n", 5)).toEqual({
+      text: "one\ntwo\n",
+      skippedBytes: 0,
+    });
+    expect(tailLogLines("", 1)).toEqual({ text: "", skippedBytes: 0 });
+  });
+
   test("counts skipped UTF-8 bytes rather than JavaScript characters", () => {
     expect(tailLogLines("🚀 first\nsecond\n", 1)).toEqual({
       text: "second\n",
