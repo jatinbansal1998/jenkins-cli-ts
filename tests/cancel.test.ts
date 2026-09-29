@@ -244,10 +244,11 @@ describe("runCancel job target resolution", () => {
     const logSpy = spyOn(console, "log");
     try {
       const stopBuild = mock(async () => undefined);
-      const getJobStatus = mock(async () => ({
-        building: true,
+      const getLastBuild = mock(async () => ({
         buildUrl: "https://jenkins.example.com/job/api/14/",
         buildNumber: 14,
+        building: true,
+        result: null,
       }));
       const getBuildStatus = mock(async () => ({
         buildUrl: "https://jenkins.example.com/job/api/14/",
@@ -257,13 +258,13 @@ describe("runCancel job target resolution", () => {
       }));
 
       await runCancel({
-        client: createClient({ stopBuild, getJobStatus, getBuildStatus }),
+        client: createClient({ stopBuild, getLastBuild, getBuildStatus }),
         env,
         jobUrl,
         nonInteractive: true,
       });
 
-      expect(getJobStatus).toHaveBeenCalledWith(jobUrl);
+      expect(getLastBuild).toHaveBeenCalledWith(jobUrl);
       expect(stopBuild).toHaveBeenCalledWith(
         "https://jenkins.example.com/job/api/14/",
       );
@@ -275,7 +276,12 @@ describe("runCancel job target resolution", () => {
   test("cancels the newest queue item when the job is only queued", async () => {
     const logSpy = spyOn(console, "log");
     try {
-      const getJobStatus = mock(async () => ({ building: false }));
+      const getLastBuild = mock(async () => ({
+        buildUrl: "https://jenkins.example.com/job/api/13/",
+        buildNumber: 13,
+        building: false,
+        result: "SUCCESS",
+      }));
       const cancelQueueItem = mock(async () => true);
       // Queue item URLs deliberately differ from the target by trailing
       // slash to verify canonical matching; the newest inQueueSince wins.
@@ -301,7 +307,7 @@ describe("runCancel job target resolution", () => {
       ]);
 
       await runCancel({
-        client: createClient({ getJobStatus, listQueueItems, cancelQueueItem }),
+        client: createClient({ getLastBuild, listQueueItems, cancelQueueItem }),
         env,
         jobUrl,
         nonInteractive: true,
@@ -316,12 +322,12 @@ describe("runCancel job target resolution", () => {
   });
 
   test("fails clearly when nothing is running or queued", async () => {
-    const getJobStatus = mock(async () => ({ building: false }));
+    const getLastBuild = mock(async () => null);
     const listQueueItems = mock(async () => []);
 
     await expect(
       runCancel({
-        client: createClient({ getJobStatus, listQueueItems }),
+        client: createClient({ getLastBuild, listQueueItems }),
         env,
         jobUrl,
         nonInteractive: true,

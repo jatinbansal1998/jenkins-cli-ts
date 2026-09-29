@@ -126,11 +126,11 @@ describe("assertProtectedMutationAllowed", () => {
 describe("direct mutation commands on a protected profile", () => {
   test("build rejects before any Jenkins call", async () => {
     const spies = mutationSpies();
-    const getJobStatus = mock(async () => ({ buildNumber: 1 }));
+    const getLastBuild = mock(async () => null);
 
     await expect(
       runBuild({
-        client: client({ ...spies, getJobStatus }),
+        client: client({ ...spies, getLastBuild }),
         env: protectedEnv(),
         jobUrl: JOB_URL,
         nonInteractive: true,
@@ -138,7 +138,7 @@ describe("direct mutation commands on a protected profile", () => {
     ).rejects.toThrow('Profile "release" is read-only.');
 
     expect(spies.triggerBuild).not.toHaveBeenCalled();
-    expect(getJobStatus).not.toHaveBeenCalled();
+    expect(getLastBuild).not.toHaveBeenCalled();
   });
 
   test("cancel rejects for queue and build targets without mutating", async () => {

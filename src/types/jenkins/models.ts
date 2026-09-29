@@ -250,6 +250,14 @@ export type NodesSummary = {
   totalExecutors: number;
 };
 
+/** A job's newest build, fetched with a single request. */
+export type LastBuildSummary = {
+  buildUrl: string;
+  buildNumber: number;
+  building: boolean;
+  result: string | null;
+};
+
 export type LastFailedBuildReference = {
   buildUrl: string;
   buildNumber?: number;

@@ -119,6 +119,8 @@ export type JenkinsBuildChangesResponse = {
 export type JenkinsLastBuildResponse = {
   lastBuild?: {
     number?: number;
+    building?: boolean;
+    result?: string | null;
   };
 };
 

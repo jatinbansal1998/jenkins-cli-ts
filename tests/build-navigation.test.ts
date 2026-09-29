@@ -12,7 +12,11 @@ import {
 } from "../src/flows/constants";
 import type { AutocompletePromptResult } from "../src/flows/types";
 import type { JenkinsClient } from "../src/jenkins/client";
-import type { JenkinsJob, JobParameterDefinition } from "../src/types/jenkins";
+import type {
+  JenkinsJob,
+  JobParameterDefinition,
+  LastBuildSummary,
+} from "../src/types/jenkins";
 import { runBuild, setBuildDepsForTesting } from "../src/commands/build";
 import type { WatchSpinner } from "../src/commands/watch-output";
 import { setBuildPreFlowDepsForTesting } from "../src/flows/handlers";
@@ -105,6 +109,15 @@ const loadJobsMock = mock(async () => [{ name: "alpha", url: JOB_URL }]);
 
 function createClient(stubs: Partial<JenkinsClient>): JenkinsClient {
   return stubs as JenkinsClient;
+}
+
+function lastBuildSummary(buildNumber: number): LastBuildSummary {
+  return {
+    buildNumber,
+    buildUrl: `${JOB_URL}${buildNumber}/`,
+    building: false,
+    result: "SUCCESS",
+  };
 }
 
 describe("build command navigation", () => {
@@ -233,7 +246,7 @@ describe("build command navigation", () => {
   });
 
   test("Esc in shared job picker exits the build", async () => {
-    const getJobStatus = mock(async () => ({ buildNumber: 41 }));
+    const getLastBuild = mock(async () => lastBuildSummary(41));
     const triggerBuild = mock(async () => ({
       buildUrl: BUILD_URL,
       buildNumber: 42,
@@ -245,7 +258,7 @@ describe("build command navigation", () => {
 
     await runBuild({
       client: createClient({
-        getJobStatus,
+        getLastBuild,
         triggerBuild,
       }),
       env: {} as EnvConfig,
@@ -260,7 +273,7 @@ describe("build command navigation", () => {
   test("interactive mode ignores --without-params and still prompts for build mode", async () => {
     // Decision (2026-07): --without-params is a non-interactive-only flag.
     // Interactive runs must keep prompting so users pick the mode explicitly.
-    const getJobStatus = mock(async () => ({ buildNumber: 41 }));
+    const getLastBuild = mock(async () => lastBuildSummary(41));
     const triggerBuild = mock(async () => ({
       buildUrl: BUILD_URL,
       buildNumber: 42,
@@ -272,7 +285,7 @@ describe("build command navigation", () => {
 
     await runBuild({
       client: createClient({
-        getJobStatus,
+        getLastBuild,
         triggerBuild,
       }),
       env: {} as EnvConfig,
@@ -293,7 +306,7 @@ describe("build command navigation", () => {
   });
 
   test("interactive branch selection supports using job without parameters", async () => {
-    const getJobStatus = mock(async () => ({ buildNumber: 41 }));
+    const getLastBuild = mock(async () => lastBuildSummary(41));
     const triggerBuild = mock(async () => ({
       buildUrl: BUILD_URL,
       buildNumber: 42,
@@ -305,7 +318,7 @@ describe("build command navigation", () => {
 
     await runBuild({
       client: createClient({
-        getJobStatus,
+        getLastBuild,
         triggerBuild,
       }),
       env: {} as EnvConfig,
@@ -325,7 +338,7 @@ describe("build command navigation", () => {
 
     await runBuild({
       client: createClient({
-        getJobStatus: mock(async () => ({ buildNumber: 41 })),
+        getLastBuild: mock(async () => lastBuildSummary(41)),
         triggerBuild: mock(async () => ({
           buildUrl: BUILD_URL,
           buildNumber: 42,
@@ -343,7 +356,7 @@ describe("build command navigation", () => {
   });
 
   test("interactive build with parameters retries on blank branch", async () => {
-    const getJobStatus = mock(async () => ({ buildNumber: 41 }));
+    const getLastBuild = mock(async () => lastBuildSummary(41));
     const triggerBuild = mock(async () => ({
       buildUrl: BUILD_URL,
       buildNumber: 42,
@@ -359,7 +372,7 @@ describe("build command navigation", () => {
 
     await runBuild({
       client: createClient({
-        getJobStatus,
+        getLastBuild,
         triggerBuild,
       }),
       env: {} as EnvConfig,
@@ -374,7 +387,7 @@ describe("build command navigation", () => {
   });
 
   test("Esc in branch selection returns to build mode", async () => {
-    const getJobStatus = mock(async () => ({ buildNumber: 41 }));
+    const getLastBuild = mock(async () => lastBuildSummary(41));
     const triggerBuild = mock(async () => ({
       buildUrl: BUILD_URL,
       buildNumber: 42,
@@ -389,7 +402,7 @@ describe("build command navigation", () => {
 
     await runBuild({
       client: createClient({
-        getJobStatus,
+        getLastBuild,
         triggerBuild,
       }),
       env: {} as EnvConfig,
@@ -409,7 +422,7 @@ describe("build command navigation", () => {
   });
 
   test("interactive custom-params mode collects key and value", async () => {
-    const getJobStatus = mock(async () => ({ buildNumber: 41 }));
+    const getLastBuild = mock(async () => lastBuildSummary(41));
     const triggerBuild = mock(async () => ({
       buildUrl: BUILD_URL,
       buildNumber: 42,
@@ -426,7 +439,7 @@ describe("build command navigation", () => {
 
     await runBuild({
       client: createClient({
-        getJobStatus,
+        getLastBuild,
         triggerBuild,
       }),
       env: {} as EnvConfig,
@@ -441,7 +454,7 @@ describe("build command navigation", () => {
   });
 
   test("custom-params menu can cancel the build before submission", async () => {
-    const getJobStatus = mock(async () => ({ buildNumber: 41 }));
+    const getLastBuild = mock(async () => lastBuildSummary(41));
     const triggerBuild = mock(async () => ({
       buildUrl: BUILD_URL,
       buildNumber: 42,
@@ -458,7 +471,7 @@ describe("build command navigation", () => {
 
     await runBuild({
       client: createClient({
-        getJobStatus,
+        getLastBuild,
         triggerBuild,
       }),
       env: {} as EnvConfig,
@@ -470,7 +483,7 @@ describe("build command navigation", () => {
   });
 
   test("Esc in custom-params menu returns to the previous value prompt", async () => {
-    const getJobStatus = mock(async () => ({ buildNumber: 41 }));
+    const getLastBuild = mock(async () => lastBuildSummary(41));
     const triggerBuild = mock(async () => ({
       buildUrl: BUILD_URL,
       buildNumber: 42,
@@ -489,7 +502,7 @@ describe("build command navigation", () => {
 
     await runBuild({
       client: createClient({
-        getJobStatus,
+        getLastBuild,
         triggerBuild,
       }),
       env: {} as EnvConfig,
@@ -504,7 +517,7 @@ describe("build command navigation", () => {
   });
 
   test("Esc from build mode with a locked job exits instead of reopening empty search", async () => {
-    const getJobStatus = mock(async () => ({ buildNumber: 41 }));
+    const getLastBuild = mock(async () => lastBuildSummary(41));
     const triggerBuild = mock(async () => ({
       buildUrl: BUILD_URL,
       buildNumber: 42,
@@ -519,7 +532,7 @@ describe("build command navigation", () => {
 
     await runBuild({
       client: createClient({
-        getJobStatus,
+        getLastBuild,
         triggerBuild,
       }),
       env: {} as EnvConfig,
@@ -533,7 +546,7 @@ describe("build command navigation", () => {
   });
 
   test("interactive branch mode can add extra custom parameters", async () => {
-    const getJobStatus = mock(async () => ({ buildNumber: 41 }));
+    const getLastBuild = mock(async () => lastBuildSummary(41));
     const triggerBuild = mock(async () => ({
       buildUrl: BUILD_URL,
       buildNumber: 42,
@@ -554,7 +567,7 @@ describe("build command navigation", () => {
 
     await runBuild({
       client: createClient({
-        getJobStatus,
+        getLastBuild,
         triggerBuild,
       }),
       env: {} as EnvConfig,
@@ -570,7 +583,7 @@ describe("build command navigation", () => {
   });
 
   test("typed custom branch from the combined picker triggers the build", async () => {
-    const getJobStatus = mock(async () => ({ buildNumber: 41 }));
+    const getLastBuild = mock(async () => lastBuildSummary(41));
     const triggerBuild = mock(async () => ({
       buildUrl: BUILD_URL,
       buildNumber: 42,
@@ -583,7 +596,7 @@ describe("build command navigation", () => {
 
     await runBuild({
       client: createClient({
-        getJobStatus,
+        getLastBuild,
         triggerBuild,
       }),
       env: {} as EnvConfig,
@@ -598,7 +611,7 @@ describe("build command navigation", () => {
   });
 
   test("remove cached branch stays available and prunes picker options", async () => {
-    const getJobStatus = mock(async () => ({ buildNumber: 41 }));
+    const getLastBuild = mock(async () => lastBuildSummary(41));
     const triggerBuild = mock(async () => ({
       buildUrl: BUILD_URL,
       buildNumber: 42,
@@ -621,7 +634,7 @@ describe("build command navigation", () => {
 
     await runBuild({
       client: createClient({
-        getJobStatus,
+        getLastBuild,
         triggerBuild,
       }),
       env: {} as EnvConfig,
@@ -676,7 +689,7 @@ describe("build command navigation", () => {
     await runBuild({
       client: createClient({
         getJobParameterDefinitions: mock(async () => definitions),
-        getJobStatus: mock(async () => ({ buildNumber: 41 })),
+        getLastBuild: mock(async () => lastBuildSummary(41)),
         triggerBuild,
       }),
       env: {} as EnvConfig,
@@ -712,7 +725,7 @@ describe("build command navigation", () => {
     await runBuild({
       client: createClient({
         getJobParameterDefinitions: mock(async () => definitions),
-        getJobStatus: mock(async () => ({ buildNumber: 41 })),
+        getLastBuild: mock(async () => lastBuildSummary(41)),
         triggerBuild,
       }),
       env: {} as EnvConfig,
@@ -741,7 +754,7 @@ describe("build command navigation", () => {
             { name: "TOKEN", type: "password", sensitive: true },
           ],
         ),
-        getJobStatus: mock(async () => ({ buildNumber: 41 })),
+        getLastBuild: mock(async () => lastBuildSummary(41)),
         triggerBuild,
       }),
       env: {} as EnvConfig,

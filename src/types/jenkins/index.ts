@@ -22,6 +22,7 @@ export type {
   JenkinsRevision,
   JenkinsPipelineStage,
   JobStatus,
+  LastBuildSummary,
   LastFailedBuildReference,
   NodeSummary,
   NodesSummary,

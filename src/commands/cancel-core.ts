@@ -334,12 +334,12 @@ async function resolveCancelTarget(
     };
   }
 
-  const jobStatus = await options.client.getJobStatus(target.jobUrl);
-  if (jobStatus.building && jobStatus.buildUrl) {
+  const lastBuild = await options.client.getLastBuild(target.jobUrl);
+  if (lastBuild?.building) {
     return {
       kind: "build",
-      buildUrl: jobStatus.buildUrl,
-      buildNumber: jobStatus.buildNumber,
+      buildUrl: lastBuild.buildUrl,
+      buildNumber: lastBuild.buildNumber,
       label: `running build for ${target.jobLabel}`,
     };
   }

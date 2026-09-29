@@ -64,7 +64,7 @@ function fakeClient(options: {
       building: true,
       result: null,
     })),
-    getJobStatus: mock(async () => ({
+    getLastBuild: mock(async () => ({
       buildUrl: BUILD_URL,
       buildNumber: 128,
       building: true,
@@ -143,7 +143,7 @@ describe("runPendingInputsMenu", () => {
       jobLabel: "deploy",
     });
 
-    expect(client.getJobStatus).toHaveBeenCalledWith(JOB_URL);
+    expect(client.getLastBuild).toHaveBeenCalledWith(JOB_URL);
     expect(client.listPendingInputActions).toHaveBeenCalledWith(BUILD_URL);
     expect(select).not.toHaveBeenCalled();
     expect(logged()).toContain("OK: No pending input actions for deploy #128.");
@@ -161,7 +161,7 @@ describe("runPendingInputsMenu", () => {
       jobLabel: "deploy",
     });
 
-    expect(client.getJobStatus).not.toHaveBeenCalled();
+    expect(client.getLastBuild).not.toHaveBeenCalled();
     expect(client.getBuildStatus).toHaveBeenCalledWith(`${JOB_URL}/127/`);
     expect(client.listPendingInputActions).toHaveBeenCalledWith(
       `${JOB_URL}/127/`,
@@ -186,7 +186,7 @@ describe("runPendingInputsMenu", () => {
     });
 
     expect(client.getQueueBuild).toHaveBeenCalledWith(queueUrl);
-    expect(client.getJobStatus).not.toHaveBeenCalled();
+    expect(client.getLastBuild).not.toHaveBeenCalled();
     expect(client.getBuildStatus).toHaveBeenCalledWith(`${JOB_URL}/129/`);
   });
 
@@ -202,7 +202,7 @@ describe("runPendingInputsMenu", () => {
       jobLabel: "deploy",
     });
 
-    expect(client.getJobStatus).not.toHaveBeenCalled();
+    expect(client.getLastBuild).not.toHaveBeenCalled();
     expect(client.getBuildStatus).not.toHaveBeenCalled();
     expect(client.listPendingInputActions).not.toHaveBeenCalled();
     expect(logged()).toContain("deploy is still queued");

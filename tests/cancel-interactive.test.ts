@@ -199,9 +199,11 @@ describe("interactive targetless cancel", () => {
       options(
         client({
           listRunningBuilds: mock(async () => builds),
-          getJobStatus: mock(async () => ({
-            building: true,
+          getLastBuild: mock(async () => ({
             buildUrl: builds[0]!.buildUrl,
+            buildNumber: builds[0]!.buildNumber,
+            building: true,
+            result: null,
           })),
           stopBuild,
         }),
@@ -237,9 +239,11 @@ describe("interactive targetless cancel", () => {
       options(
         client({
           listRunningBuilds: mock(async () => builds),
-          getJobStatus: mock(async () => ({
-            building: true,
+          getLastBuild: mock(async () => ({
             buildUrl: builds[0]!.buildUrl,
+            buildNumber: builds[0]!.buildNumber,
+            building: true,
+            result: null,
           })),
           stopBuild: mock(async () => undefined),
         }),
@@ -268,9 +272,11 @@ describe("interactive targetless cancel", () => {
       options(
         client({
           listRunningBuilds: mock(async () => []),
-          getJobStatus: mock(async () => ({
-            building: true,
+          getLastBuild: mock(async () => ({
             buildUrl: builds[0]!.buildUrl,
+            buildNumber: builds[0]!.buildNumber,
+            building: true,
+            result: null,
           })),
           stopBuild: mock(async () => undefined),
         }),
@@ -300,9 +306,11 @@ describe("interactive targetless cancel", () => {
             listRunningBuilds: mock(async () => {
               throw new Error("offline");
             }),
-            getJobStatus: mock(async () => ({
-              building: true,
+            getLastBuild: mock(async () => ({
               buildUrl: builds[0]!.buildUrl,
+              buildNumber: builds[0]!.buildNumber,
+              building: true,
+              result: null,
             })),
             stopBuild: mock(async () => undefined),
           }),

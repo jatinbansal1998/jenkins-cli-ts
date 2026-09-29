@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { mkdirSync } from "node:fs";
+import { mkdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { registerNetworkFaultTests } from "./jenkins/network-faults";
 import {
@@ -24,6 +24,17 @@ const keychainIntegrationRequired =
   process.env.REQUIRE_KEYCHAIN_INTEGRATION === "1";
 
 registerNetworkFaultTests();
+
+/** GET URLs the CLI recorded in its `--debug` API log, in request order. */
+async function apiRequestUrls(home: string): Promise<string[]> {
+  const logs = await Promise.all(
+    cliLogFiles(home, "api").map((file) => Bun.file(file).text()),
+  );
+  return logs
+    .join("\n")
+    .split("\n")
+    .flatMap((line) => line.match(/ REQUEST GET (\S+)$/)?.[1] ?? []);
+}
 
 /** Run git with a fixed synthetic identity; fails loudly on a non-zero exit. */
 async function git(...args: string[]): Promise<string> {
@@ -2743,6 +2754,103 @@ describe.skipIf(!integrationEnabled)(
           "250ms",
           "--json",
         ]);
+      });
+    }, 90_000);
+
+    test("polls a running build without re-reading data that cannot change", async () => {
+      await withCliHome(async (waitHome) => {
+        await withCliHome(async (logsHome) => {
+          const jobUrl = `${jenkinsUrl}/job/cli-log-follow/`;
+          await runCli(waitHome, [
+            "build",
+            "--job-url",
+            jobUrl,
+            "--without-params",
+          ]);
+          const running = await pollCli(
+            waitHome,
+            ["status", "--job-url", jobUrl, "--json"],
+            (result) => {
+              const payload = JSON.parse(result.stdout) as {
+                data?: { build?: { building?: boolean } };
+              };
+              return payload.data?.build?.building === true;
+            },
+          );
+          const buildUrl = (
+            JSON.parse(running.stdout) as {
+              data: { build: { url: string } };
+            }
+          ).data.build.url;
+          // Only requests made by the commands under test count below.
+          for (const home of [waitHome, logsHome]) {
+            for (const file of cliLogFiles(home, "api")) {
+              rmSync(file);
+            }
+          }
+
+          const [waited, logs] = await Promise.all([
+            invokeCli(waitHome, [
+              "wait",
+              "--build-url",
+              buildUrl,
+              "--interval",
+              "250ms",
+              "--timeout",
+              "60s",
+              "--json",
+              "--debug",
+            ]),
+            invokeCli(logsHome, [
+              "logs",
+              "--build-url",
+              buildUrl,
+              "--follow",
+              "--poll",
+              "100ms",
+              "--debug",
+            ]),
+          ]);
+
+          expect(waited.exitCode, waited.output).toBe(0);
+          const waitedBuild = (
+            JSON.parse(waited.stdout) as {
+              data: { result: string; build: { triggeredBy?: string } };
+            }
+          ).data;
+          expect(waitedBuild.result).toBe("SUCCESS");
+          expect(waitedBuild.build.triggeredBy).toBeString();
+          const waitRequests = await apiRequestUrls(waitHome);
+          const waitStatusReads = waitRequests.filter((url) =>
+            url.startsWith(`${buildUrl}api/json`),
+          );
+          expect(waitStatusReads.length).toBeGreaterThan(3);
+          // Parameters and causes are read once, not on every poll.
+          expect(
+            waitStatusReads.filter((url) => url.includes("parameters[")),
+          ).toHaveLength(1);
+          // A freestyle build has no wfapi; the 404 is remembered.
+          expect(
+            waitRequests.filter((url) => url.includes("/wfapi/describe")),
+          ).toHaveLength(1);
+          expect(
+            waitRequests.filter((url) => url.includes("/queue/item/")).length,
+          ).toBeLessThanOrEqual(1);
+
+          expect(logs.exitCode, logs.output).toBe(0);
+          expect(logs.stdout).toContain("tail-follow-finished");
+          const logsRequests = await apiRequestUrls(logsHome);
+          expect(
+            logsRequests.filter((url) => url.includes("/progressiveText"))
+              .length,
+          ).toBeGreaterThan(10);
+          // X-More-Data says when the log is done; status is read at start
+          // and once the log closes, not on every 100ms poll.
+          expect(
+            logsRequests.filter((url) => url.startsWith(`${buildUrl}api/json`))
+              .length,
+          ).toBeLessThanOrEqual(3);
+        });
       });
     }, 90_000);
 

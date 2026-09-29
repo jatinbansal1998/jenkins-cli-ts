@@ -11,7 +11,10 @@ import type * as clack from "../src/clack";
 import type { EnvConfig } from "../src/env";
 import { BUILD_WITHOUT_PARAMS_VALUE } from "../src/flows/constants";
 import type { JenkinsClient } from "../src/jenkins/client";
-import type { JobParameterDefinition } from "../src/types/jenkins";
+import type {
+  JobParameterDefinition,
+  LastBuildSummary,
+} from "../src/types/jenkins";
 import { runBuild, setBuildDepsForTesting } from "../src/commands/build";
 import type { WatchSpinner } from "../src/commands/watch-output";
 
@@ -48,6 +51,15 @@ const QUEUE_URL = "https://jenkins.example.com/queue/item/9042/";
 
 function createClient(stubs: Partial<JenkinsClient>): JenkinsClient {
   return stubs as JenkinsClient;
+}
+
+function lastBuildSummary(buildNumber: number): LastBuildSummary {
+  return {
+    buildNumber,
+    buildUrl: `${JOB_URL}${buildNumber}/`,
+    building: false,
+    result: "SUCCESS",
+  };
 }
 
 describe("build command", () => {
@@ -115,7 +127,7 @@ describe("build command", () => {
   });
 
   test("cancel action passes only build URL when build and queue URLs are both present", async () => {
-    const getJobStatus = mock(async () => ({ buildNumber: 380 }));
+    const getLastBuild = mock(async () => lastBuildSummary(380));
     const triggerBuild = mock(async () => ({
       buildUrl: BUILD_URL,
       buildNumber: 381,
@@ -132,7 +144,7 @@ describe("build command", () => {
 
     await runBuild({
       client: createClient({
-        getJobStatus,
+        getLastBuild,
         triggerBuild,
       }),
       env: {} as EnvConfig,
@@ -152,7 +164,7 @@ describe("build command", () => {
   });
 
   test("history rebuild updates the active build used by follow-up log actions", async () => {
-    const getJobStatus = mock(async () => ({ buildNumber: 380 }));
+    const getLastBuild = mock(async () => lastBuildSummary(380));
     const triggerBuild = mock(async () => ({
       buildUrl: BUILD_URL,
       buildNumber: 381,
@@ -178,7 +190,7 @@ describe("build command", () => {
 
     await runBuild({
       client: createClient({
-        getJobStatus,
+        getLastBuild,
         triggerBuild,
       }),
       env: {} as EnvConfig,
@@ -199,7 +211,7 @@ describe("build command", () => {
   });
 
   test("prints non-interactive command when build is triggered in return-to-caller flow", async () => {
-    const getJobStatus = mock(async () => ({ buildNumber: 380 }));
+    const getLastBuild = mock(async () => lastBuildSummary(380));
     const triggerBuild = mock(async () => ({
       buildUrl: BUILD_URL,
       buildNumber: 381,
@@ -213,7 +225,7 @@ describe("build command", () => {
 
     await runBuild({
       client: createClient({
-        getJobStatus,
+        getLastBuild,
         triggerBuild,
       }),
       env: {} as EnvConfig,
@@ -238,7 +250,7 @@ describe("build command", () => {
   });
 
   test("watch cancellation still opens post-build action menu", async () => {
-    const getJobStatus = mock(async () => ({ buildNumber: 380 }));
+    const getLastBuild = mock(async () => lastBuildSummary(380));
     const triggerBuild = mock(async () => ({
       buildUrl: BUILD_URL,
       buildNumber: 381,
@@ -275,7 +287,7 @@ describe("build command", () => {
     try {
       await runBuild({
         client: createClient({
-          getJobStatus,
+          getLastBuild,
           triggerBuild,
           getBuildStatus,
         }),
@@ -312,7 +324,7 @@ describe("build command", () => {
   });
 
   test("tip command keeps --watch for without-params builds", async () => {
-    const getJobStatus = mock(async () => ({ buildNumber: 380 }));
+    const getLastBuild = mock(async () => lastBuildSummary(380));
     const triggerBuild = mock(async () => ({
       buildUrl: BUILD_URL,
       buildNumber: 381,
@@ -333,7 +345,7 @@ describe("build command", () => {
 
     await runBuild({
       client: createClient({
-        getJobStatus,
+        getLastBuild,
         triggerBuild,
         getBuildStatus,
       }),
@@ -358,7 +370,7 @@ describe("build command", () => {
   });
 
   test("tip command prints repeatable --param flags for custom parameters", async () => {
-    const getJobStatus = mock(async () => ({ buildNumber: 380 }));
+    const getLastBuild = mock(async () => lastBuildSummary(380));
     const triggerBuild = mock(async () => ({
       buildUrl: BUILD_URL,
       buildNumber: 381,
@@ -369,7 +381,7 @@ describe("build command", () => {
 
     await runBuild({
       client: createClient({
-        getJobStatus,
+        getLastBuild,
         triggerBuild,
       }),
       env: {} as EnvConfig,
@@ -400,7 +412,7 @@ describe("build command", () => {
   });
 
   test("non-interactive build without branch triggers without parameters", async () => {
-    const getJobStatus = mock(async () => ({ buildNumber: 380 }));
+    const getLastBuild = mock(async () => lastBuildSummary(380));
     const triggerBuild = mock(async () => ({
       queueUrl: QUEUE_URL,
       jobUrl: JOB_URL,
@@ -408,7 +420,7 @@ describe("build command", () => {
 
     await runBuild({
       client: createClient({
-        getJobStatus,
+        getLastBuild,
         triggerBuild,
       }),
       env: {} as EnvConfig,
@@ -426,7 +438,7 @@ describe("build command", () => {
   });
 
   test("non-interactive build with blank branch triggers without parameters", async () => {
-    const getJobStatus = mock(async () => ({ buildNumber: 380 }));
+    const getLastBuild = mock(async () => lastBuildSummary(380));
     const triggerBuild = mock(async () => ({
       queueUrl: QUEUE_URL,
       jobUrl: JOB_URL,
@@ -434,7 +446,7 @@ describe("build command", () => {
 
     await runBuild({
       client: createClient({
-        getJobStatus,
+        getLastBuild,
         triggerBuild,
       }),
       env: {} as EnvConfig,
@@ -452,7 +464,7 @@ describe("build command", () => {
   });
 
   test("non-interactive build with custom params triggers parameterized build", async () => {
-    const getJobStatus = mock(async () => ({ buildNumber: 380 }));
+    const getLastBuild = mock(async () => lastBuildSummary(380));
     const triggerBuild = mock(async () => ({
       queueUrl: QUEUE_URL,
       jobUrl: JOB_URL,
@@ -460,7 +472,7 @@ describe("build command", () => {
 
     await runBuild({
       client: createClient({
-        getJobStatus,
+        getLastBuild,
         triggerBuild,
       }),
       env: {} as EnvConfig,
@@ -484,7 +496,7 @@ describe("build command", () => {
   });
 
   test("non-interactive build merges branch and custom params", async () => {
-    const getJobStatus = mock(async () => ({ buildNumber: 380 }));
+    const getLastBuild = mock(async () => lastBuildSummary(380));
     const triggerBuild = mock(async () => ({
       queueUrl: QUEUE_URL,
       jobUrl: JOB_URL,
@@ -492,7 +504,7 @@ describe("build command", () => {
 
     await runBuild({
       client: createClient({
-        getJobStatus,
+        getLastBuild,
         triggerBuild,
       }),
       env: {} as EnvConfig,
@@ -516,7 +528,7 @@ describe("build command", () => {
   });
 
   test("non-interactive build fails when branch param key conflicts with custom params", async () => {
-    const getJobStatus = mock(async () => ({ buildNumber: 380 }));
+    const getLastBuild = mock(async () => lastBuildSummary(380));
     const triggerBuild = mock(async () => ({
       queueUrl: QUEUE_URL,
       jobUrl: JOB_URL,
@@ -525,7 +537,7 @@ describe("build command", () => {
     await expect(
       runBuild({
         client: createClient({
-          getJobStatus,
+          getLastBuild,
           triggerBuild,
         }),
         env: {} as EnvConfig,
@@ -542,7 +554,7 @@ describe("build command", () => {
   });
 
   test("watch cancellation still reaches trigger-another-build confirmation", async () => {
-    const getJobStatus = mock(async () => ({ buildNumber: 380 }));
+    const getLastBuild = mock(async () => lastBuildSummary(380));
     const triggerBuild = mock(async () => ({
       buildUrl: BUILD_URL,
       buildNumber: 381,
@@ -581,7 +593,7 @@ describe("build command", () => {
     try {
       await runBuild({
         client: createClient({
-          getJobStatus,
+          getLastBuild,
           triggerBuild,
           getBuildStatus,
         }),
@@ -618,7 +630,7 @@ describe("build command", () => {
     const originalExitCode = process.exitCode;
     process.exitCode = 0;
 
-    const getJobStatus = mock(async () => ({ buildNumber: 380 }));
+    const getLastBuild = mock(async () => lastBuildSummary(380));
     const triggerBuild = mock(async () => ({
       buildUrl: BUILD_URL,
       buildNumber: 381,
@@ -664,7 +676,7 @@ describe("build command", () => {
     try {
       await runBuild({
         client: createClient({
-          getJobStatus,
+          getLastBuild,
           triggerBuild,
           getBuildStatus,
           stopBuild,
@@ -700,7 +712,7 @@ describe("build command", () => {
     const originalExitCode = process.exitCode;
     process.exitCode = 0;
 
-    const getJobStatus = mock(async () => ({ buildNumber: 380 }));
+    const getLastBuild = mock(async () => lastBuildSummary(380));
     const triggerBuild = mock(async () => ({
       buildUrl: BUILD_URL,
       buildNumber: 381,
@@ -744,7 +756,7 @@ describe("build command", () => {
     try {
       await runBuild({
         client: createClient({
-          getJobStatus,
+          getLastBuild,
           triggerBuild,
           getBuildStatus,
           stopBuild,
@@ -842,7 +854,7 @@ describe("build command", () => {
   });
 
   test("non-interactive --without-params triggers with an empty parameter map", async () => {
-    const getJobStatus = mock(async () => ({ buildNumber: 380 }));
+    const getLastBuild = mock(async () => lastBuildSummary(380));
     const triggerBuild = mock(async () => ({
       queueUrl: QUEUE_URL,
       jobUrl: JOB_URL,
@@ -852,7 +864,7 @@ describe("build command", () => {
     setBuildDepsForTesting({ recordBranchSelection });
 
     await runBuild({
-      client: createClient({ getJobStatus, triggerBuild }),
+      client: createClient({ getLastBuild, triggerBuild }),
       env: {} as EnvConfig,
       jobUrl: JOB_URL,
       defaultBranch: true,
@@ -869,7 +881,7 @@ describe("build command", () => {
   });
 
   test("non-interactive build honors a custom --branch-param name", async () => {
-    const getJobStatus = mock(async () => ({ buildNumber: 380 }));
+    const getLastBuild = mock(async () => lastBuildSummary(380));
     const triggerBuild = mock(async () => ({
       queueUrl: QUEUE_URL,
       jobUrl: JOB_URL,
@@ -879,7 +891,7 @@ describe("build command", () => {
     setBuildDepsForTesting({ recordBranchSelection });
 
     await runBuild({
-      client: createClient({ getJobStatus, triggerBuild }),
+      client: createClient({ getLastBuild, triggerBuild }),
       env: {} as EnvConfig,
       jobUrl: JOB_URL,
       branch: "release-1.2",
@@ -907,7 +919,7 @@ describe("build command", () => {
     const loadJobs = mock(async () => [cachedJob]);
     const resolveJobMatch = mock(async () => cachedJob);
     const recordRecentJob = mock(async () => undefined);
-    const getJobStatus = mock(async () => ({ buildNumber: 5 }));
+    const getLastBuild = mock(async () => lastBuildSummary(5));
     const triggerBuild = mock(async () => ({
       buildUrl: `${cachedJob.url}/6/`,
       buildNumber: 6,
@@ -917,7 +929,7 @@ describe("build command", () => {
 
     try {
       await runBuild({
-        client: createClient({ getJobStatus, triggerBuild }),
+        client: createClient({ getLastBuild, triggerBuild }),
         env: {} as EnvConfig,
         job: "api deploy",
         branch: "staging",
@@ -987,7 +999,7 @@ describe("build command", () => {
     const originalExitCode = process.exitCode;
     process.exitCode = 0;
 
-    const getJobStatus = mock(async () => ({ buildNumber: 380 }));
+    const getLastBuild = mock(async () => lastBuildSummary(380));
     const triggerBuild = mock(async () => ({
       buildUrl: BUILD_URL,
       buildNumber: 381,
@@ -1002,7 +1014,7 @@ describe("build command", () => {
 
     try {
       await runBuild({
-        client: createClient({ getJobStatus, triggerBuild, getBuildStatus }),
+        client: createClient({ getLastBuild, triggerBuild, getBuildStatus }),
         env: {} as EnvConfig,
         jobUrl: JOB_URL,
         branch: "staging",
@@ -1021,11 +1033,46 @@ describe("build command", () => {
     }
   });
 
+  test("non-interactive watch finds the new build by job when Jenkins returns no queue URL", async () => {
+    const originalExitCode = process.exitCode;
+    process.exitCode = 0;
+
+    const lastBuilds = [
+      lastBuildSummary(380),
+      { ...lastBuildSummary(381), building: true, result: null },
+    ];
+    const getLastBuild = mock(async () => lastBuilds.shift()!);
+    const triggerBuild = mock(async () => ({ jobUrl: JOB_URL }));
+    const getBuildStatus = mock(async (_buildUrl: string) => ({
+      buildNumber: 381,
+      buildUrl: `${JOB_URL}381/`,
+      result: "SUCCESS",
+      building: false,
+    }));
+
+    try {
+      await runBuild({
+        client: createClient({ getLastBuild, triggerBuild, getBuildStatus }),
+        env: {} as EnvConfig,
+        jobUrl: JOB_URL,
+        branch: "staging",
+        nonInteractive: true,
+        watch: true,
+      });
+
+      expect(getLastBuild).toHaveBeenCalledTimes(2);
+      expect(getBuildStatus.mock.calls).toEqual([[`${JOB_URL}381/`]]);
+      expect(process.exitCode).toBe(0);
+    } finally {
+      process.exitCode = originalExitCode;
+    }
+  });
+
   test("non-interactive watch resolves a queued build before polling it", async () => {
     const originalExitCode = process.exitCode;
     process.exitCode = 0;
 
-    const getJobStatus = mock(async () => ({ buildNumber: 380 }));
+    const getLastBuild = mock(async () => lastBuildSummary(380));
     const triggerBuild = mock(async () => ({
       queueUrl: QUEUE_URL,
       jobUrl: JOB_URL,
@@ -1044,7 +1091,7 @@ describe("build command", () => {
     try {
       await runBuild({
         client: createClient({
-          getJobStatus,
+          getLastBuild,
           triggerBuild,
           getQueueBuild,
           getBuildStatus,
@@ -1107,7 +1154,7 @@ describe("build command", () => {
             { name: "FORCE", type: "boolean", sensitive: false },
           ],
         ),
-        getJobStatus: mock(async () => ({})),
+        getLastBuild: mock(async () => null),
         triggerBuild,
       }),
       env: {} as EnvConfig,
@@ -1135,7 +1182,7 @@ describe("build command", () => {
         getJobParameterDefinitions: mock(async () => {
           throw new Error("metadata endpoint unavailable");
         }),
-        getJobStatus: mock(async () => ({})),
+        getLastBuild: mock(async () => null),
         triggerBuild,
       }),
       env: {} as EnvConfig,
