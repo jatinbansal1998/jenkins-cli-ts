@@ -228,7 +228,7 @@ file is read and rewritten. Most of the perf list below is one of those two.
 
 ### HTTP client
 
-- [ ] **P17. Retries fire immediately, and also after a timeout.** - Today: `client.ts:1487-1490` retries with no delay, and retries after
+- [x] **P17. Retries fire immediately, and also after a timeout.** - Today: `client.ts:1487-1490` retries with no delay, and retries after
       an `AbortError` timeout too, so worst case is 2 x 10s = 20s. - Why it matters: immediate retry on a 503 usually gets another 503. A
       retry after a timeout doubles the wait for nothing. - Do: jittered backoff (~200-500ms). Do not retry after a header
       timeout. Keep retrying GETs on 502/503/504. Non-idempotent POSTs

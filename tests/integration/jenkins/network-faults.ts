@@ -84,11 +84,15 @@ export function registerNetworkFaultTests(): void {
                 ok: false,
                 error: { message: expect.any(String) },
               });
+              const gets = proxy.requests.filter(
+                (request) => request.method === "GET",
+              );
+              if (fault.type === "reset_peer") {
+                expect(gets).toHaveLength(2);
+              }
               if (fault.type === "timeout") {
                 expect(result.output).toContain("timed out");
-                expect(
-                  proxy.requests.filter((request) => request.method === "GET"),
-                ).toHaveLength(2);
+                expect(gets).toHaveLength(1);
               }
               if (fault.type === "limit_data") {
                 expect(result.output).toContain("Invalid JSON response");
@@ -127,7 +131,10 @@ export function registerNetworkFaultTests(): void {
             expect(queued.exitCode, queued.output).toBe(0);
             const payload = parseJson<{ data: { queueUrl: string } }>(queued);
             const queueUrl = new URL(payload.data.queueUrl);
-            proxy.loseNextPost({ type: "timeout", attributes: { timeout: 0 } });
+            proxy.loseNextPost({
+              type: "reset_peer",
+              attributes: { timeout: 0 },
+            });
             const cancelled = await invokeCli(
               home,
               [
