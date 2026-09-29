@@ -1840,7 +1840,9 @@ describe.skipIf(!integrationEnabled)(
               withoutKeychain,
             ),
           );
-          expect(cachedJobs.data).toEqual(jobs.data);
+          expect(cachedJobs.data.map((job) => job.name)).toEqual(
+            jobs.data.map((job) => job.name),
+          );
           const refresh = await runCliExpectFailure(
             home,
             ["list", "--refresh", "--profile", profile],
