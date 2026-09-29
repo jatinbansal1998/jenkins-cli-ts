@@ -1007,9 +1007,10 @@ export class JenkinsClient {
       options.operation === "approve"
         ? "approve pending input"
         : "abort pending input";
+    // Resolve the token and fetch (and cache) the crumb before the POST so
+    // their failures are plain errors rather than an unconfirmed submission.
+    await this.resolveApiToken();
     if (this.useCrumb) {
-      // Fetch (and cache) the crumb before the POST so a crumb failure is a
-      // plain error rather than an unconfirmed submission.
       await this.getCrumb();
     }
     // One deadline covers headers and body: the shared header timeout is

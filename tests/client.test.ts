@@ -1908,4 +1908,26 @@ describe("JenkinsClient API token lookup", () => {
     ).rejects.toBe(tokenError);
     expect(fetchMock).not.toHaveBeenCalled();
   });
+
+  test("fails a pending input submission instead of reporting it unconfirmed", async () => {
+    const fetchMock = mock(async () => new Response(null, { status: 200 }));
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+    const tokenError = new CliError("No token.", [], "JENKINS_AUTH_ERROR");
+
+    const client = new JenkinsClient({
+      baseUrl: "https://jenkins.example.com",
+      user: "user",
+      apiToken: async () => {
+        throw tokenError;
+      },
+    });
+
+    await expect(
+      client.submitPendingInput({
+        url: "https://jenkins.example.com/job/app/1/wfapi/inputSubmit?inputId=Gate",
+        operation: "approve",
+      }),
+    ).rejects.toBe(tokenError);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
 });
