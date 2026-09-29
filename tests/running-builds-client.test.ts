@@ -9,6 +9,8 @@ afterEach(() => {
 
 const FOLDER_CLASS = "com.cloudbees.hudson.plugins.folder.Folder";
 const JOB_CLASS = "hudson.model.FreeStyleProject";
+const MULTIBRANCH_CLASS =
+  "org.jenkinsci.plugins.workflow.multibranch.WorkflowMultiBranchProject";
 
 test("normalizes, sorts, and deduplicates running builds in nested folders", async () => {
   const fetchMock = mock(async (_input: Parameters<typeof fetch>[0]) =>
@@ -144,5 +146,49 @@ describe("running-build folder fallback", () => {
 
     expect(builds).toHaveLength(1);
     expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  test("includes running branch builds of multibranch projects", async () => {
+    const fetchMock = mock(async (_input: Parameters<typeof fetch>[0]) =>
+      Response.json({
+        jobs: [
+          {
+            _class: MULTIBRANCH_CLASS,
+            name: "api",
+            url: "https://jenkins.example.com/job/api/",
+            jobs: [
+              {
+                _class: "org.jenkinsci.plugins.workflow.job.WorkflowJob",
+                name: "main",
+                fullName: "api/main",
+                url: "https://jenkins.example.com/job/api/job/main/",
+                lastBuild: {
+                  number: 4,
+                  url: "https://jenkins.example.com/job/api/job/main/4/",
+                  building: true,
+                },
+              },
+            ],
+          },
+        ],
+      }),
+    );
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+    const builds = await new JenkinsClient({
+      baseUrl: "https://jenkins.example.com",
+      user: "user",
+      apiToken: "token",
+    }).listRunningBuilds();
+
+    expect(builds).toEqual([
+      {
+        jobName: "main",
+        fullJobName: "api/main",
+        jobUrl: "https://jenkins.example.com/job/api/job/main/",
+        buildNumber: 4,
+        buildUrl: "https://jenkins.example.com/job/api/job/main/4/",
+      },
+    ]);
   });
 });
