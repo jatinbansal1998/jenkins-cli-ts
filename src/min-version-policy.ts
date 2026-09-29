@@ -3,6 +3,7 @@ import { CLI_FLAGS } from "./cli-constants";
 import { runUpdate } from "./commands/update";
 import { GITHUB_VERSION_POLICY_URL } from "./github-constants";
 import { fetchVersionPolicy } from "./github/api-wrapper";
+import { selfInvocation } from "./self-invocation";
 import parser from "yargs-parser";
 import {
   compareVersions,
@@ -10,11 +11,13 @@ import {
   normalizeVersionTag,
   readUpdateState,
   patchUpdateState,
+  type UpdateState,
 } from "./update";
 
 const POLICY_URL = GITHUB_VERSION_POLICY_URL;
 const POLICY_FETCH_TIMEOUT_MS = 800;
 const POLICY_REFRESH_TTL_MS = 60 * 60 * 1000;
+export const MIN_VERSION_REFRESH_COMMAND = "refresh-version-policy";
 
 type MinimumVersionPolicyDeps = {
   compareVersions: typeof compareVersions;
@@ -23,6 +26,7 @@ type MinimumVersionPolicyDeps = {
   readUpdateState: typeof readUpdateState;
   runUpdate: typeof runUpdate;
   patchUpdateState: typeof patchUpdateState;
+  spawnDetached: (command: string[]) => void;
 };
 
 const defaultMinimumVersionPolicyDeps: MinimumVersionPolicyDeps = {
@@ -32,6 +36,14 @@ const defaultMinimumVersionPolicyDeps: MinimumVersionPolicyDeps = {
   readUpdateState,
   runUpdate,
   patchUpdateState,
+  spawnDetached(command) {
+    Bun.spawn({
+      cmd: command,
+      stdio: ["ignore", "ignore", "ignore"],
+      detached: true,
+      windowsHide: true,
+    }).unref();
+  },
 };
 
 let minimumVersionPolicyDeps = defaultMinimumVersionPolicyDeps;
@@ -51,10 +63,12 @@ export function setMinimumVersionPolicyDepsForTesting(
 type EnforceMinimumVersionOptions = {
   currentVersion: string;
   rawArgs: string[];
+  state: UpdateState;
 };
 
 type RefreshMinimumVersionOptions = {
-  currentVersion: string;
+  rawArgs: string[];
+  state: UpdateState;
 };
 
 type MinimumVersionPolicy = {
@@ -69,7 +83,7 @@ export async function enforceMinimumVersionFromCache(
     return;
   }
 
-  const state = await minimumVersionPolicyDeps.readUpdateState();
+  const { state } = options;
   const minAllowedVersion = state.minAllowedVersion?.trim();
   if (!minAllowedVersion) {
     return;
@@ -110,13 +124,30 @@ export async function enforceMinimumVersionFromCache(
   }
 }
 
+/**
+ * Hands a stale policy refresh to a detached worker so the foreground command
+ * never waits on the GitHub fetch.
+ */
 export function kickOffMinimumVersionRefresh(
   options: RefreshMinimumVersionOptions,
 ): void {
-  void refreshMinimumVersionPolicy(options.currentVersion);
+  if (
+    isHelpOrVersionRequest(options.rawArgs) ||
+    !shouldRefreshPolicy(options.state.minAllowedFetchedAt)
+  ) {
+    return;
+  }
+  try {
+    minimumVersionPolicyDeps.spawnDetached(
+      selfInvocation([MIN_VERSION_REFRESH_COMMAND]),
+    );
+  } catch {
+    // Best-effort only; the next start retries.
+  }
 }
 
-async function refreshMinimumVersionPolicy(
+/** Runs in the detached worker that `kickOffMinimumVersionRefresh` spawns. */
+export async function refreshMinimumVersionPolicy(
   currentVersion: string,
 ): Promise<void> {
   try {
@@ -204,6 +235,19 @@ function isUpdateCommand(rawArgs: string[]): boolean {
     (value): value is string => typeof value === "string",
   );
   return command === "update";
+}
+
+function isHelpOrVersionRequest(rawArgs: string[]): boolean {
+  const flags = new Set<string>([
+    CLI_FLAGS.HELP,
+    CLI_FLAGS.HELP_SHORT,
+    CLI_FLAGS.VERSION,
+    CLI_FLAGS.VERSION_SHORT,
+  ]);
+  if (rawArgs.some((arg) => flags.has(arg))) {
+    return true;
+  }
+  return parser(rawArgs)._[0] === "help";
 }
 
 function isInteractive(rawArgs: string[]): boolean {

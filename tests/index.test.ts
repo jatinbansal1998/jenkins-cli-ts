@@ -2,12 +2,14 @@ import { describe, expect, test } from "bun:test";
 import fs from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { stampFreshUpdateState } from "./helpers.update-state";
 import { CliError } from "../src/cli";
 import { parseBuildCustomParams } from "../src";
 
 describe("cli default command", () => {
   test("defaults to list flow when no command is provided", () => {
     const tempHome = fs.mkdtempSync(join(tmpdir(), "jenkins-cli-home-"));
+    stampFreshUpdateState(tempHome);
 
     try {
       const result = Bun.spawnSync({
@@ -38,6 +40,7 @@ describe("cli default command", () => {
 
   test("migrates legacy config during normal command execution", () => {
     const tempHome = fs.mkdtempSync(join(tmpdir(), "jenkins-cli-home-"));
+    stampFreshUpdateState(tempHome);
     const configDir = join(tempHome, ".config", "jenkins-cli");
     const configPath = join(configDir, "jenkins-cli-config.json");
 
@@ -93,6 +96,7 @@ describe("cli default command", () => {
 
   test("does not fallback to legacy global cache file", () => {
     const tempHome = fs.mkdtempSync(join(tmpdir(), "jenkins-cli-home-"));
+    stampFreshUpdateState(tempHome);
     const cacheDir = join(tempHome, "Library", "Caches", "jenkins-cli");
     const legacyCachePath = join(cacheDir, "jobs.json");
 
@@ -145,6 +149,7 @@ describe("cli default command", () => {
 
   test("fails fast in non-interactive mode when cached minimum version is higher", () => {
     const tempHome = fs.mkdtempSync(join(tmpdir(), "jenkins-cli-home-"));
+    stampFreshUpdateState(tempHome);
     const configDir = join(tempHome, ".config", "jenkins-cli");
     const updateStatePath = join(configDir, "update-state.json");
 
@@ -154,7 +159,7 @@ describe("cli default command", () => {
         updateStatePath,
         JSON.stringify({
           minAllowedVersion: "v9.9.9",
-          minAllowedFetchedAt: "2026-02-12T00:00:00.000Z",
+          minAllowedFetchedAt: new Date().toISOString(),
         }),
       );
 
@@ -189,6 +194,7 @@ describe("cli default command", () => {
 
   test("startup remains non-blocking when min-version cache is missing", () => {
     const tempHome = fs.mkdtempSync(join(tmpdir(), "jenkins-cli-home-"));
+    stampFreshUpdateState(tempHome);
 
     try {
       const result = Bun.spawnSync({
@@ -223,6 +229,7 @@ function runCli(args: string[]): {
   output: string;
 } {
   const tempHome = fs.mkdtempSync(join(tmpdir(), "jenkins-cli-home-"));
+  stampFreshUpdateState(tempHome);
   try {
     const result = Bun.spawnSync({
       cmd: ["bun", "run", "src/index.ts", ...args],

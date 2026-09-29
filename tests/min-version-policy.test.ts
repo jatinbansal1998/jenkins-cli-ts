@@ -6,6 +6,7 @@ const { compareVersions, normalizeVersionTag } = await import("../src/update");
 const { setMinimumVersionPolicyDepsForTesting } =
   await import("../src/min-version-policy");
 const runUpdateMock = mock(async () => undefined);
+const spawnDetachedMock = mock((_command: string[]) => undefined);
 const getPreferredUpdateCommandMock = mock(() => "jenkins-cli update");
 
 let updateState: Record<string, unknown> = {};
@@ -38,6 +39,7 @@ beforeEach(() => {
   getPreferredUpdateCommandMock.mockClear();
   readUpdateStateMock.mockClear();
   patchUpdateStateMock.mockClear();
+  spawnDetachedMock.mockClear();
   restoreMinimumVersionPolicyDeps = setMinimumVersionPolicyDepsForTesting({
     compareVersions,
     getPreferredUpdateCommand: getPreferredUpdateCommandMock,
@@ -45,6 +47,7 @@ beforeEach(() => {
     readUpdateState: readUpdateStateMock,
     runUpdate: runUpdateMock,
     patchUpdateState: patchUpdateStateMock,
+    spawnDetached: spawnDetachedMock,
   });
 });
 
@@ -66,6 +69,7 @@ describe("minimum version policy", () => {
       enforceMinimumVersionFromCache({
         currentVersion: "0.7.0",
         rawArgs: ["list"],
+        state: updateState,
       }),
     ).resolves.toBeUndefined();
     expect(runUpdateMock).not.toHaveBeenCalled();
@@ -80,6 +84,7 @@ describe("minimum version policy", () => {
       enforceMinimumVersionFromCache({
         currentVersion: "0.7.0",
         rawArgs: ["list"],
+        state: updateState,
       }),
     ).resolves.toBeUndefined();
     expect(runUpdateMock).not.toHaveBeenCalled();
@@ -96,6 +101,7 @@ describe("minimum version policy", () => {
       enforceMinimumVersionFromCache({
         currentVersion: "0.7.0",
         rawArgs: ["list"],
+        state: updateState,
       }),
     ).resolves.toBeUndefined();
     expect(runUpdateMock).toHaveBeenCalledTimes(1);
@@ -110,6 +116,7 @@ describe("minimum version policy", () => {
       enforceMinimumVersionFromCache({
         currentVersion: "0.7.0",
         rawArgs: ["list", "--non-interactive"],
+        state: updateState,
       }),
     ).rejects.toBeInstanceOf(CliError);
     expect(runUpdateMock).not.toHaveBeenCalled();
@@ -124,6 +131,7 @@ describe("minimum version policy", () => {
       enforceMinimumVersionFromCache({
         currentVersion: "0.7.0",
         rawArgs: ["update"],
+        state: updateState,
       }),
     ).resolves.toBeUndefined();
     expect(runUpdateMock).not.toHaveBeenCalled();
@@ -138,6 +146,7 @@ describe("minimum version policy", () => {
       enforceMinimumVersionFromCache({
         currentVersion: "0.7.0",
         rawArgs: ["list", "--profile", "update", "--non-interactive"],
+        state: updateState,
       }),
     ).rejects.toBeInstanceOf(CliError);
     expect(runUpdateMock).not.toHaveBeenCalled();
@@ -152,13 +161,53 @@ describe("minimum version policy", () => {
       enforceMinimumVersionFromCache({
         currentVersion: "0.7.0",
         rawArgs: ["--profile", "default", "update"],
+        state: updateState,
       }),
     ).resolves.toBeUndefined();
     expect(runUpdateMock).not.toHaveBeenCalled();
   });
 
-  test("refresh skips network call when cached policy is still fresh", async () => {
+  test("kick-off hands a stale policy refresh to a detached worker", async () => {
+    const { kickOffMinimumVersionRefresh, MIN_VERSION_REFRESH_COMMAND } =
+      await import("../src/min-version-policy");
+    const fetchMock = mock(async () => new Response("{}", { status: 200 }));
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+    kickOffMinimumVersionRefresh({ rawArgs: ["list", "--json"], state: {} });
+
+    expect(spawnDetachedMock).toHaveBeenCalledTimes(1);
+    expect(spawnDetachedMock.mock.calls[0]?.[0].at(-1)).toBe(
+      MIN_VERSION_REFRESH_COMMAND,
+    );
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  test.each([["--help"], ["-h"], ["--version"], ["-v"], ["help"]])(
+    "kick-off skips the refresh for %s",
+    async (arg) => {
+      const { kickOffMinimumVersionRefresh } =
+        await import("../src/min-version-policy");
+
+      kickOffMinimumVersionRefresh({ rawArgs: [arg], state: {} });
+
+      expect(spawnDetachedMock).not.toHaveBeenCalled();
+    },
+  );
+
+  test("kick-off skips the refresh when cached policy is still fresh", async () => {
     const { kickOffMinimumVersionRefresh } =
+      await import("../src/min-version-policy");
+
+    kickOffMinimumVersionRefresh({
+      rawArgs: ["list"],
+      state: { minAllowedFetchedAt: new Date().toISOString() },
+    });
+
+    expect(spawnDetachedMock).not.toHaveBeenCalled();
+  });
+
+  test("refresh skips network call when cached policy is still fresh", async () => {
+    const { refreshMinimumVersionPolicy } =
       await import("../src/min-version-policy");
     updateState = {
       minAllowedVersion: "v0.7.0",
@@ -167,15 +216,14 @@ describe("minimum version policy", () => {
     const fetchMock = mock(async () => new Response("{}", { status: 200 }));
     globalThis.fetch = fetchMock as unknown as typeof fetch;
 
-    kickOffMinimumVersionRefresh({ currentVersion: "0.7.0" });
-    await flushBackgroundTasks();
+    await refreshMinimumVersionPolicy("0.7.0");
 
     expect(fetchMock).not.toHaveBeenCalled();
     expect(patchUpdateStateMock).not.toHaveBeenCalled();
   });
 
   test("refresh stores latest valid policy", async () => {
-    const { kickOffMinimumVersionRefresh } =
+    const { refreshMinimumVersionPolicy } =
       await import("../src/min-version-policy");
     updateState = {
       minAllowedVersion: "v0.7.0",
@@ -196,8 +244,7 @@ describe("minimum version policy", () => {
     );
     globalThis.fetch = fetchMock as unknown as typeof fetch;
 
-    kickOffMinimumVersionRefresh({ currentVersion: "0.7.0" });
-    await flushBackgroundTasks();
+    await refreshMinimumVersionPolicy("0.7.0");
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(updateState.minAllowedVersion).toBe("v1.2.3");
@@ -207,7 +254,7 @@ describe("minimum version policy", () => {
   });
 
   test("refresh failure preserves existing cached policy", async () => {
-    const { kickOffMinimumVersionRefresh } =
+    const { refreshMinimumVersionPolicy } =
       await import("../src/min-version-policy");
     updateState = {
       minAllowedVersion: "v7.7.7",
@@ -220,16 +267,10 @@ describe("minimum version policy", () => {
     const fetchMock = mock(async () => new Response("{}", { status: 500 }));
     globalThis.fetch = fetchMock as unknown as typeof fetch;
 
-    kickOffMinimumVersionRefresh({ currentVersion: "0.7.0" });
-    await flushBackgroundTasks();
+    await refreshMinimumVersionPolicy("0.7.0");
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(patchUpdateStateMock).not.toHaveBeenCalled();
     expect(updateState).toEqual(previousState);
   });
 });
-
-async function flushBackgroundTasks(): Promise<void> {
-  await new Promise((resolve) => setTimeout(resolve, 0));
-  await new Promise((resolve) => setTimeout(resolve, 0));
-}

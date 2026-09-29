@@ -47,7 +47,7 @@ test.skipIf(process.platform === "win32").each([false, true])(
           await nativeFetch(${JSON.stringify(new URL("finished", server.url).href)});
         }
       } else {
-        kickOffAutoUpdate("0.0.1", ["auth", "list"]);
+        kickOffAutoUpdate("0.0.1", ["auth", "list"], {});
         console.log("foreground finished");
       }
     `,

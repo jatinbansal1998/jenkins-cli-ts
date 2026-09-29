@@ -399,16 +399,19 @@ function shouldSkipAutoUpdate(rawArgs: string[]): boolean {
 export function kickOffAutoUpdate(
   currentVersion: string,
   rawArgs: string[],
+  state: UpdateState,
 ): void {
   if (shouldSkipAutoUpdate(rawArgs)) {
     return;
   }
-  void runAutoUpdate(currentVersion);
+  void runAutoUpdate(currentVersion, state);
 }
 
-async function runAutoUpdate(currentVersion: string): Promise<void> {
+async function runAutoUpdate(
+  currentVersion: string,
+  state: UpdateState,
+): Promise<void> {
   try {
-    const state = await readUpdateState();
     const lastChecked = state.lastCheckedAt
       ? Date.parse(state.lastCheckedAt)
       : NaN;
