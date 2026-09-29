@@ -103,8 +103,11 @@ export function getSuggestedJobs(
 
 export type JobCacheEnv = Pick<
   EnvConfig,
-  "jenkinsUrl" | "jenkinsUser" | "jenkinsApiToken" | "useCrumb" | "folderDepth"
+  "jenkinsUrl" | "jenkinsUser" | "useCrumb" | "folderDepth"
 >;
+
+/** What the parent hands the detached `refresh-job-cache` process. */
+export type JobCacheRefreshPayload = JobCacheEnv & { jenkinsApiToken: string };
 
 const CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 const REFRESH_LOCK_TTL_MS = 10 * 60 * 1000;
@@ -154,7 +157,7 @@ export async function loadJobs(options: {
 
   const ageMs = Date.now() - new Date(cache.fetchedAt).getTime();
   if (ageMs > CACHE_TTL_MS) {
-    await scheduleBackgroundRefresh(options.env);
+    await scheduleBackgroundRefresh(options.client, options.env);
     printHint(
       `Job cache is ${formatAge(ageMs)} old; refreshing it in the background. Run \`jenkins-cli list --refresh\` to wait for fresh data.`,
     );
@@ -200,16 +203,24 @@ async function fetchAndCacheJobs(
   return jobs;
 }
 
-async function scheduleBackgroundRefresh(env: JobCacheEnv): Promise<void> {
+async function scheduleBackgroundRefresh(
+  client: JenkinsClient,
+  env: JobCacheEnv,
+): Promise<void> {
+  const lockPath = getRefreshLockPath(env.jenkinsUrl);
   try {
     await mkdir(CACHE_DIR, { recursive: true });
-    if (!(await acquireRefreshLock(getRefreshLockPath(env.jenkinsUrl)))) {
+    if (!(await acquireRefreshLock(lockPath))) {
       return;
     }
-    const payload: JobCacheEnv = {
+  } catch {
+    return;
+  }
+  try {
+    const payload: JobCacheRefreshPayload = {
       jenkinsUrl: env.jenkinsUrl,
       jenkinsUser: env.jenkinsUser,
-      jenkinsApiToken: env.jenkinsApiToken,
+      jenkinsApiToken: await client.resolveApiToken(),
       useCrumb: env.useCrumb,
       folderDepth: env.folderDepth,
     };
@@ -217,7 +228,14 @@ async function scheduleBackgroundRefresh(env: JobCacheEnv): Promise<void> {
       selfInvocation([JOB_CACHE_REFRESH_COMMAND, "--non-interactive"]),
       { [JOB_CACHE_REFRESH_ENV]: JSON.stringify(payload) },
     );
-  } catch {}
+  } catch (error) {
+    // No worker will clear the lock, so release it for the next run.
+    await rm(lockPath, { force: true }).catch(() => undefined);
+    // Unusable credentials must surface; a failed spawn only delays freshness.
+    if (error instanceof CliError && error.code === "JENKINS_AUTH_ERROR") {
+      throw error;
+    }
+  }
 }
 
 export async function clearJobCacheRefreshLock(

@@ -1827,6 +1827,29 @@ describe.skipIf(!integrationEnabled)(
             ]),
           );
 
+          // The null backend holds no token, so these runs prove which
+          // commands read the keychain: a fresh-cache list must not.
+          const withoutKeychain = {
+            ...withoutCredentialEnv,
+            TS_KEYRING_BACKEND: "null",
+          };
+          const cachedJobs = parseJson<{ data: Array<{ name: string }> }>(
+            await runCli(
+              home,
+              ["list", "--json", "--profile", profile],
+              withoutKeychain,
+            ),
+          );
+          expect(cachedJobs.data.map((job) => job.name)).toEqual(
+            jobs.data.map((job) => job.name),
+          );
+          const refresh = await runCliExpectFailure(
+            home,
+            ["list", "--refresh", "--profile", profile],
+            withoutKeychain,
+          );
+          expect(refresh.output).toContain("No Jenkins API token found");
+
           await runCli(
             home,
             ["auth", "logout", "--profile", profile],

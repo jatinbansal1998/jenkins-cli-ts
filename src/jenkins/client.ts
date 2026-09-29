@@ -106,7 +106,9 @@ export type {
 
 export class JenkinsClient {
   private readonly baseUrl: string;
-  private readonly authHeader: string;
+  private readonly user: string;
+  private readonly apiTokenSource: JenkinsClientOptions["apiToken"];
+  private apiToken?: Promise<string>;
   private readonly timeoutMs: number;
   private readonly useCrumb: boolean;
   private readonly folderDepth: number;
@@ -114,12 +116,8 @@ export class JenkinsClient {
 
   constructor(options: JenkinsClientOptions) {
     this.baseUrl = options.baseUrl;
-    const token = Buffer.from(`${options.user}:${options.apiToken}`).toString(
-      "base64",
-    );
-    this.authHeader = `Basic ${token}`;
-    registerRedactedSecret(options.apiToken);
-    registerRedactedSecret(token);
+    this.user = options.user;
+    this.apiTokenSource = options.apiToken;
     this.timeoutMs = options.timeoutMs ?? 10_000;
     this.useCrumb = options.useCrumb === true;
     const inDepth = options.folderDepth;
@@ -348,7 +346,7 @@ export class JenkinsClient {
     const url = this.withJob(jobUrl, "config.xml");
     const response = await this.fetchWithTimeout(
       url,
-      { method: "GET", headers: { Authorization: this.authHeader } },
+      { method: "GET", headers: { Authorization: await this.authHeader() } },
       1,
       context,
     );
@@ -620,10 +618,11 @@ export class JenkinsClient {
     url.searchParams.set("tree", fields);
 
     let response: Response;
+    const headers = await this.authHeaders();
     try {
       response = await this.fetchWithTimeout(
         url.toString(),
-        { method: "GET", headers: this.authHeaders() },
+        { method: "GET", headers },
         1,
         "fetch test report",
       );
@@ -690,10 +689,11 @@ export class JenkinsClient {
     const url = this.withBase(
       "pluginManager/api/json?tree=plugins[shortName,active]",
     );
+    const headers = await this.authHeaders();
     try {
       const response = await this.fetchWithTimeout(
         url,
-        { method: "GET", headers: this.authHeaders() },
+        { method: "GET", headers },
         0,
         "check test report capability",
       );
@@ -730,7 +730,9 @@ export class JenkinsClient {
       .map((segment) => encodeURIComponent(segment))
       .join("/");
     const url = this.withJob(buildUrl, `artifact/${encodedPath}`);
-    const headers: Record<string, string> = { Authorization: this.authHeader };
+    const headers: Record<string, string> = {
+      Authorization: await this.authHeader(),
+    };
 
     logApiRequest("GET", url, headers);
 
@@ -935,7 +937,7 @@ export class JenkinsClient {
     // an error rather than an HTML page parsed as "no pending inputs".
     const response = await this.fetchWithTimeout(
       url,
-      { method: "GET", headers: this.authHeaders(), redirect: "manual" },
+      { method: "GET", headers: await this.authHeaders(), redirect: "manual" },
       1,
       context,
     );
@@ -1005,9 +1007,10 @@ export class JenkinsClient {
       options.operation === "approve"
         ? "approve pending input"
         : "abort pending input";
+    // Resolve the token and fetch (and cache) the crumb before the POST so
+    // their failures are plain errors rather than an unconfirmed submission.
+    await this.resolveApiToken();
     if (this.useCrumb) {
-      // Fetch (and cache) the crumb before the POST so a crumb failure is a
-      // plain error rather than an unconfirmed submission.
       await this.getCrumb();
     }
     // One deadline covers headers and body: the shared header timeout is
@@ -1129,7 +1132,7 @@ export class JenkinsClient {
     const url = this.resolveUrl(logUrl);
     const response = await this.fetchWithTimeout(
       url,
-      { method: "GET", headers: this.authHeaders() },
+      { method: "GET", headers: await this.authHeaders() },
       0,
       "fetch pipeline node logs",
     );
@@ -1185,7 +1188,7 @@ export class JenkinsClient {
       url.toString(),
       {
         method: "GET",
-        headers: { ...this.authHeaders(), Accept: "text/plain" },
+        headers: { ...(await this.authHeaders()), Accept: "text/plain" },
       },
       0,
       "fetch build timestamps",
@@ -1211,7 +1214,7 @@ export class JenkinsClient {
 
     const response = await this.fetchWithTimeout(
       url.toString(),
-      { method: "GET", headers: this.authHeaders() },
+      { method: "GET", headers: await this.authHeaders() },
       1,
       context,
     );
@@ -1338,7 +1341,7 @@ export class JenkinsClient {
     const redirect = options.redirect ?? "follow";
     if (!this.useCrumb) {
       const headers: Record<string, string> = {
-        Authorization: this.authHeader,
+        Authorization: await this.authHeader(),
       };
       if (options.body !== undefined) {
         headers["Content-Type"] = contentType;
@@ -1360,7 +1363,7 @@ export class JenkinsClient {
     for (let attempt = 0; attempt < 2; attempt += 1) {
       const crumb = await this.getCrumb();
       const headers: Record<string, string> = {
-        Authorization: this.authHeader,
+        Authorization: await this.authHeader(),
       };
       if (options.body !== undefined) {
         headers["Content-Type"] = contentType;
@@ -1401,7 +1404,7 @@ export class JenkinsClient {
     const url = this.withBase("crumbIssuer/api/json");
     const response = await this.fetchWithTimeout(
       url,
-      { method: "GET", headers: this.authHeaders() },
+      { method: "GET", headers: await this.authHeaders() },
       1,
       "fetch crumb",
     );
@@ -1427,7 +1430,7 @@ export class JenkinsClient {
   private async requestJson<T>(url: string, context: string): Promise<T> {
     const response = await this.fetchWithTimeout(
       url,
-      { method: "GET", headers: this.authHeaders() },
+      { method: "GET", headers: await this.authHeaders() },
       1,
       context,
     );
@@ -1448,9 +1451,31 @@ export class JenkinsClient {
     }
   }
 
-  private authHeaders(): Record<string, string> {
+  /**
+   * Resolves the API token on first use and reuses it afterwards, so commands
+   * served from the local cache never read the OS keychain.
+   */
+  async resolveApiToken(): Promise<string> {
+    this.apiToken ??= this.loadApiToken();
+    return await this.apiToken;
+  }
+
+  private async loadApiToken(): Promise<string> {
+    const source = this.apiTokenSource;
+    const token = typeof source === "string" ? source : await source();
+    registerRedactedSecret(token);
+    registerRedactedSecret(encodeBasicCredentials(this.user, token));
+    return token;
+  }
+
+  private async authHeader(): Promise<string> {
+    const token = await this.resolveApiToken();
+    return `Basic ${encodeBasicCredentials(this.user, token)}`;
+  }
+
+  private async authHeaders(): Promise<Record<string, string>> {
     return {
-      Authorization: this.authHeader,
+      Authorization: await this.authHeader(),
       Accept: "application/json",
     };
   }
@@ -1563,10 +1588,11 @@ export class JenkinsClient {
     buildUrl: string,
   ): Promise<JenkinsApiBuild | null> {
     const url = this.withJob(buildUrl, `api/json?tree=${BUILD_DETAILS_FIELDS}`);
+    const headers = await this.authHeaders();
     try {
       const response = await this.fetchWithTimeout(
         url,
-        { method: "GET", headers: this.authHeaders() },
+        { method: "GET", headers },
         0,
         "fetch build details",
       );
@@ -1587,10 +1613,11 @@ export class JenkinsClient {
       return undefined;
     }
     const url = this.withBase(`queue/item/${queueId}/api/json`);
+    const headers = await this.authHeaders();
     try {
       const response = await this.fetchWithTimeout(
         url,
-        { method: "GET", headers: this.authHeaders() },
+        { method: "GET", headers },
         0,
         "fetch queue item",
       );
@@ -1615,10 +1642,11 @@ export class JenkinsClient {
       queueUrl,
       "api/json?tree=id,task[url],executable[number]",
     );
+    const headers = await this.authHeaders();
     try {
       const response = await this.fetchWithTimeout(
         url,
-        { method: "GET", headers: this.authHeaders() },
+        { method: "GET", headers },
         0,
         "fetch queue item",
       );
@@ -1639,10 +1667,11 @@ export class JenkinsClient {
   ): Promise<PipelineInfo | null> {
     const base = buildUrl.endsWith("/") ? buildUrl : `${buildUrl}/`;
     const url = new URL("wfapi/describe", base).toString();
+    const headers = await this.authHeaders();
     try {
       const response = await this.fetchWithTimeout(
         url,
-        { method: "GET", headers: this.authHeaders() },
+        { method: "GET", headers },
         0,
         "fetch pipeline stage",
       );
@@ -1726,10 +1755,11 @@ export class JenkinsClient {
   private async getPipelineNode(
     url: string,
   ): Promise<JenkinsPipelineNodeResponse | null> {
+    const headers = await this.authHeaders();
     try {
       const response = await this.fetchWithTimeout(
         url,
-        { method: "GET", headers: this.authHeaders() },
+        { method: "GET", headers },
         0,
         "fetch pipeline node",
       );
@@ -1741,6 +1771,10 @@ export class JenkinsClient {
       return null;
     }
   }
+}
+
+function encodeBasicCredentials(user: string, token: string): string {
+  return Buffer.from(`${user}:${token}`).toString("base64");
 }
 
 function loginRedirectError(context: string): CliError {

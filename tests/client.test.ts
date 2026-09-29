@@ -1860,3 +1860,74 @@ describe("JenkinsClient createItem", () => {
     expect(createAttempts).toBe(2);
   });
 });
+
+describe("JenkinsClient API token lookup", () => {
+  test("runs the lookup on the first request only", async () => {
+    const fetchMock = mock(async (_input: FetchInput, _init?: FetchInit) =>
+      Response.json({
+        jobs: [{ name: "app", url: "https://jenkins.example.com/job/app/" }],
+      }),
+    );
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+    const lookup = mock(async () => "lazy-token");
+
+    const client = new JenkinsClient({
+      baseUrl: "https://jenkins.example.com",
+      user: "user",
+      apiToken: lookup,
+    });
+    expect(lookup).not.toHaveBeenCalled();
+
+    await client.listJobs();
+    await client.listJobs();
+
+    expect(lookup).toHaveBeenCalledTimes(1);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    for (const [, init] of fetchMock.mock.calls) {
+      expect(readHeader(init, "Authorization")).toBe(
+        `Basic ${Buffer.from("user:lazy-token").toString("base64")}`,
+      );
+    }
+  });
+
+  test("surfaces a failed lookup from best-effort reads", async () => {
+    const fetchMock = mock(async () => Response.json({}));
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+    const tokenError = new CliError("No token.", [], "JENKINS_AUTH_ERROR");
+
+    const client = new JenkinsClient({
+      baseUrl: "https://jenkins.example.com",
+      user: "user",
+      apiToken: async () => {
+        throw tokenError;
+      },
+    });
+
+    await expect(
+      client.getQueueBuild("https://jenkins.example.com/queue/item/7/"),
+    ).rejects.toBe(tokenError);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  test("fails a pending input submission instead of reporting it unconfirmed", async () => {
+    const fetchMock = mock(async () => new Response(null, { status: 200 }));
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+    const tokenError = new CliError("No token.", [], "JENKINS_AUTH_ERROR");
+
+    const client = new JenkinsClient({
+      baseUrl: "https://jenkins.example.com",
+      user: "user",
+      apiToken: async () => {
+        throw tokenError;
+      },
+    });
+
+    await expect(
+      client.submitPendingInput({
+        url: "https://jenkins.example.com/job/app/1/wfapi/inputSubmit?inputId=Gate",
+        operation: "approve",
+      }),
+    ).rejects.toBe(tokenError);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+});

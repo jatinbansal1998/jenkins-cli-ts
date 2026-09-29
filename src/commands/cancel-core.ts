@@ -136,7 +136,10 @@ async function resolveCancelTargets(
   let runningBuilds: RunningBuildSummary[];
   try {
     runningBuilds = await options.client.listRunningBuilds();
-  } catch {
+  } catch (error) {
+    if (error instanceof CliError && error.code === "JENKINS_AUTH_ERROR") {
+      throw error;
+    }
     printHint("Could not load running builds; searching all jobs instead.");
     return [await resolveCancelTarget(options)];
   }

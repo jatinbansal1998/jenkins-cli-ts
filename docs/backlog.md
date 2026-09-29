@@ -137,8 +137,10 @@ file is read and rewritten. Most of the perf list below is one of those two.
       repeated calls with the same input are free. For an empty query return
       only the top `maxItems` preferred jobs instead of mapping all N.
 
-- [ ] **P7. Commands that only read the local cache still unlock the
-      keychain.** - Today: `src/index.ts:170` resolves the API token for every contextual
+- [x] **P7. Commands that only read the local cache still unlock the
+      keychain.** Shipped: lazy token lookup. Not done: pinning the
+      backend with `useBackend`; only commands that reach Jenkins pay the
+      detection cost now. - Today: `src/index.ts:170` resolves the API token for every contextual
       command before it runs. `list` served from a fresh cache and the job
       picker never contact Jenkins, so they never need it. On first use
       `cross-keychain` checks all 8 backend types, scans `PATH` for

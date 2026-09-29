@@ -8,6 +8,7 @@ import {
   test,
 } from "bun:test";
 import fs from "node:fs";
+import { CliError } from "../src/cli";
 import type { EnvConfig } from "../src/env";
 import type { JenkinsClient } from "../src/jenkins/client";
 import type { JenkinsJob } from "../src/types/jenkins";
@@ -151,19 +152,21 @@ describe("job cache refresh", () => {
       }),
     );
     const listJobs = mock(async () => [] as JenkinsJob[]);
+    const resolveApiToken = mock(async () => "test-token");
     const spawnDetached = mock(
       (_command: string[], _childEnv: Record<string, string>) => undefined,
     );
     const restore = jobsModule.setJobsDepsForTesting({ spawnDetached });
     const load = () =>
       jobsModule.loadJobs({
-        client: { listJobs } as unknown as JenkinsClient,
+        client: { listJobs, resolveApiToken } as unknown as JenkinsClient,
         env: loadEnv,
       });
 
     try {
       expect(await load()).toEqual(cachedJobs);
       expect(listJobs).not.toHaveBeenCalled();
+      expect(resolveApiToken).toHaveBeenCalledTimes(1);
       expect(spawnDetached).toHaveBeenCalledTimes(1);
       const [command, childEnv] = spawnDetached.mock.calls[0] ?? [];
       expect(command?.slice(-2)).toEqual([
@@ -193,6 +196,73 @@ describe("job cache refresh", () => {
       expect(spawnDetached).toHaveBeenCalledTimes(2);
 
       await jobsModule.clearJobCacheRefreshLock(env.jenkinsUrl);
+      expect(files.has(lockPath)).toBe(false);
+    } finally {
+      restore();
+    }
+  });
+
+  test("fresh cache is served without resolving the API token", async () => {
+    const cachedJobs: JenkinsJob[] = [
+      { name: "keep", url: "https://jenkins.example.com/job/keep" },
+    ];
+    files.set(
+      jobsModule.getJobCachePath(env.jenkinsUrl),
+      JSON.stringify({
+        jenkinsUrl: env.jenkinsUrl,
+        user: env.jenkinsUser,
+        folderDepth: loadEnv.folderDepth,
+        fetchedAt: new Date().toISOString(),
+        jobs: cachedJobs,
+      }),
+    );
+    const listJobs = mock(async () => [] as JenkinsJob[]);
+    const resolveApiToken = mock(async () => "test-token");
+
+    const jobs = await jobsModule.loadJobs({
+      client: { listJobs, resolveApiToken } as unknown as JenkinsClient,
+      env: loadEnv,
+    });
+
+    expect(jobs).toEqual(cachedJobs);
+    expect(listJobs).not.toHaveBeenCalled();
+    expect(resolveApiToken).not.toHaveBeenCalled();
+  });
+
+  test("a failed token lookup surfaces and releases the refresh lock", async () => {
+    const cachePath = jobsModule.getJobCachePath(env.jenkinsUrl);
+    const lockPath = `${cachePath}.refreshing`;
+    files.set(
+      cachePath,
+      JSON.stringify({
+        jenkinsUrl: env.jenkinsUrl,
+        user: env.jenkinsUser,
+        folderDepth: loadEnv.folderDepth,
+        fetchedAt: "2026-02-12T00:00:00.000Z",
+        jobs: [{ name: "keep", url: "https://jenkins.example.com/job/keep" }],
+      }),
+    );
+    const tokenError = new CliError(
+      "No Jenkins API token found.",
+      [],
+      "JENKINS_AUTH_ERROR",
+    );
+    const resolveApiToken = mock(async (): Promise<string> => {
+      throw tokenError;
+    });
+    const spawnDetached = mock(
+      (_command: string[], _childEnv: Record<string, string>) => undefined,
+    );
+    const restore = jobsModule.setJobsDepsForTesting({ spawnDetached });
+
+    try {
+      await expect(
+        jobsModule.loadJobs({
+          client: { resolveApiToken } as unknown as JenkinsClient,
+          env: loadEnv,
+        }),
+      ).rejects.toBe(tokenError);
+      expect(spawnDetached).not.toHaveBeenCalled();
       expect(files.has(lockPath)).toBe(false);
     } finally {
       restore();

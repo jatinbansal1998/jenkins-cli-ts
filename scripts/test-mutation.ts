@@ -31,9 +31,9 @@ const mutations: Mutation[] = network
         name: "does not retry a timed-out read",
         file: "src/jenkins/client.ts",
         original:
-          'private async requestJson<T>(url: string, context: string): Promise<T> {\n    const response = await this.fetchWithTimeout(\n      url,\n      { method: "GET", headers: this.authHeaders() },\n      1,',
+          'private async requestJson<T>(url: string, context: string): Promise<T> {\n    const response = await this.fetchWithTimeout(\n      url,\n      { method: "GET", headers: await this.authHeaders() },\n      1,',
         replacement:
-          'private async requestJson<T>(url: string, context: string): Promise<T> {\n    const response = await this.fetchWithTimeout(\n      url,\n      { method: "GET", headers: this.authHeaders() },\n      0,',
+          'private async requestJson<T>(url: string, context: string): Promise<T> {\n    const response = await this.fetchWithTimeout(\n      url,\n      { method: "GET", headers: await this.authHeaders() },\n      0,',
       },
       {
         name: "does not retry an idempotent cancellation",
@@ -46,8 +46,9 @@ const mutations: Mutation[] = network
       {
         name: "uses an invalid Jenkins authorization scheme",
         file: "src/jenkins/client.ts",
-        original: "this.authHeader = `Basic ${token}`;",
-        replacement: "this.authHeader = `Bearer ${token}`;",
+        original: "return `Basic ${encodeBasicCredentials(this.user, token)}`;",
+        replacement:
+          "return `Bearer ${encodeBasicCredentials(this.user, token)}`;",
       },
       {
         name: "drops submitted build parameter values",
@@ -77,7 +78,7 @@ const mutations: Mutation[] = network
         name: "downloads artifacts without authentication",
         file: "src/jenkins/client.ts",
         original:
-          "const headers: Record<string, string> = { Authorization: this.authHeader };",
+          "const headers: Record<string, string> = {\n      Authorization: await this.authHeader(),\n    };",
         replacement: "const headers: Record<string, string> = {};",
       },
       {
