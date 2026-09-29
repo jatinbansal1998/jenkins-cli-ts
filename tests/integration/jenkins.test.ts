@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { mkdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
+import { splitLogLines } from "../../src/log-filters";
 import { registerNetworkFaultTests } from "./jenkins/network-faults";
 import {
   cliLogFiles,
@@ -2744,6 +2745,112 @@ describe.skipIf(!integrationEnabled)(
         ]);
         expect(future.stdout).toBe("");
       });
+    }, 180_000);
+
+    test("reads a large log's tail and --since without downloading it twice", async () => {
+      const received: { method: string; path: string; bytes: number }[] = [];
+      const proxy = Bun.serve({
+        hostname: "127.0.0.1",
+        port: 0,
+        async fetch(request) {
+          const incoming = new URL(request.url);
+          const target = new URL(jenkinsUrl!);
+          target.pathname = incoming.pathname;
+          target.search = incoming.search;
+          const headers = new Headers(request.headers);
+          headers.delete("host");
+          const response = await fetch(target, {
+            method: request.method,
+            headers,
+            body: ["GET", "HEAD"].includes(request.method)
+              ? undefined
+              : await request.arrayBuffer(),
+            redirect: "manual",
+          });
+          const body = await response.arrayBuffer();
+          received.push({
+            method: request.method,
+            path: incoming.pathname,
+            bytes: body.byteLength,
+          });
+          const responseHeaders = new Headers(response.headers);
+          responseHeaders.delete("content-length");
+          responseHeaders.delete("content-encoding");
+          return new Response(body, {
+            status: response.status,
+            headers: responseHeaders,
+          });
+        },
+      });
+      const bytesFrom = (suffix: string): number =>
+        received
+          .filter((entry) => entry.path.endsWith(suffix))
+          .reduce((total, entry) => total + entry.bytes, 0);
+      try {
+        await withCliHome(async (home) => {
+          const root = `${proxy.url.origin}/jenkins`;
+          const env = { JENKINS_URL: root };
+          const jobUrl = `${root}/job/cli-large-log/`;
+          await runCli(
+            home,
+            ["build", "--job-url", jobUrl, "--without-params", "--watch"],
+            env,
+          );
+          const buildUrl = parseJson<{ data: { build: { url: string } } }>(
+            await runCli(home, ["status", "--job-url", jobUrl, "--json"], env),
+          ).data.build.url;
+
+          received.length = 0;
+          const full = await runCli(
+            home,
+            ["logs", "--build-url", buildUrl, "--no-follow"],
+            env,
+          );
+          const fullBytes = bytesFrom("/logText/progressiveText");
+          expect(full.stdout).toContain("large-log-40000");
+          expect(fullBytes).toBeGreaterThan(4 * 1024 * 1024);
+          const fullLines = splitLogLines(full.stdout);
+
+          // 2,000 lines outgrow the first 64KB window, so this also covers
+          // the window growing.
+          for (const lines of [3, 2_000]) {
+            received.length = 0;
+            const tail = await runCli(
+              home,
+              [
+                "logs",
+                "--build-url",
+                buildUrl,
+                "--tail",
+                String(lines),
+                "--no-follow",
+              ],
+              env,
+            );
+            expect(tail.stdout).toBe(fullLines.slice(-lines).join(""));
+            expect(bytesFrom("/logText/progressiveText")).toBeLessThan(
+              fullBytes / 4,
+            );
+          }
+
+          received.length = 0;
+          const since = await runCli(
+            home,
+            ["logs", "--build-url", buildUrl, "--since", "1h", "--no-follow"],
+            env,
+          );
+          expect(since.stdout.match(/^large-log-\d{5} /gm)).toHaveLength(
+            40_000,
+          );
+          expect(since.stdout).toContain("large-log-last");
+          // A finished build's --since reads only Timestamper's appendLog
+          // text; the console log itself is never downloaded.
+          expect(bytesFrom("/logText/progressiveText")).toBe(0);
+          expect(bytesFrom("/timestamps/")).toBeLessThan(fullBytes * 1.5);
+        });
+      } finally {
+        await proxy.stop(true);
+      }
     }, 180_000);
 
     test("defaults redirected logs to a one-shot read while a build is running", async () => {

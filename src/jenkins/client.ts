@@ -1137,6 +1137,22 @@ export class JenkinsClient {
     );
   }
 
+  // HEAD returns X-Text-Size without a body. A GET cannot probe the size:
+  // Jenkins answers a start past the end with the whole log from offset 0.
+  async getConsoleTextSize(buildUrl: string): Promise<number> {
+    const response = await this.fetchWithTimeout(
+      this.withJob(buildUrl, "logText/progressiveText"),
+      { method: "HEAD", headers: await this.authHeaders() },
+      1,
+      "fetch build log size",
+    );
+    if (!response.ok) {
+      await this.raiseHttpError(response, "fetch build log size");
+    }
+    const size = Number(response.headers.get("x-text-size"));
+    return Number.isSafeInteger(size) && size > 0 ? size : 0;
+  }
+
   async getPipelineDescription(buildUrl: string): Promise<PipelineInfo | null> {
     return await this.getPipelineInfo(buildUrl);
   }

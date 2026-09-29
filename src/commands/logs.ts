@@ -426,59 +426,34 @@ async function streamWholeBuildLogs(options: {
     offset,
   });
 
-  if (options.effective.tail || options.effective.since) {
-    const snapshot = await readSnapshot(
-      (start) => options.client.getConsoleChunk(options.buildUrl, start),
-      options.cancelSignal,
-    );
+  const { since, tail } = options.effective;
+  const snapshot = since
+    ? await readSinceSnapshot({
+        client: options.client,
+        buildUrl: options.buildUrl,
+        since,
+        tail,
+        building: initial.building === true,
+        cancelSignal: options.cancelSignal,
+      })
+    : tail
+      ? await readTailSnapshot(
+          options.client,
+          options.buildUrl,
+          tail,
+          options.cancelSignal,
+        )
+      : null;
+  if (snapshot) {
     if (snapshot.cancelled) {
       return true;
     }
-    let filtered = { text: snapshot.text, skippedBytes: 0 };
-    if (options.effective.since) {
-      const completeLines = splitLogLines(snapshot.text).filter((line) =>
-        /(?:\r\n|\n|\r)$/.test(line),
-      ).length;
-      const duration = /^(\d+)(ms|s|m|h|d)$/i.test(options.effective.since);
-      const controllerNow = duration
-        ? parseTimestampResponse(
-            await options.client.getConsoleTimestamps(options.buildUrl, {
-              currentTime: true,
-            }),
-          )
-        : Date.now();
-      if (controllerNow === null) {
-        throw timestampCapabilityError(
-          "Jenkins timestamp metadata is unavailable for this build.",
-        );
-      }
-      const timestamps = await options.client.getConsoleTimestamps(
-        options.buildUrl,
-        { endLine: completeLines, appendLog: true },
-      );
-      if (timestamps === null) {
-        throw timestampCapabilityError(
-          "Jenkins timestamp metadata is unavailable for this build.",
-        );
-      }
-      filtered = filterTimestampedLog(
-        timestamps,
-        parseSinceCutoff(options.effective.since, controllerNow),
-      );
-    }
-    if (options.effective.tail) {
-      const tailed = tailLogLines(filtered.text, options.effective.tail);
-      filtered = {
-        text: tailed.text,
-        skippedBytes: filtered.skippedBytes + tailed.skippedBytes,
-      };
-    }
     offset = snapshot.offset;
     logOpen = snapshot.hasMore;
-    if (filtered.text) {
+    if (snapshot.text) {
       options.emitter.chunk({
-        text: filtered.text,
-        offset: filtered.skippedBytes,
+        text: snapshot.text,
+        offset: snapshot.skippedBytes,
         nextOffset: offset,
         more: options.effective.follow || snapshot.hasMore,
       });
@@ -782,11 +757,118 @@ type SnapshotResult = {
   cancelled: boolean;
 };
 
+type FilteredSnapshot = SnapshotResult & { skippedBytes: number };
+
+const TAIL_WINDOW_BYTES = 64 * 1024;
+
+// Reads backwards from the end in growing windows, so the download is sized
+// to the requested lines rather than to the whole log.
+async function readTailSnapshot(
+  client: JenkinsClient,
+  buildUrl: string,
+  lineCount: number,
+  cancelSignal?: LogCancellationSignal,
+): Promise<FilteredSnapshot> {
+  const size = await client.getConsoleTextSize(buildUrl);
+  for (let window = TAIL_WINDOW_BYTES; ; window *= 4) {
+    const start = Math.max(0, size - window);
+    const snapshot = await readSnapshot(
+      (offset) => client.getConsoleChunk(buildUrl, offset),
+      cancelSignal,
+      start,
+    );
+    if (snapshot.cancelled) {
+      return { ...snapshot, skippedBytes: 0 };
+    }
+    const tailed = tailLogLines(snapshot.text, lineCount);
+    // A window opening mid-log may cut its first line, so it holds the tail
+    // only once all requested lines start after a break inside it.
+    if (start === 0 || tailed.skippedBytes > 0) {
+      return {
+        ...snapshot,
+        text: tailed.text,
+        skippedBytes: start + tailed.skippedBytes,
+      };
+    }
+  }
+}
+
+async function readSinceSnapshot(options: {
+  client: JenkinsClient;
+  buildUrl: string;
+  since: string;
+  tail?: number;
+  building: boolean;
+  cancelSignal?: LogCancellationSignal;
+}): Promise<FilteredSnapshot> {
+  const { client, buildUrl, since } = options;
+  const readControllerNow = async (): Promise<number | null> =>
+    /^(\d+)(ms|s|m|h|d)$/i.test(since)
+      ? parseTimestampResponse(
+          await client.getConsoleTimestamps(buildUrl, { currentTime: true }),
+        )
+      : Date.now();
+
+  let log: SnapshotResult;
+  let controllerNow: number | null;
+  let timestamps: string | null;
+  if (options.building) {
+    // A running log grows between requests. Only a snapshot ties the offset
+    // that --follow resumes from to the line count the timestamps cover.
+    log = await readSnapshot(
+      (start) => client.getConsoleChunk(buildUrl, start),
+      options.cancelSignal,
+    );
+    if (log.cancelled) {
+      return { ...log, skippedBytes: 0 };
+    }
+    const completeLines = splitLogLines(log.text).filter((line) =>
+      /(?:\r\n|\n|\r)$/.test(line),
+    ).length;
+    [controllerNow, timestamps] = await Promise.all([
+      readControllerNow(),
+      client.getConsoleTimestamps(buildUrl, {
+        endLine: completeLines,
+        appendLog: true,
+      }),
+    ]);
+  } else {
+    // A finished log no longer changes, so the appendLog text alone carries
+    // every line and the size probe gives the end offset.
+    let size: number;
+    [controllerNow, timestamps, size] = await Promise.all([
+      readControllerNow(),
+      client.getConsoleTimestamps(buildUrl, { appendLog: true }),
+      client.getConsoleTextSize(buildUrl),
+    ]);
+    log = { text: "", offset: size, hasMore: false, cancelled: false };
+  }
+  if (controllerNow === null || timestamps === null) {
+    throw timestampCapabilityError(
+      "Jenkins timestamp metadata is unavailable for this build.",
+    );
+  }
+
+  const filtered = filterTimestampedLog(
+    timestamps,
+    parseSinceCutoff(since, controllerNow),
+  );
+  const tailed = options.tail
+    ? tailLogLines(filtered.text, options.tail)
+    : { text: filtered.text, skippedBytes: 0 };
+  return {
+    ...log,
+    text: tailed.text,
+    skippedBytes: filtered.skippedBytes + tailed.skippedBytes,
+  };
+}
+
 async function readSnapshot(
   getChunk: (offset: number) => Promise<ConsoleChunk>,
   cancelSignal?: LogCancellationSignal,
+  start = 0,
 ): Promise<SnapshotResult> {
-  let offset = 0;
+  let offset = start;
   let value = "";
   while (true) {
     if (cancelSignal?.isCancelled()) {

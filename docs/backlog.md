@@ -176,7 +176,7 @@ file is read and rewritten. Most of the perf list below is one of those two.
 
 ### Logs
 
-- [ ] **P8. `logs --tail` and `logs --since` download the whole log; `--since`
+- [x] **P8. `logs --tail` and `logs --since` download the whole log; `--since`
       downloads it twice.** - Today: `readSnapshot` (`logs.ts:427-430`, `:775-798`) pulls the full
       log with `value += chunk.text` just to keep the last N lines. For
       `--since`, `:452-455` then calls `timestamps/?appendLog=true`, which
@@ -189,7 +189,10 @@ file is read and rewritten. Most of the perf list below is one of those two.
       growing windows (64KB, 256KB, ...) until N newlines are found. For
       since, skip the full snapshot and use the `appendLog` response alone.
       Run the two timestamp calls in parallel. Count skipped bytes as
-      `byteLength(text) - byteLength(tail)` using `lastIndexOf("\n")`.
+      `byteLength(text) - byteLength(tail)` using `lastIndexOf("\n")`. - Done differently: a `start` past the end makes Jenkins restart at 0
+      and send the whole log, so the size comes from a `HEAD` request. A
+      running build's `--since` still reads a snapshot, because only that
+      ties the `--follow` offset to the timestamped line count.
 
 - [ ] **P9. The interactive `logs` build picker fetches pipeline details for
       10 builds and shows none of it.** - Today: `logs.ts:285-289` calls `listBuildHistory(limit 10)`. That
