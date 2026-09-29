@@ -8,6 +8,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { stampFreshUpdateState } from "./helpers.update-state";
 import { CliError } from "../src/cli";
 import { assertProtectedMutationAllowed, type EnvConfig } from "../src/env";
 import type { JenkinsClient } from "../src/jenkins/client";
@@ -319,6 +320,7 @@ describe("protected profile CLI output", () => {
     stderr: string;
   } {
     const home = mkdtempSync(join(tmpdir(), "jenkins-cli-protected-home-"));
+    stampFreshUpdateState(home);
     try {
       const configDir = join(home, ".config", "jenkins-cli");
       mkdirSync(configDir, { recursive: true });
@@ -406,6 +408,7 @@ describe("protected profile CLI output", () => {
 
   test("auth login marks and clears protection without re-entering credentials", () => {
     const home = mkdtempSync(join(tmpdir(), "jenkins-cli-protected-login-"));
+    stampFreshUpdateState(home);
     const configPath = join(
       home,
       ".config",

@@ -1,9 +1,11 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { stampFreshUpdateState } from "./helpers.update-state";
 
 export function runCli(args: string[]): { exitCode: number; output: string } {
   const home = mkdtempSync(join(tmpdir(), "jenkins-cli-test-home-"));
+  stampFreshUpdateState(home);
   try {
     const result = Bun.spawnSync({
       cmd: ["bun", "run", "src/index.ts", ...args],

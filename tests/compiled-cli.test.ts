@@ -13,6 +13,7 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { runNativeExecutable } from "./helpers.native-executable";
+import { stampFreshUpdateState } from "./helpers.update-state";
 import { embedCrossKeychainAssets } from "../scripts/build-plugins";
 
 type CliRun = {
@@ -27,6 +28,7 @@ let nextHomeId = 0;
 function makeHome(config?: Record<string, unknown>): string {
   const home = join(tempDir, `home-${nextHomeId++}`);
   mkdirSync(home, { recursive: true });
+  stampFreshUpdateState(home);
   if (config) {
     const configDir = join(home, ".config", "jenkins-cli");
     mkdirSync(configDir, { recursive: true });

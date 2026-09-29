@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { stampFreshUpdateState } from "./helpers.update-state";
 import { getScriptName } from "../src/cli";
 
 function runCli(
@@ -9,6 +10,7 @@ function runCli(
   config?: Record<string, unknown>,
 ): { exitCode: number; output: string } {
   const home = mkdtempSync(join(tmpdir(), "jenkins-cli-auth-home-"));
+  stampFreshUpdateState(home);
   try {
     if (config) {
       const configDir = join(home, ".config", "jenkins-cli");

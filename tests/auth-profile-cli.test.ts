@@ -8,6 +8,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { stampFreshUpdateState } from "./helpers.update-state";
 
 /**
  * End-to-end routing tests for the auth profile management commands. These
@@ -22,6 +23,7 @@ const homes: string[] = [];
 
 function makeHome(config?: Record<string, unknown>): string {
   const home = mkdtempSync(join(tmpdir(), "jenkins-cli-auth-profile-home-"));
+  stampFreshUpdateState(home);
   homes.push(home);
   if (config) {
     writeHomeConfig(home, config);

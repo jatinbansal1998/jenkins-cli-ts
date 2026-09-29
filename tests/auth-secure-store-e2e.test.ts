@@ -9,6 +9,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { stampFreshUpdateState } from "./helpers.update-state";
 import { KEYCHAIN_TOKEN_SENTINEL } from "../src/config";
 import {
   buildSecureStoreAccount,
@@ -92,6 +93,7 @@ function configureMacOsTestKeychain(home: string): void {
 function makeHome(config?: StoredConfig): string {
   const home = join(tempRoot, `home-${nextHomeId++}`);
   mkdirSync(home, { recursive: true });
+  stampFreshUpdateState(home);
   configureMacOsTestKeychain(home);
   if (config) {
     const configDir = join(home, ".config", "jenkins-cli");

@@ -193,7 +193,7 @@ file is read and rewritten. Most of the perf list below is one of those two.
 
 ### Startup and background work
 
-- [ ] **P12. The minimum-version check runs even for `--version`, `--help`
+- [x] **P12. The minimum-version check runs even for `--version`, `--help`
       and `--json`, and can hold the process open.** - Today: `index.ts:99` calls `kickOffMinimumVersionRefresh` with no skip
       list, unlike `shouldSkipAutoUpdate` (`update.ts:414-431`) which does
       skip those. The timeout timer is `unref`'d (`with-timeout.ts:13-15`)

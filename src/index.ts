@@ -40,10 +40,12 @@ import { logCliError, pruneOldLogs, setDebugMode } from "./logger";
 import {
   enforceMinimumVersionFromCache,
   kickOffMinimumVersionRefresh,
+  MIN_VERSION_REFRESH_COMMAND,
+  refreshMinimumVersionPolicy,
 } from "./min-version-policy";
 import { maybeMigrateToken } from "./token-migration";
 import { formatPromptTarget } from "./tui-target";
-import { kickOffAutoUpdate } from "./update";
+import { kickOffAutoUpdate, readUpdateState } from "./update";
 import { BUILD_TARGET } from "./build-target";
 import { emitJsonError, emitJsonLine, toJsonError } from "./json-output";
 import packageJson from "../package.json";
@@ -68,6 +70,12 @@ declare const __COMPILED_ENTRYPOINT__: boolean | undefined;
 
 async function main(): Promise<void> {
   const rawArgs = hideBin(process.argv);
+  // The detached policy worker must bypass the startup gate below, or it would
+  // spawn another worker and could be blocked by the very policy it refreshes.
+  if (rawArgs[0] === MIN_VERSION_REFRESH_COMMAND) {
+    await refreshMinimumVersionPolicy(VERSION);
+    return;
+  }
   // yargs treats a trailing positional "help" as --help before dispatching
   // command handlers. Parse global option types before handling the catalog.
   const helpRequest = parseArgs(rawArgs, {
@@ -96,9 +104,14 @@ async function main(): Promise<void> {
     return;
   }
 
-  kickOffMinimumVersionRefresh({ currentVersion: VERSION });
-  await enforceMinimumVersionFromCache({ currentVersion: VERSION, rawArgs });
-  kickOffAutoUpdate(VERSION, rawArgs);
+  const updateState = await readUpdateState();
+  kickOffMinimumVersionRefresh({ rawArgs, state: updateState });
+  await enforceMinimumVersionFromCache({
+    currentVersion: VERSION,
+    rawArgs,
+    state: updateState,
+  });
+  kickOffAutoUpdate(VERSION, rawArgs, updateState);
 
   await createParser(rawArgs).parseAsync();
 }
