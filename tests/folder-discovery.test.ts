@@ -11,6 +11,10 @@ afterEach(() => {
 
 const FOLDER_CLASS = "com.cloudbees.hudson.plugins.folder.Folder";
 const FREESTYLE_CLASS = "hudson.model.FreeStyleProject";
+const PIPELINE_CLASS = "org.jenkinsci.plugins.workflow.job.WorkflowJob";
+const MULTIBRANCH_CLASS =
+  "org.jenkinsci.plugins.workflow.multibranch.WorkflowMultiBranchProject";
+const ORGANIZATION_FOLDER_CLASS = "jenkins.branch.OrganizationFolder";
 
 function makeClient(): JenkinsClient {
   return new JenkinsClient({
@@ -321,7 +325,7 @@ describe("JenkinsClient folder discovery", () => {
     expect(jobs[0]?.name).toBe("plain-job");
   });
 
-  test("does not recurse into non-folder container types", async () => {
+  test("discovers branch jobs inside multibranch projects and organization folders", async () => {
     const fetchMock = mock(async (input: FetchInput, _init?: FetchInit) => {
       const url = String(input);
       if (
@@ -332,18 +336,49 @@ describe("JenkinsClient folder discovery", () => {
           JSON.stringify({
             jobs: [
               {
-                _class:
-                  "org.jenkinsci.plugins.workflow.multibranch.WorkflowMultiBranchProject",
-                name: "multibranch-project",
-                fullName: "multibranch-project",
-                url: "https://jenkins.example.com/job/multibranch-project/",
+                _class: MULTIBRANCH_CLASS,
+                name: "api",
+                fullName: "api",
+                url: "https://jenkins.example.com/job/api/",
                 jobs: [
                   {
-                    _class: FREESTYLE_CLASS,
-                    name: "should-not-appear",
-                    url: "https://jenkins.example.com/job/multibranch-project/job/should-not-appear/",
+                    _class: PIPELINE_CLASS,
+                    name: "main",
+                    fullName: "api/main",
+                    url: "https://jenkins.example.com/job/api/job/main/",
                   },
                 ],
+              },
+              {
+                _class: ORGANIZATION_FOLDER_CLASS,
+                name: "acme",
+                fullName: "acme",
+                url: "https://jenkins.example.com/job/acme/",
+                jobs: [
+                  {
+                    _class: MULTIBRANCH_CLASS,
+                    name: "web",
+                    fullName: "acme/web",
+                    url: "https://jenkins.example.com/job/acme/job/web/",
+                  },
+                ],
+              },
+            ],
+          }),
+          { status: 200 },
+        );
+      }
+      if (
+        url.startsWith("https://jenkins.example.com/job/acme/job/web/api/json")
+      ) {
+        return new Response(
+          JSON.stringify({
+            jobs: [
+              {
+                _class: PIPELINE_CLASS,
+                name: "feature-x",
+                fullName: "acme/web/feature-x",
+                url: "https://jenkins.example.com/job/acme/job/web/job/feature-x/",
               },
             ],
           }),
@@ -355,11 +390,18 @@ describe("JenkinsClient folder discovery", () => {
     globalThis.fetch = fetchMock as unknown as typeof fetch;
 
     const jobs = await makeClient().listJobs();
-    expect(jobs).toHaveLength(1);
-    expect(jobs[0]?.name).toBe("multibranch-project");
-    expect(jobs[0]?.url).toBe(
-      "https://jenkins.example.com/job/multibranch-project/",
-    );
+    expect(jobs).toEqual([
+      {
+        name: "main",
+        fullName: "api/main",
+        url: "https://jenkins.example.com/job/api/job/main/",
+      },
+      {
+        name: "feature-x",
+        fullName: "acme/web/feature-x",
+        url: "https://jenkins.example.com/job/acme/job/web/job/feature-x/",
+      },
+    ]);
   });
 
   test("propagates folder traversal errors (does not swallow them)", async () => {

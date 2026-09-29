@@ -292,7 +292,7 @@ empty. There are no TODO or FIXME comments in source.
       profile names. Never contact Jenkins or read the keychain during
       completion.
 
-- [ ] **F2. Multibranch and organization-folder jobs are invisible to `list`
+- [x] **F2. Multibranch and organization-folder jobs are invisible to `list`
       and the picker.** - Today: `collectFolderJobs` (`client.ts:197`) only descends into
       `com.cloudbees.hudson.plugins.folder.Folder`.
       `tests/folder-discovery.test.ts:336-361` asserts that multibranch

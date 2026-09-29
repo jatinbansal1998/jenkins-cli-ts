@@ -20,12 +20,19 @@ import hudson.slaves.JNLPLauncher
 import hudson.tasks.ArtifactArchiver
 import hudson.tasks.Shell
 import hudson.tasks.junit.JUnitResultArchiver
+import jenkins.branch.BranchProperty
+import jenkins.branch.BranchSource
+import jenkins.branch.DefaultBranchPropertyStrategy
+import jenkins.branch.NoTriggerBranchProperty
 import jenkins.install.InstallState
 import jenkins.model.Jenkins
+import jenkins.plugins.git.GitSCMSource
+import jenkins.plugins.git.traits.BranchDiscoveryTrait
 import jenkins.security.ApiTokenProperty
 import org.jenkinsci.plugins.workflow.cps.CpsFlowDefinition
 import org.jenkinsci.plugins.workflow.cps.CpsScmFlowDefinition
 import org.jenkinsci.plugins.workflow.job.WorkflowJob
+import org.jenkinsci.plugins.workflow.multibranch.WorkflowMultiBranchProject
 import net.uaznia.lukanus.hudson.plugins.gitparameter.GitParameterDefinition
 import net.uaznia.lukanus.hudson.plugins.gitparameter.SelectedValue
 import net.uaznia.lukanus.hudson.plugins.gitparameter.SortMode
@@ -332,6 +339,18 @@ buildErrorJob.addProperty(new ParametersDefinitionProperty([
 ]))
 buildErrorJob.setDefinition(new CpsScmFlowDefinition(syntheticScm, "Jenkinsfile"))
 buildErrorJob.save()
+
+def multibranchGitSource = new GitSCMSource(new File(runtimeDir, "demo-app.git").getAbsolutePath())
+multibranchGitSource.setTraits([new BranchDiscoveryTrait()])
+def multibranchSource = new BranchSource(multibranchGitSource)
+// Indexing would otherwise build every branch and hold the only executor.
+multibranchSource.setStrategy(new DefaultBranchPropertyStrategy(
+  [new NoTriggerBranchProperty()] as BranchProperty[]
+))
+def multibranchJob = jenkins.createProject(WorkflowMultiBranchProject.class, "demo-app-multibranch")
+multibranchJob.getSourcesList().add(multibranchSource)
+multibranchJob.save()
+multibranchJob.scheduleBuild2(0)
 
 def failingPipelineJob = jenkins.createProject(WorkflowJob.class, "cli-pipeline-failure")
 failingPipelineJob.setDefinition(new CpsFlowDefinition('''

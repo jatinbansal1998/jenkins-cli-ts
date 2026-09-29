@@ -201,7 +201,7 @@ export class JenkinsClient {
     out: JenkinsJob[],
     seen: Set<string>,
   ): Promise<void> {
-    if (item._class === CLOUDBEES_FOLDER_CLASS) {
+    if (isFolderItem(item)) {
       let children: JenkinsApiJob[];
       if (Array.isArray(item.jobs)) {
         children = item.jobs;
@@ -245,7 +245,7 @@ export class JenkinsClient {
     out: RunningBuildSummary[],
     seen: Set<string>,
   ): Promise<void> {
-    if (item._class === CLOUDBEES_FOLDER_CLASS) {
+    if (isFolderItem(item)) {
       let children: JenkinsApiJob[];
       if (Array.isArray(item.jobs)) {
         children = item.jobs;
@@ -1865,7 +1865,12 @@ function isBuildResourceContext(context: string): boolean {
 /** Transport retries wait 200-500ms; jitter spreads out concurrent callers. */
 const RETRY_DELAY_MIN_MS = 200;
 const RETRY_JITTER_MS = 300;
-const CLOUDBEES_FOLDER_CLASS = "com.cloudbees.hudson.plugins.folder.Folder";
+/** Container classes whose children are jobs, walked the same way. */
+const FOLDER_CLASSES = new Set([
+  "com.cloudbees.hudson.plugins.folder.Folder",
+  "org.jenkinsci.plugins.workflow.multibranch.WorkflowMultiBranchProject",
+  "jenkins.branch.OrganizationFolder",
+]);
 const CAUSE_FIELDS =
   "_class,shortDescription,userId,userName,upstreamProject,upstreamBuild";
 /** Affected paths reported per change before the CLI flags truncation. */
@@ -1910,6 +1915,10 @@ function buildFolderTree(fields: string, depth: number): string {
     tree = `${fields},jobs[${tree}]`;
   }
   return tree;
+}
+
+function isFolderItem(item: JenkinsApiJob): boolean {
+  return typeof item._class === "string" && FOLDER_CLASSES.has(item._class);
 }
 
 function normalizeUrl(value: string): string {

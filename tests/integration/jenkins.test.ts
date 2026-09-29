@@ -1871,6 +1871,50 @@ describe.skipIf(!integrationEnabled)(
       90_000,
     );
 
+    test("discovers multibranch branch jobs as repo/branch and builds one by name", async () => {
+      await withCliHome(async (home) => {
+        // Branch indexing runs asynchronously after controller startup.
+        const listed = await pollCli(
+          home,
+          ["list", "--refresh", "--json"],
+          (result) =>
+            result.stdout.includes('"demo-app-multibranch/main"') &&
+            result.stdout.includes('"demo-app-multibranch/feature-alpha"'),
+          60_000,
+        );
+        const list = parseJson<{
+          data: Array<{ name: string; fullName?: string; url: string }>;
+        }>(listed);
+        expect(list.data).toEqual(
+          expect.arrayContaining([
+            {
+              name: "main",
+              fullName: "demo-app-multibranch/main",
+              url: `${jenkinsUrl}/job/demo-app-multibranch/job/main/`,
+              disabled: false,
+              lastBuild: null,
+            },
+            expect.objectContaining({
+              name: "feature-alpha",
+              fullName: "demo-app-multibranch/feature-alpha",
+            }),
+          ]),
+        );
+        expect(list.data.map((job) => job.name)).not.toContain(
+          "demo-app-multibranch",
+        );
+
+        const built = await runCli(home, [
+          "build",
+          "--job",
+          "demo-app-multibranch/main",
+          "--without-params",
+          "--watch",
+        ]);
+        expect(built.output).toContain("SUCCESS");
+      });
+    }, 120_000);
+
     test("discovers nested jobs and preserves branch parameters through reruns", async () => {
       await withCliHome(async (home) => {
         const list = parseJson<{
