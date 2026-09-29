@@ -26,6 +26,12 @@ jobs:
       - name: Check formatting
         run: bun run format:check
 
+      # Offline: only relative links and anchors, so external sites cannot flake CI.
+      - name: Check markdown links
+        uses: lycheeverse/lychee-action@v2
+        with:
+          args: --offline --include-fragments --no-progress --exclude-path node_modules './**/*.md'
+
       - name: Typecheck
         run: bun run typecheck
 

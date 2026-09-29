@@ -389,12 +389,13 @@ upload, bearer/OIDC/mTLS auth.
 - [ ] **H5. Integration tests run one Jenkins version.** - Today: a single `jenkins:lts-jdk21` image with pinned
       `tests/integration/jenkins/plugins.txt`. - Do: add one older LTS to the matrix so API regressions show up.
 
-- [ ] **H6. Doc-only changes skip CI entirely, and there is no markdown
+- [x] **H6. Doc-only changes skip CI entirely, and there is no markdown
       check.** - Today: `pull-request.yml` and `post-merge.yml` use `paths-ignore` for
       `**/*.md` and `docs/**`. `paths-ignore` still lists
       `fuzzy-search-docs/**`, which no longer exists. This very file was
       pushed to `main` without any run. - Do: run at least `format:check` and a link check on doc changes.
-      Remove the stale path.
+      Remove the stale path. - Shipped: markdown and `docs/` changes now run full CI, and the
+      `quality` job checks relative links and anchors offline with lychee.
 
 - [ ] **H7. Load tests have no baseline.** - Today: `jenkins-load.yml` is `workflow_dispatch`, ubuntu only, and
       nothing compares results across runs. - Do: store the numbers as a workflow artifact and diff against the
@@ -415,6 +416,11 @@ upload, bearer/OIDC/mTLS auth.
       hard to find. - Do: only log unexpected errors (not `CliError` with a known code).
 
 - [ ] **H12. Issue #120 body is stale.** - Today: shows unticked boxes for `tests` and `changes`, both shipped. - Do: edit the issue.
+
+- [x] **H13. Rapid merges leave `main` with no green post-merge run.** - Today: the `post-merge-main` concurrency group has no
+      `cancel-in-progress`. On 2026-09-29, four of six merges had no green
+      run until one was re-run by hand. - Do: set `cancel-in-progress: true`. Each main commit contains the
+      earlier ones, so the newest run proves them all. - Shipped.
 
 ## Suggested order
 

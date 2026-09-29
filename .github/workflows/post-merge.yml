@@ -4,9 +4,6 @@ on:
   push:
     branches: [main]
     paths-ignore:
-      - "**/*.md"
-      - "docs/**"
-      - "fuzzy-search-docs/**"
       - "LICENSE"
       - ".github/FUNDING.yml"
       - ".coderabbit.yaml"
@@ -15,6 +12,9 @@ on:
 
 concurrency:
   group: post-merge-main
+  # Each main commit contains every earlier one, so a newer merge replaces
+  # the running check instead of queueing behind it.
+  cancel-in-progress: true
 
 permissions:
   contents: read
