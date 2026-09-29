@@ -107,7 +107,7 @@ file is read and rewritten. Most of the perf list below is one of those two.
       so the poll loop stops re-reading. Use read-modify-write under a lock
       for the small state file.
 
-- [ ] **P11. `help --json` and `help --full` start 33 copies of the 89MB
+- [x] **P11. `help --json` and `help --full` start 33 copies of the 89MB
       binary.** - Today: `src/cli/full-help.ts:103` spawns one child process per entry
       in `FULL_HELP_COMMANDS` (33 of them), all at once, and each child runs
       full startup including the min-version refresh (P12). - Why it matters: `help --json` is the command agents call most, and it

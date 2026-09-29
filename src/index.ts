@@ -88,11 +88,11 @@ async function main(): Promise<void> {
     throw new CliError("'help' does not support --jsonl output.");
   }
   if (isHelpCommand && isJsonOutputRequested(rawArgs)) {
-    await printJsonHelp(scriptName, VERSION);
+    await printJsonHelp(scriptName, VERSION, createParser);
     return;
   }
   if (isHelpCommand && helpRequest.full === true) {
-    await printFullHelp(scriptName);
+    await printFullHelp(scriptName, createParser);
     return;
   }
 
@@ -100,6 +100,10 @@ async function main(): Promise<void> {
   await enforceMinimumVersionFromCache({ currentVersion: VERSION, rawArgs });
   kickOffAutoUpdate(VERSION, rawArgs);
 
+  await createParser(rawArgs).parseAsync();
+}
+
+function createParser(rawArgs: string[]): Argv {
   const dependencies: CommandRegistrationDependencies = {
     runCommand,
     runCommandWithContext,
@@ -127,7 +131,7 @@ async function main(): Promise<void> {
   parser = registerOperationsCommands(parser, dependencies);
   parser = registerInputCommands(parser, dependencies);
   parser = registerUpdateHelpCommands(parser, dependencies, VERSION);
-  parser = parser
+  return parser
     .version(
       "version",
       `Show version (${VERSION})`,
@@ -143,8 +147,6 @@ async function main(): Promise<void> {
       }
       throw new CliError(message, ["Run with --help to see usage."]);
     });
-
-  await parser.parseAsync();
 }
 
 function loadContextEnv(argv?: ContextArgv): ReturnType<typeof loadEnv> {
