@@ -58,7 +58,7 @@ const parameterizedAction: PendingInputAction = {
 
 type FakeClient = {
   getBuildStatus: ReturnType<typeof mock>;
-  getJobStatus: ReturnType<typeof mock>;
+  getLastBuild: ReturnType<typeof mock>;
   listPendingInputActions: ReturnType<typeof mock>;
   submitPendingInput: ReturnType<typeof mock>;
 };
@@ -80,7 +80,7 @@ function fakeClient(options: {
       building: options.building ?? true,
       result: options.building === false ? "SUCCESS" : null,
     })),
-    getJobStatus: mock(async () => ({
+    getLastBuild: mock(async () => ({
       buildUrl: BUILD_URL,
       buildNumber: 128,
       building: true,
@@ -289,7 +289,7 @@ describe("input list", () => {
       nonInteractive: true,
     });
 
-    expect(client.getJobStatus).toHaveBeenCalledWith(JOB_URL);
+    expect(client.getLastBuild).toHaveBeenCalledWith(JOB_URL);
     expect(client.listPendingInputActions).toHaveBeenCalledWith(BUILD_URL);
     expect(logged()).toContain("OK: Build: deploy #128 (RUNNING)");
     expect(logged()).toContain("Release: Deploy to production?");
@@ -330,7 +330,7 @@ describe("input list", () => {
 
   test("rebuilds the latest-build URL under the validated job URL", async () => {
     const client = fakeClient({ pending: [[releaseAction]] });
-    client.getJobStatus.mockImplementation(async () => ({
+    client.getLastBuild.mockImplementation(async () => ({
       buildUrl: "https://evil.example.com/job/other/128/",
       buildNumber: 128,
       building: true,
@@ -357,10 +357,11 @@ describe("input list", () => {
 
   test("rejects a malformed latest build number instead of trusting the URL", async () => {
     const client = fakeClient({ pending: [[releaseAction]] });
-    client.getJobStatus.mockImplementation(async () => ({
+    client.getLastBuild.mockImplementation(async () => ({
       buildUrl: `${JOB_URL}/128/`,
       buildNumber: -1,
       building: true,
+      result: null,
     }));
     setDeps({
       resolveJobTarget: mock(async () => ({
@@ -383,7 +384,7 @@ describe("input list", () => {
 
   test("fails with NO_BUILDS when the job never built", async () => {
     const client = fakeClient({ pending: [[]] });
-    client.getJobStatus.mockImplementation(async () => ({}));
+    client.getLastBuild.mockImplementation(async () => null);
     setDeps({
       resolveJobTarget: mock(async () => ({
         jobUrl: JOB_URL,

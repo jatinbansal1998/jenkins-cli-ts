@@ -53,7 +53,13 @@ describe("wait command", () => {
     const persistKnownTotalStagesSpy = trackRestore(
       spyOn(stageCountCacheModule, "persistKnownTotalStages"),
     ).mockResolvedValue();
-    const getJobStatus = mock(async () => ({
+    const getLastBuild = mock(async () => ({
+      buildNumber: 42,
+      buildUrl: "https://jenkins.example.com/job/api/42/",
+      result: "UNSTABLE",
+      building: false,
+    }));
+    const getBuildStatus = mock(async () => ({
       buildNumber: 42,
       buildUrl: "https://jenkins.example.com/job/api/42/",
       result: "UNSTABLE",
@@ -63,14 +69,11 @@ describe("wait command", () => {
       stages: [{ id: "1", name: "Deploy", status: "UNSTABLE" }],
       triggeredBy: "timer",
     }));
-    const getBuildStatus = mock(async () => {
-      throw new Error("should not fetch build status for completed build");
-    });
 
     const result = await waitForBuild({
       env,
       client: createClient({
-        getJobStatus,
+        getLastBuild,
         getBuildStatus,
         getQueueBuild: mock(async () => null),
       }),
@@ -86,20 +89,21 @@ describe("wait command", () => {
       buildUrl: "https://jenkins.example.com/job/api/42/",
       triggeredBy: "timer",
     });
-    expect(getJobStatus).toHaveBeenCalledTimes(1);
-    expect(getBuildStatus).toHaveBeenCalledTimes(0);
+    expect(getLastBuild).toHaveBeenCalledTimes(1);
+    expect(getBuildStatus).toHaveBeenCalledTimes(1);
+    expect(getBuildStatus).toHaveBeenCalledWith(
+      "https://jenkins.example.com/job/api/42/",
+    );
     expect(persistKnownTotalStagesSpy).toHaveBeenCalledTimes(1);
   });
 
   test("waitForBuild falls back from queue lookup to job/build status", async () => {
     const getQueueBuild = mock(async () => null);
-    const getJobStatus = mock(async () => ({
+    const getLastBuild = mock(async () => ({
       buildNumber: 7,
       buildUrl: "https://jenkins.example.com/job/api/7/",
       result: "SUCCESS",
       building: false,
-      timestampMs: 1700000000000,
-      durationMs: 10_000,
     }));
     const getBuildStatus = mock(async () => ({
       buildNumber: 7,
@@ -114,7 +118,7 @@ describe("wait command", () => {
       env,
       client: createClient({
         getQueueBuild,
-        getJobStatus,
+        getLastBuild,
         getBuildStatus,
       }),
       jobUrl: "https://jenkins.example.com/job/api/",
@@ -130,8 +134,67 @@ describe("wait command", () => {
       buildUrl: "https://jenkins.example.com/job/api/7/",
     });
     expect(getQueueBuild).toHaveBeenCalledTimes(1);
-    expect(getJobStatus).toHaveBeenCalledTimes(1);
+    expect(getLastBuild).toHaveBeenCalledTimes(1);
     expect(getBuildStatus).toHaveBeenCalledTimes(1);
+  });
+
+  test("waitForBuild follows a running latest build by its build URL", async () => {
+    const buildUrl = "https://jenkins.example.com/job/api/8/";
+    const getLastBuild = mock(async () => ({
+      buildNumber: 8,
+      buildUrl,
+      result: null,
+      building: true,
+    }));
+    const statuses = [
+      { buildNumber: 8, buildUrl, result: null, building: true },
+      { buildNumber: 8, buildUrl, result: "SUCCESS", building: false },
+    ];
+    const getBuildStatus = mock(async (_buildUrl: string) => statuses.shift()!);
+
+    const result = await waitForBuild({
+      env,
+      client: createClient({ getLastBuild, getBuildStatus }),
+      jobUrl: "https://jenkins.example.com/job/api/",
+      jobLabel: "api",
+      intervalMs: 1,
+      nonInteractive: true,
+      suppressOutput: true,
+    });
+
+    expect(result).toMatchObject({ result: "SUCCESS", buildNumber: 8 });
+    expect(getLastBuild).toHaveBeenCalledTimes(1);
+    expect(getBuildStatus.mock.calls).toEqual([[buildUrl], [buildUrl]]);
+  });
+
+  test("waitForBuild polls the job only until its first build appears", async () => {
+    const buildUrl = "https://jenkins.example.com/job/api/1/";
+    const lastBuilds = [
+      null,
+      null,
+      { buildNumber: 1, buildUrl, result: null, building: true },
+    ];
+    const getLastBuild = mock(async () => lastBuilds.shift() ?? null);
+    const getBuildStatus = mock(async (_buildUrl: string) => ({
+      buildNumber: 1,
+      buildUrl,
+      result: "FAILURE",
+      building: false,
+    }));
+
+    const result = await waitForBuild({
+      env,
+      client: createClient({ getLastBuild, getBuildStatus }),
+      jobUrl: "https://jenkins.example.com/job/api/",
+      jobLabel: "api",
+      intervalMs: 1,
+      nonInteractive: true,
+      suppressOutput: true,
+    });
+
+    expect(result).toMatchObject({ result: "FAILURE", buildNumber: 1 });
+    expect(getLastBuild).toHaveBeenCalledTimes(3);
+    expect(getBuildStatus.mock.calls).toEqual([[buildUrl]]);
   });
 
   test("runWait returns non-success result when build fails", async () => {

@@ -70,6 +70,7 @@ import type {
   JenkinsQueueItemsResponse,
   JenkinsQueueWaitTimeResponse,
   JobStatus,
+  LastBuildSummary,
   LastFailedBuildReference,
   NodeSummary,
   NodesSummary,
@@ -96,6 +97,7 @@ export type {
   JenkinsJob,
   JobParameterDefinition,
   JobStatus,
+  LastBuildSummary,
   NodesSummary,
   QueueBuildReference,
   QueueItemSummary,
@@ -113,6 +115,13 @@ export class JenkinsClient {
   private readonly useCrumb: boolean;
   private readonly folderDepth: number;
   private crumbCache?: Crumb;
+  /** Build metadata that cannot change once a build has started. */
+  private readonly startedBuildMetadata = new Map<
+    string,
+    StartedBuildMetadata
+  >();
+  /** Builds whose wfapi returned 404: freestyle, or no Stage View plugin. */
+  private readonly buildsWithoutWfapi = new Set<string>();
 
   constructor(options: JenkinsClientOptions) {
     this.baseUrl = options.baseUrl;
@@ -303,23 +312,17 @@ export class JenkinsClient {
     const buildUrl = isBuildNumber(lastBuild.number)
       ? this.withJob(jobUrl, `${lastBuild.number}/`)
       : undefined;
-    const buildDetails = buildUrl ? await this.getBuildDetails(buildUrl) : null;
-    const pipeline = buildUrl ? await this.getPipelineInfo(buildUrl) : null;
-    let queueTimeMs: number | undefined;
-    if (
-      typeof pipeline?.queueDurationMillis === "number" &&
-      pipeline.queueDurationMillis >= 0
-    ) {
-      queueTimeMs = pipeline.queueDurationMillis;
-    } else if (
-      typeof buildDetails?.queueId === "number" &&
-      typeof lastBuild.timestamp === "number"
-    ) {
-      queueTimeMs = await this.getQueueWaitTimeMs(
-        buildDetails.queueId,
-        lastBuild.timestamp,
-      );
-    }
+    const [buildDetails, pipeline] = buildUrl
+      ? await Promise.all([
+          this.getBuildDetails(buildUrl),
+          this.getPipelineInfo(buildUrl),
+        ])
+      : [null, null];
+    const queueTimeMs = await this.resolveQueueTimeMs(
+      pipeline,
+      buildDetails?.queueId,
+      lastBuild.timestamp,
+    );
     const { parameters, branch, revisions, triggeredBy } =
       extractBuildMetadata(buildDetails);
 
@@ -396,30 +399,45 @@ export class JenkinsClient {
   }
 
   async getBuildStatus(buildUrl: string): Promise<BuildStatus> {
-    const url = this.withJob(buildUrl, `api/json?tree=${BUILD_DETAILS_FIELDS}`);
-    const buildDetails = await this.requestJson<JenkinsApiBuild>(
-      url,
-      "fetch build status",
-    );
-
-    const pipeline = await this.getPipelineInfo(buildUrl);
-    let queueTimeMs: number | undefined;
-    if (
-      typeof pipeline?.queueDurationMillis === "number" &&
-      pipeline.queueDurationMillis >= 0
-    ) {
-      queueTimeMs = pipeline.queueDurationMillis;
-    } else if (
-      typeof buildDetails.queueId === "number" &&
-      typeof buildDetails.timestamp === "number"
-    ) {
-      queueTimeMs = await this.getQueueWaitTimeMs(
+    // Polls re-send only the fields that can still change; parameters,
+    // causes and queue wait are fixed once the build has started.
+    const known = this.startedBuildMetadata.get(buildUrl);
+    const fields = known ? BUILD_POLL_FIELDS : BUILD_DETAILS_FIELDS;
+    const [buildDetails, pipeline] = await Promise.all([
+      this.requestJson<JenkinsApiBuild>(
+        this.withJob(buildUrl, `api/json?tree=${fields}`),
+        "fetch build status",
+      ),
+      this.getPipelineInfo(buildUrl),
+    ]);
+    let metadata = known;
+    if (!metadata) {
+      const { parameters, branch, triggeredBy } =
+        extractBuildMetadata(buildDetails);
+      const queueTimeMs = await this.resolveQueueTimeMs(
+        pipeline,
         buildDetails.queueId,
         buildDetails.timestamp,
       );
+      metadata = {
+        parameters,
+        branch,
+        triggeredBy,
+        queueId: buildDetails.queueId,
+        queueTimeMs,
+      };
+      this.startedBuildMetadata.set(buildUrl, metadata);
+    } else if (metadata.queueTimeMs === undefined) {
+      // A failed lookup must not stick: retry until the wait is known.
+      metadata.queueTimeMs = await this.resolveQueueTimeMs(
+        pipeline,
+        metadata.queueId,
+        buildDetails.timestamp,
+      );
     }
-    const { parameters, branch, revisions, triggeredBy } =
-      extractBuildMetadata(buildDetails);
+    const { parameters, branch, triggeredBy, queueTimeMs } = metadata;
+    // Checkout evidence appears mid-build, so it is read on every poll.
+    const revisions = extractGitRevisions(buildDetails.actions);
 
     return {
       buildNumber: buildDetails.number,
@@ -522,21 +540,24 @@ export class JenkinsClient {
     };
   }
 
-  async getLastBuild(
-    jobUrl: string,
-  ): Promise<{ buildUrl: string; buildNumber?: number } | null> {
-    const url = this.withJob(jobUrl, "api/json?tree=lastBuild[number]");
+  async getLastBuild(jobUrl: string): Promise<LastBuildSummary | null> {
+    const url = this.withJob(
+      jobUrl,
+      "api/json?tree=lastBuild[number,building,result]",
+    );
     const payload = await this.requestJson<JenkinsLastBuildResponse>(
       url,
       "fetch last build",
     );
-    const build = payload?.lastBuild;
-    if (!isBuildNumber(build?.number)) {
+    const latest = payload?.lastBuild;
+    if (!isBuildNumber(latest?.number)) {
       return null;
     }
     return {
-      buildUrl: this.withJob(jobUrl, `${build.number}/`),
-      buildNumber: build.number,
+      buildUrl: this.withJob(jobUrl, `${latest.number}/`),
+      buildNumber: latest.number,
+      building: latest.building ?? false,
+      result: latest.result ?? null,
     };
   }
 
@@ -1605,6 +1626,23 @@ export class JenkinsClient {
     }
   }
 
+  private async resolveQueueTimeMs(
+    pipeline: PipelineInfo | null,
+    queueId: number | undefined,
+    startTimestamp: number | undefined,
+  ): Promise<number | undefined> {
+    if (
+      typeof pipeline?.queueDurationMillis === "number" &&
+      pipeline.queueDurationMillis >= 0
+    ) {
+      return pipeline.queueDurationMillis;
+    }
+    if (typeof queueId === "number" && typeof startTimestamp === "number") {
+      return await this.getQueueWaitTimeMs(queueId, startTimestamp);
+    }
+    return undefined;
+  }
+
   private async getQueueWaitTimeMs(
     queueId: number,
     startTimestamp: number,
@@ -1666,6 +1704,9 @@ export class JenkinsClient {
     } = {},
   ): Promise<PipelineInfo | null> {
     const base = buildUrl.endsWith("/") ? buildUrl : `${buildUrl}/`;
+    if (this.buildsWithoutWfapi.has(base)) {
+      return null;
+    }
     const url = new URL("wfapi/describe", base).toString();
     const headers = await this.authHeaders();
     try {
@@ -1675,6 +1716,9 @@ export class JenkinsClient {
         0,
         "fetch pipeline stage",
       );
+      if (response.status === 404) {
+        this.buildsWithoutWfapi.add(base);
+      }
       if (!response.ok) {
         return null;
       }
@@ -1843,6 +1887,15 @@ const BUILD_ACTION_FIELDS =
   "parameters[name,value],_class,lastBuiltRevision[SHA1,branch[name]],remoteUrls,causes[shortDescription,userId,userName]";
 const BUILD_HISTORY_FIELDS = `number,result,building,timestamp,duration,estimatedDuration,actions[${BUILD_ACTION_FIELDS}]`;
 const BUILD_DETAILS_FIELDS = `${BUILD_HISTORY_FIELDS},queueId`;
+const BUILD_POLL_FIELDS = `number,result,building,timestamp,duration,estimatedDuration,actions[_class,lastBuiltRevision[SHA1,branch[name]],remoteUrls]`;
+
+type StartedBuildMetadata = {
+  parameters?: JenkinsBuildParameter[];
+  branch?: string;
+  triggeredBy?: string;
+  queueId?: number;
+  queueTimeMs?: number;
+};
 
 const FOLDER_LEAF_FIELDS =
   "_class,name,fullName,url,disabled,lastBuild[number,url,result,building,timestamp,duration,estimatedDuration]";

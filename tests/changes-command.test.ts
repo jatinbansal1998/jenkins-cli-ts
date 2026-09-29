@@ -698,6 +698,8 @@ describe("runChanges", () => {
     const getLastBuild = mock(async () => ({
       buildUrl: BUILD_URL,
       buildNumber: 5,
+      building: false,
+      result: "SUCCESS",
     }));
     const getBuildChanges = mock(async () => REPORT);
     await runChanges({

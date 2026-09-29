@@ -61,7 +61,7 @@ describe("server build URL trust", () => {
             [field]: { number: 9, url },
           }),
         ) as unknown as typeof fetch;
-        expect(await client()[method](jobUrl)).toEqual({
+        expect(await client()[method](jobUrl)).toMatchObject({
           buildNumber: 9,
           buildUrl: `${jobUrl}9/`,
         });
@@ -1138,6 +1138,179 @@ describe("JenkinsClient build transport", () => {
     } finally {
       rmSync(home, { recursive: true, force: true });
     }
+  });
+});
+
+function gitBuildDataAction(sha: string) {
+  return {
+    _class: "hudson.plugins.git.util.BuildData",
+    lastBuiltRevision: { SHA1: sha, branch: [{ name: "origin/main" }] },
+    remoteUrls: ["https://git.example.com/repo.git"],
+  };
+}
+
+describe("JenkinsClient build status polling", () => {
+  const jobUrl = "https://jenkins.example.com/job/my-job/";
+  const buildUrl = `${jobUrl}7/`;
+  const causeAction = {
+    _class: "hudson.model.CauseAction",
+    causes: [{ userName: "Ada" }],
+  };
+  const paramsAction = {
+    _class: "hudson.model.ParametersAction",
+    parameters: [{ name: "BRANCH", value: "main" }],
+  };
+
+  /**
+   * Serves one build; wfapi answers with `wfapiStatus`, and the first
+   * `queueFailures` queue lookups fail.
+   */
+  function serveBuild(options: {
+    wfapiStatus?: number;
+    pollActions?: unknown[];
+    queueFailures?: number;
+  }) {
+    let queueFailuresLeft = options.queueFailures ?? 0;
+    const requested: string[] = [];
+    let inFlight = 0;
+    let maxInFlight = 0;
+    const fetchMock = mock(async (input: FetchInput) => {
+      const url = String(input);
+      requested.push(url);
+      inFlight += 1;
+      maxInFlight = Math.max(maxInFlight, inFlight);
+      await Bun.sleep(5);
+      inFlight -= 1;
+      if (url.includes("tree=disabled,lastBuild")) {
+        return Response.json({ disabled: false, lastBuild: { number: 7 } });
+      }
+      if (url.includes("/wfapi/describe")) {
+        const status = options.wfapiStatus ?? 200;
+        return status === 200
+          ? Response.json({ id: "7", queueDurationMillis: 1500, stages: [] })
+          : new Response("", { status });
+      }
+      if (url.includes("/queue/item/")) {
+        if (queueFailuresLeft > 0) {
+          queueFailuresLeft -= 1;
+          return new Response("", { status: 500 });
+        }
+        return Response.json({ inQueueSince: 1_000 });
+      }
+      const isPoll = !url.includes("parameters[");
+      return Response.json({
+        number: 7,
+        building: true,
+        timestamp: 4_000,
+        queueId: 3,
+        actions: isPoll
+          ? (options.pollActions ?? [])
+          : [causeAction, paramsAction],
+      });
+    });
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+    return {
+      requested,
+      maxInFlight: () => maxInFlight,
+      count: (part: string) =>
+        requested.filter((url) => url.includes(part)).length,
+    };
+  }
+
+  test("getBuildStatus fetches build details and wfapi concurrently", async () => {
+    const server = serveBuild({});
+    await createClient().getBuildStatus(buildUrl);
+    expect(server.requested).toHaveLength(2);
+    expect(server.maxInFlight()).toBe(2);
+  });
+
+  test("getJobStatus fetches build details and wfapi concurrently", async () => {
+    const server = serveBuild({});
+    await createClient().getJobStatus(jobUrl);
+    expect(server.requested).toHaveLength(3);
+    expect(server.maxInFlight()).toBe(2);
+  });
+
+  test("later polls skip static fields but keep their values", async () => {
+    const server = serveBuild({ pollActions: [gitBuildDataAction("abc123")] });
+    const client = createClient();
+
+    const first = await client.getBuildStatus(buildUrl);
+    const second = await client.getBuildStatus(buildUrl);
+
+    const detailUrls = server.requested.filter((url) =>
+      url.includes("/api/json?tree="),
+    );
+    expect(detailUrls).toHaveLength(2);
+    expect(detailUrls[0]).toContain("parameters[name,value]");
+    expect(detailUrls[1]).not.toContain("parameters[");
+    expect(detailUrls[1]).not.toContain("causes[");
+    expect(detailUrls[1]).toContain("lastBuiltRevision[SHA1,branch[name]]");
+    expect(first.revisions).toEqual([]);
+    expect(second).toMatchObject({
+      parameters: [{ name: "BRANCH", value: "main" }],
+      branch: "main",
+      triggeredBy: "Ada",
+      queueTimeMs: 1500,
+    });
+    // Checkout evidence can appear mid-build, so polls still read it.
+    expect(second.revisions?.[0]?.sha).toBe("abc123");
+  });
+
+  test("a build without wfapi stops asking for it and looks up the queue once", async () => {
+    const server = serveBuild({ wfapiStatus: 404 });
+    const client = createClient();
+
+    await client.getBuildStatus(buildUrl);
+    const second = await client.getBuildStatus(buildUrl);
+
+    expect(server.count("/wfapi/describe")).toBe(1);
+    expect(server.count("/queue/item/3/")).toBe(1);
+    expect(second.queueTimeMs).toBe(3_000);
+  });
+
+  test("a failed queue lookup is retried until the queue wait is known", async () => {
+    const server = serveBuild({ wfapiStatus: 404, queueFailures: 1 });
+    const client = createClient();
+
+    const first = await client.getBuildStatus(buildUrl);
+    const second = await client.getBuildStatus(buildUrl);
+    const third = await client.getBuildStatus(buildUrl);
+
+    expect(first.queueTimeMs).toBeUndefined();
+    expect(second.queueTimeMs).toBe(3_000);
+    expect(third.queueTimeMs).toBe(3_000);
+    expect(server.count("/queue/item/3/")).toBe(2);
+  });
+
+  test("a failing wfapi is retried on the next poll", async () => {
+    const server = serveBuild({ wfapiStatus: 500 });
+    const client = createClient();
+
+    await client.getBuildStatus(buildUrl);
+    await client.getBuildStatus(buildUrl);
+
+    expect(server.count("/wfapi/describe")).toBe(2);
+  });
+
+  test("getLastBuild reads the newest build in one request", async () => {
+    const requested: string[] = [];
+    globalThis.fetch = mock(async (input: FetchInput) => {
+      requested.push(String(input));
+      return Response.json({
+        lastBuild: { number: 7, building: true, result: null },
+      });
+    }) as unknown as typeof fetch;
+
+    expect(await createClient().getLastBuild(jobUrl)).toEqual({
+      buildUrl,
+      buildNumber: 7,
+      building: true,
+      result: null,
+    });
+    expect(requested).toEqual([
+      `${jobUrl}api/json?tree=lastBuild[number,building,result]`,
+    ]);
   });
 });
 

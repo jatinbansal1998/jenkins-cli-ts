@@ -354,8 +354,8 @@ async function resolveInputBuild(
       result: status.result ?? null,
     };
   }
-  const status = await options.client.getJobStatus(target.jobUrl);
-  if (!status.buildUrl || status.buildNumber === undefined) {
+  const lastBuild = await options.client.getLastBuild(target.jobUrl);
+  if (!lastBuild) {
     throw new CliError(
       `No builds found for ${target.jobLabel}.`,
       ["Pending inputs only exist on a running Pipeline build."],
@@ -365,7 +365,10 @@ async function resolveInputBuild(
   // Only the build number is taken from Jenkins; the URL is rebuilt under the
   // validated job URL so a hostile or misconfigured response cannot redirect
   // authenticated requests elsewhere.
-  if (!Number.isSafeInteger(status.buildNumber) || status.buildNumber <= 0) {
+  if (
+    !Number.isSafeInteger(lastBuild.buildNumber) ||
+    lastBuild.buildNumber <= 0
+  ) {
     throw new CliError(
       `Unexpected Jenkins response while trying to resolve the latest build of ${target.jobLabel}: invalid build number.`,
       ["Retry with an explicit --build or --build-url."],
@@ -375,10 +378,10 @@ async function resolveInputBuild(
   return {
     jobUrl: target.jobUrl,
     jobLabel: target.jobLabel,
-    buildUrl: `${normalizeJobUrl(target.jobUrl)}/${status.buildNumber}/`,
-    buildNumber: status.buildNumber,
-    building: status.building ?? false,
-    result: status.result ?? null,
+    buildUrl: `${normalizeJobUrl(target.jobUrl)}/${lastBuild.buildNumber}/`,
+    buildNumber: lastBuild.buildNumber,
+    building: lastBuild.building,
+    result: lastBuild.result,
   };
 }
 

@@ -81,6 +81,42 @@ describe("logs command", () => {
     ]);
   });
 
+  test("follow asks for build status only after Jenkins closes the log", async () => {
+    const output: string[] = [];
+    const getBuildStatus = mock()
+      .mockResolvedValueOnce({ buildNumber: 9, buildUrl, building: true })
+      .mockResolvedValueOnce({
+        buildNumber: 9,
+        buildUrl,
+        building: false,
+        result: "SUCCESS",
+      });
+    const chunks = [
+      { text: "a\n", nextStart: 2, hasMore: true },
+      { text: "", nextStart: 2, hasMore: true },
+      { text: "", nextStart: 2, hasMore: true },
+      { text: "b\n", nextStart: 4, hasMore: true },
+      { text: "", nextStart: 4, hasMore: false },
+    ];
+    const getConsoleChunk = mock(async () => chunks.shift()!);
+
+    await runLogs({
+      client: client({ getBuildStatus, getConsoleChunk }),
+      env,
+      buildUrl,
+      follow: true,
+      plain: true,
+      poll: "1ms",
+      nonInteractive: true,
+      writeText: (value) => output.push(value),
+    });
+
+    expect(output.join("")).toBe("a\nb\n");
+    expect(getConsoleChunk).toHaveBeenCalledTimes(5);
+    // One status read to start, one once the log closed; none per poll.
+    expect(getBuildStatus).toHaveBeenCalledTimes(2);
+  });
+
   test("defaults redirected output to one snapshot", async () => {
     const stdoutDescriptor = Object.getOwnPropertyDescriptor(
       process.stdout,

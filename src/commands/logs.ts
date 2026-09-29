@@ -311,11 +311,11 @@ async function resolveLogTarget(
     };
   }
 
-  const status = await options.client.getJobStatus(target.jobUrl);
-  if (!status.buildUrl) {
+  const lastBuild = await options.client.getLastBuild(target.jobUrl);
+  if (!lastBuild) {
     throw noBuildsError(target.jobLabel);
   }
-  return { buildUrl: status.buildUrl, jobLabel: target.jobLabel };
+  return { buildUrl: lastBuild.buildUrl, jobLabel: target.jobLabel };
 }
 
 async function resolveEffectiveOptions(
@@ -417,6 +417,9 @@ async function streamWholeBuildLogs(options: {
 }): Promise<boolean> {
   const initial = options.initialStatus;
   let offset = 0;
+  // X-More-Data stays true until Jenkins closes the log, so the follow loop
+  // asks for build status only once the log says it is finished.
+  let logOpen = true;
   options.emitter.start({
     buildUrl: initial.buildUrl ?? options.buildUrl,
     buildNumber: initial.buildNumber,
@@ -471,6 +474,7 @@ async function streamWholeBuildLogs(options: {
       };
     }
     offset = snapshot.offset;
+    logOpen = snapshot.hasMore;
     if (filtered.text) {
       options.emitter.chunk({
         text: filtered.text,
@@ -497,20 +501,25 @@ async function streamWholeBuildLogs(options: {
       return true;
     }
     offset = streamed.offset;
+    logOpen = streamed.hasMore;
   }
 
   while (options.effective.follow) {
     if (options.cancelSignal?.isCancelled()) {
       return true;
     }
-    const status = await options.client.getBuildStatus(options.buildUrl);
-    if (!status.building) {
-      options.emitter.complete({
-        buildUrl: status.buildUrl ?? options.buildUrl,
-        offset,
-        result: status.result,
-      });
-      return false;
+    // A proxy that strips X-More-Data makes every read look final; the status
+    // check below then keeps the loop going while the build still runs.
+    if (!logOpen) {
+      const status = await options.client.getBuildStatus(options.buildUrl);
+      if (!status.building) {
+        options.emitter.complete({
+          buildUrl: status.buildUrl ?? options.buildUrl,
+          offset,
+          result: status.result,
+        });
+        return false;
+      }
     }
     if (await waitForPoll(options.pollMs, options.cancelSignal)) {
       return true;
@@ -532,6 +541,7 @@ async function streamWholeBuildLogs(options: {
       return true;
     }
     offset = streamed.offset;
+    logOpen = streamed.hasMore;
   }
 
   const status = await options.client.getBuildStatus(options.buildUrl);
@@ -802,11 +812,11 @@ async function readAvailableChunks(options: {
   offset: number;
   onChunk: (chunk: ConsoleChunk, start: number) => void;
   cancelSignal?: LogCancellationSignal;
-}): Promise<{ offset: number; cancelled: boolean }> {
+}): Promise<{ offset: number; hasMore: boolean; cancelled: boolean }> {
   let offset = options.offset;
   while (true) {
     if (options.cancelSignal?.isCancelled()) {
-      return { offset, cancelled: true };
+      return { offset, hasMore: true, cancelled: true };
     }
     const start = offset;
     const chunk = await options.getChunk(offset);
@@ -815,7 +825,7 @@ async function readAvailableChunks(options: {
     }
     offset = chunk.nextStart;
     if (!chunk.hasMore || (offset <= start && !chunk.text)) {
-      return { offset, cancelled: false };
+      return { offset, hasMore: chunk.hasMore, cancelled: false };
     }
   }
 }

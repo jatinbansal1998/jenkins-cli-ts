@@ -50,8 +50,13 @@ file is read and rewritten. Most of the perf list below is one of those two.
       In follow mode, call `describe` once per poll and re-run discovery
       only when a stage id or status actually changed.
 
-- [ ] **P2. Every status poll makes 2-4 serial round trips and re-downloads
-      data that never changes.** - Today: `getBuildStatus` (`src/jenkins/client.ts:400-424`) fetches build
+- [x] **P2. Every status poll makes 2-4 serial round trips and re-downloads
+      data that never changes.** Shipped: details and `wfapi` in parallel,
+      parameters/causes/queue wait cached per build after the first poll
+      (later polls still read git revisions, which appear mid-build), `wfapi`
+      404 remembered per build, whole-build `logs --follow` reads status only
+      once `X-More-Data` goes false. Not done: the Pipeline stage follow loop
+      (`logs.ts:626`), which P1 rewrites. - Today: `getBuildStatus` (`src/jenkins/client.ts:400-424`) fetches build
       details, then waits, then fetches `wfapi/describe`, then maybe
       `queue/item/N`. `getJobStatus` (`:288-324`) adds the job fetch in front
       of that, so 3-4 sequential requests. The build-details query
@@ -71,8 +76,12 @@ file is read and rewritten. Most of the perf list below is one of those two.
       logs follow loop, rely on `X-More-Data` and fetch status only once it
       goes false.
 
-- [ ] **P3. `getJobStatus` is called in a dozen places that only need the last
-      build number.** - Today: these call sites read only `buildNumber`, `building` or
+- [x] **P3. `getJobStatus` is called in a dozen places that only need the last
+      build number.** Shipped: `getLastBuild` now returns number, URL,
+      `building` and `result` from one request and replaces `getJobStatus` at
+      every listed site. Watch/wait loops hand off to the build-URL poll once
+      the build is known. `status` and `rerun` keep `getJobStatus`; they show
+      or reuse the full details. - Today: these call sites read only `buildNumber`, `building` or
       `buildUrl` from the result, but pay for the full 3-4 request chain in
       P2: `build.ts:275, 651, 1096, 1206, 1240`, `logs.ts:314`,
       `wait.ts:309, 444, 525`, `watch-utils.ts:151`, `cancel-core.ts:334`,

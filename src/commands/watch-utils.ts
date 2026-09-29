@@ -2,9 +2,30 @@ import { CliError } from "../cli";
 import { assertProtectedMutationAllowed, type EnvConfig } from "../env";
 import { areSameJobUrls, normalizeOptionalJobUrl } from "../job-url";
 import type { JenkinsClient } from "../jenkins/client";
-import type { QueueItemSummary } from "../types/jenkins";
+import type { LastBuildSummary, QueueItemSummary } from "../types/jenkins";
 
 export const DEFAULT_WATCH_INTERVAL_MS = 5_000;
+
+/**
+ * The job's newest build, if it is the one a watch is waiting for: any build
+ * other than the one seen before the trigger, or that same build while it is
+ * still running.
+ */
+export async function findWatchedBuild(
+  client: JenkinsClient,
+  jobUrl: string,
+  baselineBuildNumber: number | undefined,
+): Promise<LastBuildSummary | null> {
+  const lastBuild = await client.getLastBuild(jobUrl);
+  if (!lastBuild) {
+    return null;
+  }
+  const isWatched =
+    baselineBuildNumber === undefined ||
+    lastBuild.buildNumber !== baselineBuildNumber ||
+    lastBuild.building;
+  return isWatched ? lastBuild : null;
+}
 
 export async function waitForPollIntervalOrCancel(
   intervalMs: number,
@@ -148,14 +169,14 @@ export async function requestCancellationForWatchTarget(options: {
 
   const jobUrl = normalizeOptionalJobUrl(options.jobUrl);
   if (jobUrl) {
-    const jobStatus = await options.client.getJobStatus(jobUrl);
-    if (jobStatus.building && jobStatus.buildUrl) {
-      await options.client.stopBuild(jobStatus.buildUrl);
+    const lastBuild = await options.client.getLastBuild(jobUrl);
+    if (lastBuild?.building) {
+      await options.client.stopBuild(lastBuild.buildUrl);
       return {
         kind: "build",
-        buildUrl: jobStatus.buildUrl,
-        buildNumber: jobStatus.buildNumber,
-        message: `Cancellation requested for build: ${jobStatus.buildUrl}`,
+        buildUrl: lastBuild.buildUrl,
+        buildNumber: lastBuild.buildNumber,
+        message: `Cancellation requested for build: ${lastBuild.buildUrl}`,
       };
     }
 
