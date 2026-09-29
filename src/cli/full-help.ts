@@ -1,6 +1,6 @@
+import type { Argv } from "yargs";
 import { CliError } from "../cli";
 import { emitJsonSuccess } from "../json-output";
-import { selfInvocation } from "../self-invocation";
 import {
   commandPathSupportsJson,
   commandPathSupportsJsonl,
@@ -61,14 +61,17 @@ type CommandHelpSection = {
   help: string;
 };
 
+type CreateParser = (rawArgs: string[]) => Argv;
+
 /**
  * Prints the --help output of every command in one document so automation and
  * AI agents can learn the complete CLI surface from a single invocation.
- * Children are spawned concurrently; each `--help` run skips the update
- * prompt/auto-update paths and never touches Jenkins.
  */
-export async function printFullHelp(scriptName: string): Promise<void> {
-  const sections = await collectCommandHelp(scriptName);
+export async function printFullHelp(
+  scriptName: string,
+  createParser: CreateParser,
+): Promise<void> {
+  const sections = await collectCommandHelp(scriptName, createParser);
   const rule = "=".repeat(72);
   console.log(
     sections
@@ -82,8 +85,9 @@ export async function printFullHelp(scriptName: string): Promise<void> {
 export async function printJsonHelp(
   scriptName: string,
   version: string,
+  createParser: CreateParser,
 ): Promise<void> {
-  const sections = await collectCommandHelp(scriptName);
+  const sections = await collectCommandHelp(scriptName, createParser);
   const data: HelpCatalog = {
     version,
     commands: sections.map((section) => ({
@@ -99,32 +103,34 @@ export async function printJsonHelp(
 
 async function collectCommandHelp(
   scriptName: string,
+  createParser: CreateParser,
 ): Promise<CommandHelpSection[]> {
-  return await Promise.all(
-    FULL_HELP_COMMANDS.map(async (commandPath) => {
-      const invocation = [scriptName, ...commandPath, "--help"].join(" ");
-      const child = Bun.spawn({
-        cmd: selfInvocation([...commandPath, "--help"]),
-        stdout: "pipe",
-        stderr: "pipe",
-        stdin: "ignore",
-      });
-      const [stdout, stderr, exitCode] = await Promise.all([
-        new Response(child.stdout).text(),
-        new Response(child.stderr).text(),
-        child.exited,
-      ]);
-      if (exitCode !== 0) {
-        throw new CliError(
-          `Failed to collect help for "${invocation}".`,
-          stderr.trim() ? [stderr.trim()] : [],
-        );
+  const sections: CommandHelpSection[] = [];
+  for (const commandPath of FULL_HELP_COMMANDS) {
+    const args = [...commandPath, "--help"];
+    const invocation = [scriptName, ...args].join(" ");
+    const help = await renderHelp(createParser(args), args).catch(
+      (error: unknown) => {
+        throw new CliError(`Failed to collect help for "${invocation}".`, [
+          error instanceof Error ? error.message : String(error),
+        ]);
+      },
+    );
+    sections.push({ path: commandPath, invocation, help: help.trim() });
+  }
+  return sections;
+}
+
+// A parse callback makes yargs hand back the help text instead of printing it
+// and exiting the process.
+function renderHelp(parser: Argv, args: string[]): Promise<string> {
+  return new Promise((resolve, reject) => {
+    void parser.parse(args, {}, (error, _argv, output) => {
+      if (error) {
+        reject(error);
+      } else {
+        resolve(output);
       }
-      return {
-        path: commandPath,
-        invocation,
-        help: stdout.trim(),
-      };
-    }),
-  );
+    });
+  });
 }

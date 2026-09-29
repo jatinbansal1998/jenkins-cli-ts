@@ -1,5 +1,6 @@
-import { describe, expect, test } from "bun:test";
-import { FULL_HELP_COMMANDS } from "../src/cli/full-help";
+import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
+import yargs from "yargs/yargs";
+import { FULL_HELP_COMMANDS, printFullHelp } from "../src/cli/full-help";
 import {
   commandPathSupportsJson,
   commandPathSupportsJsonl,
@@ -220,4 +221,35 @@ describe("help --full", () => {
     expect(result.output).toContain("--offline-only"); // nodes
     expect(result.output).toContain("--channel"); // update
   }, 60_000);
+});
+
+describe("printFullHelp", () => {
+  let spawnSpy = spyOn(Bun, "spawn");
+  let logSpy = spyOn(console, "log");
+
+  beforeEach(() => {
+    spawnSpy = spyOn(Bun, "spawn");
+    logSpy = spyOn(console, "log").mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    spawnSpy.mockRestore();
+    logSpy.mockRestore();
+  });
+
+  // Spawning one CLI child per command made `help --json` the slowest command.
+  test("renders every command's help in-process", async () => {
+    await printFullHelp("jenkins-cli", (rawArgs) =>
+      yargs(rawArgs)
+        .scriptName("jenkins-cli")
+        .command("status", "Show build status", (statusYargs) =>
+          statusYargs.option("only-in-status-help", { type: "boolean" }),
+        ),
+    );
+
+    expect(spawnSpy).not.toHaveBeenCalled();
+    const output = logSpy.mock.calls.map((call) => String(call[0])).join("\n");
+    expect(output).toContain("\njenkins-cli status --help\n");
+    expect(output).toContain("--only-in-status-help");
+  });
 });
