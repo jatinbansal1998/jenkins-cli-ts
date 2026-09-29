@@ -419,8 +419,21 @@ export class JenkinsClient {
         buildDetails.queueId,
         buildDetails.timestamp,
       );
-      metadata = { parameters, branch, triggeredBy, queueTimeMs };
+      metadata = {
+        parameters,
+        branch,
+        triggeredBy,
+        queueId: buildDetails.queueId,
+        queueTimeMs,
+      };
       this.startedBuildMetadata.set(buildUrl, metadata);
+    } else if (metadata.queueTimeMs === undefined) {
+      // A failed lookup must not stick: retry until the wait is known.
+      metadata.queueTimeMs = await this.resolveQueueTimeMs(
+        pipeline,
+        metadata.queueId,
+        buildDetails.timestamp,
+      );
     }
     const { parameters, branch, triggeredBy, queueTimeMs } = metadata;
     // Checkout evidence appears mid-build, so it is read on every poll.
@@ -1880,6 +1893,7 @@ type StartedBuildMetadata = {
   parameters?: JenkinsBuildParameter[];
   branch?: string;
   triggeredBy?: string;
+  queueId?: number;
   queueTimeMs?: number;
 };
 

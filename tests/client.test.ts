@@ -1161,11 +1161,16 @@ describe("JenkinsClient build status polling", () => {
     parameters: [{ name: "BRANCH", value: "main" }],
   };
 
-  /** Serves one build; wfapi answers with `wfapiStatus`. */
+  /**
+   * Serves one build; wfapi answers with `wfapiStatus`, and the first
+   * `queueFailures` queue lookups fail.
+   */
   function serveBuild(options: {
     wfapiStatus?: number;
     pollActions?: unknown[];
+    queueFailures?: number;
   }) {
+    let queueFailuresLeft = options.queueFailures ?? 0;
     const requested: string[] = [];
     let inFlight = 0;
     let maxInFlight = 0;
@@ -1186,6 +1191,10 @@ describe("JenkinsClient build status polling", () => {
           : new Response("", { status });
       }
       if (url.includes("/queue/item/")) {
+        if (queueFailuresLeft > 0) {
+          queueFailuresLeft -= 1;
+          return new Response("", { status: 500 });
+        }
         return Response.json({ inQueueSince: 1_000 });
       }
       const isPoll = !url.includes("parameters[");
@@ -1258,6 +1267,20 @@ describe("JenkinsClient build status polling", () => {
     expect(server.count("/wfapi/describe")).toBe(1);
     expect(server.count("/queue/item/3/")).toBe(1);
     expect(second.queueTimeMs).toBe(3_000);
+  });
+
+  test("a failed queue lookup is retried until the queue wait is known", async () => {
+    const server = serveBuild({ wfapiStatus: 404, queueFailures: 1 });
+    const client = createClient();
+
+    const first = await client.getBuildStatus(buildUrl);
+    const second = await client.getBuildStatus(buildUrl);
+    const third = await client.getBuildStatus(buildUrl);
+
+    expect(first.queueTimeMs).toBeUndefined();
+    expect(second.queueTimeMs).toBe(3_000);
+    expect(third.queueTimeMs).toBe(3_000);
+    expect(server.count("/queue/item/3/")).toBe(2);
   });
 
   test("a failing wfapi is retried on the next poll", async () => {
