@@ -224,8 +224,8 @@ describe("help --full", () => {
 });
 
 describe("printFullHelp", () => {
-  let spawnSpy = spyOn(Bun, "spawn");
-  let logSpy = spyOn(console, "log");
+  let spawnSpy: ReturnType<typeof spyOn<typeof Bun, "spawn">>;
+  let logSpy: ReturnType<typeof spyOn<typeof console, "log">>;
 
   beforeEach(() => {
     spawnSpy = spyOn(Bun, "spawn");
