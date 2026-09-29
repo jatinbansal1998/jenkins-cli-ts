@@ -69,6 +69,10 @@ const results = await Promise.allSettled(
       // @ts-expect-error -- Bun compile targets are valid at runtime
       compile: { target: compileTarget, outfile: outpath },
       plugins: [embedCrossKeychainAssets],
+      // Bytecode defaults to CJS, which rejects the entry's top-level await.
+      bytecode: true,
+      format: "esm",
+      minify: true,
       sourcemap: "linked",
       define: {
         __BUILD_TARGET__: JSON.stringify(compileTarget),

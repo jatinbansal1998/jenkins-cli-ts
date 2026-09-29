@@ -26,6 +26,10 @@ const result = await Bun.build({
   // unused internal modules when compiling the executable.
   compile: { outfile: `${DIST}/jenkins-cli` },
   plugins: [embedCrossKeychainAssets],
+  // Bytecode defaults to CJS, which rejects the entry's top-level await.
+  bytecode: true,
+  format: "esm",
+  minify: true,
   sourcemap: "linked",
   define: {
     __BUILD_TARGET__: JSON.stringify(target),
