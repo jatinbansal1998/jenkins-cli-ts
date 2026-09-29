@@ -1485,11 +1485,16 @@ export class JenkinsClient {
       }
       return response;
     } catch (error) {
-      if (retriesLeft > 0) {
+      const timedOut = error instanceof Error && error.name === "AbortError";
+      // A server that missed the deadline once will likely miss it again, so
+      // a retry would only double the wait.
+      if (retriesLeft > 0 && !timedOut) {
+        cleanup();
+        await Bun.sleep(RETRY_DELAY_MIN_MS + Math.random() * RETRY_JITTER_MS);
         return this.fetchWithTimeout(url, options, retriesLeft - 1, context);
       }
 
-      if (error instanceof Error && error.name === "AbortError") {
+      if (timedOut) {
         logNetworkError(method, url, "TIMEOUT");
 
         throw new CliError(
@@ -1779,6 +1784,9 @@ function isBuildResourceContext(context: string): boolean {
   );
 }
 
+/** Transport retries wait 200-500ms; jitter spreads out concurrent callers. */
+const RETRY_DELAY_MIN_MS = 200;
+const RETRY_JITTER_MS = 300;
 const CLOUDBEES_FOLDER_CLASS = "com.cloudbees.hudson.plugins.folder.Folder";
 const CAUSE_FIELDS =
   "_class,shortDescription,userId,userName,upstreamProject,upstreamBuild";

@@ -1649,6 +1649,66 @@ describe("JenkinsClient listNodes", () => {
   });
 });
 
+describe("JenkinsClient transport retry", () => {
+  test("waits before retrying a GET after a network error", async () => {
+    const callTimes: number[] = [];
+    const fetchMock = mock(async (_input: FetchInput, _init?: FetchInit) => {
+      callTimes.push(performance.now());
+      if (callTimes.length === 1) {
+        throw new Error("socket closed");
+      }
+      return Response.json({
+        jobs: [
+          {
+            _class: "hudson.model.FreeStyleProject",
+            name: "api",
+            url: "https://jenkins.example.com/job/api/",
+          },
+        ],
+      });
+    });
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+    const client = new JenkinsClient({
+      baseUrl: "https://jenkins.example.com",
+      user: "user",
+      apiToken: "token",
+      timeoutMs: 1_000,
+    });
+
+    await client.listJobs();
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(callTimes[1]! - callTimes[0]!).toBeGreaterThanOrEqual(200);
+  });
+
+  test("does not retry a GET after the header timeout", async () => {
+    const fetchMock = mock(
+      (_input: FetchInput, init?: FetchInit) =>
+        new Promise<Response>((_resolve, reject) => {
+          init?.signal?.addEventListener("abort", () =>
+            reject(
+              new DOMException("The operation was aborted.", "AbortError"),
+            ),
+          );
+        }),
+    );
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+    const client = new JenkinsClient({
+      baseUrl: "https://jenkins.example.com",
+      user: "user",
+      apiToken: "token",
+      timeoutMs: 50,
+    });
+
+    await expect(client.listJobs()).rejects.toThrow(
+      "Request timed out while trying to list jobs.",
+    );
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe("JenkinsClient getJobConfigXml", () => {
   test("fetches config.xml from the job URL with basic auth", async () => {
     const fetchMock = mock(async (_input: FetchInput, _init?: FetchInit) => {
