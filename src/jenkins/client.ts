@@ -549,15 +549,15 @@ export class JenkinsClient {
       url,
       "fetch last build",
     );
-    const build = payload?.lastBuild;
-    if (!isBuildNumber(build?.number)) {
+    const latest = payload?.lastBuild;
+    if (!isBuildNumber(latest?.number)) {
       return null;
     }
     return {
-      buildUrl: this.withJob(jobUrl, `${build.number}/`),
-      buildNumber: build.number,
-      building: build.building ?? false,
-      result: build.result ?? null,
+      buildUrl: this.withJob(jobUrl, `${latest.number}/`),
+      buildNumber: latest.number,
+      building: latest.building ?? false,
+      result: latest.result ?? null,
     };
   }
 
