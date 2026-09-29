@@ -207,13 +207,15 @@ file is read and rewritten. Most of the perf list below is one of those two.
       for the job cache, so the foreground never waits. Skip the refresh for
       `--version`, `--help` and `--json`.
 
-- [ ] **P15. The binary is built without bytecode or minification.** - Today: neither `bytecode: true` nor `minify: true` is set in
+- [x] **P15. The binary is built without bytecode or minification.** - Today: neither `bytecode: true` nor `minify: true` is set in
       `scripts/build.ts:66-76` or `scripts/build-local.ts:24-34`. The bundle
       is ~1.47MB of JS source that is parsed on every start. - Why it matters: a parse-time win of maybe 10-30ms per invocation. Not
       measured. The 89MB binary size is the Bun runtime and will not shrink. - Do: try `bytecode: true` and `minify: true`. `src/index.ts` ends in a
       top-level `await main()`; Bun's bytecode mode has historically needed
       CommonJS output, so check Bun 1.4 supports ESM bytecode or wrap the
-      entry in an IIFE.
+      entry in an IIFE. - Shipped: `bytecode`, `minify` and `format: "esm"`
+      (Bun 1.4 supports ESM bytecode). Measured: `--version` 96ms to 47ms,
+      `--help` 234ms to 185ms. Binary grew 89MB to 92MB.
 
 - [ ] **P20. The config file is parsed three times per run.** - Today: `getDebugDefault` (`env.ts:250`, called from middleware),
       `loadEnv` (`env.ts:102`) and `maybeMigrateToken`
