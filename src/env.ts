@@ -29,6 +29,9 @@ type LoadEnvOptions = {
   confirmProtected?: boolean;
 };
 
+/** Error code for credentials Jenkins cannot be called with. */
+const JENKINS_AUTH_ERROR_CODE = "JENKINS_AUTH_ERROR";
+
 /** Stable error code for a write blocked by a read-only profile. */
 export const PROFILE_PROTECTED_CODE = "PROFILE_PROTECTED";
 
@@ -196,7 +199,9 @@ export function loadEnv(options: LoadEnvOptions = {}): EnvConfig {
  * profiles, env vars, and one-off credentials this returns the token as-is.
  *
  * Throws a CliError with actionable hints when a keychain-backed token cannot
- * be resolved (keyring locked, missing entry, or backend unavailable).
+ * be resolved (keyring locked, missing entry, or backend unavailable). The
+ * token is read on the first Jenkins request, so the error carries the auth
+ * code that best-effort lookups rethrow instead of swallowing.
  */
 export async function resolveApiToken(
   env: EnvConfig,
@@ -221,6 +226,7 @@ export async function resolveApiToken(
         "Ensure your login keychain / keyring is unlocked and accessible.",
         `Or run \`${relogin} --no-keychain\` to store the token in the config file.`,
       ],
+      JENKINS_AUTH_ERROR_CODE,
     );
   }
 
@@ -231,6 +237,7 @@ export async function resolveApiToken(
         `Run \`${relogin}\` to store the token again.`,
         `Or run \`${relogin} --no-keychain\` to store it in the config file.`,
       ],
+      JENKINS_AUTH_ERROR_CODE,
     );
   }
   return token;

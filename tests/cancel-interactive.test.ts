@@ -316,6 +316,32 @@ describe("interactive targetless cancel", () => {
       errorSpy.mockRestore();
     }
   });
+
+  test("surfaces an auth error instead of falling back to job search", async () => {
+    const resolveJobTarget = mock(async () => ({
+      jobUrl: builds[0]!.jobUrl,
+      jobLabel: "apps/api",
+    }));
+    setDeps({ resolveJobTarget: resolveJobTarget });
+    const authError = new CliError(
+      "No Jenkins API token found.",
+      [],
+      "JENKINS_AUTH_ERROR",
+    );
+
+    await expect(
+      runCancel(
+        options(
+          client({
+            listRunningBuilds: mock(async () => {
+              throw authError;
+            }),
+          }),
+        ),
+      ),
+    ).rejects.toBe(authError);
+    expect(resolveJobTarget).not.toHaveBeenCalled();
+  });
 });
 
 test("batch cancellation reports partial failure after attempting all builds", async () => {

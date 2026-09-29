@@ -8,6 +8,7 @@ import {
   test,
 } from "bun:test";
 import fs from "node:fs";
+import { CliError } from "../src/cli";
 import type { EnvConfig } from "../src/env";
 import type { JenkinsClient } from "../src/jenkins/client";
 import type { JenkinsJob } from "../src/types/jenkins";
@@ -228,12 +229,9 @@ describe("job cache refresh", () => {
     expect(resolveApiToken).not.toHaveBeenCalled();
   });
 
-  test("a failed token lookup skips the refresh and releases the lock", async () => {
+  test("a failed token lookup surfaces and releases the refresh lock", async () => {
     const cachePath = jobsModule.getJobCachePath(env.jenkinsUrl);
     const lockPath = `${cachePath}.refreshing`;
-    const cachedJobs: JenkinsJob[] = [
-      { name: "keep", url: "https://jenkins.example.com/job/keep" },
-    ];
     files.set(
       cachePath,
       JSON.stringify({
@@ -241,11 +239,16 @@ describe("job cache refresh", () => {
         user: env.jenkinsUser,
         folderDepth: loadEnv.folderDepth,
         fetchedAt: "2026-02-12T00:00:00.000Z",
-        jobs: cachedJobs,
+        jobs: [{ name: "keep", url: "https://jenkins.example.com/job/keep" }],
       }),
     );
+    const tokenError = new CliError(
+      "No Jenkins API token found.",
+      [],
+      "JENKINS_AUTH_ERROR",
+    );
     const resolveApiToken = mock(async (): Promise<string> => {
-      throw new Error("keyring locked");
+      throw tokenError;
     });
     const spawnDetached = mock(
       (_command: string[], _childEnv: Record<string, string>) => undefined,
@@ -253,13 +256,12 @@ describe("job cache refresh", () => {
     const restore = jobsModule.setJobsDepsForTesting({ spawnDetached });
 
     try {
-      const jobs = await jobsModule.loadJobs({
-        client: { resolveApiToken } as unknown as JenkinsClient,
-        env: loadEnv,
-      });
-
-      expect(jobs).toEqual(cachedJobs);
-      expect(resolveApiToken).toHaveBeenCalledTimes(1);
+      await expect(
+        jobsModule.loadJobs({
+          client: { resolveApiToken } as unknown as JenkinsClient,
+          env: loadEnv,
+        }),
+      ).rejects.toBe(tokenError);
       expect(spawnDetached).not.toHaveBeenCalled();
       expect(files.has(lockPath)).toBe(false);
     } finally {

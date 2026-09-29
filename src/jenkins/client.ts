@@ -618,10 +618,11 @@ export class JenkinsClient {
     url.searchParams.set("tree", fields);
 
     let response: Response;
+    const headers = await this.authHeaders();
     try {
       response = await this.fetchWithTimeout(
         url.toString(),
-        { method: "GET", headers: await this.authHeaders() },
+        { method: "GET", headers },
         1,
         "fetch test report",
       );
@@ -688,10 +689,11 @@ export class JenkinsClient {
     const url = this.withBase(
       "pluginManager/api/json?tree=plugins[shortName,active]",
     );
+    const headers = await this.authHeaders();
     try {
       const response = await this.fetchWithTimeout(
         url,
-        { method: "GET", headers: await this.authHeaders() },
+        { method: "GET", headers },
         0,
         "check test report capability",
       );
@@ -1585,10 +1587,11 @@ export class JenkinsClient {
     buildUrl: string,
   ): Promise<JenkinsApiBuild | null> {
     const url = this.withJob(buildUrl, `api/json?tree=${BUILD_DETAILS_FIELDS}`);
+    const headers = await this.authHeaders();
     try {
       const response = await this.fetchWithTimeout(
         url,
-        { method: "GET", headers: await this.authHeaders() },
+        { method: "GET", headers },
         0,
         "fetch build details",
       );
@@ -1609,10 +1612,11 @@ export class JenkinsClient {
       return undefined;
     }
     const url = this.withBase(`queue/item/${queueId}/api/json`);
+    const headers = await this.authHeaders();
     try {
       const response = await this.fetchWithTimeout(
         url,
-        { method: "GET", headers: await this.authHeaders() },
+        { method: "GET", headers },
         0,
         "fetch queue item",
       );
@@ -1637,10 +1641,11 @@ export class JenkinsClient {
       queueUrl,
       "api/json?tree=id,task[url],executable[number]",
     );
+    const headers = await this.authHeaders();
     try {
       const response = await this.fetchWithTimeout(
         url,
-        { method: "GET", headers: await this.authHeaders() },
+        { method: "GET", headers },
         0,
         "fetch queue item",
       );
@@ -1661,10 +1666,11 @@ export class JenkinsClient {
   ): Promise<PipelineInfo | null> {
     const base = buildUrl.endsWith("/") ? buildUrl : `${buildUrl}/`;
     const url = new URL("wfapi/describe", base).toString();
+    const headers = await this.authHeaders();
     try {
       const response = await this.fetchWithTimeout(
         url,
-        { method: "GET", headers: await this.authHeaders() },
+        { method: "GET", headers },
         0,
         "fetch pipeline stage",
       );
@@ -1748,10 +1754,11 @@ export class JenkinsClient {
   private async getPipelineNode(
     url: string,
   ): Promise<JenkinsPipelineNodeResponse | null> {
+    const headers = await this.authHeaders();
     try {
       const response = await this.fetchWithTimeout(
         url,
-        { method: "GET", headers: await this.authHeaders() },
+        { method: "GET", headers },
         0,
         "fetch pipeline node",
       );

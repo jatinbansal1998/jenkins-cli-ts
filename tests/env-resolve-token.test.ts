@@ -67,6 +67,7 @@ describe("resolveApiToken", () => {
     const promise = resolveApiToken(env, secureStoreDeps({ token: null }));
     await expect(promise).rejects.toBeInstanceOf(CliError);
     await expect(promise).rejects.toThrow(/No Jenkins API token found/);
+    await expect(promise).rejects.toMatchObject({ code: "JENKINS_AUTH_ERROR" });
   });
 
   test("throws a CliError when the keyring is locked/unavailable", async () => {
@@ -82,5 +83,6 @@ describe("resolveApiToken", () => {
     await expect(promise).rejects.toThrow(
       /Unable to read the Jenkins API token/,
     );
+    await expect(promise).rejects.toMatchObject({ code: "JENKINS_AUTH_ERROR" });
   });
 });

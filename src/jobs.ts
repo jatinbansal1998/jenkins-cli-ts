@@ -228,9 +228,13 @@ async function scheduleBackgroundRefresh(
       selfInvocation([JOB_CACHE_REFRESH_COMMAND, "--non-interactive"]),
       { [JOB_CACHE_REFRESH_ENV]: JSON.stringify(payload) },
     );
-  } catch {
+  } catch (error) {
     // No worker will clear the lock, so release it for the next run.
     await rm(lockPath, { force: true }).catch(() => undefined);
+    // Unusable credentials must surface; a failed spawn only delays freshness.
+    if (error instanceof CliError && error.code === "JENKINS_AUTH_ERROR") {
+      throw error;
+    }
   }
 }
 

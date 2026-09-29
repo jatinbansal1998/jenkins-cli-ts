@@ -1889,4 +1889,23 @@ describe("JenkinsClient API token lookup", () => {
       );
     }
   });
+
+  test("surfaces a failed lookup from best-effort reads", async () => {
+    const fetchMock = mock(async () => Response.json({}));
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+    const tokenError = new CliError("No token.", [], "JENKINS_AUTH_ERROR");
+
+    const client = new JenkinsClient({
+      baseUrl: "https://jenkins.example.com",
+      user: "user",
+      apiToken: async () => {
+        throw tokenError;
+      },
+    });
+
+    await expect(
+      client.getQueueBuild("https://jenkins.example.com/queue/item/7/"),
+    ).rejects.toBe(tokenError);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
 });
