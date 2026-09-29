@@ -332,7 +332,8 @@ export type Crumb = {
 export type JenkinsClientOptions = {
   baseUrl: string;
   user: string;
-  apiToken: string;
+  /** A token, or a lookup the client runs on its first request. */
+  apiToken: string | (() => Promise<string>);
   timeoutMs?: number;
   useCrumb?: boolean;
   folderDepth?: number;

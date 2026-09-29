@@ -178,16 +178,13 @@ function loadContextEnv(argv?: ContextArgv): ReturnType<typeof loadEnv> {
   return env;
 }
 
-async function buildContext(
-  env: ReturnType<typeof loadEnv>,
-): Promise<CommandContext> {
-  // Resolve keychain-backed tokens transparently for downstream API calls.
-  const apiToken = await resolveApiToken(env);
-  env.jenkinsApiToken = apiToken;
+function buildContext(env: ReturnType<typeof loadEnv>): CommandContext {
+  // Keychain-backed tokens are read on the first Jenkins request, so commands
+  // served from the local cache never unlock the keychain.
   const client = new JenkinsClient({
     baseUrl: env.jenkinsUrl,
     user: env.jenkinsUser,
-    apiToken,
+    apiToken: () => resolveApiToken(env),
     useCrumb: env.useCrumb,
     folderDepth: env.folderDepth,
   });
@@ -200,13 +197,12 @@ async function prepareContext(
   showIntro: (target?: string) => void,
   interactive: boolean,
 ): Promise<CommandContext> {
-  // Show the intro before the potentially slower keychain read.
   const env = loadContextEnv(argv);
   showIntro(formatPromptTarget(env));
   // Automatically migrate an eligible plaintext profile before command work.
   // Non-interactive runs stay silent to preserve structured output contracts.
   await maybeMigrateToken({ env, report: interactive });
-  return await buildContext(env);
+  return buildContext(env);
 }
 
 async function runCommand(

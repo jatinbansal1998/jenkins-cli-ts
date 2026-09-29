@@ -1860,3 +1860,33 @@ describe("JenkinsClient createItem", () => {
     expect(createAttempts).toBe(2);
   });
 });
+
+describe("JenkinsClient API token lookup", () => {
+  test("runs the lookup on the first request only", async () => {
+    const fetchMock = mock(async (_input: FetchInput, _init?: FetchInit) =>
+      Response.json({
+        jobs: [{ name: "app", url: "https://jenkins.example.com/job/app/" }],
+      }),
+    );
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+    const lookup = mock(async () => "lazy-token");
+
+    const client = new JenkinsClient({
+      baseUrl: "https://jenkins.example.com",
+      user: "user",
+      apiToken: lookup,
+    });
+    expect(lookup).not.toHaveBeenCalled();
+
+    await client.listJobs();
+    await client.listJobs();
+
+    expect(lookup).toHaveBeenCalledTimes(1);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    for (const [, init] of fetchMock.mock.calls) {
+      expect(readHeader(init, "Authorization")).toBe(
+        `Basic ${Buffer.from("user:lazy-token").toString("base64")}`,
+      );
+    }
+  });
+});

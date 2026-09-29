@@ -8,7 +8,7 @@ import { JenkinsClient } from "../jenkins/client";
 import {
   clearJobCacheRefreshLock,
   JOB_CACHE_REFRESH_ENV,
-  type JobCacheEnv,
+  type JobCacheRefreshPayload,
   loadJobs,
 } from "../jobs";
 
@@ -31,7 +31,7 @@ export async function runJobCacheRefresh(): Promise<void> {
   }
 }
 
-function parseRefreshEnv(raw: string | undefined): JobCacheEnv {
+function parseRefreshEnv(raw: string | undefined): JobCacheRefreshPayload {
   let parsed: unknown;
   try {
     parsed = JSON.parse(raw ?? "");

@@ -8,9 +8,10 @@ import {
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { stampFreshUpdateState } from "./helpers.update-state";
 import { KEYCHAIN_TOKEN_SENTINEL } from "../src/config";
+import { getJobCachePath } from "../src/jobs";
 import {
   buildSecureStoreAccount,
   deleteToken,
@@ -104,6 +105,52 @@ function makeHome(config?: StoredConfig): string {
     );
   }
   return home;
+}
+
+/** Points the CLI's job cache inside `home` on every platform. */
+function cacheEnvForHome(home: string): Record<string, string> {
+  return {
+    XDG_CACHE_HOME: join(home, ".cache"),
+    LOCALAPPDATA: join(home, "AppData", "Local"),
+  };
+}
+
+function writeFreshJobCache(home: string, url: string): void {
+  const cacheDir =
+    process.platform === "darwin"
+      ? join(home, "Library", "Caches", "jenkins-cli")
+      : process.platform === "win32"
+        ? join(home, "AppData", "Local", "jenkins-cli")
+        : join(home, ".cache", "jenkins-cli");
+  mkdirSync(cacheDir, { recursive: true });
+  writeFileSync(
+    join(cacheDir, basename(getJobCachePath(url))),
+    JSON.stringify({
+      jenkinsUrl: url,
+      user: "ci-user",
+      folderDepth: 3,
+      fetchedAt: new Date().toISOString(),
+      jobs: [{ name: "cached-job", url: `${url}/job/cached-job/` }],
+    }),
+  );
+}
+
+function keychainProfileConfig(identity: {
+  profileName: string;
+  url: string;
+}): StoredConfig {
+  return {
+    version: 2,
+    defaultProfile: identity.profileName,
+    profiles: {
+      [identity.profileName]: {
+        jenkinsUrl: identity.url,
+        jenkinsUser: "ci-user",
+        jenkinsApiToken: KEYCHAIN_TOKEN_SENTINEL,
+        tokenStorage: "keychain",
+      },
+    },
+  };
 }
 
 function readStoredConfig(home: string): StoredConfig {
@@ -368,5 +415,36 @@ describe("secure-store CLI fallback", () => {
     const profile = readStoredConfig(home).profiles[identity.profileName];
     expect(profile?.jenkinsApiToken).toBe(identity.token);
     expect(profile?.tokenStorage).toBeUndefined();
+  });
+  test("a keychain profile lists from a fresh cache without reading the keychain", () => {
+    const identity = createIdentity("cache-only-e2e");
+    const home = makeHome(keychainProfileConfig(identity));
+    writeFreshJobCache(home, identity.url);
+
+    // The null backend holds no token, so any keychain read would fail.
+    const result = runCli(
+      ["list", "--non-interactive", "--profile", identity.profileName],
+      home,
+      { ...cacheEnvForHome(home), TS_KEYRING_BACKEND: "null" },
+    );
+
+    expect(result.output).toContain("cached-job");
+    expect(result.output).not.toContain("No Jenkins API token found");
+    expect(result.exitCode).toBe(0);
+  });
+
+  test("a keychain profile still reads the keychain when Jenkins is needed", () => {
+    const identity = createIdentity("cache-miss-e2e");
+    const home = makeHome(keychainProfileConfig(identity));
+
+    const result = runCli(
+      ["list", "--non-interactive", "--profile", identity.profileName],
+      home,
+      { ...cacheEnvForHome(home), TS_KEYRING_BACKEND: "null" },
+    );
+
+    expect(result.exitCode).toBe(1);
+    expect(result.output).toContain("No Jenkins API token found in the");
+    expect(result.output).toContain(`for profile "${identity.profileName}".`);
   });
 });
