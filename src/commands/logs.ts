@@ -1,7 +1,7 @@
 import { logCliError } from "../logger";
 import { confirm, isCancel, select, text } from "../clack";
 
-import { resolveBuildSelector } from "../build-selector";
+import { type BuildSelection, resolveBuildSelector } from "../build-selector";
 import { CliError, printHint } from "../cli";
 import type { EnvConfig } from "../env";
 import type { JenkinsClient } from "../jenkins/client";
@@ -52,7 +52,7 @@ type LogsOptions = {
   env: EnvConfig;
   job?: string;
   jobUrl?: string;
-  build?: number;
+  build?: BuildSelection;
   buildUrl?: string;
   queueUrl?: string;
   follow?: boolean;

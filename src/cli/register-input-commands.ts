@@ -1,4 +1,5 @@
 import type { Argv } from "yargs";
+import { parseBuildSelection } from "../build-selector";
 import {
   runInputAbort,
   runInputApprove,
@@ -58,8 +59,7 @@ export function registerInputCommands(
                   env,
                   job: optionalString(argv.job),
                   jobUrl: optionalString(argv.jobUrl),
-                  build:
-                    typeof argv.build === "number" ? argv.build : undefined,
+                  build: parseBuildSelection(argv.build),
                   buildUrl: optionalString(argv.buildUrl),
                   nonInteractive: Boolean(argv.nonInteractive || argv.json),
                   json: Boolean(argv.json),
@@ -82,8 +82,7 @@ export function registerInputCommands(
                   env,
                   job: optionalString(argv.job),
                   jobUrl: optionalString(argv.jobUrl),
-                  build:
-                    typeof argv.build === "number" ? argv.build : undefined,
+                  build: parseBuildSelection(argv.build),
                   buildUrl: optionalString(argv.buildUrl),
                   id: optionalString(argv.id),
                   yes: Boolean(argv.yes),
@@ -108,8 +107,7 @@ export function registerInputCommands(
                   env,
                   job: optionalString(argv.job),
                   jobUrl: optionalString(argv.jobUrl),
-                  build:
-                    typeof argv.build === "number" ? argv.build : undefined,
+                  build: parseBuildSelection(argv.build),
                   buildUrl: optionalString(argv.buildUrl),
                   id: optionalString(argv.id),
                   yes: Boolean(argv.yes),

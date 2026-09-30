@@ -2,6 +2,8 @@
  * Raw Jenkins API response payloads (wire format).
  */
 
+import type { BuildPermalink } from "./models";
+
 export type JenkinsApiJob = {
   _class?: string;
   name?: string;
@@ -165,12 +167,6 @@ type JenkinsApiChildTestReport = {
   };
 };
 
-export type JenkinsLastCompletedBuildResponse = {
-  lastCompletedBuild?: {
-    number?: number;
-  };
-};
-
 export type JenkinsJobStatusResponse = {
   disabled?: boolean;
   lastBuild?: JenkinsApiBuild;
@@ -238,11 +234,9 @@ export type JenkinsCrumbResponse = {
   crumb?: string;
 };
 
-export type JenkinsLastFailedBuildResponse = {
-  lastFailedBuild?: {
-    number?: number;
-  };
-};
+export type JenkinsPermalinkBuildResponse = Partial<
+  Record<BuildPermalink, { number?: number } | null>
+>;
 
 export type JenkinsQueueWaitTimeResponse = {
   inQueueSince?: number;

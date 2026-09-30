@@ -47,7 +47,10 @@ export async function rerunLastBuildForJob(
 export async function rerunLastFailedBuildForJob(
   options: RerunSharedOptions,
 ): Promise<RerunBuildResult> {
-  const lastFailed = await options.client.getLastFailedBuild(options.jobUrl);
+  const lastFailed = await options.client.getPermalinkBuild(
+    options.jobUrl,
+    "lastFailedBuild",
+  );
   if (!lastFailed) {
     throw new CliError(`No failed build found for ${options.jobLabel}.`, [
       "Run a build first, then rerun once a failed build exists.",

@@ -212,12 +212,12 @@ describe("direct mutation commands on a protected profile", () => {
 
   test("rerun and rerun-last reject before their mutating client methods", async () => {
     const spies = mutationSpies();
-    const getLastFailedBuild = mock(async () => null);
+    const getPermalinkBuild = mock(async () => null);
     const getJobStatus = mock(async () => ({ buildNumber: 1 }));
 
     await expect(
       runRerun({
-        client: client({ ...spies, getLastFailedBuild, getJobStatus }),
+        client: client({ ...spies, getPermalinkBuild, getJobStatus }),
         env: protectedEnv(),
         jobUrl: JOB_URL,
         nonInteractive: true,
@@ -226,7 +226,7 @@ describe("direct mutation commands on a protected profile", () => {
 
     await expect(
       runRerunLastBuild({
-        client: client({ ...spies, getLastFailedBuild, getJobStatus }),
+        client: client({ ...spies, getPermalinkBuild, getJobStatus }),
         env: protectedEnv(),
         jobUrl: JOB_URL,
         nonInteractive: true,
@@ -234,7 +234,7 @@ describe("direct mutation commands on a protected profile", () => {
     ).rejects.toThrow('Profile "release" is read-only.');
 
     expect(spies.triggerBuild).not.toHaveBeenCalled();
-    expect(getLastFailedBuild).not.toHaveBeenCalled();
+    expect(getPermalinkBuild).not.toHaveBeenCalled();
     expect(getJobStatus).not.toHaveBeenCalled();
   });
 

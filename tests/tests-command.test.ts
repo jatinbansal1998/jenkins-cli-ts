@@ -332,7 +332,7 @@ describe("runTests", () => {
   });
 
   test("uses the latest completed build when no exact build is selected", async () => {
-    const getLastCompletedBuild = mock(async () => ({
+    const getPermalinkBuild = mock(async () => ({
       buildUrl: BUILD_URL,
       buildNumber: 5,
     }));
@@ -342,7 +342,7 @@ describe("runTests", () => {
     }));
     await runTests({
       client: createClient({
-        getLastCompletedBuild,
+        getPermalinkBuild,
         getBuildStatus: mock(async () => ({
           buildNumber: 5,
           result: "SUCCESS",
@@ -355,8 +355,9 @@ describe("runTests", () => {
       write: () => {},
     });
 
-    expect(getLastCompletedBuild).toHaveBeenCalledWith(
+    expect(getPermalinkBuild).toHaveBeenCalledWith(
       "https://jenkins.example.com/job/api",
+      "lastCompletedBuild",
     );
     expect(getTestReport).toHaveBeenCalledWith(
       BUILD_URL,

@@ -1,4 +1,5 @@
 import type { Argv } from "yargs";
+import { parseBuildSelection } from "../build-selector";
 import { runCancel } from "../commands/cancel";
 import { runNodes } from "../commands/nodes";
 import { runQueue } from "../commands/queue";
@@ -51,7 +52,7 @@ export function registerOperationsCommands(
             env,
             job: optionalString(argv.job),
             jobUrl: optionalString(argv.jobUrl),
-            build: typeof argv.build === "number" ? argv.build : undefined,
+            build: parseBuildSelection(argv.build),
             buildUrl: optionalString(argv.buildUrl),
             queueUrl: optionalString(argv.queueUrl),
             nonInteractive: Boolean(argv.nonInteractive || argv.json),
@@ -119,7 +120,7 @@ export function registerOperationsCommands(
             env,
             job: optionalString(argv.job),
             jobUrl: optionalString(argv.jobUrl),
-            build: typeof argv.build === "number" ? argv.build : undefined,
+            build: parseBuildSelection(argv.build),
             buildUrl: optionalString(argv.buildUrl),
             nonInteractive: Boolean(argv.nonInteractive || argv.json),
             json: Boolean(argv.json),

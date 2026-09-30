@@ -304,7 +304,7 @@ empty. There are no TODO or FIXME comments in source.
       `OrganizationFolder` the same way as folders, and show branch jobs as
       `repo/branch`. Update the discovery test to expect them.
 
-- [ ] **F3. `--build` accepts only a number.** - Today: `options.ts:94` parses `--build` as an integer. The client uses
+- [x] **F3. `--build` accepts only a number.** - Today: `options.ts:94` parses `--build` as an integer. The client uses
       `lastBuild`, `lastCompletedBuild` and `lastFailedBuild` internally but
       never exposes them. - Why it matters: "show me the logs of the last successful build" is a
       daily task and today needs two commands. - Do: accept `--build lastSuccessful|lastStable|lastFailed|lastCompleted`

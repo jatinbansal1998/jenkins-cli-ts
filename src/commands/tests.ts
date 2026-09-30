@@ -1,4 +1,4 @@
-import { resolveBuildSelector } from "../build-selector";
+import { type BuildSelection, resolveBuildSelector } from "../build-selector";
 import { CliError } from "../cli";
 import type { EnvConfig } from "../env";
 import type { JenkinsClient } from "../jenkins/client";
@@ -11,7 +11,7 @@ type TestsOptions = {
   env: EnvConfig;
   job?: string;
   jobUrl?: string;
-  build?: number;
+  build?: BuildSelection;
   buildUrl?: string;
   failed?: boolean;
   nonInteractive: boolean;
@@ -66,7 +66,10 @@ async function resolveCompletedBuild(
   if (target.kind !== "job") {
     throw new CliError("Tests require a build or job target.");
   }
-  const completed = await client.getLastCompletedBuild(target.jobUrl);
+  const completed = await client.getPermalinkBuild(
+    target.jobUrl,
+    "lastCompletedBuild",
+  );
   if (!completed) {
     throw new CliError(
       `No completed builds found for ${target.jobLabel}.`,

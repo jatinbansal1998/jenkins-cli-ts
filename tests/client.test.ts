@@ -51,23 +51,29 @@ describe("server build URL trust", () => {
 
   for (const [method, field] of [
     ["getLastBuild", "lastBuild"],
-    ["getLastCompletedBuild", "lastCompletedBuild"],
-    ["getLastFailedBuild", "lastFailedBuild"],
+    ["getPermalinkBuild", "lastCompletedBuild"],
+    ["getPermalinkBuild", "lastFailedBuild"],
+    ["getPermalinkBuild", "lastStableBuild"],
+    ["getPermalinkBuild", "lastSuccessfulBuild"],
   ] as const) {
-    test(`${method} derives a trusted URL without requiring a server URL`, async () => {
+    const fetchBuild = () =>
+      method === "getLastBuild"
+        ? client().getLastBuild(jobUrl)
+        : client().getPermalinkBuild(jobUrl, field);
+    test(`${method}(${field}) derives a trusted URL without requiring a server URL`, async () => {
       for (const url of [foreignUrl, undefined]) {
         globalThis.fetch = mock(async () =>
           Response.json({
             [field]: { number: 9, url },
           }),
         ) as unknown as typeof fetch;
-        expect(await client()[method](jobUrl)).toMatchObject({
+        expect(await fetchBuild()).toMatchObject({
           buildNumber: 9,
           buildUrl: `${jobUrl}9/`,
         });
       }
     });
-    test(`${method} rejects invalid build numbers`, async () => {
+    test(`${method}(${field}) rejects invalid build numbers`, async () => {
       for (const number of [
         -1,
         0,
@@ -81,7 +87,7 @@ describe("server build URL trust", () => {
             [field]: { number, url: foreignUrl },
           }),
         ) as unknown as typeof fetch;
-        expect(await client()[method](jobUrl)).toBeNull();
+        expect(await fetchBuild()).toBeNull();
       }
     });
   }

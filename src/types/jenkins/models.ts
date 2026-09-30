@@ -258,9 +258,16 @@ export type LastBuildSummary = {
   result: string | null;
 };
 
-export type LastFailedBuildReference = {
+/** Job-level build permalinks Jenkins resolves without listing builds. */
+export type BuildPermalink =
+  | "lastCompletedBuild"
+  | "lastFailedBuild"
+  | "lastStableBuild"
+  | "lastSuccessfulBuild";
+
+export type BuildReference = {
   buildUrl: string;
-  buildNumber?: number;
+  buildNumber: number;
 };
 
 export type ConsoleChunk = {
