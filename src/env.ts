@@ -7,8 +7,8 @@ import { CliError } from "./cli";
 import {
   CONFIG_FILE,
   type JenkinsConfig,
+  type LoadedConfig,
   migrateLegacyConfigSyncIfNeeded,
-  readConfigSync,
   resolveDefaultProfileName,
   type TokenStorage,
 } from "./config";
@@ -83,7 +83,10 @@ export function assertProtectedMutationAllowed(env: EnvConfig): void {
   );
 }
 
-export function loadEnv(options: LoadEnvOptions = {}): EnvConfig {
+export function loadEnv(
+  loadedConfig: LoadedConfig | null,
+  options: LoadEnvOptions = {},
+): EnvConfig {
   const cliUrl = normalizeOptionalString(options.url);
   const cliUser = normalizeOptionalString(options.user);
   const cliToken = normalizeOptionalString(options.apiToken);
@@ -102,8 +105,7 @@ export function loadEnv(options: LoadEnvOptions = {}): EnvConfig {
     ]);
   }
 
-  const loadedConfig = migrateLegacyConfigSyncIfNeeded() ?? readConfigSync();
-  const config = loadedConfig?.config;
+  const config = migrateLegacyConfigSyncIfNeeded(loadedConfig)?.config;
 
   if (
     providedCliCredentialCount === REQUIRED_CLI_CREDENTIAL_COUNT &&
@@ -247,15 +249,17 @@ export async function resolveApiToken(
  * Get the debug setting from environment variable or config file.
  * Returns true if JENKINS_DEBUG is set to "true" or "1".
  * This is used as the default value when --debug flag is not explicitly passed.
+ * The config is passed as a loader so a set JENKINS_DEBUG never reads the file.
  */
-export function getDebugDefault(): boolean {
+export function getDebugDefault(
+  loadConfig: () => LoadedConfig | null,
+): boolean {
   const rawDebug = normalizeOptionalString(process.env[ENV_KEYS.JENKINS_DEBUG]);
   if (rawDebug) {
     return parseBooleanFlag(rawDebug) ?? false;
   }
 
-  const loadedConfig = readConfigSync();
-  return Boolean(loadedConfig?.config.debug);
+  return Boolean(loadConfig()?.config.debug);
 }
 
 const REQUIRED_CLI_CREDENTIAL_COUNT = 3;

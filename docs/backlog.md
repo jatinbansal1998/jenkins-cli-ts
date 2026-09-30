@@ -231,14 +231,20 @@ file is read and rewritten. Most of the perf list below is one of those two.
       (Bun 1.4 supports ESM bytecode). Measured: `--version` 96ms to 47ms,
       `--help` 234ms to 185ms. Binary grew 89MB to 92MB.
 
-- [ ] **P20. The config file is parsed three times per run.** - Today: `getDebugDefault` (`env.ts:250`, called from middleware),
+- [x] **P20. The config file is parsed three times per run.** - Today: `getDebugDefault` (`env.ts:250`, called from middleware),
       `loadEnv` (`env.ts:102`) and `maybeMigrateToken`
-      (`token-migration.ts:72`) each read and parse it. - Why it matters: small, but it is on every command. - Do: read it once and pass it along.
+      (`token-migration.ts:72`) each read and parse it. - Why it matters: small, but it is on every command. - Do: read it once and pass it along. - Shipped: `runCommand` reads it lazily at most once and hands it to
+      the debug default, `loadEnv` and `maybeMigrateToken`. Measured via
+      strace on `status --json`: 3 opens to 1.
 
-- [ ] **P21. musl detection reads the entire binary into a string.** - Today: `update.ts:86` reads `/proc/self/exe` as latin1, lowercases it,
+- [x] **P21. musl detection reads the entire binary into a string.** - Today: `update.ts:86` reads `/proc/self/exe` as latin1, lowercases it,
       and searches for "musl". It only runs when both `ldd` probes fail, in
       the update path. - Why it matters: holds ~100MB in memory twice for a yes/no answer. - Do: `BUILD_TARGET` already records whether the binary is a musl build.
-      Use it, or check for `/lib/ld-musl-*.so.1`.
+      Use it, or check for `/lib/ld-musl-*.so.1`. - Shipped: the last-resort fallback now reads `BUILD_TARGET`. The old
+      scan was also wrong: the Bun runtime contains the string "musl", so on
+      glibc with `ldd` missing it picked the musl asset. Measured with `ldd`
+      off PATH: wrong musl asset at 186MB RSS before, correct gnu asset at
+      25MB after.
 
 ### HTTP client
 

@@ -14,6 +14,7 @@ const {
   getReleaseInstallDecision,
   isHomebrewManagedPath,
   normalizeVersionTag,
+  parseBuildTargetMusl,
   parseLddProbeOutput,
   parseUpdateChannel,
   resolveAssetName,
@@ -99,6 +100,19 @@ describe("update version helpers", () => {
 
   test("parseLddProbeOutput returns null for unrelated output", () => {
     expect(parseLddProbeOutput("not enough information")).toBeNull();
+  });
+
+  test("parseBuildTargetMusl reads libc from a Linux build target", () => {
+    expect(parseBuildTargetMusl("bun-linux-x64-musl")).toBeTrue();
+    expect(parseBuildTargetMusl("bun-linux-arm64-musl")).toBeTrue();
+    expect(parseBuildTargetMusl("bun-linux-x64")).toBeFalse();
+    expect(parseBuildTargetMusl("bun-linux-arm64")).toBeFalse();
+  });
+
+  test("parseBuildTargetMusl says nothing for source runs or other platforms", () => {
+    expect(parseBuildTargetMusl("source")).toBeNull();
+    expect(parseBuildTargetMusl("bun-darwin-arm64")).toBeNull();
+    expect(parseBuildTargetMusl("bun-windows-x64")).toBeNull();
   });
 
   test("resolveUpdateChannel defaults to stable", () => {

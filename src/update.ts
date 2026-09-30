@@ -1,5 +1,4 @@
 import path from "node:path";
-import { readFileSync } from "node:fs";
 import { chmod, mkdir, mkdtemp, rename, rm } from "node:fs/promises";
 import parseSemver from "semver/functions/parse";
 import { lock } from "proper-lockfile";
@@ -12,6 +11,7 @@ import {
   isJsonLinesOutputRequested,
   isJsonOutputRequested,
 } from "./cli/options";
+import { BUILD_TARGET } from "./build-target";
 import { CliError, printHint } from "./cli";
 import { CONFIG_DIR } from "./config";
 import { isCompiledEntryPoint, selfInvocation } from "./self-invocation";
@@ -42,6 +42,18 @@ export function parseLddProbeOutput(text: string): boolean | null {
     return false;
   }
   return null;
+}
+
+/**
+ * Reads libc from the target this binary was compiled for. A running binary's
+ * libc matches the host, so this is a safe last resort. Source runs and
+ * non-Linux targets say nothing.
+ */
+export function parseBuildTargetMusl(target: string): boolean | null {
+  if (!target.startsWith("bun-linux-")) {
+    return null;
+  }
+  return target.endsWith("-musl");
 }
 
 function runProbe(cmd: string[]): { success: boolean; text: string } | null {
@@ -82,14 +94,7 @@ function detectMusl(): boolean | null {
     }
   }
 
-  try {
-    const selfExe = readFileSync("/proc/self/exe", "latin1");
-    if (selfExe.toLowerCase().includes("musl")) {
-      return true;
-    }
-  } catch {}
-
-  return null;
+  return parseBuildTargetMusl(BUILD_TARGET);
 }
 
 export function resolveAssetName(): string {

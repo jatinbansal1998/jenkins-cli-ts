@@ -1,8 +1,9 @@
-import { describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, mock, test } from "bun:test";
 import fs from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { normalizeUrl } from "../src/env";
+import type { LoadedConfig } from "../src/config";
+import { getDebugDefault, normalizeUrl } from "../src/env";
 
 type LoadEnvResult = {
   ok: boolean;
@@ -658,5 +659,34 @@ describe("loadEnv protected profile resolution", () => {
       expect(result.payload.env?.profileName).toBeUndefined();
       expect(result.payload.env?.protectedProfileName).toBeUndefined();
     });
+  });
+});
+
+describe("getDebugDefault", () => {
+  const originalDebug = process.env.JENKINS_DEBUG;
+  afterEach(() => {
+    if (originalDebug === undefined) {
+      delete process.env.JENKINS_DEBUG;
+    } else {
+      process.env.JENKINS_DEBUG = originalDebug;
+    }
+  });
+
+  const debugConfig: LoadedConfig = {
+    config: { version: 2, profiles: {}, debug: true },
+    legacyDetected: false,
+  };
+
+  test("JENKINS_DEBUG wins without reading the config file", () => {
+    process.env.JENKINS_DEBUG = "0";
+    const loadConfig = mock(() => debugConfig);
+    expect(getDebugDefault(loadConfig)).toBeFalse();
+    expect(loadConfig).not.toHaveBeenCalled();
+  });
+
+  test("falls back to the config debug flag", () => {
+    delete process.env.JENKINS_DEBUG;
+    expect(getDebugDefault(() => debugConfig)).toBeTrue();
+    expect(getDebugDefault(() => null)).toBeFalse();
   });
 });

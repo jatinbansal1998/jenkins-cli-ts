@@ -3,6 +3,7 @@ import type { JenkinsClient } from "../jenkins/client";
 
 export type CommandArgv = {
   [key: string]: unknown;
+  debug?: unknown;
   nonInteractive?: unknown;
   banner?: unknown;
   json?: unknown;

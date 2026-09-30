@@ -1,10 +1,11 @@
+import { readConfigSync } from "../src/config";
 import { loadEnv } from "../src/env";
 
 const rawOptions = process.env.TEST_LOAD_ENV_OPTIONS;
 const options = rawOptions ? JSON.parse(rawOptions) : undefined;
 
 try {
-  const { jenkinsApiToken, ...env } = loadEnv(options);
+  const { jenkinsApiToken, ...env } = loadEnv(readConfigSync(), options);
   console.log(
     JSON.stringify({
       ok: true,
