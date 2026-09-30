@@ -43,128 +43,187 @@ type PipelineGraphNode = {
   path: string;
 };
 
-export async function resolvePipelineLogSelection(options: {
-  client: JenkinsClient;
-  buildUrl: string;
+// Caps concurrent wfapi node reads so a wide Pipeline does not flood Jenkins.
+const NODE_FETCH_LIMIT = 6;
+
+export type PipelineLogSelector = {
   stage?: string;
   stageId?: string;
   failed?: boolean;
-}): Promise<PipelineLogSelection> {
-  const graph = await discoverPipelineGraph(options.client, options.buildUrl);
-  const selected = selectGraphNode(graph, options);
-  const stage =
-    graph.find((node) => node.isStage && node.id === selected.stageId) ??
-    selected;
-  const sourceNodes =
-    selected.logUrl && !options.failed
-      ? [selected]
-      : graph.filter(
-          (node) =>
-            node.stageId === stage.id &&
-            Boolean(node.logUrl) &&
-            (options.failed ||
-              selected.isStage ||
-              isDescendantOf(node, selected, graph)),
-        );
+};
 
-  if (sourceNodes.length === 0) {
-    throw pipelineCapabilityError(
-      `Pipeline log metadata is unavailable for ${selected.path}.`,
-      options.buildUrl,
-    );
-  }
+/**
+ * One resolver serves a whole `logs` run. A follow loop calls `resolve` on
+ * every poll, so it remembers what cannot change: the detail of a stage that
+ * has finished and each node's console URL.
+ */
+export class PipelineLogResolver {
+  private readonly settledStageDetails = new Map<
+    string,
+    JenkinsPipelineNodeResponse
+  >();
+  private readonly consoleUrls = new Map<string, string>();
 
-  const sources: PipelineLogSource[] = [];
-  for (const node of sourceNodes.toSorted(compareNodes)) {
-    const log = await options.client.getPipelineNodeLog(node.logUrl!);
-    if (!log) {
-      continue;
-    }
-    const identity: PipelineLogIdentity = {
-      stageId: stage.id,
-      stageName: stage.name,
-      nodeId: node.id,
-      nodeName: node.name,
-      path: node.path,
-    };
-    if (log.consoleUrl) {
-      sources.push({
-        identity,
-        status: node.status,
-        startTimeMillis: node.startTimeMillis,
-        consoleUrl: log.consoleUrl,
-      });
-      continue;
-    }
-    if (typeof log.text === "string" && !log.hasMore) {
-      sources.push({
-        identity,
-        status: node.status,
-        startTimeMillis: node.startTimeMillis,
-        completeText: log.text,
-      });
-    }
-  }
+  constructor(
+    private readonly client: JenkinsClient,
+    private readonly buildUrl: string,
+    private readonly selector: PipelineLogSelector,
+  ) {}
 
-  if (sources.length === 0) {
-    throw pipelineCapabilityError(
-      `Jenkins does not expose a readable log for ${selected.path}.`,
-      options.buildUrl,
-    );
-  }
-
-  const failedNode = graph
-    .filter((node) => node.stageId === stage.id && isFailureStatus(node.status))
-    .toSorted(compareDepthDescending)[0];
-
-  return {
-    stage,
-    selected,
-    sources,
-    failureReason: failedNode?.errorMessage,
-  };
-}
-
-async function discoverPipelineGraph(
-  client: JenkinsClient,
-  buildUrl: string,
-): Promise<PipelineGraphNode[]> {
-  const pipeline = await client.getPipelineDescription(buildUrl);
-  const stages = pipeline?.stages ?? [];
-  if (stages.length === 0) {
-    throw pipelineCapabilityError(
-      "Pipeline stage metadata is unavailable for this build.",
-      buildUrl,
-    );
-  }
-
-  const graph: PipelineGraphNode[] = stages.map(toStageNode);
-  for (const stage of stages) {
-    const stageId = normalizeId(stage.id);
-    const selfUrl = stage._links?.self?.href;
-    if (!stageId || !selfUrl) {
-      continue;
-    }
-    const detail = await client.getPipelineNodeDescription(selfUrl);
-    if (!detail) {
-      continue;
-    }
-    mergeStageDetail(graph, stageId, detail);
-    for (const node of detail.stageFlowNodes ?? []) {
-      addNodeRecursively(
-        graph,
-        node,
-        stageId,
-        stage.name || `Stage ${stageId}`,
+  async resolve(
+    stages: JenkinsPipelineStage[] | undefined,
+  ): Promise<PipelineLogSelection> {
+    if (!stages?.length) {
+      throw pipelineCapabilityError(
+        "Pipeline stage metadata is unavailable for this build.",
+        this.buildUrl,
       );
     }
+    const graph: PipelineGraphNode[] = stages.map(toStageNode);
+    const stageNodes = graph.filter((node) => node.isStage);
+    const selectedStage = selectStage(stageNodes, this.selector);
+    // Only a --stage-id naming a step inside some stage needs every stage.
+    await this.addStageDetails(
+      graph,
+      selectedStage ? [selectedStage] : stageNodes,
+    );
+    const selected = selectedStage
+      ? selectInStage(graph, selectedStage, this.selector)
+      : findNode(graph, this.selector.stageId!.trim());
+    const stage =
+      graph.find((node) => node.isStage && node.id === selected.stageId) ??
+      selected;
+    const sourceNodes =
+      selected.logUrl && !this.selector.failed
+        ? [selected]
+        : graph.filter(
+            (node) =>
+              node.stageId === stage.id &&
+              Boolean(node.logUrl) &&
+              (this.selector.failed ||
+                selected.isStage ||
+                isDescendantOf(node, selected, graph)),
+          );
+
+    if (sourceNodes.length === 0) {
+      throw pipelineCapabilityError(
+        `Pipeline log metadata is unavailable for ${selected.path}.`,
+        this.buildUrl,
+      );
+    }
+
+    const sources = (
+      await mapWithLimit(
+        sourceNodes.toSorted(compareNodes),
+        NODE_FETCH_LIMIT,
+        (node) => this.readSource(node, stage),
+      )
+    ).filter((source) => source !== null);
+
+    if (sources.length === 0) {
+      throw pipelineCapabilityError(
+        `Jenkins does not expose a readable log for ${selected.path}.`,
+        this.buildUrl,
+      );
+    }
+
+    const failedNode = graph
+      .filter(
+        (node) => node.stageId === stage.id && isFailureStatus(node.status),
+      )
+      .toSorted(compareDepthDescending)[0];
+
+    return {
+      stage,
+      selected,
+      sources,
+      failureReason: failedNode?.errorMessage,
+    };
   }
 
-  const byId = new Map(graph.map((node) => [node.id, node]));
-  for (const node of graph) {
-    node.path = buildDisplayPath(node, byId);
+  private async addStageDetails(
+    graph: PipelineGraphNode[],
+    stages: PipelineGraphNode[],
+  ): Promise<void> {
+    const details = await mapWithLimit(stages, NODE_FETCH_LIMIT, (stage) =>
+      this.readStageDetail(stage),
+    );
+    // Merged in stage order: a node reported under two stages keeps the first.
+    stages.forEach((stage, index) => {
+      const detail = details[index];
+      if (!detail) {
+        return;
+      }
+      mergeStageDetail(stage, detail);
+      for (const node of detail.stageFlowNodes ?? []) {
+        addNodeRecursively(graph, node, stage.id, stage.name);
+      }
+    });
+
+    const byId = new Map(graph.map((node) => [node.id, node]));
+    for (const node of graph) {
+      node.path = buildDisplayPath(node, byId);
+    }
   }
-  return graph;
+
+  private async readStageDetail(
+    stage: PipelineGraphNode,
+  ): Promise<JenkinsPipelineNodeResponse | null> {
+    const cached = this.settledStageDetails.get(stage.id);
+    if (cached) {
+      return cached;
+    }
+    if (!stage.selfUrl) {
+      return null;
+    }
+    const detail = await this.client.getPipelineNodeDescription(stage.selfUrl);
+    // A running stage keeps gaining steps, so only a finished one is kept.
+    if (detail && isSettledPipelineStatus(stage.status)) {
+      this.settledStageDetails.set(stage.id, detail);
+    }
+    return detail;
+  }
+
+  private async readSource(
+    node: PipelineGraphNode,
+    stage: PipelineGraphNode,
+  ): Promise<PipelineLogSource | null> {
+    const source = {
+      identity: {
+        stageId: stage.id,
+        stageName: stage.name,
+        nodeId: node.id,
+        nodeName: node.name,
+        path: node.path,
+      },
+      status: node.status,
+      startTimeMillis: node.startTimeMillis,
+    };
+    const knownConsoleUrl = this.consoleUrls.get(node.id);
+    if (knownConsoleUrl) {
+      return { ...source, consoleUrl: knownConsoleUrl };
+    }
+    const log = await this.client.getPipelineNodeLog(node.logUrl!);
+    if (log?.consoleUrl) {
+      this.consoleUrls.set(node.id, log.consoleUrl);
+      return { ...source, consoleUrl: log.consoleUrl };
+    }
+    if (typeof log?.text === "string" && !log.hasMore) {
+      return { ...source, completeText: log.text };
+    }
+    return null;
+  }
+}
+
+/** True once a wfapi node can no longer change its steps or log. */
+export function isSettledPipelineStatus(status: string | undefined): boolean {
+  const normalized = status?.trim().toUpperCase();
+  return (
+    normalized === "SUCCESS" ||
+    normalized === "UNSTABLE" ||
+    normalized === "ABORTED" ||
+    isFailureStatus(normalized)
+  );
 }
 
 function toStageNode(stage: JenkinsPipelineStage): PipelineGraphNode {
@@ -186,14 +245,9 @@ function toStageNode(stage: JenkinsPipelineStage): PipelineGraphNode {
 }
 
 function mergeStageDetail(
-  graph: PipelineGraphNode[],
-  stageId: string,
+  stage: PipelineGraphNode,
   detail: JenkinsPipelineNodeResponse,
 ): void {
-  const stage = graph.find((node) => node.id === stageId && node.isStage);
-  if (!stage) {
-    return;
-  }
   stage.logUrl = detail._links?.log?.href ?? stage.logUrl;
   stage.selfUrl = detail._links?.self?.href ?? stage.selfUrl;
   stage.errorMessage = detail.error?.message;
@@ -234,14 +288,16 @@ function addNodeRecursively(
   }
 }
 
-function selectGraphNode(
-  graph: PipelineGraphNode[],
-  options: { stage?: string; stageId?: string; failed?: boolean },
-): PipelineGraphNode {
-  if (options.failed) {
-    const failedStages = graph.filter(
-      (node) => node.isStage && isFailureStatus(node.status),
-    );
+/**
+ * Picks the stage a selector names from the wfapi stage list alone. Returns
+ * undefined when --stage-id names no stage: it may name a step inside one.
+ */
+function selectStage(
+  stages: PipelineGraphNode[],
+  selector: PipelineLogSelector,
+): PipelineGraphNode | undefined {
+  if (selector.failed) {
+    const failedStages = stages.filter((node) => isFailureStatus(node.status));
     if (failedStages.length === 0) {
       throw new CliError(
         "Jenkins did not report a failed Pipeline stage for this build.",
@@ -249,33 +305,16 @@ function selectGraphNode(
         "FAILED_STAGE_UNAVAILABLE",
       );
     }
-    const stage = failedStages.toSorted(compareNodes)[0]!;
-    return (
-      graph
-        .filter(
-          (node) => node.stageId === stage.id && isFailureStatus(node.status),
-        )
-        .toSorted(compareDepthDescending)[0] ?? stage
-    );
+    return failedStages.toSorted(compareNodes)[0]!;
   }
 
-  const requestedId = options.stageId?.trim();
+  const requestedId = selector.stageId?.trim();
   if (requestedId) {
-    const match = graph.find((node) => node.id === requestedId);
-    if (!match) {
-      throw new CliError(
-        `No Pipeline stage or node has id ${requestedId}.`,
-        [formatCandidates(graph.filter((node) => node.isStage))],
-        "PIPELINE_STAGE_NOT_FOUND",
-      );
-    }
-    return match;
+    return stages.find((node) => node.id === requestedId);
   }
 
-  const requestedName = options.stage?.trim();
-  const matches = graph.filter(
-    (node) => node.isStage && node.name === requestedName,
-  );
+  const requestedName = selector.stage?.trim();
+  const matches = stages.filter((node) => node.name === requestedName);
   if (matches.length === 1) {
     return matches[0]!;
   }
@@ -288,9 +327,57 @@ function selectGraphNode(
   }
   throw new CliError(
     `Pipeline stage "${requestedName}" was not found.`,
-    [formatCandidates(graph.filter((node) => node.isStage))],
+    [formatCandidates(stages)],
     "PIPELINE_STAGE_NOT_FOUND",
   );
+}
+
+function selectInStage(
+  graph: PipelineGraphNode[],
+  stage: PipelineGraphNode,
+  selector: PipelineLogSelector,
+): PipelineGraphNode {
+  if (!selector.failed) {
+    return stage;
+  }
+  return (
+    graph
+      .filter(
+        (node) => node.stageId === stage.id && isFailureStatus(node.status),
+      )
+      .toSorted(compareDepthDescending)[0] ?? stage
+  );
+}
+
+function findNode(graph: PipelineGraphNode[], id: string): PipelineGraphNode {
+  const match = graph.find((node) => node.id === id);
+  if (!match) {
+    throw new CliError(
+      `No Pipeline stage or node has id ${id}.`,
+      [formatCandidates(graph.filter((node) => node.isStage))],
+      "PIPELINE_STAGE_NOT_FOUND",
+    );
+  }
+  return match;
+}
+
+async function mapWithLimit<T, R>(
+  items: readonly T[],
+  limit: number,
+  map: (item: T) => Promise<R>,
+): Promise<R[]> {
+  const results: R[] = [];
+  let next = 0;
+  const worker = async (): Promise<void> => {
+    while (next < items.length) {
+      const index = next++;
+      results[index] = await map(items[index]!);
+    }
+  };
+  await Promise.all(
+    Array.from({ length: Math.min(limit, items.length) }, worker),
+  );
+  return results;
 }
 
 function buildDisplayPath(

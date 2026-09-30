@@ -33,8 +33,19 @@ file is read and rewritten. Most of the perf list below is one of those two.
 
 ### Hot polling paths (biggest wins)
 
-- [ ] **P1. Stage log streaming sends one request per stage, one after
-      another, and repeats all of it every second.** - Today: `discoverPipelineGraph` in `src/pipeline-logs.ts:142-158` calls
+- [x] **P1. Stage log streaming sends one request per stage, one after
+      another, and repeats all of it every second.** Shipped: `--stage`,
+      `--failed` and a `--stage-id` naming a stage read only that stage's
+      node; a `--stage-id` naming a step reads all stages, 6 in flight. Step
+      logs are read 6 in flight and each node's `consoleUrl` is remembered.
+      A finished stage's node and a finished step's log are not re-read on
+      later polls. The follow loop reads status once per poll and takes the
+      stage list from it, then reads logs once more after the build ends so
+      the last lines are not lost. - Done differently: `getBuildStatus`
+      already fetches `wfapi/describe` in parallel, so there is no separate
+      describe call at all. Discovery cannot wait for a status change: a
+      running stage gains steps while its status stays `IN_PROGRESS`, so the
+      selected stage's node is re-read on each poll until it finishes. - Today: `discoverPipelineGraph` in `src/pipeline-logs.ts:142-158` calls
       `wfapi/describe`, then loops over every stage and `await`s a
       `wfapi` node fetch for each one, even when the user passed `--stage X`
       and only wants one. Then `:78-79` fetches each step node's log the same
@@ -204,6 +215,22 @@ file is read and rewritten. Most of the perf list below is one of those two.
 - [ ] **P19. Pipeline graph building has quadratic loops.** - Today: `pipeline-logs.ts:223` uses `graph.find` for every added node.
       `isDescendantOf` (`:342-361`) rebuilds a `byId` map for every node
       inside the filter at `:61-69`, and uses `pending.shift()`. - Why it matters: only noticeable on pipelines with hundreds of steps. - Do: build one `Map` at the start and reuse it.
+
+- [x] **P22. A log that keeps growing is re-read with no pause.** Shipped
+      (with P1): a 200ms floor (`MIN_CHUNK_INTERVAL_MS`) between reads in
+      both readers, so it also covers stage logs. Measured against a fake
+      controller on localhost that always sends new bytes and
+      `X-More-Data: true`: ~2,000-5,800 requests/s before, 4.9 requests/s
+      after (smallest gap 201ms). - Today: `readSnapshot` and `readAvailableChunks` in
+      `src/commands/logs.ts` fetch the next `progressiveText` chunk at once
+      whenever the last response had `X-More-Data: true` and the offset
+      moved. The `--poll` wait only runs when a read returns no new bytes. - Why it matters: a build that writes output all the time never hits
+      that wait, so `logs --follow` sends requests back to back for the
+      whole build, limited only by round-trip time. That hammers Jenkins
+      and burns CPU on both sides. - Do: after a chunk that brought new bytes and has more, wait a short
+      fixed interval before the next read. One read returns everything
+      written so far, so catch-up is still a single request. Keep the full
+      `--poll` wait for the "no new bytes" case. No flag or config.
 
 ### Startup and background work
 
