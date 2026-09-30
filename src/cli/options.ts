@@ -92,8 +92,9 @@ export function addBuildUrlOption(yargsInstance: Argv): Argv {
 
 export function addBuildOption(yargsInstance: Argv): Argv {
   return yargsInstance.option("build", {
-    type: "number",
-    describe: "Target a specific build number (with --job/--job-url)",
+    type: "string",
+    describe:
+      "Target a build number or lastSuccessful, lastStable, lastFailed, lastCompleted (with --job/--job-url)",
   });
 }
 

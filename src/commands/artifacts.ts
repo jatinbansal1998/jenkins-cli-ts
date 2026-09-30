@@ -7,7 +7,7 @@ import type { EnvConfig } from "../env";
 import type { JenkinsClient } from "../jenkins/client";
 import type { ArtifactEntry } from "../types/jenkins";
 import { jsonArtifact, runJsonCommand, type JsonWrite } from "../json-output";
-import { resolveBuildSelector } from "../build-selector";
+import { type BuildSelection, resolveBuildSelector } from "../build-selector";
 
 type ArtifactsOptions = {
   client: JenkinsClient;
@@ -15,7 +15,7 @@ type ArtifactsOptions = {
   job?: string;
   jobUrl?: string;
   buildUrl?: string;
-  build?: number;
+  build?: BuildSelection;
   download?: boolean;
   dest?: string;
   artifact?: string[];
@@ -113,7 +113,10 @@ async function resolveBuildTarget(
     throw new CliError("Artifacts require a build or job target.");
   }
 
-  const completed = await options.client.getLastCompletedBuild(target.jobUrl);
+  const completed = await options.client.getPermalinkBuild(
+    target.jobUrl,
+    "lastCompletedBuild",
+  );
   if (!completed) {
     throw new CliError(`No completed builds found for ${target.jobLabel}.`, [
       "Trigger a build first, or pass --build <number> or --build-url <url>.",
@@ -121,7 +124,7 @@ async function resolveBuildTarget(
   }
   return {
     buildUrl: completed.buildUrl,
-    label: `${target.jobLabel} #${completed.buildNumber ?? "?"}`,
+    label: `${target.jobLabel} #${completed.buildNumber}`,
   };
 }
 

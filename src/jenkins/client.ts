@@ -46,7 +46,6 @@ import type {
   JenkinsApiComputer,
   JenkinsApiJob,
   JenkinsBuildArtifactsResponse,
-  JenkinsLastCompletedBuildResponse,
   JenkinsPipelineNodeResponse,
   JenkinsPipelineNodeLogResponse,
   JenkinsApiQueueItem,
@@ -64,14 +63,15 @@ import type {
   JenkinsJobStatusResponse,
   JenkinsTestReportResponse,
   JenkinsApiTestSuite,
-  JenkinsLastFailedBuildResponse,
+  JenkinsPermalinkBuildResponse,
   JenkinsPendingInputActionResponse,
   JenkinsPipelineDescribeResponse,
   JenkinsQueueItemsResponse,
   JenkinsQueueWaitTimeResponse,
   JobStatus,
   LastBuildSummary,
-  LastFailedBuildReference,
+  BuildPermalink,
+  BuildReference,
   NodeSummary,
   NodesSummary,
   PendingInputAction,
@@ -519,18 +519,17 @@ export class JenkinsClient {
     };
   }
 
-  async getLastCompletedBuild(
+  /** Resolves a job permalink such as `lastSuccessfulBuild` to one build. */
+  async getPermalinkBuild(
     jobUrl: string,
-  ): Promise<{ buildUrl: string; buildNumber?: number } | null> {
-    const url = this.withJob(
-      jobUrl,
-      "api/json?tree=lastCompletedBuild[number]",
-    );
-    const payload = await this.requestJson<JenkinsLastCompletedBuildResponse>(
+    permalink: BuildPermalink,
+  ): Promise<BuildReference | null> {
+    const url = this.withJob(jobUrl, `api/json?tree=${permalink}[number]`);
+    const payload = await this.requestJson<JenkinsPermalinkBuildResponse>(
       url,
-      "fetch last completed build",
+      `fetch ${permalink}`,
     );
-    const build = payload.lastCompletedBuild;
+    const build = payload[permalink];
     if (!isBuildNumber(build?.number)) {
       return null;
     }
@@ -1275,24 +1274,6 @@ export class JenkinsClient {
       text,
       nextStart,
       hasMore: hasMore === "true",
-    };
-  }
-
-  async getLastFailedBuild(
-    jobUrl: string,
-  ): Promise<LastFailedBuildReference | null> {
-    const url = this.withJob(jobUrl, "api/json?tree=lastFailedBuild[number]");
-    const payload = await this.requestJson<JenkinsLastFailedBuildResponse>(
-      url,
-      "fetch last failed build",
-    );
-    const build = payload.lastFailedBuild;
-    if (!isBuildNumber(build?.number)) {
-      return null;
-    }
-    return {
-      buildUrl: this.withJob(jobUrl, `${build.number}/`),
-      buildNumber: build.number,
     };
   }
 

@@ -5,7 +5,7 @@
 import { logCliError } from "../logger";
 import { autocomplete, confirm, isCancel, select, text } from "../clack";
 
-import { resolveBuildSelector } from "../build-selector";
+import { type BuildSelection, resolveBuildSelector } from "../build-selector";
 import { CliError, printHint, printOk } from "../cli";
 import { runMenuAction } from "./menu-action";
 import {
@@ -47,7 +47,7 @@ type StatusOptions = {
   env: EnvConfig;
   job?: string;
   jobUrl?: string;
-  build?: number;
+  build?: BuildSelection;
   buildUrl?: string;
   nonInteractive: boolean;
   watch?: boolean;

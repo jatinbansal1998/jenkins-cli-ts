@@ -53,7 +53,8 @@ Job selection (build, status, history, wait, logs, tests, changes, artifacts, ca
   With no job argument or flag, an interactive job picker opens (requires a TTY).
 
 Exact build selection (status, wait, logs, tests, changes, artifacts, cancel, rerun, input):
-  --build <n>       Positive integer build number; requires --job or --job-url
+  --build <n|alias> Positive build number, or one of lastSuccessful, lastStable,
+                    lastFailed, lastCompleted; requires --job or --job-url
   --build-url <url> Complete numeric Jenkins build URL; cannot be combined with
                     --build, --job, --job-url, or --queue-url
   Direct job/build/queue URLs must belong to the active Jenkins controller.
@@ -115,7 +116,7 @@ Command-specific options:
     [job-name]       Job name or description
     --job <text>     Job name or description
     --job-url <url>  Full Jenkins job URL
-    --build <n>       Target a specific build number (with --job/--job-url)
+    --build <n|alias> Build number or alias such as lastSuccessful (with --job/--job-url)
     --build-url <url> Full Jenkins build URL
     --watch          Watch selected build until completion [default: false]
     --json           Output a single JSON document (implies non-interactive)
@@ -131,7 +132,7 @@ Command-specific options:
     [job-name]        Job name or description
     --job <text>      Job name or description
     --job-url <url>   Full Jenkins job URL
-    --build <n>       Target a specific build number (with --job/--job-url)
+    --build <n|alias> Build number or alias such as lastSuccessful (with --job/--job-url)
     --build-url <url> Full Jenkins build URL
     --queue-url <url> Full Jenkins queue item URL
     --interval <dur>  Polling interval (e.g. 30s, 1m) [default: ${DEFAULT_WATCH_INTERVAL_MS / 1000}s]
@@ -142,7 +143,7 @@ Command-specific options:
     [job-name]        Job name or description
     --job <text>      Job name or description
     --job-url <url>   Full Jenkins job URL
-    --build <n>       Target a specific build number (with --job/--job-url)
+    --build <n|alias> Build number or alias such as lastSuccessful (with --job/--job-url)
     --build-url <url> Full Jenkins build URL
     --queue-url <url> Full Jenkins queue item URL
     --follow          Keep streaming logs until build completes [default: stdout is a TTY]
@@ -163,7 +164,7 @@ Command-specific options:
     [job-name]        Job name or description
     --job <text>      Job name or description
     --job-url <url>   Full Jenkins job URL
-    --build <n>       Target a specific build number (with --job/--job-url)
+    --build <n|alias> Build number or alias such as lastSuccessful (with --job/--job-url)
     --build-url <url> Full Jenkins build URL
     --failed          Show failing cases, messages, and stack traces
     --json            Output a single JSON document (implies non-interactive)
@@ -172,7 +173,7 @@ Command-specific options:
     [job-name]        Job name or description
     --job <text>      Job name or description
     --job-url <url>   Full Jenkins job URL
-    --build <n>       Target a specific build number (with --job/--job-url)
+    --build <n|alias> Build number or alias such as lastSuccessful (with --job/--job-url)
     --build-url <url> Full Jenkins build URL
     --limit <n>       Show at most N changes [default: 20]
     --paths           Include each change's affected file paths
@@ -182,7 +183,7 @@ Command-specific options:
     [job-name]        Job name or description
     --job <text>      Job name or description
     --job-url <url>   Full Jenkins job URL
-    --build <n>       Target a specific build number (with --job/--job-url)
+    --build <n|alias> Build number or alias such as lastSuccessful (with --job/--job-url)
     --build-url <url> Full Jenkins build URL
     --download        Download artifacts, not just list them [default: false]
     --dest <dir>      Destination directory for downloads [default: cwd]
@@ -197,7 +198,7 @@ Command-specific options:
     [job-name]        Job name or description
     --job <text>      Job name or description
     --job-url <url>   Full Jenkins job URL
-    --build <n>       Target a specific build number (with --job/--job-url)
+    --build <n|alias> Build number or alias such as lastSuccessful (with --job/--job-url)
     --build-url <url> Full Jenkins build URL
     --queue-url <url> Full Jenkins queue item URL
     --json            Output one cancellation receipt
@@ -214,7 +215,7 @@ Command-specific options:
     [job-name]       Job name or description
     --job <text>     Job name or description
     --job-url <url>  Full Jenkins job URL
-    --build <n>       Target a specific build number (with --job/--job-url)
+    --build <n|alias> Build number or alias such as lastSuccessful (with --job/--job-url)
     --build-url <url> Full Jenkins build URL
     --json           Output source and new target receipt
 
@@ -222,7 +223,7 @@ Command-specific options:
     [job-name]        Job name or description
     --job <text>      Job name or description
     --job-url <url>   Full Jenkins job URL
-    --build <n>       Target a specific build number (with --job/--job-url)
+    --build <n|alias> Build number or alias such as lastSuccessful (with --job/--job-url)
     --build-url <url> Full Jenkins build URL
     --id <id>         Pending input id (approve/abort; required when several
                       are pending)

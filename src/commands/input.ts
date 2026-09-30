@@ -9,7 +9,7 @@
  * timeout, or a build cancellation could have settled it.
  */
 
-import { resolveBuildSelector } from "../build-selector";
+import { type BuildSelection, resolveBuildSelector } from "../build-selector";
 import { CliError, printOk } from "../cli";
 import { assertProtectedMutationAllowed, type EnvConfig } from "../env";
 import type { JenkinsClient } from "../jenkins/client";
@@ -37,7 +37,7 @@ type InputTargetOptions = {
   env: EnvConfig;
   job?: string;
   jobUrl?: string;
-  build?: number;
+  build?: BuildSelection;
   buildUrl?: string;
   nonInteractive: boolean;
 };

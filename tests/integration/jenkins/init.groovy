@@ -110,6 +110,21 @@ printf 'exact-artifact:%s\n' "$MESSAGE" > exact-artifact.txt
 exactJob.getPublishersList().add(new ArtifactArchiver("exact-artifact.txt"))
 exactJob.save()
 
+def permalinkJob = jenkins.createProject(FreeStyleProject.class, "cli-permalinks")
+permalinkJob.addProperty(new ParametersDefinitionProperty([
+  new ChoiceParameterDefinition("OUTCOME", ["SUCCESS", "UNSTABLE", "FAILURE"] as String[], "Build result for permalink selection")
+]))
+def permalinkShell = new Shell('''set -eu
+printf 'permalink-outcome:%s\n' "$OUTCOME"
+case "$OUTCOME" in
+  UNSTABLE) exit 3 ;;
+  FAILURE) exit 1 ;;
+esac
+''')
+permalinkShell.setUnstableReturn(3)
+permalinkJob.getBuildersList().add(permalinkShell)
+permalinkJob.save()
+
 def testResultsJob = jenkins.createProject(FreeStyleProject.class, "cli-test-results")
 testResultsJob.getBuildersList().add(new Shell('''set -eu
 cat > test-results.xml <<'XML'

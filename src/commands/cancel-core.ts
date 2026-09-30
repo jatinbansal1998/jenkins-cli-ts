@@ -1,6 +1,6 @@
 import { logCliError } from "../logger";
 import { CliError, printError, printHint, printOk } from "../cli";
-import { resolveBuildSelector } from "../build-selector";
+import { type BuildSelection, resolveBuildSelector } from "../build-selector";
 import { assertProtectedMutationAllowed, type EnvConfig } from "../env";
 import type { JenkinsClient } from "../jenkins/client";
 import type { RunningBuildSummary } from "../types/jenkins";
@@ -17,7 +17,7 @@ type CancelOptions = {
   env: EnvConfig;
   job?: string;
   jobUrl?: string;
-  build?: number;
+  build?: BuildSelection;
   buildUrl?: string;
   queueUrl?: string;
   nonInteractive: boolean;

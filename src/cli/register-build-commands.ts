@@ -1,4 +1,5 @@
 import type { Argv } from "yargs";
+import { parseBuildSelection } from "../build-selector";
 import { runArtifacts } from "../commands/artifacts";
 import { runBuild } from "../commands/build";
 import { DEFAULT_CHANGES_LIMIT, runChanges } from "../commands/changes";
@@ -82,7 +83,7 @@ export function registerBuildCommands(
             env,
             job: optionalString(argv.job),
             jobUrl: optionalString(argv.jobUrl),
-            build: typeof argv.build === "number" ? argv.build : undefined,
+            build: parseBuildSelection(argv.build),
             buildUrl: optionalString(argv.buildUrl),
             nonInteractive: Boolean(argv.nonInteractive || argv.json),
             watch: watchExplicitlyPassed ? Boolean(argv.watch) : undefined,
@@ -131,7 +132,7 @@ export function registerBuildCommands(
             env,
             job: optionalString(argv.job),
             jobUrl: optionalString(argv.jobUrl),
-            build: typeof argv.build === "number" ? argv.build : undefined,
+            build: parseBuildSelection(argv.build),
             buildUrl: optionalString(argv.buildUrl),
             queueUrl: optionalString(argv.queueUrl),
             interval: optionalString(argv.interval),
@@ -153,7 +154,7 @@ export function registerBuildCommands(
             env,
             job: optionalString(argv.job),
             jobUrl: optionalString(argv.jobUrl),
-            build: typeof argv.build === "number" ? argv.build : undefined,
+            build: parseBuildSelection(argv.build),
             buildUrl: optionalString(argv.buildUrl),
             queueUrl: optionalString(argv.queueUrl),
             follow: typeof argv.follow === "boolean" ? argv.follow : undefined,
@@ -192,7 +193,7 @@ export function registerBuildCommands(
             env,
             job: optionalString(argv.job),
             jobUrl: optionalString(argv.jobUrl),
-            build: typeof argv.build === "number" ? argv.build : undefined,
+            build: parseBuildSelection(argv.build),
             buildUrl: optionalString(argv.buildUrl),
             failed: Boolean(argv.failed),
             nonInteractive: Boolean(argv.nonInteractive || argv.json),
@@ -228,7 +229,7 @@ export function registerBuildCommands(
               env,
               job: optionalString(argv.job),
               jobUrl: optionalString(argv.jobUrl),
-              build: typeof argv.build === "number" ? argv.build : undefined,
+              build: parseBuildSelection(argv.build),
               buildUrl: optionalString(argv.buildUrl),
               limit: typeof argv.limit === "number" ? argv.limit : undefined,
               paths: Boolean(argv.paths),
@@ -253,7 +254,7 @@ export function registerBuildCommands(
               env,
               job: optionalString(argv.job),
               jobUrl: optionalString(argv.jobUrl),
-              build: typeof argv.build === "number" ? argv.build : undefined,
+              build: parseBuildSelection(argv.build),
               buildUrl: optionalString(argv.buildUrl),
               download: Boolean(argv.download),
               dest: optionalString(argv.dest),

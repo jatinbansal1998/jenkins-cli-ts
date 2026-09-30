@@ -97,7 +97,7 @@ describe("rerun-core", () => {
   });
 
   test("rerunLastFailedBuildForJob reuses the last failed build parameters", async () => {
-    const getLastFailedBuild = mock(async () => ({
+    const getPermalinkBuild = mock(async () => ({
       buildUrl: `${JOB_URL}41/`,
       buildNumber: 41,
     }));
@@ -112,7 +112,7 @@ describe("rerun-core", () => {
       buildNumber: 42,
     }));
     const client = {
-      getLastFailedBuild,
+      getPermalinkBuild,
       getBuildStatus,
       triggerBuild,
     } as unknown as JenkinsClient;
@@ -124,6 +124,7 @@ describe("rerun-core", () => {
       jobLabel: "api",
     });
 
+    expect(getPermalinkBuild).toHaveBeenCalledWith(JOB_URL, "lastFailedBuild");
     expect(getBuildStatus).toHaveBeenCalledWith(`${JOB_URL}41/`);
     expect(triggerBuild).toHaveBeenCalledWith(JOB_URL, {
       BRANCH: "release/41",

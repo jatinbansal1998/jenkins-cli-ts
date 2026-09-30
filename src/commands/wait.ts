@@ -1,5 +1,5 @@
 import { logCliError } from "../logger";
-import { resolveBuildSelector } from "../build-selector";
+import { type BuildSelection, resolveBuildSelector } from "../build-selector";
 import {
   CliError,
   handleCliError,
@@ -47,7 +47,7 @@ type WaitOptions = {
   env: EnvConfig;
   job?: string;
   jobUrl?: string;
-  build?: number;
+  build?: BuildSelection;
   buildUrl?: string;
   queueUrl?: string;
   interval?: string;

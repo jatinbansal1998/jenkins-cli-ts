@@ -1,4 +1,4 @@
-import { resolveBuildSelector } from "../build-selector";
+import { type BuildSelection, resolveBuildSelector } from "../build-selector";
 import { CliError } from "../cli";
 import type { EnvConfig } from "../env";
 import type { JenkinsClient } from "../jenkins/client";
@@ -20,7 +20,7 @@ type ChangesOptions = {
   env: EnvConfig;
   job?: string;
   jobUrl?: string;
-  build?: number;
+  build?: BuildSelection;
   buildUrl?: string;
   limit?: number;
   paths?: boolean;

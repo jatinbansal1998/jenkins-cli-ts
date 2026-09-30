@@ -1,9 +1,24 @@
 import { CliError } from "./cli";
 import type { EnvConfig } from "./env";
 import type { JenkinsClient } from "./jenkins/client";
+import type { BuildPermalink } from "./types/jenkins";
 import { normalizeControllerTargetUrl } from "./jenkins-target-url";
 import { normalizeJobUrl } from "./job-url";
 import { resolveJobTarget } from "./commands/ops-helpers";
+
+const BUILD_PERMALINKS = {
+  lastCompleted: "lastCompletedBuild",
+  lastFailed: "lastFailedBuild",
+  lastStable: "lastStableBuild",
+  lastSuccessful: "lastSuccessfulBuild",
+} as const satisfies Record<string, BuildPermalink>;
+
+type BuildAlias = keyof typeof BUILD_PERMALINKS;
+
+/** A `--build` value: an exact build number or a Jenkins permalink alias. */
+export type BuildSelection = number | BuildAlias;
+
+const BUILD_VALUE_HINT = `Provide a positive build number (for example, --build 184) or one of: ${Object.keys(BUILD_PERMALINKS).join(", ")}.`;
 
 type ResolvedBuildSelector =
   | {
@@ -30,7 +45,7 @@ export async function resolveBuildSelector(options: {
   env: EnvConfig;
   job?: string;
   jobUrl?: string;
-  build?: number;
+  build?: BuildSelection;
   buildUrl?: string;
   queueUrl?: string;
   nonInteractive: boolean;
@@ -83,7 +98,10 @@ export async function resolveBuildSelector(options: {
   });
 
   if (options.build !== undefined) {
-    const buildNumber = parseBuildNumber(options.build);
+    const buildNumber =
+      typeof options.build === "number"
+        ? parseBuildNumber(options.build)
+        : await resolveBuildAlias(options.client, target, options.build);
     return {
       kind: "build",
       jobUrl: target.jobUrl,
@@ -96,21 +114,65 @@ export async function resolveBuildSelector(options: {
   return { kind: "job", ...target };
 }
 
-function parseBuildNumber(value: unknown): number {
-  if (typeof value !== "number" || !Number.isSafeInteger(value) || value <= 0) {
+/** Parses the raw `--build` argument; `undefined` means it was not passed. */
+export function parseBuildSelection(
+  value: unknown,
+): BuildSelection | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+  const text = typeof value === "string" ? value.trim() : "";
+  if (isBuildAlias(text)) {
+    return text;
+  }
+  if (/^\d+$/.test(text)) {
+    return parseBuildNumber(Number(text));
+  }
+  throw invalidBuildValue();
+}
+
+function isBuildAlias(value: string): value is BuildAlias {
+  return Object.hasOwn(BUILD_PERMALINKS, value);
+}
+
+async function resolveBuildAlias(
+  client: JenkinsClient,
+  target: { jobUrl: string; jobLabel: string },
+  alias: BuildAlias,
+): Promise<number> {
+  const build = await client.getPermalinkBuild(
+    target.jobUrl,
+    BUILD_PERMALINKS[alias],
+  );
+  if (!build) {
     throw new CliError(
-      "Invalid --build value.",
-      ["Provide a positive integer build number (for example, --build 184)."],
-      "INVALID_BUILD_NUMBER",
+      `Job ${target.jobLabel} has no ${alias} build.`,
+      ["Pass a build number with --build, or omit --build for the latest."],
+      "BUILD_NOT_FOUND",
     );
   }
+  return build.buildNumber;
+}
+
+function parseBuildNumber(value: unknown): number {
+  if (typeof value !== "number" || !Number.isSafeInteger(value) || value <= 0) {
+    throw invalidBuildValue();
+  }
   return value;
+}
+
+function invalidBuildValue(): CliError {
+  return new CliError(
+    "Invalid --build value.",
+    [BUILD_VALUE_HINT],
+    "INVALID_BUILD_NUMBER",
+  );
 }
 
 function validateSelectorCombinations(options: {
   job?: string;
   jobUrl?: string;
-  build?: number;
+  build?: BuildSelection;
   buildUrl?: string;
   queueUrl?: string;
   allowQueue?: boolean;

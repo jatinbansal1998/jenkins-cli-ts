@@ -65,12 +65,15 @@ jenkins-cli build api --param DEPLOY_ENV=staging --watch
 jenkins-cli status --job api
 jenkins-cli history --job api
 jenkins-cli logs --job api --build 42
+jenkins-cli logs --job api --build lastSuccessful
 jenkins-cli tests --job api --build 42
 jenkins-cli artifacts --job api --build 42 --download --dest ./artifacts
 ```
 
 Use `--job-url` or `--build-url` when you already have a Jenkins URL. Commands
 such as `status` and `logs` use the latest build unless you select one explicitly.
+`--build` also accepts `lastSuccessful`, `lastStable`, `lastFailed`, or
+`lastCompleted`.
 
 | Task            | Commands                                                     |
 | --------------- | ------------------------------------------------------------ |

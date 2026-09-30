@@ -937,6 +937,96 @@ describe.skipIf(!integrationEnabled)(
       });
     }, 180_000);
 
+    test("selects builds by Jenkins permalink alias", async () => {
+      await withCliHome(async (home) => {
+        const jobUrl = `${jenkinsUrl}/job/cli-permalinks/`;
+        const buildNumbers: Record<string, number> = {};
+        for (const outcome of ["SUCCESS", "UNSTABLE", "FAILURE"]) {
+          const receipt = parseJson<{
+            data: { result: string; buildNumber: number };
+          }>(
+            await invokeCli(home, [
+              "build",
+              "--job-url",
+              jobUrl,
+              "--param",
+              `OUTCOME=${outcome}`,
+              "--watch",
+              "--json",
+            ]),
+          );
+          expect(receipt.data.result).toBe(outcome);
+          buildNumbers[outcome] = receipt.data.buildNumber;
+        }
+
+        for (const [alias, outcome] of [
+          ["lastStable", "SUCCESS"],
+          ["lastSuccessful", "UNSTABLE"],
+          ["lastFailed", "FAILURE"],
+          ["lastCompleted", "FAILURE"],
+        ] as const) {
+          expect(
+            parseJson(
+              await runCli(home, [
+                "status",
+                "--job-url",
+                jobUrl,
+                "--build",
+                alias,
+                "--json",
+              ]),
+            ),
+          ).toMatchObject({
+            ok: true,
+            command: "status",
+            data: {
+              build: {
+                number: buildNumbers[outcome],
+                url: `${jobUrl}${buildNumbers[outcome]}/`,
+                result: outcome,
+              },
+            },
+          });
+        }
+
+        const logs = await runCli(home, [
+          "logs",
+          "--job-url",
+          jobUrl,
+          "--build",
+          "lastSuccessful",
+          "--no-follow",
+        ]);
+        expect(logs.output).toContain("permalink-outcome:UNSTABLE");
+        expect(logs.output).not.toContain("permalink-outcome:FAILURE");
+
+        const missing = parseJson<{ error: { code: string; message: string } }>(
+          await runCliExpectFailure(home, [
+            "status",
+            "--job-url",
+            `${jenkinsUrl}/job/cli-never-built/`,
+            "--build",
+            "lastFailed",
+            "--json",
+          ]),
+        );
+        expect(missing.error.code).toBe("BUILD_NOT_FOUND");
+        expect(missing.error.message).toContain("has no lastFailed build");
+
+        const invalid = parseJson<{ error: { code: string } }>(
+          await runCliExpectFailure(home, [
+            "status",
+            "--job-url",
+            jobUrl,
+            "--build",
+            "lastGreen",
+            "--json",
+          ]),
+        );
+        expect(invalid.error.code).toBe("INVALID_BUILD_NUMBER");
+      });
+    }, 120_000);
+
     test("inspects published freestyle and Pipeline test results", async () => {
       await withCliHome(async (home) => {
         const mixedJobUrl = `${jenkinsUrl}/job/cli-test-results/`;

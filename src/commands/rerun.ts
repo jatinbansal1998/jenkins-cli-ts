@@ -1,5 +1,5 @@
 import { CliError } from "../cli";
-import { resolveBuildSelector } from "../build-selector";
+import { type BuildSelection, resolveBuildSelector } from "../build-selector";
 import { assertProtectedMutationAllowed, type EnvConfig } from "../env";
 import type { JenkinsClient } from "../jenkins/client";
 import { resolveJobTarget } from "./ops-helpers";
@@ -21,7 +21,7 @@ type RerunOptions = {
   env: EnvConfig;
   job?: string;
   jobUrl?: string;
-  build?: number;
+  build?: BuildSelection;
   buildUrl?: string;
   nonInteractive: boolean;
   json?: boolean;
