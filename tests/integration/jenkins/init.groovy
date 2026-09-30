@@ -439,6 +439,27 @@ timestamps {
 ''', true))
 logInspectionPipeline.save()
 
+// Runs outside `node` so following the Watch stage does not hold the
+// controller's single executor. The sleeps give `logs --stage --follow` time
+// to attach while the stage runs and to see steps that start mid-follow.
+def stageFollowPipeline = jenkins.createProject(WorkflowJob.class, "cli-pipeline-stage-follow")
+stageFollowPipeline.setDefinition(new CpsFlowDefinition('''
+stage('Build') {
+  echo 'stage-follow-build'
+}
+stage('Lint') {
+  echo 'stage-follow-lint'
+}
+stage('Watch') {
+  echo 'stage-follow-first'
+  sleep 8
+  echo 'stage-follow-second'
+  sleep 2
+  echo 'stage-follow-third'
+}
+''', true))
+stageFollowPipeline.save()
+
 def timestampedLogJob = jenkins.createProject(WorkflowJob.class, "cli-timestamped-logs")
 timestampedLogJob.setDefinition(new CpsFlowDefinition('''
 timestamps {

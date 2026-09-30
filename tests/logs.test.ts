@@ -1,12 +1,14 @@
 import { afterEach, describe, expect, mock, test } from "bun:test";
 import { CliError } from "../src/cli";
 import {
+  MIN_CHUNK_INTERVAL_MS,
   runLogs,
   setLogsDependenciesForTesting,
   type LogCancellationSignal,
 } from "../src/commands/logs";
 import type { EnvConfig } from "../src/env";
 import type { JenkinsClient } from "../src/jenkins/client";
+import type { BuildStatus } from "../src/types/jenkins";
 
 const env: EnvConfig = {
   jenkinsUrl: "https://jenkins.example.com",
@@ -29,6 +31,24 @@ function serveFrom(log: string) {
     nextStart: log.length,
     hasMore: false,
   }));
+}
+
+/** wfapi stages of a finished Build stage followed by a Test stage. */
+function buildAndTestStages(testStatus: string) {
+  return [
+    {
+      id: "10",
+      name: "Build",
+      status: "SUCCESS",
+      _links: { self: { href: "/node/10/wfapi/describe" } },
+    },
+    {
+      id: "20",
+      name: "Test",
+      status: testStatus,
+      _links: { self: { href: "/node/20/wfapi/describe" } },
+    },
+  ];
 }
 
 afterEach(() => {
@@ -226,16 +246,6 @@ describe("logs command", () => {
 
   test("keeps stage diagnostics off stdout and streams raw node text", async () => {
     const output: string[] = [];
-    const getPipelineDescription = mock(async () => ({
-      stages: [
-        {
-          id: "10",
-          name: "Test",
-          status: "SUCCESS",
-          _links: { self: { href: "/node/10/wfapi/describe" } },
-        },
-      ],
-    }));
     const getPipelineNodeDescription = mock(async () => ({
       id: "10",
       name: "Test",
@@ -268,8 +278,15 @@ describe("logs command", () => {
           buildUrl,
           building: false,
           result: "SUCCESS",
+          stages: [
+            {
+              id: "10",
+              name: "Test",
+              status: "SUCCESS",
+              _links: { self: { href: "/node/10/wfapi/describe" } },
+            },
+          ],
         })),
-        getPipelineDescription,
         getPipelineNodeDescription,
         getPipelineNodeLog,
         getPipelineNodeConsoleChunk,
@@ -373,16 +390,6 @@ describe("logs command", () => {
 
   test("never merges an unterminated tail with the next Pipeline node's log", async () => {
     const output: string[] = [];
-    const getPipelineDescription = mock(async () => ({
-      stages: [
-        {
-          id: "10",
-          name: "Test",
-          status: "SUCCESS",
-          _links: { self: { href: "/node/10/wfapi/describe" } },
-        },
-      ],
-    }));
     const getPipelineNodeDescription = mock(async () => ({
       id: "10",
       name: "Test",
@@ -422,8 +429,15 @@ describe("logs command", () => {
           buildUrl,
           building: false,
           result: "SUCCESS",
+          stages: [
+            {
+              id: "10",
+              name: "Test",
+              status: "SUCCESS",
+              _links: { self: { href: "/node/10/wfapi/describe" } },
+            },
+          ],
         })),
-        getPipelineDescription,
         getPipelineNodeDescription,
         getPipelineNodeLog,
         getPipelineNodeConsoleChunk,
@@ -523,8 +537,9 @@ describe("logs command", () => {
 
   test("returns a stable ambiguity error for repeated stage names", async () => {
     const pipelineClient = client({
-      getBuildStatus: mock(async () => ({ buildNumber: 9, buildUrl })),
-      getPipelineDescription: mock(async () => ({
+      getBuildStatus: mock(async () => ({
+        buildNumber: 9,
+        buildUrl,
         stages: [
           { id: "10", name: "Test" },
           { id: "20", name: "Test" },
@@ -550,6 +565,345 @@ describe("logs command", () => {
     expect((error as CliError).code).toBe("AMBIGUOUS_STAGE_SELECTOR");
     expect((error as CliError).hints.join(" ")).toContain("id 10");
     expect((error as CliError).hints.join(" ")).toContain("id 20");
+  });
+
+  test("reads only the selected stage's wfapi node", async () => {
+    const output: string[] = [];
+    const getPipelineNodeDescription = mock(async (href: string) => {
+      const id = href.match(/\/node\/(\d+)\//)![1]!;
+      return {
+        id,
+        status: "SUCCESS",
+        stageFlowNodes: [
+          {
+            id: `${id}1`,
+            name: "Shell Script",
+            status: "SUCCESS",
+            parentNodes: [id],
+            _links: { log: { href: `/node/${id}1/wfapi/log` } },
+          },
+        ],
+      };
+    });
+    const getPipelineNodeLog = mock(async (href: string) => ({
+      hasMore: false,
+      consoleUrl: href.replace("/wfapi/log", "/log"),
+    }));
+
+    await runLogs({
+      client: client({
+        getBuildStatus: mock(async () => ({
+          buildNumber: 9,
+          buildUrl,
+          building: false,
+          result: "SUCCESS",
+          stages: ["10", "20", "30"].map((id) => ({
+            id,
+            name: `Stage ${id}`,
+            status: "SUCCESS",
+            _links: { self: { href: `/node/${id}/wfapi/describe` } },
+          })),
+        })),
+        getPipelineNodeDescription,
+        getPipelineNodeLog,
+        getPipelineNodeConsoleChunk: mock(async (consoleUrl: string) => ({
+          text: `${consoleUrl}\n`,
+          nextStart: consoleUrl.length + 1,
+          hasMore: false,
+        })),
+      }),
+      env,
+      buildUrl,
+      stage: "Stage 20",
+      follow: false,
+      nonInteractive: true,
+      writeText: (value) => output.push(value),
+    });
+
+    expect(output.join("")).toBe("/node/201/log\n");
+    expect(getPipelineNodeDescription.mock.calls).toEqual([
+      ["/node/20/wfapi/describe"],
+    ]);
+    expect(getPipelineNodeLog).toHaveBeenCalledTimes(1);
+  });
+
+  test("finds a --stage-id step inside any stage, six reads at a time", async () => {
+    const output: string[] = [];
+    let inFlight = 0;
+    let maxInFlight = 0;
+    const getPipelineNodeDescription = mock(async (href: string) => {
+      const id = href.match(/\/node\/(\d+)\//)![1]!;
+      inFlight++;
+      maxInFlight = Math.max(maxInFlight, inFlight);
+      await Bun.sleep(1);
+      inFlight--;
+      return {
+        id,
+        status: "SUCCESS",
+        stageFlowNodes: [
+          {
+            id: `${id}1`,
+            name: "Shell Script",
+            status: "SUCCESS",
+            parentNodes: [id],
+            _links: { log: { href: `/node/${id}1/wfapi/log` } },
+          },
+        ],
+      };
+    });
+
+    await runLogs({
+      client: client({
+        getBuildStatus: mock(async () => ({
+          buildNumber: 9,
+          buildUrl,
+          building: false,
+          result: "SUCCESS",
+          stages: Array.from({ length: 10 }, (_, index) => {
+            const id = String((index + 1) * 10);
+            return {
+              id,
+              name: `Stage ${id}`,
+              status: "SUCCESS",
+              _links: { self: { href: `/node/${id}/wfapi/describe` } },
+            };
+          }),
+        })),
+        getPipelineNodeDescription,
+        getPipelineNodeLog: mock(async (href: string) => ({
+          hasMore: false,
+          consoleUrl: href.replace("/wfapi/log", "/log"),
+        })),
+        getPipelineNodeConsoleChunk: mock(async (consoleUrl: string) => ({
+          text: `${consoleUrl}\n`,
+          nextStart: consoleUrl.length + 1,
+          hasMore: false,
+        })),
+      }),
+      env,
+      buildUrl,
+      stageId: "201",
+      follow: false,
+      nonInteractive: true,
+      writeText: (value) => output.push(value),
+    });
+
+    expect(output.join("")).toBe("/node/201/log\n");
+    expect(getPipelineNodeDescription).toHaveBeenCalledTimes(10);
+    expect(maxInFlight).toBe(6);
+  });
+
+  test("follows a running stage without re-reading what already finished", async () => {
+    const output: string[] = [];
+    type Phase = {
+      status: Partial<BuildStatus>;
+      steps: Record<string, string>;
+      logs: Record<string, string>;
+    };
+    // Each status poll moves the build one step forward.
+    const phases: Phase[] = [
+      {
+        status: { building: true, stages: buildAndTestStages("IN_PROGRESS") },
+        steps: { "21": "SUCCESS", "22": "IN_PROGRESS" },
+        logs: { "21": "one\n", "22": "two\n" },
+      },
+      {
+        status: { building: true, stages: buildAndTestStages("IN_PROGRESS") },
+        steps: { "21": "SUCCESS", "22": "SUCCESS", "23": "IN_PROGRESS" },
+        logs: { "21": "one\n", "22": "two\nmore\n", "23": "three\n" },
+      },
+      {
+        status: {
+          building: false,
+          result: "SUCCESS",
+          stages: buildAndTestStages("SUCCESS"),
+        },
+        steps: { "21": "SUCCESS", "22": "SUCCESS", "23": "SUCCESS" },
+        logs: { "21": "one\n", "22": "two\nmore\n", "23": "three\nlast\n" },
+      },
+    ];
+    let phase = -1;
+    const current = () => phases[phase]!;
+    const getBuildStatus = mock(async () => {
+      phase++;
+      return { buildNumber: 9, buildUrl, ...current().status };
+    });
+    const getPipelineNodeDescription = mock(async (_href: string) => ({
+      id: "20",
+      stageFlowNodes: Object.entries(current().steps).map(([id, status]) => ({
+        id,
+        name: `Step ${id}`,
+        status,
+        startTimeMillis: Number(id),
+        parentNodes: ["20"],
+        _links: { log: { href: `/node/${id}/wfapi/log` } },
+      })),
+    }));
+    const getPipelineNodeLog = mock(async (href: string) => ({
+      hasMore: false,
+      consoleUrl: href.replace("/wfapi/log", "/log"),
+    }));
+    const getPipelineNodeConsoleChunk = mock(
+      async (consoleUrl: string, offset: number) => {
+        const id = consoleUrl.match(/\/node\/(\d+)\//)![1]!;
+        const log = current().logs[id]!;
+        return {
+          text: log.slice(offset),
+          nextStart: log.length,
+          hasMore: false,
+        };
+      },
+    );
+
+    await runLogs({
+      client: client({
+        getBuildStatus,
+        getPipelineNodeDescription,
+        getPipelineNodeLog,
+        getPipelineNodeConsoleChunk,
+      }),
+      env,
+      buildUrl,
+      stage: "Test",
+      follow: true,
+      poll: "1ms",
+      nonInteractive: true,
+      writeText: (value) => output.push(value),
+    });
+
+    // "last" is written after the final running poll; the pass that runs
+    // once status says done still reads it.
+    expect(output.join("")).toBe("one\ntwo\nmore\nthree\nlast\n");
+    expect(getBuildStatus).toHaveBeenCalledTimes(3);
+    // The running stage is re-read each poll; the finished Build stage never.
+    expect(getPipelineNodeDescription.mock.calls).toEqual([
+      ["/node/20/wfapi/describe"],
+      ["/node/20/wfapi/describe"],
+      ["/node/20/wfapi/describe"],
+    ]);
+    // Console URLs are remembered, so each node's wfapi log is read once.
+    expect(getPipelineNodeLog.mock.calls.map(([href]) => href)).toEqual([
+      "/node/21/wfapi/log",
+      "/node/22/wfapi/log",
+      "/node/23/wfapi/log",
+    ]);
+    // Step 21 had finished before its first read, so it is read only once.
+    expect(
+      getPipelineNodeConsoleChunk.mock.calls.filter(([url]) =>
+        url.includes("/21/"),
+      ),
+    ).toHaveLength(1);
+  });
+
+  test("keeps a finished stage's detail while the build still runs", async () => {
+    const statuses = [true, true, false].map((building) => ({
+      buildNumber: 9,
+      buildUrl,
+      building,
+      result: building ? undefined : "SUCCESS",
+      stages: [
+        {
+          id: "10",
+          name: "Build",
+          status: "SUCCESS",
+          _links: { self: { href: "/node/10/wfapi/describe" } },
+        },
+      ],
+    }));
+    const getBuildStatus = mock(async () => statuses.shift()!);
+    const getPipelineNodeDescription = mock(async () => ({
+      id: "10",
+      stageFlowNodes: [
+        {
+          id: "11",
+          name: "Shell Script",
+          status: "SUCCESS",
+          parentNodes: ["10"],
+          _links: { log: { href: "/node/11/wfapi/log" } },
+        },
+      ],
+    }));
+    const output: string[] = [];
+
+    await runLogs({
+      client: client({
+        getBuildStatus,
+        getPipelineNodeDescription,
+        getPipelineNodeLog: mock(async () => ({
+          hasMore: false,
+          consoleUrl: "/node/11/log",
+        })),
+        getPipelineNodeConsoleChunk: serveFrom("built\n"),
+      }),
+      env,
+      buildUrl,
+      stage: "Build",
+      follow: true,
+      poll: "1ms",
+      nonInteractive: true,
+      writeText: (value) => output.push(value),
+    });
+
+    expect(output.join("")).toBe("built\n");
+    expect(getBuildStatus).toHaveBeenCalledTimes(3);
+    expect(getPipelineNodeDescription).toHaveBeenCalledTimes(1);
+  });
+
+  test("does not keep a finished stage's detail while a step still runs", async () => {
+    const statuses = [true, true, true, false].map((building) => ({
+      buildNumber: 9,
+      buildUrl,
+      building,
+      result: building ? undefined : "SUCCESS",
+      stages: [
+        {
+          id: "10",
+          name: "Build",
+          status: "SUCCESS",
+          _links: { self: { href: "/node/10/wfapi/describe" } },
+        },
+      ],
+    }));
+    // The stage list already says SUCCESS while the first detail read still
+    // reports the step as running.
+    const stepStatuses = ["IN_PROGRESS", "SUCCESS"];
+    const getPipelineNodeDescription = mock(async () => ({
+      id: "10",
+      stageFlowNodes: [
+        {
+          id: "11",
+          name: "Shell Script",
+          status: stepStatuses.shift() ?? "SUCCESS",
+          parentNodes: ["10"],
+          _links: { log: { href: "/node/11/wfapi/log" } },
+        },
+      ],
+    }));
+    const getPipelineNodeConsoleChunk = serveFrom("built\n");
+
+    await runLogs({
+      client: client({
+        getBuildStatus: mock(async () => statuses.shift()!),
+        getPipelineNodeDescription,
+        getPipelineNodeLog: mock(async () => ({
+          hasMore: false,
+          consoleUrl: "/node/11/log",
+        })),
+        getPipelineNodeConsoleChunk,
+      }),
+      env,
+      buildUrl,
+      stage: "Build",
+      follow: true,
+      poll: "1ms",
+      nonInteractive: true,
+      writeText: () => undefined,
+    });
+
+    // Re-read once the step settles, then kept; the step log stops being
+    // polled after its first read as a finished step.
+    expect(getPipelineNodeDescription).toHaveBeenCalledTimes(2);
+    expect(getPipelineNodeConsoleChunk).toHaveBeenCalledTimes(2);
   });
 
   test("Ctrl+C cancellation never calls the Jenkins build mutation API", async () => {
@@ -582,6 +936,49 @@ describe("logs command", () => {
 
     expect(stopBuild).not.toHaveBeenCalled();
     expect(process.exitCode).toBe(130);
+  });
+
+  test("paces reads of a log that always has more data", async () => {
+    for (const tail of [undefined, 1]) {
+      const callTimes: number[] = [];
+      let size = 0;
+      const getConsoleChunk = mock(async () => {
+        callTimes.push(performance.now());
+        size += 5;
+        return {
+          text: "busy\n",
+          nextStart: size,
+          hasMore: callTimes.length < 4,
+        };
+      });
+
+      await runLogs({
+        client: client({
+          getBuildStatus: mock(async () => ({
+            buildNumber: 9,
+            buildUrl,
+            building: false,
+            result: "SUCCESS",
+          })),
+          getConsoleChunk,
+          getConsoleTextSize: mock(async () => 0),
+        }),
+        env,
+        buildUrl,
+        tail,
+        follow: false,
+        nonInteractive: true,
+        writeText: () => undefined,
+      });
+
+      // Covers both readers: the streaming one and the --tail snapshot.
+      expect(callTimes).toHaveLength(4);
+      for (let index = 1; index < callTimes.length; index++) {
+        expect(
+          callTimes[index]! - callTimes[index - 1]!,
+        ).toBeGreaterThanOrEqual(MIN_CHUNK_INTERVAL_MS);
+      }
+    }
   });
 
   test("backs off when Jenkins reports more data without advancing the offset", async () => {

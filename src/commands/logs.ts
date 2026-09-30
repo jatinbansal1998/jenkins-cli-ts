@@ -15,7 +15,8 @@ import {
   transformLogLine,
 } from "../log-filters";
 import {
-  resolvePipelineLogSelection,
+  isSettledPipelineStatus,
+  PipelineLogResolver,
   type PipelineLogIdentity,
   type PipelineLogSelection,
   type PipelineLogSource,
@@ -35,6 +36,10 @@ import { parseOptionalDurationMs } from "./ops-helpers";
 import { waitForPollIntervalOrCancel } from "./watch-utils";
 
 export const DEFAULT_LOG_POLL_MS = 1_000;
+// X-More-Data stays true for as long as a build writes, so without a floor a
+// busy log is re-read back to back. One read returns everything written so
+// far, so catch-up is still a single request.
+export const MIN_CHUNK_INTERVAL_MS = 200;
 const INTERACTIVE_HISTORY_LIMIT = 10;
 
 export type LogCancellationSignal = {
@@ -537,9 +542,14 @@ async function streamPipelineLogs(options: {
   cancelSignal?: LogCancellationSignal;
   initialStatus: BuildStatus;
 }): Promise<boolean> {
-  let selection = await loadPipelineSelection(options);
+  const resolver = new PipelineLogResolver(options.client, options.buildUrl, {
+    stage: options.effective.stage,
+    stageId: options.effective.stageId,
+    failed: options.effective.failed,
+  });
+  let status = options.initialStatus;
+  const selection = await resolver.resolve(status.stages);
   const identity = selectionIdentity(selection);
-  const status = options.initialStatus;
   options.emitter.start({
     buildUrl: status.buildUrl ?? options.buildUrl,
     buildNumber: status.buildNumber,
@@ -604,20 +614,9 @@ async function streamPipelineLogs(options: {
     }
   }
 
-  while (options.effective.follow) {
-    if (options.cancelSignal?.isCancelled()) {
-      return true;
-    }
-    const current = await options.client.getBuildStatus(options.buildUrl);
-    if (!current.building) {
-      options.emitter.complete({
-        buildUrl: current.buildUrl ?? options.buildUrl,
-        offset: emittedBytes,
-        result: current.result,
-        identity,
-      });
-      return false;
-    }
+  // Each poll reads status once; getBuildStatus carries the wfapi stage list
+  // too, so it doubles as the stage discovery input.
+  while (options.effective.follow && status.building) {
     if ([...states.values()].some((entry) => !entry.source.consoleUrl)) {
       throw new CliError(
         "Jenkins exposes only a completed Pipeline node log for this running build.",
@@ -628,8 +627,13 @@ async function streamPipelineLogs(options: {
     if (await waitForPoll(options.pollMs, options.cancelSignal)) {
       return true;
     }
-    selection = await loadPipelineSelection(options);
-    mergePipelineSources(states, selection.sources);
+    status = await options.client.getBuildStatus(options.buildUrl);
+    mergePipelineSources(
+      states,
+      (await resolver.resolve(status.stages)).sources,
+    );
+    // Read after the status check, so the final pass also catches output
+    // written between the last poll and the build finishing.
     for (const state of states.values()) {
       const streamed = await streamPipelineSource(
         options.client,
@@ -666,6 +670,8 @@ type PipelineSourceState = {
   source: PipelineLogSource;
   offset: number;
   completeEmitted: boolean;
+  // Read to the end after the node finished; later polls skip it.
+  drained: boolean;
 };
 
 function mergePipelineSources(
@@ -682,22 +688,9 @@ function mergePipelineSources(
       source,
       offset: 0,
       completeEmitted: false,
+      drained: false,
     });
   }
-}
-
-async function loadPipelineSelection(options: {
-  client: JenkinsClient;
-  buildUrl: string;
-  effective: EffectiveLogOptions;
-}): Promise<PipelineLogSelection> {
-  return await resolvePipelineLogSelection({
-    client: options.client,
-    buildUrl: options.buildUrl,
-    stage: options.effective.stage,
-    stageId: options.effective.stageId,
-    failed: options.effective.failed,
-  });
 }
 
 async function streamPipelineSource(
@@ -714,6 +707,10 @@ async function streamPipelineSource(
     state.offset = Buffer.byteLength(state.source.completeText);
     return false;
   }
+  if (state.drained) {
+    return false;
+  }
+  const settledBeforeRead = isSettledPipelineStatus(state.source.status);
   const streamed = await readAvailableChunks({
     getChunk: (start) =>
       client.getPipelineNodeConsoleChunk(state.source.consoleUrl!, start),
@@ -726,6 +723,7 @@ async function streamPipelineSource(
     cancelSignal,
   });
   state.offset = streamed.offset;
+  state.drained = settledBeforeRead && !streamed.hasMore && !streamed.cancelled;
   return streamed.cancelled;
 }
 
@@ -886,6 +884,7 @@ async function readSnapshot(
         cancelled: false,
       };
     }
+    await waitForPollIntervalOrCancel(MIN_CHUNK_INTERVAL_MS, cancelSignal);
   }
 }
 
@@ -909,6 +908,10 @@ async function readAvailableChunks(options: {
     if (!chunk.hasMore || (offset <= start && !chunk.text)) {
       return { offset, hasMore: chunk.hasMore, cancelled: false };
     }
+    await waitForPollIntervalOrCancel(
+      MIN_CHUNK_INTERVAL_MS,
+      options.cancelSignal,
+    );
   }
 }
 

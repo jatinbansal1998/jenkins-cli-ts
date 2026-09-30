@@ -37,6 +37,15 @@ async function apiRequestUrls(home: string): Promise<string[]> {
     .flatMap((line) => line.match(/ REQUEST GET (\S+)$/)?.[1] ?? []);
 }
 
+/** How many times each value occurs. */
+function countBy(values: string[]): Map<string, number> {
+  const counts = new Map<string, number>();
+  for (const value of values) {
+    counts.set(value, (counts.get(value) ?? 0) + 1);
+  }
+  return counts;
+}
+
 /** Run git with a fixed synthetic identity; fails loudly on a non-zero exit. */
 async function git(...args: string[]): Promise<string> {
   const child = Bun.spawn({
@@ -3092,6 +3101,98 @@ describe.skipIf(!integrationEnabled)(
               .length,
           ).toBeLessThanOrEqual(3);
         });
+      });
+    }, 90_000);
+
+    test("follows one Pipeline stage without re-reading other stages or finished steps", async () => {
+      await withCliHome(async (home) => {
+        const jobUrl = `${jenkinsUrl}/job/cli-pipeline-stage-follow/`;
+        await runCli(home, ["build", "--job-url", jobUrl, "--without-params"]);
+        const running = await pollCli(
+          home,
+          ["status", "--job-url", jobUrl, "--json"],
+          (result) => {
+            const payload = JSON.parse(result.stdout) as {
+              data?: {
+                build?: {
+                  building?: boolean;
+                  stages?: { name?: string; status?: string }[];
+                };
+              };
+            };
+            return (
+              payload.data?.build?.building === true &&
+              payload.data.build.stages?.some(
+                (stage) =>
+                  stage.name === "Watch" && stage.status === "IN_PROGRESS",
+              ) === true
+            );
+          },
+        );
+        const buildUrl = parseJson<{ data: { build: { url: string } } }>(
+          running,
+        ).data.build.url;
+        for (const file of cliLogFiles(home, "api")) {
+          rmSync(file);
+        }
+
+        const logs = await invokeCli(home, [
+          "logs",
+          "--build-url",
+          buildUrl,
+          "--stage",
+          "Watch",
+          "--follow",
+          "--poll",
+          "100ms",
+          "--debug",
+        ]);
+
+        expect(logs.exitCode, logs.output).toBe(0);
+        for (const line of [
+          "stage-follow-first",
+          "stage-follow-second",
+          "stage-follow-third",
+        ]) {
+          expect(logs.stdout.split(line)).toHaveLength(2);
+        }
+        expect(logs.stdout).not.toContain("stage-follow-build");
+        expect(logs.stdout).not.toContain("stage-follow-lint");
+
+        const paths = (await apiRequestUrls(home)).map(
+          (url) => new URL(url).pathname,
+        );
+        const statusPath = new URL(`${buildUrl}api/json`).pathname;
+        const describePath = new URL(`${buildUrl}wfapi/describe`).pathname;
+        const statusReads = paths.filter((path) => path === statusPath);
+        expect(statusReads.length).toBeGreaterThan(10);
+        // The stage list rides on each status poll; no separate describe.
+        expect(paths.filter((path) => path === describePath)).toHaveLength(
+          statusReads.length,
+        );
+        // Only the Watch stage's node is described, never Build or Lint.
+        expect(
+          countBy(
+            paths.filter(
+              (path) =>
+                path.includes("/execution/node/") &&
+                path.endsWith("/wfapi/describe"),
+            ),
+          ).size,
+        ).toBe(1);
+        // Each step's wfapi log is read once; its console URL is remembered.
+        const nodeLogReads = countBy(
+          paths.filter((path) => path.endsWith("/wfapi/log")),
+        );
+        expect(nodeLogReads.size).toBeGreaterThanOrEqual(3);
+        expect([...nodeLogReads.values()].every((count) => count === 1)).toBe(
+          true,
+        );
+        // A step that finished before its first read is read exactly once.
+        const consoleReads = countBy(
+          paths.filter((path) => path.endsWith("/progressiveText")),
+        );
+        expect(Math.min(...consoleReads.values())).toBe(1);
       });
     }, 90_000);
 
