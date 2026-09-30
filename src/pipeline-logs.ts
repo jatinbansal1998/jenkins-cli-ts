@@ -178,7 +178,13 @@ export class PipelineLogResolver {
     }
     const detail = await this.client.getPipelineNodeDescription(stage.selfUrl);
     // A running stage keeps gaining steps, so only a finished one is kept.
-    if (detail && isSettledPipelineStatus(stage.status)) {
+    // Its steps are checked too: a cached step still marked running would be
+    // re-read on every later poll.
+    if (
+      detail &&
+      isSettledPipelineStatus(stage.status) &&
+      allNodesSettled(detail.stageFlowNodes ?? [])
+    ) {
       this.settledStageDetails.set(stage.id, detail);
     }
     return detail;
@@ -223,6 +229,14 @@ export function isSettledPipelineStatus(status: string | undefined): boolean {
     normalized === "UNSTABLE" ||
     normalized === "ABORTED" ||
     isFailureStatus(normalized)
+  );
+}
+
+function allNodesSettled(nodes: JenkinsPipelineNodeResponse[]): boolean {
+  return nodes.every(
+    (node) =>
+      isSettledPipelineStatus(node.status) &&
+      allNodesSettled(node.stageFlowNodes ?? []),
   );
 }
 

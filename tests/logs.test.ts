@@ -849,6 +849,63 @@ describe("logs command", () => {
     expect(getPipelineNodeDescription).toHaveBeenCalledTimes(1);
   });
 
+  test("does not keep a finished stage's detail while a step still runs", async () => {
+    const statuses = [true, true, true, false].map((building) => ({
+      buildNumber: 9,
+      buildUrl,
+      building,
+      result: building ? undefined : "SUCCESS",
+      stages: [
+        {
+          id: "10",
+          name: "Build",
+          status: "SUCCESS",
+          _links: { self: { href: "/node/10/wfapi/describe" } },
+        },
+      ],
+    }));
+    // The stage list already says SUCCESS while the first detail read still
+    // reports the step as running.
+    const stepStatuses = ["IN_PROGRESS", "SUCCESS"];
+    const getPipelineNodeDescription = mock(async () => ({
+      id: "10",
+      stageFlowNodes: [
+        {
+          id: "11",
+          name: "Shell Script",
+          status: stepStatuses.shift() ?? "SUCCESS",
+          parentNodes: ["10"],
+          _links: { log: { href: "/node/11/wfapi/log" } },
+        },
+      ],
+    }));
+    const getPipelineNodeConsoleChunk = serveFrom("built\n");
+
+    await runLogs({
+      client: client({
+        getBuildStatus: mock(async () => statuses.shift()!),
+        getPipelineNodeDescription,
+        getPipelineNodeLog: mock(async () => ({
+          hasMore: false,
+          consoleUrl: "/node/11/log",
+        })),
+        getPipelineNodeConsoleChunk,
+      }),
+      env,
+      buildUrl,
+      stage: "Build",
+      follow: true,
+      poll: "1ms",
+      nonInteractive: true,
+      writeText: () => undefined,
+    });
+
+    // Re-read once the step settles, then kept; the step log stops being
+    // polled after its first read as a finished step.
+    expect(getPipelineNodeDescription).toHaveBeenCalledTimes(2);
+    expect(getPipelineNodeConsoleChunk).toHaveBeenCalledTimes(2);
+  });
+
   test("Ctrl+C cancellation never calls the Jenkins build mutation API", async () => {
     const stopBuild = mock(async () => undefined);
     const signal: LogCancellationSignal = {
