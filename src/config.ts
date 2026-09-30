@@ -234,8 +234,9 @@ export async function migrateLegacyConfigIfNeeded(): Promise<LoadedConfig | null
   };
 }
 
-export function migrateLegacyConfigSyncIfNeeded(): LoadedConfig | null {
-  const loaded = readConfigSync();
+export function migrateLegacyConfigSyncIfNeeded(
+  loaded: LoadedConfig | null,
+): LoadedConfig | null {
   if (!loaded || !loaded.legacyDetected) {
     return loaded;
   }

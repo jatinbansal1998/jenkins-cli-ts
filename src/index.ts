@@ -33,6 +33,7 @@ import type {
   CommandArgv,
 } from "./cli/registration-types";
 import { printCliIntro } from "./cli-intro";
+import { type LoadedConfig, readConfigSync } from "./config";
 import { loadEnv, getDebugDefault, resolveApiToken } from "./env";
 
 import { JenkinsClient } from "./jenkins/client";
@@ -124,19 +125,7 @@ function createParser(rawArgs: string[]): Argv {
   let parser: Argv = yargs(rawArgs)
     .scriptName(scriptName)
     .usage("Usage: $0 [command] [options]")
-    .options(GLOBAL_OPTIONS)
-    .middleware((argv) => {
-      // Check if --debug or --no-debug was explicitly passed.
-      const debugExplicitlyPassed = rawArgs.some(
-        (arg) => arg === "--debug" || arg === "--no-debug",
-      );
-
-      if (debugExplicitlyPassed) {
-        setDebugMode(Boolean(argv.debug));
-      } else {
-        setDebugMode(getDebugDefault());
-      }
-    });
+    .options(GLOBAL_OPTIONS);
 
   parser = registerAuthCommands(parser, dependencies);
   parser = registerJobCommands(parser, dependencies);
@@ -162,8 +151,11 @@ function createParser(rawArgs: string[]): Argv {
     });
 }
 
-function loadContextEnv(argv?: ContextArgv): ReturnType<typeof loadEnv> {
-  const env = loadEnv({
+function loadContextEnv(
+  loadedConfig: LoadedConfig | null,
+  argv?: ContextArgv,
+): ReturnType<typeof loadEnv> {
+  const env = loadEnv(loadedConfig, {
     profile: optionalString(argv?.profile),
     url: optionalString(argv?.url),
     user: optionalString(argv?.user),
@@ -196,12 +188,17 @@ async function prepareContext(
   argv: ContextArgv | undefined,
   showIntro: (target?: string) => void,
   interactive: boolean,
+  loadedConfig: LoadedConfig | null,
 ): Promise<CommandContext> {
-  const env = loadContextEnv(argv);
+  const env = loadContextEnv(loadedConfig, argv);
   showIntro(formatPromptTarget(env));
   // Automatically migrate an eligible plaintext profile before command work.
   // Non-interactive runs stay silent to preserve structured output contracts.
-  await maybeMigrateToken({ env, report: interactive });
+  await maybeMigrateToken({
+    env,
+    config: loadedConfig?.config,
+    report: interactive,
+  });
   return buildContext(env);
 }
 
@@ -211,8 +208,20 @@ async function runCommand(
   action: (helpers: {
     showIntro: (target?: string) => void;
     interactive: boolean;
+    loadConfig: () => LoadedConfig | null;
   }) => Promise<void>,
 ): Promise<void> {
+  // The config file is read at most once per command, and only when needed.
+  let loadedConfig: LoadedConfig | null | undefined;
+  const loadConfig = (): LoadedConfig | null => {
+    if (loadedConfig === undefined) {
+      loadedConfig = readConfigSync();
+    }
+    return loadedConfig;
+  };
+  setDebugMode(
+    typeof argv?.debug === "boolean" ? argv.debug : getDebugDefault(loadConfig),
+  );
   // --json implies non-interactive: no prompts, no banner on stdout.
   const interactive =
     !argv?.nonInteractive &&
@@ -236,7 +245,7 @@ async function runCommand(
       target,
     });
   };
-  await action({ showIntro, interactive });
+  await action({ showIntro, interactive, loadConfig });
 }
 
 async function runCommandWithContext<TArgv extends ContextualCommandArgv>(
@@ -249,30 +258,39 @@ async function runCommandWithContext<TArgv extends ContextualCommandArgv>(
     },
   ) => Promise<void>,
 ): Promise<void> {
-  await runCommand(command, argv, async ({ showIntro, interactive }) => {
-    try {
-      const context = await prepareContext(argv, showIntro, interactive);
-      await action({
-        ...context,
-        argv,
-        showIntro,
-      });
-    } catch (error) {
-      if (argv.json) {
-        logCliError(error);
-        emitJsonError(toJsonError(error));
-        process.exitCode ||= 1;
-        return;
+  await runCommand(
+    command,
+    argv,
+    async ({ showIntro, interactive, loadConfig }) => {
+      try {
+        const context = await prepareContext(
+          argv,
+          showIntro,
+          interactive,
+          loadConfig(),
+        );
+        await action({
+          ...context,
+          argv,
+          showIntro,
+        });
+      } catch (error) {
+        if (argv.json) {
+          logCliError(error);
+          emitJsonError(toJsonError(error));
+          process.exitCode ||= 1;
+          return;
+        }
+        if (argv.jsonl) {
+          logCliError(error);
+          emitJsonLine({ type: "error", error: toJsonError(error) });
+          process.exitCode ||= 1;
+          return;
+        }
+        throw error;
       }
-      if (argv.jsonl) {
-        logCliError(error);
-        emitJsonLine({ type: "error", error: toJsonError(error) });
-        process.exitCode ||= 1;
-        return;
-      }
-      throw error;
-    }
-  });
+    },
+  );
 }
 
 function isInteractiveTerminal(): boolean {

@@ -72,6 +72,7 @@ function linuxSecureStore(
 }
 
 type Harness = {
+  config: JenkinsConfig | undefined;
   saved: JenkinsConfig[];
   logs: string[];
   hints: string[];
@@ -90,7 +91,6 @@ function harness(options: {
   const deps: TokenMigrationDeps = {
     isAvailable: () => options.available ?? true,
     secureStore: options.secureStore ?? linuxSecureStore(TOKEN),
-    loadConfig: async () => options.config,
     saveConfig: async (config) => {
       if (options.saveError) {
         throw options.saveError;
@@ -101,7 +101,7 @@ function harness(options: {
     log: (line) => logs.push(line),
     hint: (line) => hints.push(line),
   };
-  return { saved, logs, hints, deps };
+  return { config: options.config ?? undefined, saved, logs, hints, deps };
 }
 
 describe("shouldMigrateToken", () => {
@@ -152,6 +152,7 @@ describe("maybeMigrateToken", () => {
     await maybeMigrateToken({
       env: env(),
       report: true,
+      config: h.config,
       deps: h.deps,
     });
 
@@ -172,6 +173,7 @@ describe("maybeMigrateToken", () => {
     await maybeMigrateToken({
       env: env({ protectedProfileName: "work" }),
       report: false,
+      config: h.config,
       deps: h.deps,
     });
 
@@ -186,6 +188,7 @@ describe("maybeMigrateToken", () => {
     await maybeMigrateToken({
       env: env(),
       report: true,
+      config: h.config,
       deps: h.deps,
     });
 
@@ -202,6 +205,7 @@ describe("maybeMigrateToken", () => {
     await maybeMigrateToken({
       env: env(),
       report: true,
+      config: h.config,
       deps: h.deps,
     });
 
@@ -221,6 +225,7 @@ describe("maybeMigrateToken", () => {
     await maybeMigrateToken({
       env: env(),
       report: true,
+      config: h.config,
       deps: h.deps,
     });
 
@@ -234,6 +239,7 @@ describe("maybeMigrateToken", () => {
     await maybeMigrateToken({
       env: env(),
       report: false,
+      config: h.config,
       deps: h.deps,
     });
 
@@ -251,6 +257,7 @@ describe("maybeMigrateToken", () => {
     await maybeMigrateToken({
       env: env(),
       report: true,
+      config: h.config,
       deps: h.deps,
     });
 
@@ -287,6 +294,7 @@ describe("maybeMigrateToken", () => {
       await maybeMigrateToken({
         env: testCase.env,
         report: false,
+        config: h.config,
         deps: { ...h.deps, isAvailable: probe },
       });
       expect(h.saved).toHaveLength(0);
@@ -300,6 +308,7 @@ describe("maybeMigrateToken", () => {
     await maybeMigrateToken({
       env: env({ profileName: undefined }),
       report: true,
+      config: h.config,
       deps: h.deps,
     });
 
@@ -313,7 +322,12 @@ describe("maybeMigrateToken", () => {
     });
 
     await expect(
-      maybeMigrateToken({ env: env(), report: true, deps: h.deps }),
+      maybeMigrateToken({
+        env: env(),
+        config: h.config,
+        report: true,
+        deps: h.deps,
+      }),
     ).resolves.toBeUndefined();
 
     expect(h.saved).toHaveLength(0);

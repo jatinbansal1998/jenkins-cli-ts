@@ -11,7 +11,6 @@ import {
   type JenkinsConfig,
   type JenkinsProfileConfig,
   KEYCHAIN_TOKEN_SENTINEL,
-  readConfig,
   writeConfig,
 } from "./config";
 import type { EnvConfig } from "./env";
@@ -28,7 +27,6 @@ import {
 export type TokenMigrationDeps = {
   secureStore?: SecureStoreDeps;
   isAvailable?: (deps?: SecureStoreDeps) => boolean | Promise<boolean>;
-  loadConfig?: () => Promise<JenkinsConfig | null>;
   saveConfig?: (config: JenkinsConfig) => Promise<unknown>;
   log?: (line: string) => void;
   hint?: (line: string) => void;
@@ -63,24 +61,22 @@ export function shouldMigrateToken(input: {
  */
 export async function maybeMigrateToken(params: {
   env: EnvConfig;
+  /** The config `env` was loaded from, so the file is not read again. */
+  config: JenkinsConfig | undefined;
   report: boolean;
   deps?: TokenMigrationDeps;
 }): Promise<void> {
   const deps = params.deps ?? {};
   const isAvailable = deps.isAvailable ?? isSecureStoreAvailable;
-  const loadConfig =
-    deps.loadConfig ?? (async () => (await readConfig())?.config ?? null);
   const saveConfig = deps.saveConfig ?? writeConfig;
   const log = params.report ? (deps.log ?? printOk) : () => undefined;
   const hint = params.report ? (deps.hint ?? printHint) : () => undefined;
 
-  // Cheapest checks first: env alone rules out keychain-backed and
-  // profile-less runs without even reading the config file.
   const profileName = params.env.profileName;
   if (!profileName || params.env.tokenStorage === "keychain") {
     return;
   }
-  const config = await loadConfig();
+  const config = params.config;
   const profile = config?.profiles[profileName];
   if (
     !config ||
