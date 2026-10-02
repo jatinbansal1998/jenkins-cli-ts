@@ -1,77 +1,25 @@
-import {
-  afterEach,
-  beforeEach,
-  describe,
-  expect,
-  mock,
-  spyOn,
-  test,
-} from "bun:test";
-import fs from "node:fs";
+import { beforeEach, describe, expect, test } from "bun:test";
+import { mkdir, rm, writeFile } from "node:fs/promises";
+import { join } from "node:path";
 import type { EnvConfig } from "../src/env";
 import type { JenkinsJob } from "../src/types/jenkins";
 
-const realFsPromises = await import("node:fs/promises");
-const realOs = await import("node:os");
+// Keep the cache inside the per-file test home even when the runner sets one.
+process.env.XDG_CACHE_HOME = join(process.env.HOME ?? "", ".cache");
+process.env.LOCALAPPDATA = join(process.env.HOME ?? "", "AppData", "Local");
 
-// Capture the real functions before mock.module replaces the namespace.
-const realRename = realFsPromises.rename.bind(realFsPromises);
-const realRm = realFsPromises.rm.bind(realFsPromises);
+const jobsModule = await import("../src/jobs");
 
-const files = new Map<string, string>();
-const tempHome = "/tmp/jenkins-cli-recent-jobs-tests";
-
-async function renameInMemoryOrReal(fromPath: string, toPath: string) {
-  const value = files.get(fromPath);
-  if (value !== undefined) {
-    files.set(toPath, value);
-    files.delete(fromPath);
-    return;
-  }
-  return await realRename(fromPath, toPath);
-}
-
-async function rmInMemoryOrReal(
-  filePath: string,
-  options?: Parameters<typeof realFsPromises.rm>[1],
-) {
-  if (files.has(filePath)) {
-    files.delete(filePath);
-    return;
-  }
-  return await realRm(filePath, options);
-}
-
-const mkdirMock = mock(fs.promises.mkdir);
-const renameMock = mock(renameInMemoryOrReal);
-const rmMock = mock(rmInMemoryOrReal);
-
-void mock.module("node:fs/promises", () => ({
-  ...realFsPromises,
-  mkdir: mkdirMock,
-  rename: renameMock,
-  rm: rmMock,
-}));
-
-void mock.module("node:os", () => ({
-  ...realOs,
-  homedir: () => tempHome,
-}));
-
-const jobsModule = await import("../src/jobs.ts");
-
-const env = {
+const env: EnvConfig = {
   jenkinsUrl: "https://jenkins.example.com",
   jenkinsUser: "ci-user",
-} satisfies Pick<EnvConfig, "jenkinsUrl" | "jenkinsUser">;
-
-const loadEnv: EnvConfig = {
-  ...env,
   jenkinsApiToken: "test-token",
   branchParamDefault: "BRANCH",
   useCrumb: false,
   folderDepth: 3,
 };
+
+const statePath = jobsModule.getJobStatePath(env.jenkinsUrl);
 
 const cachedJobs: JenkinsJob[] = [
   {
@@ -91,109 +39,102 @@ const cachedJobs: JenkinsJob[] = [
   },
 ];
 
-let bunFileSpy = spyOn(Bun, "file");
-
 describe("recent jobs", () => {
-  beforeEach(() => {
-    files.clear();
-    bunFileSpy = spyOn(Bun, "file");
-    bunFileSpy.mockImplementation(((filePath: string | URL) => {
-      const resolvedPath =
-        typeof filePath === "string" ? filePath : filePath.toString();
-      return {
-        text: async () => {
-          const value = files.get(resolvedPath);
-          if (value !== undefined) {
-            return value;
-          }
-          throw createErrno("ENOENT");
-        },
-        write: async (data: string) => {
-          files.set(resolvedPath, data);
-          return data.length;
-        },
-      } as Bun.BunFile;
-    }) as typeof Bun.file);
-
-    mkdirMock.mockImplementation(async () => undefined);
-    renameMock.mockImplementation(renameInMemoryOrReal);
-    rmMock.mockImplementation(rmInMemoryOrReal);
+  beforeEach(async () => {
+    await rm(jobsModule.getJobCacheDir(), { recursive: true, force: true });
+    await mkdir(jobsModule.getJobCacheDir(), { recursive: true });
   });
 
-  afterEach(() => {
-    bunFileSpy.mockRestore();
-    files.clear();
-  });
-
-  test("loadRecentJobs returns recent jobs in recency order", async () => {
+  test("recordRecentJob moves the job to the front of the state file", async () => {
     const recentJobsModule = await loadRecentJobsModule();
-    writeCacheFixture({
-      jobs: cachedJobs,
-      recentJobs: [
-        " https://jenkins.example.com/job/api/ ",
-        "https://jenkins.example.com/job/worker/",
-      ],
-    });
-
-    const recentJobs = await recentJobsModule.loadRecentJobs({ env: loadEnv });
-
-    expect(recentJobs).toEqual([
-      {
-        url: "https://jenkins.example.com/job/api",
-        label: "platform/api",
-      },
-      {
-        url: "https://jenkins.example.com/job/worker",
-        label: "platform/worker",
-      },
-    ]);
-  });
-
-  test("recordRecentJob updates recency order", async () => {
-    const recentJobsModule = await loadRecentJobsModule();
-    writeCacheFixture({
-      jobs: cachedJobs,
-      recentJobs: ["https://jenkins.example.com/job/worker"],
-    });
+    await seedState({ recentJobs: ["https://jenkins.example.com/job/worker"] });
 
     await recentJobsModule.recordRecentJob({
-      env: loadEnv,
+      env,
       jobUrl: "https://jenkins.example.com/job/api/",
     });
 
-    const cache = await jobsModule.readJobCache(env);
-    expect(cache?.recentJobs).toEqual([
+    const raw = await Bun.file(statePath).text();
+    expect(raw).not.toContain("\n");
+    expect(JSON.parse(raw).recentJobs).toEqual([
       "https://jenkins.example.com/job/api",
       "https://jenkins.example.com/job/worker",
     ]);
   });
 
-  test("recordRecentJob ignores cache write failures", async () => {
+  test("recordRecentJob leaves the job list untouched", async () => {
     const recentJobsModule = await loadRecentJobsModule();
-    writeCacheFixture({
+    const cachePath = jobsModule.getJobCachePath(env.jenkinsUrl);
+    const jobCache = JSON.stringify({
+      jenkinsUrl: env.jenkinsUrl,
+      user: env.jenkinsUser,
+      fetchedAt: "2026-02-12T00:00:00.000Z",
       jobs: cachedJobs,
-      recentJobs: ["https://jenkins.example.com/job/worker"],
+    });
+    await writeFile(cachePath, jobCache);
+
+    await recentJobsModule.recordRecentJob({
+      env,
+      jobUrl: "https://jenkins.example.com/job/api/",
     });
 
-    const writeJobCacheSpy = spyOn(jobsModule, "writeJobCache");
-    writeJobCacheSpy.mockRejectedValue(new Error("disk full"));
+    expect(await Bun.file(cachePath).text()).toBe(jobCache);
+  });
+
+  test("recordRecentJob skips the write when the job is already first", async () => {
+    const recentJobsModule = await loadRecentJobsModule();
+    const seeded = await seedState({
+      recentJobs: ["https://jenkins.example.com/job/api"],
+    });
+
+    await recentJobsModule.recordRecentJob({
+      env,
+      jobUrl: "https://jenkins.example.com/job/api/",
+    });
+
+    expect(await Bun.file(statePath).text()).toBe(seeded);
+  });
+
+  test("concurrent recordRecentJob calls keep every job", async () => {
+    const recentJobsModule = await loadRecentJobsModule();
+    const jobUrls = Array.from(
+      { length: 8 },
+      (_, index) => `https://jenkins.example.com/job/job-${index}`,
+    );
+
+    await Promise.all(
+      jobUrls.map((jobUrl) =>
+        recentJobsModule.recordRecentJob({ env, jobUrl }),
+      ),
+    );
+
+    const state = JSON.parse(await Bun.file(statePath).text()) as {
+      recentJobs: string[];
+    };
+    expect(state.recentJobs.toSorted()).toEqual(jobUrls);
+  });
+
+  test("recordRecentJob ignores state write failures", async () => {
+    const recentJobsModule = await loadRecentJobsModule();
+    // A file where the cache directory should be makes every write fail.
+    await rm(jobsModule.getJobCacheDir(), { recursive: true, force: true });
+    await writeFile(jobsModule.getJobCacheDir(), "");
 
     try {
       await expect(
         recentJobsModule.recordRecentJob({
-          env: loadEnv,
+          env,
           jobUrl: "https://jenkins.example.com/job/api/",
         }),
       ).resolves.toBeUndefined();
     } finally {
-      writeJobCacheSpy.mockRestore();
+      await rm(jobsModule.getJobCacheDir(), { force: true });
     }
   });
 
   test("loadPreferredJobs sorts recent jobs by recency", async () => {
     const recentJobsModule = await loadRecentJobsModule();
-    writeCacheFixture({
-      jobs: cachedJobs,
+    await seedState({
       recentJobs: [
         "https://jenkins.example.com/job/api",
         "https://jenkins.example.com/job/worker",
@@ -201,7 +142,7 @@ describe("recent jobs", () => {
     });
 
     const orderedJobs = await recentJobsModule.loadPreferredJobs({
-      env: loadEnv,
+      env,
       jobs: [
         cachedJobs[2] as JenkinsJob,
         cachedJobs[0] as JenkinsJob,
@@ -217,30 +158,19 @@ describe("recent jobs", () => {
   });
 });
 
-function writeCacheFixture(data: {
-  jobs: JenkinsJob[];
-  recentJobs?: string[];
-}): void {
-  files.set(
-    jobsModule.getJobCachePath(env.jenkinsUrl),
-    JSON.stringify({
-      jenkinsUrl: env.jenkinsUrl,
-      user: env.jenkinsUser,
-      fetchedAt: "2026-02-12T00:00:00.000Z",
-      jobs: data.jobs,
-      ...(data.recentJobs ? { recentJobs: data.recentJobs } : {}),
-    }),
-  );
+/** Pretty-printed on purpose: any rewrite would come back compact. */
+async function seedState(data: { recentJobs: string[] }): Promise<string> {
+  const raw = JSON.stringify(data, null, 2);
+  await writeFile(statePath, raw);
+  return raw;
 }
 
-async function loadRecentJobsModule() {
+// Cache-busting import so another file's mock.module of this module cannot
+// leak into these tests under a shared `bun test` run.
+async function loadRecentJobsModule(): Promise<
+  typeof import("../src/recent-jobs")
+> {
   return await import(
     `../src/recent-jobs.ts?recent-jobs-test=${crypto.randomUUID()}`
   );
-}
-
-function createErrno(code: string, message = code): NodeJS.ErrnoException {
-  const error = new Error(message) as NodeJS.ErrnoException;
-  error.code = code;
-  return error;
 }

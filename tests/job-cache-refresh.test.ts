@@ -62,13 +62,8 @@ void mock.module("node:os", () => ({
   homedir: () => tempHome,
 }));
 
-// Import fresh per test (cache-busting) so concurrent test files that call
-// mock.module("../src/jobs", ...) don't mutate the reference we use here.
-let jobsModule = await loadFreshJobsModule();
-
-async function loadFreshJobsModule() {
-  return import(`../src/jobs?cache-refresh-test=${crypto.randomUUID()}`);
-}
+// Imported after mock.module so the module binds to the in-memory fs.
+const jobsModule = await import("../src/jobs");
 
 const env = {
   jenkinsUrl: "https://jenkins.example.com",
@@ -86,8 +81,7 @@ const loadEnv: EnvConfig = {
 let bunFileSpy = spyOn(Bun, "file");
 
 describe("job cache refresh", () => {
-  beforeEach(async () => {
-    jobsModule = await loadFreshJobsModule();
+  beforeEach(() => {
     files.clear();
     bunFileSpy = spyOn(Bun, "file");
     bunFileSpy.mockImplementation(((filePath: string | URL) => {
@@ -309,7 +303,7 @@ describe("job cache refresh", () => {
     }
   });
 
-  test("refresh replaces removed jobs and trims stale recent entries", async () => {
+  test("refresh replaces removed jobs and writes compact JSON", async () => {
     const cachePath = jobsModule.getJobCachePath(env.jenkinsUrl);
     files.set(
       cachePath,
@@ -319,26 +313,14 @@ describe("job cache refresh", () => {
         folderDepth: loadEnv.folderDepth,
         fetchedAt: "2026-02-12T00:00:00.000Z",
         jobs: [
-          {
-            name: "keep",
-            url: "https://jenkins.example.com/job/keep",
-            branches: ["release", "main"],
-          },
-          {
-            name: "removed",
-            url: "https://jenkins.example.com/job/removed",
-            branches: ["old-branch"],
-          },
-        ],
-        recentJobs: [
-          "https://jenkins.example.com/job/keep",
-          "https://jenkins.example.com/job/removed",
+          { name: "keep", url: "https://jenkins.example.com/job/keep" },
+          { name: "removed", url: "https://jenkins.example.com/job/removed" },
         ],
       }),
     );
 
     const refreshedJobs: JenkinsJob[] = [
-      { name: "keep", url: "https://jenkins.example.com/job/keep" },
+      { name: "keep", url: " https://jenkins.example.com/job/keep/ " },
       { name: "fresh", url: "https://jenkins.example.com/job/fresh" },
     ];
 
@@ -348,170 +330,19 @@ describe("job cache refresh", () => {
       } as unknown as JenkinsClient,
       env: loadEnv,
       refresh: true,
-      nonInteractive: true,
     });
 
     expect(result).toEqual(refreshedJobs);
+    expect(files.get(cachePath)).not.toContain("\n");
 
     const cache = await jobsModule.readJobCache(env);
-    expect(cache).not.toBeNull();
     expect(cache?.jobs).toEqual([
-      {
-        name: "keep",
-        url: "https://jenkins.example.com/job/keep",
-        branches: ["release", "main"],
-      },
-      {
-        name: "fresh",
-        url: "https://jenkins.example.com/job/fresh",
-      },
-    ]);
-    expect(cache?.recentJobs).toEqual(["https://jenkins.example.com/job/keep"]);
-  });
-
-  test("refresh canonicalizes trailing slashes in recent jobs before dedupe", async () => {
-    const cachePath = jobsModule.getJobCachePath(env.jenkinsUrl);
-    files.set(
-      cachePath,
-      JSON.stringify({
-        jenkinsUrl: env.jenkinsUrl,
-        user: env.jenkinsUser,
-        folderDepth: loadEnv.folderDepth,
-        fetchedAt: "2026-02-12T00:00:00.000Z",
-        jobs: [{ name: "keep", url: "https://jenkins.example.com/job/keep" }],
-        recentJobs: [
-          "https://jenkins.example.com/job/keep/",
-          " https://jenkins.example.com/job/keep ",
-        ],
-      }),
-    );
-
-    const refreshedJobs: JenkinsJob[] = [
       { name: "keep", url: "https://jenkins.example.com/job/keep" },
-    ];
-
-    const result = await jobsModule.loadJobs({
-      client: {
-        listJobs: mock(async () => refreshedJobs),
-      } as unknown as JenkinsClient,
-      env: loadEnv,
-      refresh: true,
-      nonInteractive: true,
-    });
-
-    expect(result).toEqual(refreshedJobs);
-
-    const cache = await jobsModule.readJobCache(env);
-    expect(cache).not.toBeNull();
-    expect(cache?.recentJobs).toEqual(["https://jenkins.example.com/job/keep"]);
-  });
-
-  test("refresh keeps recent jobs when live job URLs only differ by trailing slash", async () => {
-    const cachePath = jobsModule.getJobCachePath(env.jenkinsUrl);
-    files.set(
-      cachePath,
-      JSON.stringify({
-        jenkinsUrl: env.jenkinsUrl,
-        user: env.jenkinsUser,
-        folderDepth: loadEnv.folderDepth,
-        fetchedAt: "2026-02-12T00:00:00.000Z",
-        jobs: [{ name: "keep", url: "https://jenkins.example.com/job/keep" }],
-        recentJobs: ["https://jenkins.example.com/job/keep"],
-      }),
-    );
-
-    const refreshedJobs: JenkinsJob[] = [
-      { name: "keep", url: " https://jenkins.example.com/job/keep/ " },
-    ];
-
-    const result = await jobsModule.loadJobs({
-      client: {
-        listJobs: mock(async () => refreshedJobs),
-      } as unknown as JenkinsClient,
-      env: loadEnv,
-      refresh: true,
-      nonInteractive: true,
-    });
-
-    expect(result).toEqual(refreshedJobs);
-
-    const cache = await jobsModule.readJobCache(env);
-    expect(cache).not.toBeNull();
-    expect(cache?.recentJobs).toEqual(["https://jenkins.example.com/job/keep"]);
-  });
-
-  test("refresh canonicalizes known stage totals and preserves branches across slash variants", async () => {
-    const cachePath = jobsModule.getJobCachePath(env.jenkinsUrl);
-    files.set(
-      cachePath,
-      JSON.stringify({
-        jenkinsUrl: env.jenkinsUrl,
-        user: env.jenkinsUser,
-        folderDepth: loadEnv.folderDepth,
-        fetchedAt: "2026-02-12T00:00:00.000Z",
-        jobs: [
-          {
-            name: "keep",
-            url: "https://jenkins.example.com/job/keep",
-            branches: ["release"],
-          },
-        ],
-        knownStageTotals: {
-          "https://jenkins.example.com/job/keep/": {
-            totalStages: 3,
-            updatedAt: "2026-02-12T00:00:00.000Z",
-          },
-        },
-      }),
-    );
-
-    await jobsModule.loadJobs({
-      client: {
-        listJobs: mock(async () => [
-          { name: "keep", url: " https://jenkins.example.com/job/keep/ " },
-        ]),
-      } as unknown as JenkinsClient,
-      env: loadEnv,
-      refresh: true,
-      nonInteractive: true,
-    });
-
-    const cache = await jobsModule.readJobCache(env);
-    expect(cache).not.toBeNull();
-    expect(cache?.jobs).toEqual([
-      {
-        name: "keep",
-        url: "https://jenkins.example.com/job/keep",
-        branches: ["release"],
-      },
+      { name: "fresh", url: "https://jenkins.example.com/job/fresh" },
     ]);
-    expect(cache?.knownStageTotals).toEqual({
-      "https://jenkins.example.com/job/keep": {
-        totalStages: 3,
-        updatedAt: "2026-02-12T00:00:00.000Z",
-      },
-    });
   });
 
-  test("refresh persists activity metadata alongside carried-forward branches", async () => {
-    const cachePath = jobsModule.getJobCachePath(env.jenkinsUrl);
-    files.set(
-      cachePath,
-      JSON.stringify({
-        jenkinsUrl: env.jenkinsUrl,
-        user: env.jenkinsUser,
-        folderDepth: loadEnv.folderDepth,
-        fetchedAt: "2026-02-12T00:00:00.000Z",
-        jobs: [
-          {
-            name: "keep",
-            url: "https://jenkins.example.com/job/keep",
-            branches: ["release"],
-          },
-        ],
-      }),
-    );
-
+  test("refresh persists activity metadata", async () => {
     const refreshedJobs: JenkinsJob[] = [
       {
         name: "keep",
@@ -539,31 +370,10 @@ describe("job cache refresh", () => {
       } as unknown as JenkinsClient,
       env: loadEnv,
       refresh: true,
-      nonInteractive: true,
     });
 
     const cache = await jobsModule.readJobCache(env);
-    expect(cache?.jobs).toEqual([
-      {
-        name: "keep",
-        url: "https://jenkins.example.com/job/keep",
-        branches: ["release"],
-        disabled: false,
-        lastBuild: {
-          number: 12,
-          url: "https://jenkins.example.com/job/keep/12/",
-          result: "SUCCESS",
-          building: false,
-          timestampMs: 1767225600000,
-        },
-      },
-      {
-        name: "off",
-        url: "https://jenkins.example.com/job/off",
-        disabled: true,
-        lastBuild: null,
-      },
-    ]);
+    expect(cache?.jobs).toEqual(refreshedJobs);
   });
 
   test("legacy caches without activity metadata stay readable and malformed metadata is discarded", async () => {
@@ -600,7 +410,6 @@ describe("job cache refresh", () => {
         }),
       } as unknown as JenkinsClient,
       env: loadEnv,
-      nonInteractive: true,
     });
 
     expect(jobs).toEqual([
@@ -652,7 +461,6 @@ describe("job cache refresh", () => {
         } as unknown as JenkinsClient,
         env: loadEnv,
         refresh: true,
-        nonInteractive: true,
       }),
     ).rejects.toThrow("rename failed");
 

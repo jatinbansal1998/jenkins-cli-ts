@@ -2270,6 +2270,54 @@ describe.skipIf(!integrationEnabled)(
       });
     }, 120_000);
 
+    test("keeps recent jobs, branches, and stage totals out of the job list", async () => {
+      await withCliHome(async (home) => {
+        await runCli(home, ["list", "--refresh", "--json"]);
+        const cachePath = await findJobCachePath(home);
+        const jobList = await Bun.file(cachePath).text();
+        expect(jobList).not.toContain("\n");
+
+        const pipelineUrl = `${jenkinsUrl}/job/cli-pipeline`;
+        const built = await runCli(home, [
+          "build",
+          "--job-url",
+          `${pipelineUrl}/`,
+          "--branch",
+          "release/integration",
+          "--watch",
+        ]);
+        expect(built.output).toContain("SUCCESS");
+
+        // Parallel commands must not drop each other's recent-job updates.
+        const statusJobUrls = [
+          "cli-smoke",
+          "cli-failure",
+          "cli-pipeline-failure",
+          "cli-pipeline",
+        ].map((name) => `${jenkinsUrl}/job/${name}`);
+        await Promise.all(
+          statusJobUrls.map((jobUrl) =>
+            runCli(home, ["status", "--job-url", `${jobUrl}/`, "--json"]),
+          ),
+        );
+
+        expect(await Bun.file(cachePath).text()).toBe(jobList);
+        const state = JSON.parse(
+          await Bun.file(await findJobStatePath(home)).text(),
+        ) as {
+          recentJobs: string[];
+          branches: Record<string, string[]>;
+          knownStageTotals: Record<string, { totalStages: number }>;
+        };
+        expect(state.recentJobs).toEqual(expect.arrayContaining(statusJobUrls));
+        const pipelineKey = pipelineUrl.toLowerCase();
+        expect(state.branches[pipelineKey]?.[0]).toBe("release/integration");
+        expect(
+          state.knownStageTotals[pipelineKey]?.totalStages,
+        ).toBeGreaterThan(0);
+      });
+    }, 120_000);
+
     test("reports attributable git revisions for status and history", async () => {
       await withCliHome(async (home) => {
         const jobUrl = `${jenkinsUrl}/job/cli-git-revisions/`;
@@ -3920,4 +3968,12 @@ async function findJobCachePath(home: string): Promise<string> {
     return join(home, match);
   }
   throw new Error(`No job cache written under ${home}`);
+}
+
+async function findJobStatePath(home: string): Promise<string> {
+  const glob = new Bun.Glob("**/jenkins-cli/state-*.json");
+  for await (const match of glob.scan({ cwd: home, dot: true })) {
+    return join(home, match);
+  }
+  throw new Error(`No job state written under ${home}`);
 }

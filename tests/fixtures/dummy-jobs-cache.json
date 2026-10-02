@@ -6,24 +6,17 @@
     {
       "name": "api-staging",
       "fullName": "platform/api-staging",
-      "url": "https://jenkins.example.com/job/api-staging/",
-      "branches": ["main", "release/2026.02"]
+      "url": "https://jenkins.example.com/job/api-staging/"
     },
     {
       "name": "api-prod",
       "fullName": "platform/api-prod",
-      "url": "https://jenkins.example.com/job/api-prod/",
-      "branches": ["main", "release/2026.02"]
+      "url": "https://jenkins.example.com/job/api-prod/"
     },
     {
       "name": "worker-staging",
       "fullName": "platform/worker-staging",
-      "url": "https://jenkins.example.com/job/worker-staging/",
-      "branches": ["main", "release/2026.02", "feature/mock-e2e"]
+      "url": "https://jenkins.example.com/job/worker-staging/"
     }
-  ],
-  "recentJobs": [
-    "https://jenkins.example.com/job/api-staging/",
-    "https://jenkins.example.com/job/worker-staging/"
   ]
 }

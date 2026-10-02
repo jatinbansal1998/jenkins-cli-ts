@@ -1,10 +1,10 @@
 /**
  * Branch selection cache for build command.
- * Stores recently used branches per job inside jobs.json.
+ * Stores recently used branches per job in the job state file.
  */
 import type { EnvConfig } from "./env";
-import { findJobByUrl } from "./job-url";
-import { readUsableJobCache, writeJobCache } from "./jobs";
+import { getJobUrlKey } from "./job-url";
+import { readJobState, updateJobState } from "./job-state";
 
 const MAX_BRANCHES_PER_JOB = 10;
 const DEFAULT_BRANCHES = ["development", "staging", "master"];
@@ -24,17 +24,12 @@ export async function loadCachedBranchHistory(options: {
   env: EnvConfig;
   jobUrl: string;
 }): Promise<string[]> {
-  const cache = await readUsableJobCache(options.env);
-  if (!cache) {
+  const jobKey = getJobUrlKey(options.jobUrl);
+  if (!jobKey) {
     return [];
   }
-  const job = findJobByUrl(cache.jobs, options.jobUrl);
-  const entries = job?.branches;
-  if (!Array.isArray(entries)) {
-    return [];
-  }
-  const normalized = entries
-    .filter((entry): entry is string => typeof entry === "string")
+  const { branches } = await readJobState(options.env.jenkinsUrl);
+  const normalized = (branches[jobKey] ?? [])
     .map((entry) => entry.trim())
     .filter((entry) => entry.length > 0)
     .filter((entry) => !isDefaultBranch(entry));
@@ -47,26 +42,21 @@ export async function removeCachedBranch(options: {
   branch: string;
 }): Promise<boolean> {
   const target = options.branch.trim();
-  if (!target || isDefaultBranch(target)) {
+  const jobKey = getJobUrlKey(options.jobUrl);
+  if (!target || isDefaultBranch(target) || !jobKey) {
     return false;
   }
-  const cache = await readUsableJobCache(options.env);
-  if (!cache) {
-    return false;
-  }
-  const job = findJobByUrl(cache.jobs, options.jobUrl);
-  if (!job || !Array.isArray(job.branches) || job.branches.length === 0) {
-    return false;
-  }
-  const updated = job.branches.filter(
-    (entry) => entry.toLowerCase() !== target.toLowerCase(),
-  );
-  if (updated.length === job.branches.length) {
-    return false;
-  }
-  job.branches = updated;
-  await writeJobCache(cache);
-  return true;
+  let removed = false;
+  await updateJobState(options.env.jenkinsUrl, (state) => {
+    const existing = state.branches[jobKey] ?? [];
+    const updated = removeBranch(existing, target);
+    if (updated.length === existing.length) {
+      return undefined;
+    }
+    removed = true;
+    return { ...state, branches: { ...state.branches, [jobKey]: updated } };
+  });
+  return removed;
 }
 
 export async function recordBranchSelection(options: {
@@ -74,29 +64,22 @@ export async function recordBranchSelection(options: {
   jobUrl: string;
   branch: string;
 }): Promise<void> {
-  const normalizedBranch = options.branch.trim();
-  if (!normalizedBranch) {
+  const branch = options.branch.trim();
+  const jobKey = getJobUrlKey(options.jobUrl);
+  if (!branch || !jobKey) {
     return;
   }
-  const cache = await readUsableJobCache(options.env);
-  if (!cache) {
-    return;
-  }
-  const job = findJobByUrl(cache.jobs, options.jobUrl);
-  if (!job) {
-    return;
-  }
-  const existingBranches = Array.isArray(job.branches)
-    ? job.branches
-        .filter((entry): entry is string => typeof entry === "string")
-        .map((entry) => entry.trim())
-        .filter((entry) => entry.length > 0)
-    : [];
-  const deduped = existingBranches.filter(
-    (entry) => entry.toLowerCase() !== normalizedBranch.toLowerCase(),
-  );
-  job.branches = [normalizedBranch, ...deduped].slice(0, MAX_BRANCHES_PER_JOB);
-  await writeJobCache(cache);
+  await updateJobState(options.env.jenkinsUrl, (state) => {
+    const existing = state.branches[jobKey] ?? [];
+    if (existing[0] === branch) {
+      return undefined;
+    }
+    const updated = [branch, ...removeBranch(existing, branch)].slice(
+      0,
+      MAX_BRANCHES_PER_JOB,
+    );
+    return { ...state, branches: { ...state.branches, [jobKey]: updated } };
+  });
 }
 
 function isDefaultBranch(branch: string): boolean {
