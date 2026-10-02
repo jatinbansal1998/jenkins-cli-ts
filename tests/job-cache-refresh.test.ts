@@ -62,13 +62,8 @@ void mock.module("node:os", () => ({
   homedir: () => tempHome,
 }));
 
-// Import fresh per test (cache-busting) so concurrent test files that call
-// mock.module("../src/jobs", ...) don't mutate the reference we use here.
-let jobsModule = await loadFreshJobsModule();
-
-async function loadFreshJobsModule() {
-  return import(`../src/jobs?cache-refresh-test=${crypto.randomUUID()}`);
-}
+// Imported after mock.module so the module binds to the in-memory fs.
+const jobsModule = await import("../src/jobs");
 
 const env = {
   jenkinsUrl: "https://jenkins.example.com",
@@ -86,8 +81,7 @@ const loadEnv: EnvConfig = {
 let bunFileSpy = spyOn(Bun, "file");
 
 describe("job cache refresh", () => {
-  beforeEach(async () => {
-    jobsModule = await loadFreshJobsModule();
+  beforeEach(() => {
     files.clear();
     bunFileSpy = spyOn(Bun, "file");
     bunFileSpy.mockImplementation(((filePath: string | URL) => {
@@ -336,7 +330,6 @@ describe("job cache refresh", () => {
       } as unknown as JenkinsClient,
       env: loadEnv,
       refresh: true,
-      nonInteractive: true,
     });
 
     expect(result).toEqual(refreshedJobs);
@@ -377,7 +370,6 @@ describe("job cache refresh", () => {
       } as unknown as JenkinsClient,
       env: loadEnv,
       refresh: true,
-      nonInteractive: true,
     });
 
     const cache = await jobsModule.readJobCache(env);
@@ -418,7 +410,6 @@ describe("job cache refresh", () => {
         }),
       } as unknown as JenkinsClient,
       env: loadEnv,
-      nonInteractive: true,
     });
 
     expect(jobs).toEqual([
@@ -470,7 +461,6 @@ describe("job cache refresh", () => {
         } as unknown as JenkinsClient,
         env: loadEnv,
         refresh: true,
-        nonInteractive: true,
       }),
     ).rejects.toThrow("rename failed");
 

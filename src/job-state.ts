@@ -9,7 +9,7 @@ import { lock } from "proper-lockfile";
 import { getJobCacheDir, getJobStatePath, writeJsonFile } from "./jobs";
 import { normalizeRecentJobs } from "./recent-job-data";
 
-export type KnownStageTotal = {
+type KnownStageTotal = {
   totalStages: number;
   updatedAt: string;
 };
