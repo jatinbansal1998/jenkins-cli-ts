@@ -24,6 +24,23 @@ describe("status formatting", () => {
     ).toContain("Last build for api: #18");
   });
 
+  test("bolds the result only when color is enabled", () => {
+    const savedNoColor = process.env.NO_COLOR;
+    const savedForceColor = process.env.FORCE_COLOR;
+    try {
+      delete process.env.NO_COLOR;
+      process.env.FORCE_COLOR = "1";
+      expect(failedSummary()).toContain("\u001b[1mFAILURE");
+
+      delete process.env.FORCE_COLOR;
+      process.env.NO_COLOR = "1";
+      expect(failedSummary()).toBe("Last build for api: #7 FAILURE");
+    } finally {
+      restoreEnv("NO_COLOR", savedNoColor);
+      restoreEnv("FORCE_COLOR", savedForceColor);
+    }
+  });
+
   test("shows only stage content without an ordinal when total is unknown", () => {
     const message = formatCompactStatus({
       buildNumber: 417,
@@ -141,3 +158,19 @@ describe("status formatting", () => {
     expect(message).not.toContain("Stage: 2:");
   });
 });
+
+function failedSummary(): string {
+  return formatStatusSummary({
+    jobLabel: "api",
+    buildNumber: 7,
+    result: "FAILURE",
+  });
+}
+
+function restoreEnv(key: string, value: string | undefined): void {
+  if (value === undefined) {
+    delete process.env[key];
+    return;
+  }
+  process.env[key] = value;
+}

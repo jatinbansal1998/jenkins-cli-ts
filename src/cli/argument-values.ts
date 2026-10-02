@@ -28,28 +28,38 @@ export function parseBuildCustomParams(
   const params: Record<string, string> = {};
   for (const entry of entries) {
     if (typeof entry !== "string") {
-      throw new CliError("Invalid --param value.", [
-        "Expected each --param entry to be a string in KEY=VALUE format.",
-        "Use --param KEY=VALUE (example: --param DEPLOY_ENV=staging).",
-      ]);
+      throw new CliError(
+        "Invalid --param value.",
+        [
+          "Expected each --param entry to be a string in KEY=VALUE format.",
+          "Use --param KEY=VALUE (example: --param DEPLOY_ENV=staging).",
+        ],
+        "INVALID_USAGE",
+      );
     }
     const equalsIndex = entry.indexOf("=");
     if (equalsIndex <= 0) {
-      throw new CliError("Invalid --param value.", [
-        "Use --param KEY=VALUE (example: --param DEPLOY_ENV=staging).",
-      ]);
+      throw new CliError(
+        "Invalid --param value.",
+        ["Use --param KEY=VALUE (example: --param DEPLOY_ENV=staging)."],
+        "INVALID_USAGE",
+      );
     }
     const key = entry.slice(0, equalsIndex).trim();
     const paramValue = entry.slice(equalsIndex + 1);
     if (!key) {
-      throw new CliError("Invalid --param value.", [
-        "Parameter name cannot be empty.",
-      ]);
+      throw new CliError(
+        "Invalid --param value.",
+        ["Parameter name cannot be empty."],
+        "INVALID_USAGE",
+      );
     }
     if (Object.hasOwn(params, key)) {
-      throw new CliError(`Duplicate --param key "${key}".`, [
-        "Use unique parameter names when passing --param multiple times.",
-      ]);
+      throw new CliError(
+        `Duplicate --param key "${key}".`,
+        ["Use unique parameter names when passing --param multiple times."],
+        "INVALID_USAGE",
+      );
     }
     params[key] = paramValue;
   }

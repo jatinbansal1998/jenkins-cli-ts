@@ -10,7 +10,8 @@
  * callback so tests can capture stdout without spying on `process.stdout`.
  */
 import { logCliError } from "./logger";
-import { CliError } from "./cli";
+import { CliError, writeStdout } from "./cli";
+import { exitCodeFor } from "./error-codes";
 import type {
   ArtifactEntry,
   BuildStatus,
@@ -29,10 +30,6 @@ import type { AuthDiagnosticsResult } from "./auth-diagnostics";
 
 /** Sink for the single JSON document. Defaults to stdout. */
 export type JsonWrite = (text: string) => void;
-
-const defaultWrite: JsonWrite = (text) => {
-  process.stdout.write(text);
-};
 
 /** Normalized pipeline stage in JSON output. */
 type JsonStage = {
@@ -237,7 +234,7 @@ export type JsonLogIdentity = {
 export function emitJsonSuccess<T>(
   command: string,
   data: T,
-  write: JsonWrite = defaultWrite,
+  write: JsonWrite = writeStdout,
 ): void {
   const payload: JsonSuccess<T> = { ok: true, command, data };
   write(`${JSON.stringify(payload)}\n`);
@@ -246,7 +243,7 @@ export function emitJsonSuccess<T>(
 /** Emit an error envelope: `{ ok: false, error: { message, code } }`. */
 export function emitJsonError(
   error: JsonErrorBody,
-  write: JsonWrite = defaultWrite,
+  write: JsonWrite = writeStdout,
 ): void {
   const payload: JsonError = { ok: false, error };
   write(`${JSON.stringify(payload)}\n`);
@@ -255,7 +252,7 @@ export function emitJsonError(
 /** Emit one compact JSON event followed by a newline. */
 export function emitJsonLine(
   event: JsonLogEvent,
-  write: JsonWrite = defaultWrite,
+  write: JsonWrite = writeStdout,
 ): void {
   write(`${JSON.stringify(event)}\n`);
 }
@@ -263,7 +260,7 @@ export function emitJsonLine(
 /** Convert an arbitrary thrown value into a stable JSON error body. */
 export function toJsonError(error: unknown): JsonErrorBody {
   if (error instanceof CliError) {
-    return { message: error.message, code: error.code ?? "CLI_ERROR" };
+    return { message: error.message, code: error.code };
   }
   if (error instanceof Error) {
     return {
@@ -285,16 +282,14 @@ export async function runJsonCommand<T>(
   run: () => Promise<T>,
   options: { write?: JsonWrite } = {},
 ): Promise<void> {
-  const write = options.write ?? defaultWrite;
+  const write = options.write ?? writeStdout;
   try {
     const data = await run();
     emitJsonSuccess(command, data, write);
   } catch (error) {
     logCliError(error);
     emitJsonError(toJsonError(error), write);
-    if (!process.exitCode) {
-      process.exitCode = 1;
-    }
+    process.exitCode ||= exitCodeFor(error);
   }
 }
 

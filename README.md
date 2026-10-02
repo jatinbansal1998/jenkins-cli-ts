@@ -139,9 +139,35 @@ jenkins-cli logs --job api --build 42 --jsonl
 streaming uses `--jsonl` instead. Diagnostics go to stderr.
 
 For text output without prompts, pass `--non-interactive`. Pipeline input
-approval and abort also require `--yes` in non-interactive runs. `wait` exits
-with `0` on success, `1` on a non-success result, `124` on timeout, or `130` when
-interrupted.
+approval and abort also require `--yes` in non-interactive runs.
+
+`--quiet` prints nothing except errors, which still go to stderr, so a script
+can read the result from the exit code alone. It implies `--non-interactive`,
+skips the background update check, and cannot be combined with `--json` or
+`--jsonl`. Help and `--version` still print.
+
+Color is used only on a terminal. `--no-color` or `NO_COLOR=1` turns it off;
+`FORCE_COLOR=1` keeps it on when output is piped.
+
+## Exit codes
+
+The exit code is derived from the error `code` in `--json` output, so both stay
+in step.
+
+| Exit  | Meaning                                                                                                      | Example error codes                                            |
+| ----- | ------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------- |
+| `0`   | Success                                                                                                      |                                                                |
+| `1`   | The build or operation finished unsuccessfully (for example `build --watch` saw `FAILURE`), or another error | `CANCEL_INCOMPLETE`, `UPDATE_FAILED`, `UNEXPECTED_ERROR`       |
+| `2`   | Usage: invalid flags, arguments, or config file, or a request Jenkins rejected with HTTP 400                 | `INVALID_USAGE`, `INVALID_BUILD_SELECTOR`, `CONFIG_INVALID`    |
+| `3`   | Authentication: missing, unreadable, or rejected credentials                                                 | `CREDENTIALS_MISSING`, `JENKINS_AUTH_ERROR`                    |
+| `4`   | Not found: job, build, stage, queue item, input, artifact, or profile                                        | `JOB_NOT_FOUND`, `BUILD_NOT_FOUND`, `JENKINS_NOT_FOUND`        |
+| `5`   | A write was refused because the profile is read-only                                                         | `PROFILE_PROTECTED`                                            |
+| `6`   | Jenkins was unreachable, timed out, or returned an error or unexpected response                              | `JENKINS_UNREACHABLE`, `JENKINS_TIMEOUT`, `JENKINS_HTTP_ERROR` |
+| `124` | `wait --timeout` elapsed before the build finished                                                           |                                                                |
+| `130` | Interrupted with Ctrl+C, or a prompt was cancelled                                                           | `OPERATION_CANCELLED`                                          |
+
+The full list of error codes and their exit codes is in
+[`src/error-codes.ts`](src/error-codes.ts).
 
 ## Diagnostics and privacy
 

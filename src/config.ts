@@ -108,9 +108,11 @@ export function readConfigSync(): LoadedConfig | null {
     if (error instanceof CliError) {
       throw error;
     }
-    throw new CliError("Unable to read config file.", [
-      `Check permissions for ${CONFIG_FILE}.`,
-    ]);
+    throw new CliError(
+      "Unable to read config file.",
+      [`Check permissions for ${CONFIG_FILE}.`],
+      "CONFIG_INVALID",
+    );
   }
 }
 
@@ -130,9 +132,11 @@ export async function readConfig(): Promise<LoadedConfig | null> {
     if (error instanceof CliError) {
       throw error;
     }
-    throw new CliError("Unable to read config file.", [
-      `Check permissions for ${CONFIG_FILE}.`,
-    ]);
+    throw new CliError(
+      "Unable to read config file.",
+      [`Check permissions for ${CONFIG_FILE}.`],
+      "CONFIG_INVALID",
+    );
   }
 }
 
@@ -155,9 +159,11 @@ export async function writeConfigFile(input: ConfigFileInput): Promise<string> {
     input.profile ?? resolveDefaultProfileName(current) ?? DEFAULT_PROFILE_NAME,
   );
   if (!profileName) {
-    throw new CliError("Profile name is required.", [
-      "Pass --profile <name> to select a profile.",
-    ]);
+    throw new CliError(
+      "Profile name is required.",
+      ["Pass --profile <name> to select a profile."],
+      "INVALID_USAGE",
+    );
   }
 
   const existingProfile = current.profiles[profileName];
@@ -260,15 +266,19 @@ function parseConfigContents(
   try {
     parsed = JSON.parse(contents);
   } catch {
-    throw new CliError("Invalid config file JSON.", [
-      `Fix the JSON in ${configPath}.`,
-    ]);
+    throw new CliError(
+      "Invalid config file JSON.",
+      [`Fix the JSON in ${configPath}.`],
+      "CONFIG_INVALID",
+    );
   }
 
   if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-    throw new CliError("Invalid config file format.", [
-      `Expected a JSON object in ${configPath}.`,
-    ]);
+    throw new CliError(
+      "Invalid config file format.",
+      [`Expected a JSON object in ${configPath}.`],
+      "CONFIG_INVALID",
+    );
   }
 
   const record = parsed as Record<string, unknown>;
@@ -323,9 +333,11 @@ function parseProfiles(
     typeof rawProfiles !== "object" ||
     Array.isArray(rawProfiles)
   ) {
-    throw new CliError("Invalid config file format.", [
-      `Expected "profiles" to be an object in ${configPath}.`,
-    ]);
+    throw new CliError(
+      "Invalid config file format.",
+      [`Expected "profiles" to be an object in ${configPath}.`],
+      "CONFIG_INVALID",
+    );
   }
 
   const result: Record<string, JenkinsProfileConfig> = {};

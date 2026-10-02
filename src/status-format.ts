@@ -1,7 +1,5 @@
+import { styleText } from "node:util";
 import type { BuildStatus, JenkinsPipelineStage } from "./types/jenkins";
-
-const ANSI_BOLD = "\u001b[1m";
-const ANSI_RESET = "\u001b[0m";
 
 export type StatusDetails = BuildStatus & {
   knownTotalStages?: number;
@@ -121,7 +119,7 @@ export function formatCompactStatus(options: {
 }
 
 function bold(value: string): string {
-  return `${ANSI_BOLD}${value}${ANSI_RESET}`;
+  return styleText("bold", value);
 }
 
 function formatLabelValue(label: string, value: string): string {

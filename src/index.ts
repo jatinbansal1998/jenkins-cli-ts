@@ -14,10 +14,13 @@ import { printFullHelp, printJsonHelp } from "./cli/full-help";
 import { JSON_COMMANDS } from "./cli/json-commands";
 import { getRootHelpEpilog } from "./cli/help-epilog";
 import {
+  applyOutputOptions,
+  GLOBAL_BOOLEAN_OPTIONS,
   GLOBAL_OPTIONS,
   isJsonLinesOutputRequested,
   isJsonOutputRequested,
   optionalString,
+  validateOutputOptions,
 } from "./cli/options";
 import { registerAuthCommands } from "./cli/register-auth-commands";
 import { registerBuildCommands } from "./cli/register-build-commands";
@@ -49,6 +52,7 @@ import { formatPromptTarget } from "./tui-target";
 import { kickOffAutoUpdate, readUpdateState } from "./update";
 import { BUILD_TARGET } from "./build-target";
 import { emitJsonError, emitJsonLine, toJsonError } from "./json-output";
+import { exitCodeFor } from "./error-codes";
 import packageJson from "../package.json";
 
 // Keep these public helpers as declarations owned by this entry point. Bun's
@@ -79,11 +83,9 @@ async function main(): Promise<void> {
   }
   // yargs treats a trailing positional "help" as --help before dispatching
   // command handlers. Parse global option types before handling the catalog.
-  const helpRequest = parseArgs(rawArgs, {
+  const startupFlags = parseArgs(rawArgs, {
     boolean: [
-      ...Object.entries(GLOBAL_OPTIONS)
-        .filter(([, option]) => option.type === "boolean")
-        .map(([name]) => name),
+      ...GLOBAL_BOOLEAN_OPTIONS,
       "full",
       "jsonl",
       "help",
@@ -92,18 +94,25 @@ async function main(): Promise<void> {
       "v",
     ],
   });
-  const isHelpCommand = helpRequest._[0] === "help";
+  validateOutputOptions(startupFlags);
+  const isHelpCommand = startupFlags._[0] === "help";
   if (isHelpCommand && isJsonLinesOutputRequested(rawArgs)) {
-    throw new CliError("'help' does not support --jsonl output.");
+    throw new CliError(
+      "'help' does not support --jsonl output.",
+      [],
+      "INVALID_USAGE",
+    );
   }
   if (isHelpCommand && isJsonOutputRequested(rawArgs)) {
     await printJsonHelp(scriptName, VERSION, createParser);
     return;
   }
-  if (isHelpCommand && helpRequest.full === true) {
+  if (isHelpCommand && startupFlags.full === true) {
     await printFullHelp(scriptName, createParser);
     return;
   }
+  // Help was explicitly asked for, so --quiet only silences what follows.
+  applyOutputOptions(startupFlags);
 
   const updateState = await readUpdateState();
   kickOffMinimumVersionRefresh({ rawArgs, state: updateState });
@@ -125,7 +134,12 @@ function createParser(rawArgs: string[]): Argv {
   let parser: Argv = yargs(rawArgs)
     .scriptName(scriptName)
     .usage("Usage: $0 [command] [options]")
-    .options(GLOBAL_OPTIONS);
+    .options(GLOBAL_OPTIONS)
+    .middleware((argv) => {
+      if (argv.quiet) {
+        argv.nonInteractive = true;
+      }
+    });
 
   parser = registerAuthCommands(parser, dependencies);
   parser = registerJobCommands(parser, dependencies);
@@ -147,7 +161,11 @@ function createParser(rawArgs: string[]): Argv {
       if (error) {
         throw error;
       }
-      throw new CliError(message, ["Run with --help to see usage."]);
+      throw new CliError(
+        message,
+        ["Run with --help to see usage."],
+        "INVALID_USAGE",
+      );
     });
 }
 
@@ -231,6 +249,8 @@ async function runCommand(
   if (argv?.json && !JSON_COMMANDS.has(command)) {
     throw new CliError(
       `'${command.replaceAll(":", " ")}' does not support --json output.`,
+      [],
+      "INVALID_USAGE",
     );
   }
   let introShown = false;
@@ -278,13 +298,13 @@ async function runCommandWithContext<TArgv extends ContextualCommandArgv>(
         if (argv.json) {
           logCliError(error);
           emitJsonError(toJsonError(error));
-          process.exitCode ||= 1;
+          process.exitCode ||= exitCodeFor(error);
           return;
         }
         if (argv.jsonl) {
           logCliError(error);
           emitJsonLine({ type: "error", error: toJsonError(error) });
-          process.exitCode ||= 1;
+          process.exitCode ||= exitCodeFor(error);
           return;
         }
         throw error;
@@ -316,12 +336,12 @@ function reportError(error: unknown): void {
   } else {
     handleCliError(error);
   }
-  process.exitCode = 1;
+  process.exitCode = exitCodeFor(error);
 }
 
 function fatalError(error: unknown): void {
   reportError(error);
-  process.exit(1);
+  process.exit(exitCodeFor(error));
 }
 
 if (shouldRunCli) {

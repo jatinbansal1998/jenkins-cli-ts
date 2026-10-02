@@ -10,7 +10,7 @@
  */
 
 import { type BuildSelection, resolveBuildSelector } from "../build-selector";
-import { CliError, printOk } from "../cli";
+import { CliError, printLine, printOk } from "../cli";
 import { assertProtectedMutationAllowed, type EnvConfig } from "../env";
 import type { JenkinsClient } from "../jenkins/client";
 import {
@@ -155,7 +155,7 @@ async function runInputMutation(
           action,
         });
         if (result.kind !== "settled") {
-          throw new CliError("Operation cancelled.");
+          throw new CliError("Operation cancelled.", [], "OPERATION_CANCELLED");
         }
         return result.receipt;
       },
@@ -179,7 +179,7 @@ async function runInputMutation(
     confirm: nonInteractive || options.yes ? undefined : promptConfirmation,
   });
   if (result.kind === "cancelled") {
-    throw new CliError("Operation cancelled.");
+    throw new CliError("Operation cancelled.", [], "OPERATION_CANCELLED");
   }
   printSettleResult(operation, result, target);
 }
@@ -336,9 +336,13 @@ async function resolveInputBuild(
     resolveJob: activeInputDeps.resolveJobTarget,
   });
   if (target.kind === "queue") {
-    throw new CliError("Queue items cannot have pending inputs.", [
-      "Wait for the build to start, then target it with --build or --build-url.",
-    ]);
+    throw new CliError(
+      "Queue items cannot have pending inputs.",
+      [
+        "Wait for the build to start, then target it with --build or --build-url.",
+      ],
+      "INVALID_USAGE",
+    );
   }
   if (target.kind === "build") {
     // The selector already validated this URL against the active controller.
@@ -441,11 +445,11 @@ async function selectPendingInput(options: {
     })),
   });
   if (deps.isCancel(selected)) {
-    throw new CliError("Operation cancelled.");
+    throw new CliError("Operation cancelled.", [], "OPERATION_CANCELLED");
   }
   const match = actions.find((action) => action.id === selected);
   if (!match) {
-    throw new CliError("Operation cancelled.");
+    throw new CliError("Operation cancelled.", [], "OPERATION_CANCELLED");
   }
   return match;
 }
@@ -762,7 +766,7 @@ function printPendingInputs(
     `${actions.length} pending input action${actions.length === 1 ? "" : "s"}:`,
   );
   for (const action of actions) {
-    console.log(`  - ${displayId(action)}: ${displayMessage(action)}`);
+    printLine(`  - ${displayId(action)}: ${displayMessage(action)}`);
     const parameters =
       action.parameters === null
         ? "unknown"
@@ -775,7 +779,7 @@ function printPendingInputs(
       ...(action.proceedUrl ? ["approve"] : []),
       ...(action.abortUrl ? ["abort"] : []),
     ];
-    console.log(
+    printLine(
       `    proceed: ${action.proceedText ? sanitizeInputText(action.proceedText) : "Proceed"} | parameters: ${parameters} | actions: ${operations.length > 0 ? operations.join(", ") : "none"}`,
     );
   }

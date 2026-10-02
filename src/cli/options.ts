@@ -1,5 +1,6 @@
 import type { Argv, Options } from "yargs";
-import { CliError } from "../cli";
+import parseArgs from "yargs-parser";
+import { CliError, setQuietMode } from "../cli";
 
 export const GLOBAL_OPTIONS = {
   "non-interactive": {
@@ -16,6 +17,18 @@ export const GLOBAL_OPTIONS = {
     type: "boolean",
     default: false,
     describe: "Output structured JSON when supported (implies non-interactive)",
+  },
+  quiet: {
+    type: "boolean",
+    default: false,
+    describe:
+      "Print nothing except errors; read the result from the exit code (implies non-interactive)",
+  },
+  color: {
+    type: "boolean",
+    default: true,
+    describe:
+      "Color output on a terminal; --no-color turns it off (NO_COLOR and FORCE_COLOR are honored)",
   },
   debug: {
     type: "boolean",
@@ -51,6 +64,39 @@ export const GLOBAL_OPTIONS = {
   },
 } satisfies Record<string, Options>;
 
+/** Lets a bare parse tell `--quiet update` apart from `--profile update`. */
+export const GLOBAL_BOOLEAN_OPTIONS = Object.entries(GLOBAL_OPTIONS)
+  .filter(([, option]) => option.type === "boolean")
+  .map(([name]) => name);
+
+type OutputFlags = {
+  [flag: string]: unknown;
+  quiet?: unknown;
+  color?: unknown;
+  json?: unknown;
+  jsonl?: unknown;
+};
+
+export function validateOutputOptions(flags: OutputFlags): void {
+  if (flags.quiet === true && (flags.json === true || flags.jsonl === true)) {
+    throw new CliError(
+      "--quiet cannot be combined with --json or --jsonl.",
+      ["Drop --quiet; structured output already keeps stdout parseable."],
+      "INVALID_USAGE",
+    );
+  }
+}
+
+/** Applies --quiet and --no-color for the rest of the process. */
+export function applyOutputOptions(flags: OutputFlags): void {
+  setQuietMode(flags.quiet === true);
+  if (flags.color === false) {
+    process.env.NO_COLOR = "1";
+    // Bun ignores NO_COLOR, with a warning, while FORCE_COLOR is set.
+    delete process.env.FORCE_COLOR;
+  }
+}
+
 export function addJobOptions(yargsInstance: Argv): Argv {
   return yargsInstance
     .positional("job-name", {
@@ -74,6 +120,7 @@ export function addJobOptions(yargsInstance: Argv): Argv {
         throw new CliError(
           `Positional job "${positionalJob}" conflicts with --job "${optionJob}".`,
           ["Pass the job once, or use the same value for both forms."],
+          "INVALID_USAGE",
         );
       }
 
@@ -155,18 +202,18 @@ export function wasWatchExplicitlyPassed(rawArgs: string[]): boolean {
 }
 
 export function isJsonOutputRequested(rawArgs: string[]): boolean {
-  return isBooleanOptionEnabled(rawArgs, "--json");
+  return isBooleanOptionEnabled(rawArgs, "json");
 }
 
 export function isJsonLinesOutputRequested(rawArgs: string[]): boolean {
-  return isBooleanOptionEnabled(rawArgs, "--jsonl");
+  return isBooleanOptionEnabled(rawArgs, "jsonl");
 }
 
-function isBooleanOptionEnabled(
-  rawArgs: string[],
-  optionName: string,
-): boolean {
-  return rawArgs.some(
-    (arg) => arg === optionName || arg === `${optionName}=true`,
-  );
+export function isQuietRequested(rawArgs: string[]): boolean {
+  return isBooleanOptionEnabled(rawArgs, "quiet");
+}
+
+/** Parsed, not token-matched, so `--json=true` and a later `--no-json` count. */
+function isBooleanOptionEnabled(rawArgs: string[], name: string): boolean {
+  return parseArgs(rawArgs, { boolean: [name] })[name] === true;
 }

@@ -2,7 +2,7 @@
  * Config command implementation.
  * Prints a job or folder's raw config.xml. Read-only.
  */
-import { CliError } from "../cli";
+import { CliError, writeStdout } from "../cli";
 import type { EnvConfig } from "../env";
 import type { JenkinsClient } from "../jenkins/client";
 import { resolveJobTarget } from "./ops-helpers";
@@ -17,9 +17,11 @@ type JobConfigOptions = {
 
 export async function runJobConfig(options: JobConfigOptions): Promise<void> {
   if (options.job && options.jobUrl) {
-    throw new CliError("Provide either --job or --job-url, not both.", [
-      "Remove one of the flags and try again.",
-    ]);
+    throw new CliError(
+      "Provide either --job or --job-url, not both.",
+      ["Remove one of the flags and try again."],
+      "INVALID_USAGE",
+    );
   }
   const target = await resolveJobTarget({
     client: options.client,
@@ -29,5 +31,5 @@ export async function runJobConfig(options: JobConfigOptions): Promise<void> {
     nonInteractive: options.nonInteractive,
   });
   const xml = await options.client.getJobConfigXml(target.jobUrl);
-  process.stdout.write(xml.endsWith("\n") ? xml : `${xml}\n`);
+  writeStdout(xml.endsWith("\n") ? xml : `${xml}\n`);
 }

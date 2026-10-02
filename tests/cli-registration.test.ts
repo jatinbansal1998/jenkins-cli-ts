@@ -4,6 +4,7 @@ import { FULL_HELP_COMMANDS } from "../src/cli/full-help";
 import {
   isJsonLinesOutputRequested,
   isJsonOutputRequested,
+  isQuietRequested,
   wasBranchParamExplicitlyPassed,
   wasWatchExplicitlyPassed,
 } from "../src/cli/options";
@@ -79,7 +80,7 @@ describe("command aliases", () => {
   test("dropped compatibility commands are unknown", () => {
     for (const command of ["login", "deploy", "builds", "upgrade", "profile"]) {
       const result = runCli([command, "--non-interactive"]);
-      expect(result.exitCode).toBe(1);
+      expect(result.exitCode).toBe(2);
       expect(result.output).toContain(`Unknown argument: ${command}`);
     }
   });
@@ -107,7 +108,7 @@ describe("structured output registration", () => {
       ["--stage-id", "42", "--failed"],
     ]) {
       const result = runCli(["logs", ...args, "--non-interactive"]);
-      expect(result.exitCode).toBe(1);
+      expect(result.exitCode).toBe(2);
       expect(result.output).toContain("mutually exclusive");
     }
   });
@@ -121,7 +122,7 @@ describe("structured output registration", () => {
       ["logs"],
     ]) {
       const result = runCli([...command, "--json", "--non-interactive"]);
-      expect(result.exitCode).toBe(1);
+      expect(result.exitCode).toBe(2);
       expect(result.output).not.toContain("Unknown argument: json");
       expect(result.output).toContain("does not support --json");
     }
@@ -137,7 +138,7 @@ describe("structured output registration", () => {
       ["does-not-exist", "--json=true"],
     ]) {
       const result = runCli(args);
-      expect(result.exitCode).toBe(1);
+      expect(result.exitCode).toBe(2);
       expect(result.output).toStartWith('{"ok":false,"error":');
     }
 
@@ -146,7 +147,7 @@ describe("structured output registration", () => {
       ["help", "--full", "--jsonl"],
     ]) {
       const result = runCli(args);
-      expect(result.exitCode).toBe(1);
+      expect(result.exitCode).toBe(2);
       expect(result.output).toStartWith('{"type":"error","error":');
     }
   });
@@ -303,5 +304,11 @@ describe("hidden defaults and explicit flags", () => {
     expect(isJsonLinesOutputRequested(["--jsonl"])).toBe(true);
     expect(isJsonLinesOutputRequested(["--jsonl=true"])).toBe(true);
     expect(isJsonLinesOutputRequested(["--jsonl=false"])).toBe(false);
+    expect(isJsonOutputRequested(["--json", "--no-json"])).toBe(false);
+    expect(isJsonOutputRequested(["list", "--json", "--profile", "x"])).toBe(
+      true,
+    );
+    expect(isQuietRequested(["list", "--quiet=true"])).toBe(true);
+    expect(isQuietRequested(["list", "--quiet", "--no-quiet"])).toBe(false);
   });
 });

@@ -271,7 +271,7 @@ describe("status --json", () => {
     expect(parsed.ok).toBe(false);
     expect(parsed.error.code).toBe("INVALID_USAGE");
     expect(parsed.error.message).toContain("--watch");
-    expect(process.exitCode).toBe(1);
+    expect(process.exitCode).toBe(2);
     process.exitCode = 0;
   });
 
@@ -281,9 +281,11 @@ describe("status --json", () => {
     await runStatus({
       client: createClient({
         getJobStatus: mock(async () => {
-          throw new CliError("Resource not found while trying to job status.", [
-            "Verify the job URL.",
-          ]);
+          throw new CliError(
+            "Resource not found while trying to job status.",
+            ["Verify the job URL."],
+            "JENKINS_NOT_FOUND",
+          );
         }),
       }),
       env,
@@ -298,8 +300,8 @@ describe("status --json", () => {
       error: { message: string; code: string };
     };
     expect(parsed.ok).toBe(false);
-    expect(parsed.error.code).toBe("CLI_ERROR");
-    expect(process.exitCode).toBe(1);
+    expect(parsed.error.code).toBe("JENKINS_NOT_FOUND");
+    expect(process.exitCode).toBe(4);
     process.exitCode = 0;
   });
 });

@@ -9,9 +9,11 @@ import { getJobDisplayName, loadJobs, resolveJobMatch } from "../jobs";
 
 export function ensureValidUrl(value: string, label: string): void {
   if (!URL.canParse(value)) {
-    throw new CliError(`Invalid --${label} value.`, [
-      `Provide a full URL like https://jenkins.example.com/job/example/.`,
-    ]);
+    throw new CliError(
+      `Invalid --${label} value.`,
+      [`Provide a full URL like https://jenkins.example.com/job/example/.`],
+      "INVALID_USAGE",
+    );
   }
 }
 
@@ -25,7 +27,7 @@ export async function resolveJobTarget(options: {
   const targets = await resolveJobTargets({ ...options, mode: "single" });
   const target = targets[0];
   if (!target) {
-    throw new CliError("Operation cancelled.");
+    throw new CliError("Operation cancelled.", [], "OPERATION_CANCELLED");
   }
   return target;
 }
@@ -59,16 +61,20 @@ export async function resolveJobTargets(options: {
     env: options.env,
   });
   if (jobs.length === 0) {
-    throw new CliError("No jobs found in cache.", [
-      "Run `jenkins-cli list --refresh` to fetch jobs from Jenkins.",
-    ]);
+    throw new CliError(
+      "No jobs found in cache.",
+      ["Run `jenkins-cli list --refresh` to fetch jobs from Jenkins."],
+      "JOB_CACHE_EMPTY",
+    );
   }
 
   const query = options.job?.trim() ?? "";
   if (!query && options.nonInteractive) {
-    throw new CliError("Missing required --job.", [
-      "Pass --job <name> or use --job-url <url>.",
-    ]);
+    throw new CliError(
+      "Missing required --job.",
+      ["Pass --job <name> or use --job-url <url>."],
+      "INVALID_USAGE",
+    );
   }
   let selection: JobPickerResult;
   if (options.nonInteractive) {
@@ -102,7 +108,7 @@ export async function resolveJobTargets(options: {
     });
   }
   if (selection.kind === "cancelled") {
-    throw new CliError("Operation cancelled.");
+    throw new CliError("Operation cancelled.", [], "OPERATION_CANCELLED");
   }
   return selection.jobs.map(toResolvedJobTarget);
 }
@@ -131,9 +137,11 @@ function toResolvedJobTarget(job: JenkinsJob): {
 } {
   const normalizedJobUrl = normalizeOptionalJobUrl(job.url);
   if (!normalizedJobUrl) {
-    throw new CliError("Selected job has an invalid URL.", [
-      "Run `jenkins-cli list --refresh` to update the cache.",
-    ]);
+    throw new CliError(
+      "Selected job has an invalid URL.",
+      ["Run `jenkins-cli list --refresh` to update the cache."],
+      "JENKINS_INVALID_RESPONSE",
+    );
   }
   ensureValidUrl(normalizedJobUrl, "job-url");
   return {
@@ -145,15 +153,19 @@ function toResolvedJobTarget(job: JenkinsJob): {
 function parseDurationMs(input: string | undefined, label: string): number {
   const value = input?.trim() ?? "";
   if (!value) {
-    throw new CliError(`Missing --${label}.`, [
-      `Provide --${label} with a duration like 30s, 5m, or 1h.`,
-    ]);
+    throw new CliError(
+      `Missing --${label}.`,
+      [`Provide --${label} with a duration like 30s, 5m, or 1h.`],
+      "INVALID_USAGE",
+    );
   }
   const match = value.match(/^(\d+)(ms|s|m|h)?$/i);
   if (!match) {
-    throw new CliError(`Invalid --${label} value "${value}".`, [
-      "Use duration values like 500ms, 30s, 5m, or 1h.",
-    ]);
+    throw new CliError(
+      `Invalid --${label} value "${value}".`,
+      ["Use duration values like 500ms, 30s, 5m, or 1h."],
+      "INVALID_USAGE",
+    );
   }
 
   const amount = Number(match[1]);
@@ -166,9 +178,11 @@ function parseDurationMs(input: string | undefined, label: string): number {
   };
   const multiplier = multipliers[unit];
   if (!multiplier || !Number.isFinite(amount) || amount < 0) {
-    throw new CliError(`Invalid --${label} value "${value}".`, [
-      "Use duration values like 500ms, 30s, 5m, or 1h.",
-    ]);
+    throw new CliError(
+      `Invalid --${label} value "${value}".`,
+      ["Use duration values like 500ms, 30s, 5m, or 1h."],
+      "INVALID_USAGE",
+    );
   }
   return Math.floor(amount * multiplier);
 }

@@ -44,7 +44,11 @@ export async function runRerun(options: RerunOptions): Promise<void> {
           nonInteractive: true,
         });
         if (target.kind === "queue") {
-          throw new CliError("Rerun requires a build or job target.");
+          throw new CliError(
+            "Rerun requires a build or job target.",
+            [],
+            "INVALID_USAGE",
+          );
         }
         const rerun =
           target.kind === "build"
@@ -88,7 +92,11 @@ async function runRerunInteractive(options: RerunOptions): Promise<void> {
     nonInteractive: options.nonInteractive,
   });
   if (target.kind === "queue") {
-    throw new CliError("Rerun requires a build or job target.");
+    throw new CliError(
+      "Rerun requires a build or job target.",
+      [],
+      "INVALID_USAGE",
+    );
   }
 
   const rerun =
@@ -118,9 +126,11 @@ async function runRerunInteractive(options: RerunOptions): Promise<void> {
 export async function runRerunLastBuild(options: RerunOptions): Promise<void> {
   assertProtectedMutationAllowed(options.env);
   if (options.job && options.jobUrl) {
-    throw new CliError("Provide either --job or --job-url, not both.", [
-      "Remove one of the flags and try again.",
-    ]);
+    throw new CliError(
+      "Provide either --job or --job-url, not both.",
+      ["Remove one of the flags and try again."],
+      "INVALID_USAGE",
+    );
   }
 
   const target = await resolveJobTarget({

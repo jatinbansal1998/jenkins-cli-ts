@@ -10,6 +10,7 @@ import {
 import {
   isJsonLinesOutputRequested,
   isJsonOutputRequested,
+  isQuietRequested,
 } from "./cli/options";
 import { BUILD_TARGET } from "./build-target";
 import { CliError, printHint } from "./cli";
@@ -102,21 +103,33 @@ export function resolveAssetName(): string {
   const arch = process.arch;
 
   if (!isSupportedRuntimePlatform(platform)) {
-    throw new CliError(`Unsupported platform: ${platform}`);
+    throw new CliError(
+      `Unsupported platform: ${platform}`,
+      [],
+      "UPDATE_FAILED",
+    );
   }
 
   if (!isSupportedRuntimeArch(arch)) {
-    throw new CliError(`Unsupported architecture: ${arch}`);
+    throw new CliError(
+      `Unsupported architecture: ${arch}`,
+      [],
+      "UPDATE_FAILED",
+    );
   }
 
   let libc: "gnu" | "musl" | undefined;
   if (platform === "linux") {
     const isMusl = detectMusl();
     if (isMusl === null) {
-      throw new CliError("Unable to reliably detect libc on Linux.", [
-        "Cannot determine if the system uses glibc or musl.",
-        "Please download the binary manually from GitHub Releases.",
-      ]);
+      throw new CliError(
+        "Unable to reliably detect libc on Linux.",
+        [
+          "Cannot determine if the system uses glibc or musl.",
+          "Please download the binary manually from GitHub Releases.",
+        ],
+        "UPDATE_FAILED",
+      );
     }
     libc = isMusl ? "musl" : "gnu";
   }
@@ -129,6 +142,8 @@ export function resolveAssetName(): string {
   if (!target) {
     throw new CliError(
       `No release target found for platform ${platform} (${arch}).`,
+      [],
+      "UPDATE_FAILED",
     );
   }
   return target.assetName;
@@ -228,7 +243,11 @@ export async function patchUpdateState(patch: UpdateState): Promise<void> {
 export function resolveExecutablePath(): string {
   const argv1 = process.argv[1];
   if (!argv1) {
-    throw new CliError("Unable to determine the CLI path.");
+    throw new CliError(
+      "Unable to determine the CLI path.",
+      [],
+      "UPDATE_FAILED",
+    );
   }
 
   // Compiled entrypoints live in Bun's virtual filesystem; execPath is on disk.
@@ -242,9 +261,11 @@ export function resolveExecutablePath(): string {
     base === "index.js" ||
     resolved.includes(`${path.sep}src${path.sep}`);
   if (looksLikeSource) {
-    throw new CliError("Update is not supported when running from source.", [
-      `Install the global CLI and re-run \`${UPDATE_COMMAND_SELF}\`.`,
-    ]);
+    throw new CliError(
+      "Update is not supported when running from source.",
+      [`Install the global CLI and re-run \`${UPDATE_COMMAND_SELF}\`.`],
+      "UPDATE_FAILED",
+    );
   }
   return resolved;
 }
@@ -279,6 +300,7 @@ export function resolveReleaseAsset(release: ReleaseInfo): string {
       "Ensure the GitHub release includes a platform-specific binary.",
       `Expected asset name: ${assetName}`,
     ],
+    "UPDATE_FAILED",
   );
 }
 
@@ -362,6 +384,7 @@ export async function downloadAndInstall(
           `The update was downloaded to a temporary location: ${tempFile}`,
           `Please close the application and replace your executable (${targetPath}) manually.`,
         ],
+        "UPDATE_FAILED",
       );
     }
 
@@ -370,10 +393,14 @@ export async function downloadAndInstall(
   } catch (error) {
     const err = error as NodeJS.ErrnoException;
     if (err.code === "EACCES" || err.code === "EPERM") {
-      throw new CliError("Permission denied while updating the CLI.", [
-        `Check permissions for ${targetPath}.`,
-        "Try reinstalling with the install script.",
-      ]);
+      throw new CliError(
+        "Permission denied while updating the CLI.",
+        [
+          `Check permissions for ${targetPath}.`,
+          "Try reinstalling with the install script.",
+        ],
+        "UPDATE_FAILED",
+      );
     }
     throw error;
   } finally {
@@ -384,7 +411,11 @@ export async function downloadAndInstall(
 }
 
 function shouldSkipAutoUpdate(rawArgs: string[]): boolean {
-  if (isJsonOutputRequested(rawArgs) || isJsonLinesOutputRequested(rawArgs)) {
+  if (
+    isJsonOutputRequested(rawArgs) ||
+    isJsonLinesOutputRequested(rawArgs) ||
+    isQuietRequested(rawArgs)
+  ) {
     return true;
   }
   const skipFlags = new Set<string>([

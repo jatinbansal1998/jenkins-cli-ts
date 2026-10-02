@@ -4,7 +4,7 @@
  * and (interactively) lets you cancel or open a queued item.
  */
 import { isCancel, select } from "../clack";
-import { printOk } from "../cli";
+import { printLine, printOk } from "../cli";
 import type { EnvConfig } from "../env";
 import type { JenkinsClient } from "../jenkins/client";
 import { formatTable, truncateCell } from "../table";
@@ -136,13 +136,13 @@ function renderQueue(items: QueueItemSummary[], jobFilter: string): void {
     return;
   }
 
-  console.log(formatQueueTable(items));
+  printLine(formatQueueTable(items));
 
   if (items.length === 1) {
     const only = items[0];
     if (only?.reason) {
-      console.log("");
-      console.log(`Why: ${only.reason}`);
+      printLine();
+      printLine(`Why: ${only.reason}`);
     }
   }
 
@@ -182,7 +182,7 @@ function printQueueItemDetails(item: QueueItemSummary): void {
     )}.`,
   );
   if (item.reason) {
-    console.log(`Why: ${item.reason}`);
+    printLine(`Why: ${item.reason}`);
   }
 }
 

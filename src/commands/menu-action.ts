@@ -4,7 +4,6 @@
  * return the user to the current action menu instead of unwinding the flow.
  */
 import { CliError, handleCliError } from "../cli";
-import { PROFILE_PROTECTED_CODE } from "../env";
 import type { ActionEffectResult } from "../flows/types";
 
 /** Prints a CliError like the top-level handler does; rethrows anything else. */
@@ -28,7 +27,7 @@ export async function runMenuAction<T>(
     return await action();
   } catch (error) {
     printMenuActionError(error);
-    return (error as CliError).code === PROFILE_PROTECTED_CODE
+    return (error as CliError).code === "PROFILE_PROTECTED"
       ? "mutation_blocked"
       : fallback;
   }

@@ -6,7 +6,7 @@ import { logCliError } from "../logger";
 import { autocomplete, confirm, isCancel, select, text } from "../clack";
 
 import { type BuildSelection, resolveBuildSelector } from "../build-selector";
-import { CliError, printHint, printOk } from "../cli";
+import { CliError, printHint, printLine, printOk } from "../cli";
 import { runMenuAction } from "./menu-action";
 import {
   jsonBuild,
@@ -78,9 +78,11 @@ export async function runStatus(options: StatusOptions): Promise<void> {
   }
 
   if (options.job && options.jobUrl) {
-    throw new CliError("Provide either --job or --job-url, not both.", [
-      "Remove one of the flags and try again.",
-    ]);
+    throw new CliError(
+      "Provide either --job or --job-url, not both.",
+      ["Remove one of the flags and try again."],
+      "INVALID_USAGE",
+    );
   }
 
   if (options.nonInteractive) {
@@ -119,8 +121,8 @@ export async function runStatus(options: StatusOptions): Promise<void> {
     const displayedBuildUrls = new Map<string, string>();
     for (const [index, target] of targets.entries()) {
       if (showSeparators && index > 0) {
-        console.log("");
-        console.log(SEPARATOR_LINE);
+        printLine();
+        printLine(SEPARATOR_LINE);
       }
       await recordRecentJob({
         env: options.env,
@@ -349,7 +351,11 @@ async function runStatusJson(options: StatusOptions): Promise<void> {
         };
       }
       if (target.kind !== "job") {
-        throw new CliError("Status requires a build or job target.");
+        throw new CliError(
+          "Status requires a build or job target.",
+          [],
+          "INVALID_USAGE",
+        );
       }
 
       await recordRecentJob({ env: options.env, jobUrl: target.jobUrl });
@@ -376,7 +382,11 @@ async function runExactStatus(options: StatusOptions): Promise<void> {
     nonInteractive: options.nonInteractive,
   });
   if (target.kind !== "build") {
-    throw new CliError("Status requires an exact build target.");
+    throw new CliError(
+      "Status requires an exact build target.",
+      [],
+      "INVALID_USAGE",
+    );
   }
 
   await recordRecentJob({ env: options.env, jobUrl: target.jobUrl });

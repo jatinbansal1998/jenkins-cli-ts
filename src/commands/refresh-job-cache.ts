@@ -39,7 +39,11 @@ function parseRefreshEnv(raw: string | undefined): JobCacheRefreshPayload {
     parsed = undefined;
   }
   if (!parsed || typeof parsed !== "object") {
-    throw new CliError(`${JOB_CACHE_REFRESH_ENV} is missing or malformed.`);
+    throw new CliError(
+      `${JOB_CACHE_REFRESH_ENV} is missing or malformed.`,
+      [],
+      "INVALID_USAGE",
+    );
   }
   const record = parsed as Record<string, unknown>;
   const { jenkinsUrl, jenkinsUser, jenkinsApiToken, useCrumb, folderDepth } =
@@ -51,7 +55,11 @@ function parseRefreshEnv(raw: string | undefined): JobCacheRefreshPayload {
     typeof useCrumb !== "boolean" ||
     typeof folderDepth !== "number"
   ) {
-    throw new CliError(`${JOB_CACHE_REFRESH_ENV} is missing or malformed.`);
+    throw new CliError(
+      `${JOB_CACHE_REFRESH_ENV} is missing or malformed.`,
+      [],
+      "INVALID_USAGE",
+    );
   }
   return { jenkinsUrl, jenkinsUser, jenkinsApiToken, useCrumb, folderDepth };
 }

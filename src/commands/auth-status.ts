@@ -1,10 +1,12 @@
 import {
+  CREDENTIAL_PROBLEM_CODES,
   diagnoseAuthentication,
   type AuthDiagnosticsDeps,
   type AuthDiagnosticsResult,
   type AuthStatusOptions,
 } from "../auth-diagnostics";
-import { CliError } from "../cli";
+import { CliError, printLine } from "../cli";
+import type { ErrorCode } from "../error-codes";
 import { type JsonAuthStatus, runJsonCommand } from "../json-output";
 
 type AuthStatusCommandDeps = AuthDiagnosticsDeps & {
@@ -17,7 +19,7 @@ type AuthStatusCommandDeps = AuthDiagnosticsDeps & {
 export async function runAuthStatus(
   options: AuthStatusOptions & { json?: boolean },
   deps: AuthStatusCommandDeps = {},
-  write: (line: string) => void = console.log,
+  write: (line: string) => void = printLine,
 ): Promise<void> {
   if (options.json) {
     await runJsonCommand(
@@ -29,7 +31,7 @@ export async function runAuthStatus(
         );
         if (!result.success) {
           const failure = authFailureMessage(result);
-          throw new CliError(failure.message, failure.hints);
+          throw new CliError(failure.message, failure.hints, failure.code);
         }
         const { problemHints: _problemHints, ...data } = result;
         return data;
@@ -47,7 +49,7 @@ export async function runAuthStatus(
   }
 
   const failure = authFailureMessage(result);
-  throw new CliError(failure.message, failure.hints);
+  throw new CliError(failure.message, failure.hints, failure.code);
 }
 
 export function formatAuthReport(result: AuthDiagnosticsResult): string {
@@ -69,18 +71,23 @@ export function formatAuthReport(result: AuthDiagnosticsResult): string {
     .join("\n");
 }
 
-export function authFailureMessage(result: AuthDiagnosticsResult): {
+type AuthFailure = {
   message: string;
   hints: string[];
-} {
+  code: ErrorCode;
+};
+
+export function authFailureMessage(result: AuthDiagnosticsResult): AuthFailure {
   if (result.problem) {
     return {
+      code: CREDENTIAL_PROBLEM_CODES[result.problem],
       message: result.problemMessage ?? "Authentication is not configured.",
       hints: result.problemHints ?? ["Run `jenkins-cli auth login`."],
     };
   }
   if (result.keychainReadError) {
     return {
+      code: "JENKINS_AUTH_ERROR",
       message: "The Jenkins API token secure store is inaccessible.",
       hints: [
         "Unlock the login keychain / keyring and try again.",
@@ -91,6 +98,7 @@ export function authFailureMessage(result: AuthDiagnosticsResult): {
   }
   if (result.tokenPresent === false) {
     return {
+      code: "CREDENTIALS_MISSING",
       message: "No Jenkins API token was found.",
       hints: [
         result.profileLabel === "Environment"
@@ -104,6 +112,7 @@ export function authFailureMessage(result: AuthDiagnosticsResult): {
   switch (result.probe?.kind) {
     case "unauthorized":
       return {
+        code: "JENKINS_AUTH_ERROR",
         message: "Jenkins rejected the supplied credentials (HTTP 401).",
         hints: [
           "Check the username and API token, then run `jenkins-cli auth login` again.",
@@ -111,6 +120,7 @@ export function authFailureMessage(result: AuthDiagnosticsResult): {
       };
     case "forbidden":
       return {
+        code: "JENKINS_AUTH_ERROR",
         message:
           "Jenkins denied access to the identity endpoint (HTTP 403), so authentication could not be confirmed.",
         hints: [
@@ -120,6 +130,7 @@ export function authFailureMessage(result: AuthDiagnosticsResult): {
       };
     case "redirect":
       return {
+        code: "JENKINS_LOGIN_REDIRECT",
         message:
           "The Jenkins API request was redirected by SSO or a reverse proxy.",
         hints: [
@@ -130,6 +141,7 @@ export function authFailureMessage(result: AuthDiagnosticsResult): {
       };
     case "anonymous":
       return {
+        code: "JENKINS_AUTH_ERROR",
         message: "Jenkins treated the request as anonymous.",
         hints: [
           "Check the username and API token, then run `jenkins-cli auth login` again.",
@@ -137,6 +149,7 @@ export function authFailureMessage(result: AuthDiagnosticsResult): {
       };
     case "timeout":
       return {
+        code: "JENKINS_TIMEOUT",
         message:
           "The Jenkins controller could not be reached before the request timed out.",
         hints: [
@@ -145,6 +158,7 @@ export function authFailureMessage(result: AuthDiagnosticsResult): {
       };
     case "network-error":
       return {
+        code: "JENKINS_UNREACHABLE",
         message:
           "The Jenkins controller could not be reached because of a network, DNS, TLS, or connection error.",
         hints: [
@@ -155,19 +169,18 @@ export function authFailureMessage(result: AuthDiagnosticsResult): {
       return unexpectedResponseFailure(result);
     default:
       return {
+        code: "JENKINS_AUTH_ERROR",
         message: "Authentication could not be confirmed.",
         hints: ["Check the Jenkins controller and run the command again."],
       };
   }
 }
 
-function unexpectedResponseFailure(result: AuthDiagnosticsResult): {
-  message: string;
-  hints: string[];
-} {
+function unexpectedResponseFailure(result: AuthDiagnosticsResult): AuthFailure {
   const reason = result.probe?.unexpectedReason;
   if (reason === "html") {
     return {
+      code: "JENKINS_INVALID_RESPONSE",
       message: "The identity endpoint returned HTML instead of Jenkins JSON.",
       hints: [
         "Check whether a proxy or SSO login page intercepted the request.",
@@ -176,6 +189,7 @@ function unexpectedResponseFailure(result: AuthDiagnosticsResult): {
   }
   if (reason === "malformed-json") {
     return {
+      code: "JENKINS_INVALID_RESPONSE",
       message: "The identity endpoint returned malformed JSON.",
       hints: [
         "Check the Jenkins controller, reverse proxy, and SSO configuration.",
@@ -184,6 +198,7 @@ function unexpectedResponseFailure(result: AuthDiagnosticsResult): {
   }
   if (reason === "http-status") {
     return {
+      code: "JENKINS_INVALID_RESPONSE",
       message: `The identity endpoint returned unexpected HTTP ${result.probe?.httpStatus ?? "status"}.`,
       hints: [
         "Check the Jenkins controller, reverse proxy, and SSO configuration.",
@@ -191,6 +206,7 @@ function unexpectedResponseFailure(result: AuthDiagnosticsResult): {
     };
   }
   return {
+    code: "JENKINS_INVALID_RESPONSE",
     message:
       "The identity endpoint returned an incomplete or contradictory identity.",
     hints: [

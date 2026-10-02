@@ -1,5 +1,5 @@
 import type { Argv } from "yargs";
-import { CliError } from "../cli";
+import { CliError, printLine } from "../cli";
 import { emitJsonSuccess } from "../json-output";
 import {
   commandPathSupportsJson,
@@ -73,7 +73,7 @@ export async function printFullHelp(
 ): Promise<void> {
   const sections = await collectCommandHelp(scriptName, createParser);
   const rule = "=".repeat(72);
-  console.log(
+  printLine(
     sections
       .map(
         (section) => `${rule}\n${section.invocation}\n${rule}\n${section.help}`,
@@ -111,9 +111,11 @@ async function collectCommandHelp(
     const invocation = [scriptName, ...args].join(" ");
     const help = await renderHelp(createParser(args), args).catch(
       (error: unknown) => {
-        throw new CliError(`Failed to collect help for "${invocation}".`, [
-          error instanceof Error ? error.message : String(error),
-        ]);
+        throw new CliError(
+          `Failed to collect help for "${invocation}".`,
+          [error instanceof Error ? error.message : String(error)],
+          "UNEXPECTED_ERROR",
+        );
       },
     );
     sections.push({ path: commandPath, invocation, help: help.trim() });

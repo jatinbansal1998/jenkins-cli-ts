@@ -217,7 +217,7 @@ describe("interactive targetless cancel", () => {
   test("cancelling full job search returns to the running-build menu", async () => {
     const resolveJobTarget = mock()
       .mockImplementationOnce(async () => {
-        throw new CliError("Operation cancelled.");
+        throw new CliError("Operation cancelled.", [], "OPERATION_CANCELLED");
       })
       .mockImplementationOnce(async () => ({
         jobUrl: builds[0]!.jobUrl,

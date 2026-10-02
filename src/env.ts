@@ -29,12 +29,6 @@ type LoadEnvOptions = {
   confirmProtected?: boolean;
 };
 
-/** Error code for credentials Jenkins cannot be called with. */
-const JENKINS_AUTH_ERROR_CODE = "JENKINS_AUTH_ERROR";
-
-/** Stable error code for a write blocked by a read-only profile. */
-export const PROFILE_PROTECTED_CODE = "PROFILE_PROTECTED";
-
 /** Jenkins connection configuration. */
 export type EnvConfig = {
   jenkinsUrl: string;
@@ -79,7 +73,7 @@ export function assertProtectedMutationAllowed(env: EnvConfig): void {
     [
       "Re-run with --confirm-protected to allow builds, cancels, creates, reruns, and input approvals or aborts.",
     ],
-    PROFILE_PROTECTED_CODE,
+    "PROFILE_PROTECTED",
   );
 }
 
@@ -100,9 +94,13 @@ export function loadEnv(
     providedCliCredentialCount > 0 &&
     providedCliCredentialCount < REQUIRED_CLI_CREDENTIAL_COUNT
   ) {
-    throw new CliError("Incomplete Jenkins CLI credentials.", [
-      "Pass --url, --user, and --token together when using one-off credentials.",
-    ]);
+    throw new CliError(
+      "Incomplete Jenkins CLI credentials.",
+      [
+        "Pass --url, --user, and --token together when using one-off credentials.",
+      ],
+      "INVALID_USAGE",
+    );
   }
 
   const config = migrateLegacyConfigSyncIfNeeded(loadedConfig)?.config;
@@ -162,24 +160,36 @@ export function loadEnv(
   const rawUser = process.env[ENV_KEYS.JENKINS_USER];
   const rawToken = process.env[ENV_KEYS.JENKINS_API_TOKEN];
   if (!rawUrl || rawUrl.trim() === "") {
-    throw new CliError(`Missing ${ENV_KEYS.JENKINS_URL}.`, [
-      `Set ${ENV_KEYS.JENKINS_URL} to your Jenkins base URL (e.g., https://jenkins.example.com).`,
-      `Or add it to ${CONFIG_FILE}.`,
-    ]);
+    throw new CliError(
+      `Missing ${ENV_KEYS.JENKINS_URL}.`,
+      [
+        `Set ${ENV_KEYS.JENKINS_URL} to your Jenkins base URL (e.g., https://jenkins.example.com).`,
+        `Or add it to ${CONFIG_FILE}.`,
+      ],
+      "CREDENTIALS_MISSING",
+    );
   }
 
   if (!rawUser || rawUser.trim() === "") {
-    throw new CliError(`Missing ${ENV_KEYS.JENKINS_USER}.`, [
-      `Set ${ENV_KEYS.JENKINS_USER} to your Jenkins username or service account.`,
-      `Or add it to ${CONFIG_FILE}.`,
-    ]);
+    throw new CliError(
+      `Missing ${ENV_KEYS.JENKINS_USER}.`,
+      [
+        `Set ${ENV_KEYS.JENKINS_USER} to your Jenkins username or service account.`,
+        `Or add it to ${CONFIG_FILE}.`,
+      ],
+      "CREDENTIALS_MISSING",
+    );
   }
 
   if (!rawToken || rawToken.trim() === "") {
-    throw new CliError(`Missing ${ENV_KEYS.JENKINS_API_TOKEN}.`, [
-      `Set ${ENV_KEYS.JENKINS_API_TOKEN} to your Jenkins API token.`,
-      `Or add it to ${CONFIG_FILE}.`,
-    ]);
+    throw new CliError(
+      `Missing ${ENV_KEYS.JENKINS_API_TOKEN}.`,
+      [
+        `Set ${ENV_KEYS.JENKINS_API_TOKEN} to your Jenkins API token.`,
+        `Or add it to ${CONFIG_FILE}.`,
+      ],
+      "CREDENTIALS_MISSING",
+    );
   }
 
   // Environment-only credentials are not associated with a configured profile
@@ -228,7 +238,7 @@ export async function resolveApiToken(
         "Ensure your login keychain / keyring is unlocked and accessible.",
         `Or run \`${relogin} --no-keychain\` to store the token in the config file.`,
       ],
-      JENKINS_AUTH_ERROR_CODE,
+      "JENKINS_AUTH_ERROR",
     );
   }
 
@@ -239,7 +249,7 @@ export async function resolveApiToken(
         `Run \`${relogin}\` to store the token again.`,
         `Or run \`${relogin} --no-keychain\` to store it in the config file.`,
       ],
-      JENKINS_AUTH_ERROR_CODE,
+      "JENKINS_AUTH_ERROR",
     );
   }
   return token;
@@ -363,5 +373,6 @@ function missingProfileError(
   return new CliError(
     `Profile "${requestedProfileName}" was not found.`,
     hints,
+    "PROFILE_NOT_FOUND",
   );
 }

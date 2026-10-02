@@ -1,5 +1,6 @@
 import { CliError } from "./cli";
 import { CLI_FLAGS } from "./cli-constants";
+import { GLOBAL_BOOLEAN_OPTIONS, isQuietRequested } from "./cli/options";
 import { runUpdate } from "./commands/update";
 import { GITHUB_VERSION_POLICY_URL } from "./github-constants";
 import { fetchVersionPolicy } from "./github/api-wrapper";
@@ -105,11 +106,15 @@ export async function enforceMinimumVersionFromCache(
     policyMessage: state.minAllowedMessage,
   });
 
-  const error = new CliError(mandatoryMessage, [
-    `Current version: ${options.currentVersion}.`,
-    `Minimum required version: ${minAllowedVersion}.`,
-    `Run \`${updateCommand}\` to update.`,
-  ]);
+  const error = new CliError(
+    mandatoryMessage,
+    [
+      `Current version: ${options.currentVersion}.`,
+      `Minimum required version: ${minAllowedVersion}.`,
+      `Run \`${updateCommand}\` to update.`,
+    ],
+    "VERSION_UNSUPPORTED",
+  );
 
   if (!isInteractive(options.rawArgs)) {
     throw error;
@@ -230,7 +235,7 @@ function parseMinimumVersionPolicy(
 }
 
 function isUpdateCommand(rawArgs: string[]): boolean {
-  const parsed = parser(rawArgs);
+  const parsed = parser(rawArgs, { boolean: GLOBAL_BOOLEAN_OPTIONS });
   const command = parsed._.find(
     (value): value is string => typeof value === "string",
   );
@@ -247,13 +252,14 @@ function isHelpOrVersionRequest(rawArgs: string[]): boolean {
   if (rawArgs.some((arg) => flags.has(arg))) {
     return true;
   }
-  return parser(rawArgs)._[0] === "help";
+  return parser(rawArgs, { boolean: GLOBAL_BOOLEAN_OPTIONS })._[0] === "help";
 }
 
 function isInteractive(rawArgs: string[]): boolean {
   if (
     rawArgs.includes(CLI_FLAGS.NON_INTERACTIVE) ||
-    rawArgs.includes(CLI_FLAGS.NON_INTERACTIVE_CAMEL)
+    rawArgs.includes(CLI_FLAGS.NON_INTERACTIVE_CAMEL) ||
+    isQuietRequested(rawArgs)
   ) {
     return false;
   }

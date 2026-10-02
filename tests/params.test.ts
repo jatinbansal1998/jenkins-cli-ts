@@ -92,7 +92,7 @@ describe("params command", () => {
     const logSpy = spyOn(console, "log").mockImplementation(() => undefined);
     await runParams({
       client: clientWith(async () => {
-        throw new CliError("Not allowed.", [], "DENIED");
+        throw new CliError("Not allowed.", [], "JENKINS_AUTH_ERROR");
       }),
       env,
       jobUrl,
@@ -104,7 +104,7 @@ describe("params command", () => {
     expect(chunks).toHaveLength(1);
     expect(JSON.parse(chunks[0] as string)).toEqual({
       ok: false,
-      error: { message: "Not allowed.", code: "DENIED" },
+      error: { message: "Not allowed.", code: "JENKINS_AUTH_ERROR" },
     });
     expect(logSpy).not.toHaveBeenCalled();
     process.exitCode = 0;

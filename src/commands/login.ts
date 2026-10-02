@@ -5,7 +5,7 @@ import { shellEscape } from "../shell-escape";
  */
 import { openInBrowser } from "../browser";
 import { confirm, isCancel, password, text } from "../clack";
-import { CliError, printHint, printOk } from "../cli";
+import { CliError, printHint, printLine, printOk } from "../cli";
 import {
   CONFIG_FILE,
   DEFAULT_PROFILE_NAME,
@@ -179,7 +179,7 @@ export async function runLogin(
     tokenStorage: plan.tokenStorage,
     secureStoreName,
   })) {
-    console.log(line);
+    printLine(line);
   }
 }
 
@@ -268,7 +268,7 @@ async function offerToOpenUrlInBrowser(
   // confirm resolves to a boolean or clack's cancel symbol; anything that is
   // not an explicit boolean counts as a cancellation.
   if (isCancel(response) || typeof response !== "boolean") {
-    throw new CliError("Operation cancelled.");
+    throw new CliError("Operation cancelled.", [], "OPERATION_CANCELLED");
   }
   if (!response) {
     return;
@@ -326,6 +326,7 @@ export async function planTokenPersistence(
           [
             `Re-run \`jenkins-cli auth login --profile ${profileName} --no-keychain --token <token>\` with the token.`,
           ],
+          "SECURE_STORE_ERROR",
         );
       }
       token = stored;
@@ -377,6 +378,7 @@ export async function planTokenPersistence(
         [
           `Re-run \`jenkins-cli auth login --profile ${profileName} --token <token>\` with the token.`,
         ],
+        "SECURE_STORE_ERROR",
       );
     }
     tokenToStore = previousToken;
@@ -456,7 +458,7 @@ async function resolveProfileName(
     validate: (value) => (value?.trim() ? undefined : "Value required."),
   });
   if (isCancel(response)) {
-    throw new CliError("Operation cancelled.");
+    throw new CliError("Operation cancelled.", [], "OPERATION_CANCELLED");
   }
   return String(response).trim();
 }
@@ -473,9 +475,13 @@ async function resolveUrl(
     if (existingValue?.trim()) {
       return existingValue.trim();
     }
-    throw new CliError("Missing required --url.", [
-      "Run `jenkins-cli auth login --url <url> --user <user> --token <token>`.",
-    ]);
+    throw new CliError(
+      "Missing required --url.",
+      [
+        "Run `jenkins-cli auth login --url <url> --user <user> --token <token>`.",
+      ],
+      "INVALID_USAGE",
+    );
   }
   const response = await text({
     message: "Jenkins URL",
@@ -484,7 +490,7 @@ async function resolveUrl(
     validate: (value) => validateLoginUrl(value, existingValue),
   });
   if (isCancel(response)) {
-    throw new CliError("Operation cancelled.");
+    throw new CliError("Operation cancelled.", [], "OPERATION_CANCELLED");
   }
   const value = String(response).trim();
   return value || existingValue?.trim() || "";
@@ -523,9 +529,13 @@ async function resolveUser(
     if (existingValue?.trim()) {
       return existingValue.trim();
     }
-    throw new CliError("Missing required --user.", [
-      "Run `jenkins-cli auth login --url <url> --user <user> --token <token>`.",
-    ]);
+    throw new CliError(
+      "Missing required --user.",
+      [
+        "Run `jenkins-cli auth login --url <url> --user <user> --token <token>`.",
+      ],
+      "INVALID_USAGE",
+    );
   }
   const response = await text({
     message: "Jenkins username",
@@ -535,7 +545,7 @@ async function resolveUser(
       value?.trim() || existingValue?.trim() ? undefined : "Value required.",
   });
   if (isCancel(response)) {
-    throw new CliError("Operation cancelled.");
+    throw new CliError("Operation cancelled.", [], "OPERATION_CANCELLED");
   }
   const value = String(response).trim();
   return value || existingValue?.trim() || "";
@@ -553,9 +563,13 @@ async function resolveApiToken(
     if (existingValue?.trim()) {
       return existingValue.trim();
     }
-    throw new CliError("Missing required --token.", [
-      "Run `jenkins-cli auth login --url <url> --user <user> --token <token>`.",
-    ]);
+    throw new CliError(
+      "Missing required --token.",
+      [
+        "Run `jenkins-cli auth login --url <url> --user <user> --token <token>`.",
+      ],
+      "INVALID_USAGE",
+    );
   }
   const response = await password({
     message: existingValue
@@ -565,7 +579,7 @@ async function resolveApiToken(
       value?.trim() || existingValue?.trim() ? undefined : "Value required.",
   });
   if (isCancel(response)) {
-    throw new CliError("Operation cancelled.");
+    throw new CliError("Operation cancelled.", [], "OPERATION_CANCELLED");
   }
   const value = String(response).trim();
   return value || existingValue?.trim() || "";
@@ -619,7 +633,7 @@ async function resolveDefaultDecision(options: {
     initialValue: false,
   });
   if (isCancel(response)) {
-    throw new CliError("Operation cancelled.");
+    throw new CliError("Operation cancelled.", [], "OPERATION_CANCELLED");
   }
   if (response) {
     return true;
@@ -649,7 +663,7 @@ async function resolveProtectedDecision(
     initialValue: alreadyProtected,
   });
   if (isCancel(response) || typeof response !== "boolean") {
-    throw new CliError("Operation cancelled.");
+    throw new CliError("Operation cancelled.", [], "OPERATION_CANCELLED");
   }
   return response;
 }
@@ -683,7 +697,7 @@ async function resolveBranchParam(
         : undefined),
   });
   if (isCancel(response)) {
-    throw new CliError("Operation cancelled.");
+    throw new CliError("Operation cancelled.", [], "OPERATION_CANCELLED");
   }
   const value = String(response).trim();
   return value ? value : defaultParam;

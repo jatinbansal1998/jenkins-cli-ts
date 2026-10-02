@@ -1,4 +1,4 @@
-import { CliError, printHint, printOk } from "../cli";
+import { CliError, printHint, printLine, printOk } from "../cli";
 import type { JenkinsClient } from "../jenkins/client";
 import type { RunningBuildSummary } from "../types/jenkins";
 import {
@@ -39,7 +39,7 @@ export async function runRunningBuilds(options: RunOptions): Promise<void> {
 
   if (options.nonInteractive) {
     for (const build of builds) {
-      console.log(`${formatRunningBuildLabel(build)}: ${build.buildUrl}`);
+      printLine(`${formatRunningBuildLabel(build)}: ${build.buildUrl}`);
     }
     return;
   }
@@ -58,13 +58,17 @@ export async function runRunningBuilds(options: RunOptions): Promise<void> {
 
   const selected = builds.find((build) => build.buildUrl === selection);
   if (!selected) {
-    throw new CliError("Selected running build is no longer available.");
+    throw new CliError(
+      "Selected running build is no longer available.",
+      [],
+      "BUILD_NOT_FOUND",
+    );
   }
 
   try {
     await deps.openInBrowser(selected.buildUrl);
   } catch {
-    console.log(selected.buildUrl);
+    printLine(selected.buildUrl);
     printHint("Could not open the browser. Open the build URL manually.");
   }
 }

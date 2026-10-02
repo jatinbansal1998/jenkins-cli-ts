@@ -51,9 +51,11 @@ export async function fetchLatestRelease(
   );
   const latest = releases.find((release) => !release.draft);
   if (!latest) {
-    throw new CliError("No eligible GitHub releases were found.", [
-      "Create a release or prerelease in GitHub before updating.",
-    ]);
+    throw new CliError(
+      "No eligible GitHub releases were found.",
+      ["Create a release or prerelease in GitHub before updating."],
+      "UPDATE_FAILED",
+    );
   }
   return latest;
 }
@@ -77,9 +79,11 @@ export async function downloadReleaseAsset(options: {
     }),
   });
   if (!response.ok) {
-    throw new CliError(`Failed to download CLI (HTTP ${response.status}).`, [
-      "Check the release assets or try again later.",
-    ]);
+    throw new CliError(
+      `Failed to download CLI (HTTP ${response.status}).`,
+      ["Check the release assets or try again later."],
+      "UPDATE_FAILED",
+    );
   }
   return response;
 }
@@ -116,7 +120,11 @@ async function fetchRelease(
 ): Promise<GitHubReleaseInfo> {
   const payload = await fetchJson(endpoint, options);
   if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
-    throw new CliError("Unexpected release payload from GitHub.");
+    throw new CliError(
+      "Unexpected release payload from GitHub.",
+      [],
+      "UPDATE_FAILED",
+    );
   }
   return validateReleaseInfo(payload);
 }
@@ -127,7 +135,11 @@ async function fetchReleases(
 ): Promise<GitHubReleaseInfo[]> {
   const payload = await fetchJson(endpoint, options);
   if (!Array.isArray(payload)) {
-    throw new CliError("Unexpected releases payload from GitHub.");
+    throw new CliError(
+      "Unexpected releases payload from GitHub.",
+      [],
+      "UPDATE_FAILED",
+    );
   }
   return payload.map((item) => validateReleaseInfo(item));
 }
@@ -156,6 +168,7 @@ async function fetchJson(
           "Check your network connection.",
           "GitHub API rate limits can also cause failures.",
         ],
+        "UPDATE_FAILED",
       );
     }
     return await response.json();
@@ -166,11 +179,19 @@ async function fetchJson(
 
 function validateReleaseInfo(payload: unknown): GitHubReleaseInfo {
   if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
-    throw new CliError("Unexpected release payload from GitHub.");
+    throw new CliError(
+      "Unexpected release payload from GitHub.",
+      [],
+      "UPDATE_FAILED",
+    );
   }
   const release = payload as GitHubReleaseInfo;
   if (!release.tag_name || !Array.isArray(release.assets)) {
-    throw new CliError("Unexpected release payload from GitHub.");
+    throw new CliError(
+      "Unexpected release payload from GitHub.",
+      [],
+      "UPDATE_FAILED",
+    );
   }
   return release;
 }

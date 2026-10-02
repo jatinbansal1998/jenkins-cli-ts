@@ -1,7 +1,7 @@
 import { extractBranchFromParams, toParamRecord } from "../job-parameters";
 import { formatDuration } from "../status-format";
 import { truncateCell } from "../table";
-import { CliError, printOk } from "../cli";
+import { CliError, printLine, printOk } from "../cli";
 import { assertProtectedMutationAllowed, type EnvConfig } from "../env";
 import { printMenuActionError, runMenuAction } from "./menu-action";
 import type { JenkinsClient } from "../jenkins/client";
@@ -66,9 +66,11 @@ export async function runHistory(
   }
 
   if (options.job && options.jobUrl) {
-    throw new CliError("Provide either --job or --job-url, not both.", [
-      "Remove one of the flags and try again.",
-    ]);
+    throw new CliError(
+      "Provide either --job or --job-url, not both.",
+      ["Remove one of the flags and try again."],
+      "INVALID_USAGE",
+    );
   }
 
   const target = await deps.resolveJobTarget({
@@ -145,9 +147,11 @@ async function runHistoryJson(options: HistoryOptions): Promise<void> {
     "history",
     async (): Promise<JsonBuild[]> => {
       if (options.job && options.jobUrl) {
-        throw new CliError("Provide either --job or --job-url, not both.", [
-          "Remove one of the flags and try again.",
-        ]);
+        throw new CliError(
+          "Provide either --job or --job-url, not both.",
+          ["Remove one of the flags and try again."],
+          "INVALID_USAGE",
+        );
       }
       const target = await deps.resolveJobTarget({
         client: options.client,
@@ -509,11 +513,11 @@ function renderBuildHistory(page: BuildHistoryPage, jobLabel: string): void {
   const rangeEnd = page.offset + page.builds.length;
   const more = page.hasNext ? " (more available)" : "";
   printOk(`Showing builds ${rangeStart}-${rangeEnd} for ${jobLabel}${more}.`);
-  console.log(formatBuildHistoryTable(page.builds));
+  printLine(formatBuildHistoryTable(page.builds));
   const failureDetails = formatFailureDetails(page.builds);
   if (failureDetails) {
-    console.log("");
-    console.log(failureDetails);
+    printLine();
+    printLine(failureDetails);
   }
 }
 

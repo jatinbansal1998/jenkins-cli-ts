@@ -130,7 +130,11 @@ describe("ops helpers", () => {
     };
     loadJobsMock.mockImplementation(async () => [alpha, beta]);
     resolveJobMatchMock.mockImplementation(async () => {
-      throw new CliError('Job name is ambiguous for "deploy".');
+      throw new CliError(
+        'Job name is ambiguous for "deploy".',
+        [],
+        "JOB_AMBIGUOUS",
+      );
     });
     const pickJobs = mock(async () => ({
       kind: "selected" as const,

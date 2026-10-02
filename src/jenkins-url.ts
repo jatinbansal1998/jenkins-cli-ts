@@ -8,15 +8,19 @@ export function normalizeUrl(rawUrl: string): string {
   try {
     url = new URL(trimmed);
   } catch {
-    throw new CliError(`Invalid ${ENV_KEYS.JENKINS_URL}.`, [
-      "Use a full URL like https://jenkins.example.com.",
-    ]);
+    throw new CliError(
+      `Invalid ${ENV_KEYS.JENKINS_URL}.`,
+      ["Use a full URL like https://jenkins.example.com."],
+      "CONFIG_INVALID",
+    );
   }
 
   if (url.protocol !== "http:" && url.protocol !== "https:") {
-    throw new CliError(`Invalid ${ENV_KEYS.JENKINS_URL} protocol.`, [
-      `Use http:// or https:// for ${ENV_KEYS.JENKINS_URL}.`,
-    ]);
+    throw new CliError(
+      `Invalid ${ENV_KEYS.JENKINS_URL} protocol.`,
+      [`Use http:// or https:// for ${ENV_KEYS.JENKINS_URL}.`],
+      "CONFIG_INVALID",
+    );
   }
 
   return url.toString().replace(/\/+$/, "");

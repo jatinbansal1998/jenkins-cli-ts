@@ -1,8 +1,9 @@
+import { EXIT_CODES, exitCodeFor } from "../error-codes";
 import { logCliError } from "../logger";
 import { confirm, isCancel, select, text } from "../clack";
 
 import { type BuildSelection, resolveBuildSelector } from "../build-selector";
-import { CliError, printHint } from "../cli";
+import { CliError, printHint, writeStdout } from "../cli";
 import type { EnvConfig } from "../env";
 import type { JenkinsClient } from "../jenkins/client";
 import {
@@ -157,7 +158,7 @@ export async function runLogs(options: LogsOptions): Promise<void> {
     } catch (error) {
       logCliError(error);
       emitJsonLine({ type: "error", error: toJsonError(error) }, options.write);
-      process.exitCode ||= 1;
+      process.exitCode ||= exitCodeFor(error);
       return;
     }
   }
@@ -175,9 +176,11 @@ async function runLogsCore(
     "poll",
   );
   if (pollMs <= 0) {
-    throw new CliError("Invalid --poll value.", [
-      "Use an interval greater than 0ms (e.g. --poll 1s).",
-    ]);
+    throw new CliError(
+      "Invalid --poll value.",
+      ["Use an interval greater than 0ms (e.g. --poll 1s)."],
+      "INVALID_USAGE",
+    );
   }
 
   const interactive =
@@ -249,7 +252,7 @@ async function runLogsCore(
       );
     }
     if (options.nonInteractive) {
-      process.exitCode ||= 130;
+      process.exitCode ||= EXIT_CODES.INTERRUPTED;
     }
   }
   return { cancelled, buildUrl: target.buildUrl };
@@ -307,7 +310,11 @@ async function resolveLogTarget(
     }
     const build = page.builds.find((entry) => entry.buildUrl === selected);
     if (!build) {
-      throw new CliError("Selected build is no longer available.");
+      throw new CliError(
+        "Selected build is no longer available.",
+        [],
+        "BUILD_NOT_FOUND",
+      );
     }
     return {
       buildUrl: build.buildUrl,
@@ -985,22 +992,30 @@ function validateLogOptions(options: LogsOptions): RegExp | undefined {
     tailLogLines("", options.tail);
   }
   if (options.since !== undefined && !options.since.trim()) {
-    throw new CliError("Invalid --since value.", [
-      "Use a duration like 30m or an ISO-8601 timestamp.",
-    ]);
+    throw new CliError(
+      "Invalid --since value.",
+      ["Use a duration like 30m or an ISO-8601 timestamp."],
+      "INVALID_USAGE",
+    );
   }
   const grep =
     options.grep !== undefined ? compileLogRegex(options.grep) : undefined;
   if (options.context !== undefined) {
     if (!Number.isSafeInteger(options.context) || options.context < 0) {
-      throw new CliError("Invalid --context value.", [
-        "Provide a non-negative integer number of lines, for example --context 2.",
-      ]);
+      throw new CliError(
+        "Invalid --context value.",
+        [
+          "Provide a non-negative integer number of lines, for example --context 2.",
+        ],
+        "INVALID_USAGE",
+      );
     }
     if (grep === undefined) {
-      throw new CliError("--context requires --grep.", [
-        "Provide a regular expression with --grep <regex>.",
-      ]);
+      throw new CliError(
+        "--context requires --grep.",
+        ["Provide a regular expression with --grep <regex>."],
+        "INVALID_USAGE",
+      );
     }
   }
   return grep;
@@ -1010,11 +1025,15 @@ function compileLogRegex(value: string): RegExp {
   try {
     return new RegExp(value);
   } catch (error) {
-    throw new CliError(`Invalid --grep regular expression "${value}".`, [
-      error instanceof Error
-        ? error.message
-        : "Use a valid JavaScript regular expression.",
-    ]);
+    throw new CliError(
+      `Invalid --grep regular expression "${value}".`,
+      [
+        error instanceof Error
+          ? error.message
+          : "Use a valid JavaScript regular expression.",
+      ],
+      "INVALID_USAGE",
+    );
   }
 }
 
@@ -1025,9 +1044,11 @@ function parseTailValue(value: unknown): number {
 }
 
 function noBuildsError(jobLabel: string): CliError {
-  return new CliError(`No builds found for ${jobLabel}.`, [
-    "Trigger a build first, then run logs again.",
-  ]);
+  return new CliError(
+    `No builds found for ${jobLabel}.`,
+    ["Trigger a build first, then run logs again."],
+    "NO_BUILDS",
+  );
 }
 
 function formatInteractiveBuildLabel(
@@ -1058,7 +1079,7 @@ function toJsonIdentity(
 }
 
 function createTextEmitter(
-  write: (text: string) => unknown = (value) => process.stdout.write(value),
+  write: (text: string) => unknown = (value) => writeStdout(value),
 ): LogEmitter {
   return {
     start: () => undefined,

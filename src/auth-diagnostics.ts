@@ -1,3 +1,4 @@
+import type { ErrorCode } from "./error-codes";
 import { withTimeout } from "./with-timeout";
 import { normalizeOptionalString } from "./strings";
 
@@ -39,6 +40,16 @@ type AuthCredentialProblem =
   | "invalid-controller-url"
   | "missing-environment-url"
   | "missing-environment-user";
+
+/** Error code each credential problem is reported with. */
+export const CREDENTIAL_PROBLEM_CODES = {
+  "incomplete-direct-credentials": "INVALID_USAGE",
+  "unknown-profile": "PROFILE_NOT_FOUND",
+  "config-read-error": "CONFIG_INVALID",
+  "invalid-controller-url": "CONFIG_INVALID",
+  "missing-environment-url": "CREDENTIALS_MISSING",
+  "missing-environment-user": "CREDENTIALS_MISSING",
+} as const satisfies Record<AuthCredentialProblem, ErrorCode>;
 
 export type AuthCredentialResolution = {
   profileLabel: string;

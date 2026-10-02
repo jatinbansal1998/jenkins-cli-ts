@@ -1,3 +1,4 @@
+import type { ErrorCode } from "../src/error-codes";
 import { afterEach, describe, expect, mock, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -550,6 +551,23 @@ describe("JenkinsClient triggerBuild", () => {
     );
     expect(error.hints).toEqual([]);
     expect(error.code).toBe("JENKINS_AUTH_ERROR");
+  });
+
+  test.each<[number, ErrorCode]>([
+    [400, "JENKINS_BAD_REQUEST"],
+    [409, "JENKINS_HTTP_ERROR"],
+    [500, "JENKINS_HTTP_ERROR"],
+  ])("classifies HTTP %i as %s", async (status, code) => {
+    globalThis.fetch = mock(
+      async () => new Response("", { status }),
+    ) as unknown as typeof fetch;
+    const client = createClient();
+
+    const error = await captureCliError(
+      client.triggerBuild("https://jenkins.example.com/job/my-job/", {}),
+    );
+
+    expect(error.code).toBe(code);
   });
 });
 

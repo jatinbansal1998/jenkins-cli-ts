@@ -1,5 +1,5 @@
 import { type BuildSelection, resolveBuildSelector } from "../build-selector";
-import { CliError } from "../cli";
+import { CliError, writeStdout } from "../cli";
 import type { EnvConfig } from "../env";
 import type { JenkinsClient } from "../jenkins/client";
 import { runJsonCommand, type JsonWrite } from "../json-output";
@@ -19,10 +19,6 @@ type TestsOptions = {
   write?: JsonWrite;
 };
 
-const defaultWrite: JsonWrite = (text) => {
-  process.stdout.write(text);
-};
-
 export async function runTests(options: TestsOptions): Promise<void> {
   if (options.json) {
     await runJsonCommand(
@@ -34,7 +30,7 @@ export async function runTests(options: TestsOptions): Promise<void> {
   }
 
   const report = await loadTestReport(options);
-  (options.write ?? defaultWrite)(renderTestReport(report));
+  (options.write ?? writeStdout)(renderTestReport(report));
 }
 
 async function loadTestReport(options: TestsOptions): Promise<BuildTestReport> {
@@ -64,7 +60,11 @@ async function resolveCompletedBuild(
     return { buildUrl: target.buildUrl, buildNumber: target.buildNumber };
   }
   if (target.kind !== "job") {
-    throw new CliError("Tests require a build or job target.");
+    throw new CliError(
+      "Tests require a build or job target.",
+      [],
+      "INVALID_USAGE",
+    );
   }
   const completed = await client.getPermalinkBuild(
     target.jobUrl,

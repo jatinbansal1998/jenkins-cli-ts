@@ -45,6 +45,7 @@ export async function promptForDiscoveredParameters(options: {
     throw new CliError(
       `Parameter key "${options.branchParam}" conflicts with --branch.`,
       [`Remove --param ${options.branchParam}=... or omit --branch.`],
+      "INVALID_USAGE",
     );
   }
 

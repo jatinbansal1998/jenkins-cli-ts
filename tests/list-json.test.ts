@@ -265,7 +265,11 @@ describe("list --json", () => {
 
   test("emits a JSON error envelope and non-zero exit code on failure", async () => {
     trackRestore(spyOn(listDeps, "loadJobs")).mockRejectedValue(
-      new CliError("Job cache is missing.", ["Run list --refresh."]),
+      new CliError(
+        "Job cache is missing.",
+        ["Run list --refresh."],
+        "JOB_CACHE_EMPTY",
+      ),
     );
     const sink = capture();
 
@@ -283,8 +287,8 @@ describe("list --json", () => {
     };
     expect(parsed.ok).toBe(false);
     expect(parsed.error.message).toBe("Job cache is missing.");
-    expect(parsed.error.code).toBe("CLI_ERROR");
-    expect(process.exitCode).toBe(1);
+    expect(parsed.error.code).toBe("JOB_CACHE_EMPTY");
+    expect(process.exitCode).toBe(4);
     process.exitCode = 0;
   });
 });

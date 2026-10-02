@@ -184,7 +184,7 @@ describe("help --json", () => {
 
   test("help --jsonl stays unsupported", () => {
     const result = runCli(["help", "--jsonl"]);
-    expect(result.exitCode).toBe(1);
+    expect(result.exitCode).toBe(2);
     expect(result.output).toStartWith('{"type":"error","error":');
     expect(result.output).toContain("does not support --jsonl");
   });

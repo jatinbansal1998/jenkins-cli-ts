@@ -1,5 +1,5 @@
 import { type BuildSelection, resolveBuildSelector } from "../build-selector";
-import { CliError } from "../cli";
+import { CliError, writeStdout } from "../cli";
 import type { EnvConfig } from "../env";
 import type { JenkinsClient } from "../jenkins/client";
 import { runJsonCommand, type JsonWrite } from "../json-output";
@@ -29,10 +29,6 @@ type ChangesOptions = {
   write?: JsonWrite;
 };
 
-const defaultWrite: JsonWrite = (text) => {
-  process.stdout.write(text);
-};
-
 export async function runChanges(options: ChangesOptions): Promise<void> {
   if (options.json) {
     await runJsonCommand(
@@ -44,7 +40,7 @@ export async function runChanges(options: ChangesOptions): Promise<void> {
   }
 
   const report = await loadChanges(options);
-  (options.write ?? defaultWrite)(renderChanges(report));
+  (options.write ?? writeStdout)(renderChanges(report));
 }
 
 async function loadChanges(
@@ -75,7 +71,11 @@ async function resolveLastBuild(
   target: { kind: string; jobUrl?: string; jobLabel: string },
 ): Promise<{ buildUrl: string }> {
   if (target.kind !== "job" || !target.jobUrl) {
-    throw new CliError("Changes require a build or job target.");
+    throw new CliError(
+      "Changes require a build or job target.",
+      [],
+      "INVALID_USAGE",
+    );
   }
   const lastBuild = await client.getLastBuild(target.jobUrl);
   if (!lastBuild) {

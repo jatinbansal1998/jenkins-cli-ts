@@ -122,6 +122,63 @@ describe("minimum version policy", () => {
     expect(runUpdateMock).not.toHaveBeenCalled();
   });
 
+  test.each([["--quiet"], ["--quiet=true"]])(
+    "cached minimum above current fails under %s on a terminal",
+    async (quietFlag) => {
+      const { enforceMinimumVersionFromCache } =
+        await import("../src/min-version-policy");
+      updateState = { minAllowedVersion: "v9.9.9" };
+      setStreamIsTTY(process.stdin, true);
+      setStreamIsTTY(process.stdout, true);
+
+      await expect(
+        enforceMinimumVersionFromCache({
+          currentVersion: "0.7.0",
+          rawArgs: ["list", quietFlag],
+          state: updateState,
+        }),
+      ).rejects.toBeInstanceOf(CliError);
+      expect(runUpdateMock).not.toHaveBeenCalled();
+    },
+  );
+
+  test.each([
+    [["list"], 1],
+    [["list", "--quiet"], 0],
+    [["list", "--quiet=true"], 0],
+  ])(
+    "background auto-update for %p checks GitHub %i times",
+    async (rawArgs, expectedChecks) => {
+      const { kickOffAutoUpdate } = await import("../src/update");
+      const fetchMock = mock(async () => {
+        throw new Error("offline");
+      });
+      globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+      kickOffAutoUpdate("0.7.0", rawArgs, {});
+      await Bun.sleep(20);
+
+      expect(fetchMock).toHaveBeenCalledTimes(expectedChecks);
+    },
+  );
+
+  test.each([["--quiet"], ["--non-interactive"], ["--no-color"]])(
+    "update command after a leading %s bypasses gate",
+    async (flag) => {
+      const { enforceMinimumVersionFromCache } =
+        await import("../src/min-version-policy");
+      updateState = { minAllowedVersion: "v9.9.9" };
+
+      await expect(
+        enforceMinimumVersionFromCache({
+          currentVersion: "0.7.0",
+          rawArgs: [flag, "update"],
+          state: updateState,
+        }),
+      ).resolves.toBeUndefined();
+    },
+  );
+
   test("update command bypasses gate", async () => {
     const { enforceMinimumVersionFromCache } =
       await import("../src/min-version-policy");

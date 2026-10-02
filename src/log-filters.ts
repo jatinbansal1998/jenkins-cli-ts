@@ -37,9 +37,13 @@ export function parseSinceCutoff(value: string, nowMs: number): number {
 
   const timestamp = Date.parse(input);
   if (!Number.isFinite(timestamp)) {
-    throw new CliError(`Invalid --since value "${input}".`, [
-      "Use a duration like 30m or an ISO-8601 timestamp like 2026-08-01T12:00:00Z.",
-    ]);
+    throw new CliError(
+      `Invalid --since value "${input}".`,
+      [
+        "Use a duration like 30m or an ISO-8601 timestamp like 2026-08-01T12:00:00Z.",
+      ],
+      "INVALID_USAGE",
+    );
   }
   return timestamp;
 }
@@ -117,9 +121,11 @@ export function filterTimestampedLog(
 
 export function tailLogLines(text: string, count: number): FilteredLog {
   if (!Number.isSafeInteger(count) || count <= 0) {
-    throw new CliError("Invalid --tail value.", [
-      "Provide a positive integer number of lines, for example --tail 100.",
-    ]);
+    throw new CliError(
+      "Invalid --tail value.",
+      ["Provide a positive integer number of lines, for example --tail 100."],
+      "INVALID_USAGE",
+    );
   }
   const tail = text.slice(Math.max(0, lastLinesStart(text, count)));
   return {
