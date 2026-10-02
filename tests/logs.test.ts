@@ -510,7 +510,7 @@ describe("logs command", () => {
       };
       expect(event.type).toBe("error");
       expect(event.error.code).toBe("INVALID_USAGE");
-      expect(process.exitCode).toBe(1);
+      expect(process.exitCode).toBe(2);
       process.exitCode = 0;
     }
   });

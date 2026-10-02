@@ -1,4 +1,4 @@
-import { CliError, printOk } from "../cli";
+import { CliError, printLine, printOk } from "../cli";
 import type { EnvConfig } from "../env";
 import type { JenkinsClient } from "../jenkins/client";
 import { type JsonWrite, runJsonCommand } from "../json-output";
@@ -20,9 +20,11 @@ type JsonJobParameterDefinition = Omit<JobParameterDefinition, "jenkinsClass">;
 
 export async function runParams(options: ParamsOptions): Promise<void> {
   if (options.job && options.jobUrl) {
-    const error = new CliError("Provide either --job or --job-url, not both.", [
-      "Remove one of the flags and try again.",
-    ]);
+    const error = new CliError(
+      "Provide either --job or --job-url, not both.",
+      ["Remove one of the flags and try again."],
+      "INVALID_USAGE",
+    );
     if (options.json) {
       await runJsonCommand("params", async () => Promise.reject(error), {
         write: options.write,
@@ -49,7 +51,7 @@ export async function runParams(options: ParamsOptions): Promise<void> {
     printOk("No parameter definitions found for this job.");
     return;
   }
-  console.log(formatJobParametersTable(definitions));
+  printLine(formatJobParametersTable(definitions));
 }
 
 async function loadDefinitions(

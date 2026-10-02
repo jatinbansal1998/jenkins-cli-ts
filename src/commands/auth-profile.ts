@@ -5,13 +5,14 @@
  * exposes no general token revocation operation to these credentials.
  */
 import {
+  CREDENTIAL_PROBLEM_CODES,
   resolveAuthCredentials,
   type AuthCredentialResolution,
   type AuthDiagnosticsDeps,
   type AuthStatusOptions,
 } from "../auth-diagnostics";
 import { confirm, isCancel } from "../clack";
-import { CliError, printHint } from "../cli";
+import { CliError, printHint, printLine } from "../cli";
 import {
   deleteAllProfiles,
   deleteProfilesStrict,
@@ -35,7 +36,7 @@ const LOGOUT_LOCAL_ONLY_HINT =
 
 export async function runAuthList(
   deps: ProfileOperationsDeps = {},
-  write: WriteLine = console.log,
+  write: WriteLine = printLine,
   json = false,
 ): Promise<void> {
   if (json) {
@@ -60,7 +61,7 @@ export async function runAuthList(
 export async function runAuthUse(
   name: string,
   deps: ProfileOperationsDeps = {},
-  write: WriteLine = console.log,
+  write: WriteLine = printLine,
 ): Promise<void> {
   const result = await selectProfile(name, deps);
   if (result.changed) {
@@ -79,7 +80,7 @@ export async function runAuthUse(
 export async function runAuthCurrent(
   options: AuthStatusOptions & { json?: boolean },
   deps: AuthDiagnosticsDeps = {},
-  write: WriteLine = console.log,
+  write: WriteLine = printLine,
 ): Promise<void> {
   if (options.json) {
     await runJsonCommand(
@@ -90,6 +91,7 @@ export async function runAuthCurrent(
           throw new CliError(
             credentials.problemMessage ?? "Authentication is not configured.",
             credentials.problemHints ?? ["Run `jenkins-cli auth login`."],
+            CREDENTIAL_PROBLEM_CODES[credentials.problem],
           );
         }
         return {
@@ -111,6 +113,7 @@ export async function runAuthCurrent(
     throw new CliError(
       credentials.problemMessage ?? "Authentication is not configured.",
       credentials.problemHints ?? ["Run `jenkins-cli auth login`."],
+      CREDENTIAL_PROBLEM_CODES[credentials.problem],
     );
   }
 
@@ -141,12 +144,14 @@ type AuthLogoutOptions = {
 export async function runAuthLogout(
   options: AuthLogoutOptions,
   deps: AuthCommandDeps = {},
-  write: WriteLine = console.log,
+  write: WriteLine = printLine,
 ): Promise<void> {
   if (options.all && options.profile !== undefined) {
-    throw new CliError("--all and --profile are mutually exclusive.", [
-      "Pass --all to remove every profile, or --profile <name> for one.",
-    ]);
+    throw new CliError(
+      "--all and --profile are mutually exclusive.",
+      ["Pass --all to remove every profile, or --profile <name> for one."],
+      "INVALID_USAGE",
+    );
   }
 
   if (options.all) {
@@ -159,9 +164,11 @@ export async function runAuthLogout(
   if (options.profile !== undefined) {
     target = normalizeProfileName(options.profile);
     if (!target) {
-      throw new CliError("Profile name is required.", [
-        "Run `jenkins-cli auth logout --profile <name>`.",
-      ]);
+      throw new CliError(
+        "Profile name is required.",
+        ["Run `jenkins-cli auth logout --profile <name>`."],
+        "INVALID_USAGE",
+      );
     }
     if (!listed.profiles.some((row) => row.name === target)) {
       throw unknownProfileError(
@@ -171,10 +178,14 @@ export async function runAuthLogout(
     }
   } else {
     if (!listed.defaultProfile) {
-      throw new CliError("No active profile to log out.", [
-        "Run `jenkins-cli auth logout --profile <name>` to target a profile.",
-        "Run `jenkins-cli auth list` to see configured profiles.",
-      ]);
+      throw new CliError(
+        "No active profile to log out.",
+        [
+          "Run `jenkins-cli auth logout --profile <name>` to target a profile.",
+          "Run `jenkins-cli auth list` to see configured profiles.",
+        ],
+        "PROFILE_NOT_FOUND",
+      );
     }
     target = listed.defaultProfile;
   }
@@ -197,7 +208,7 @@ export async function runAuthRename(
   oldName: string,
   newName: string,
   deps: ProfileOperationsDeps = {},
-  write: WriteLine = console.log,
+  write: WriteLine = printLine,
 ): Promise<void> {
   const result = await renameProfile(oldName, newName, deps);
   if (!result.changed) {
@@ -245,7 +256,7 @@ async function confirmOrAbort(
     initialValue: false,
   });
   if (isCancel(response) || !response) {
-    throw new CliError("Operation cancelled.");
+    throw new CliError("Operation cancelled.", [], "OPERATION_CANCELLED");
   }
 }
 

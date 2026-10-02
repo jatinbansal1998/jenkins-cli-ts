@@ -2,7 +2,7 @@ import { formatTable } from "../table";
 import { mkdir } from "node:fs/promises";
 import path from "node:path";
 import { isCancel, multiselect, text } from "../clack";
-import { CliError, printHint, printOk } from "../cli";
+import { CliError, printHint, printLine, printOk } from "../cli";
 import type { EnvConfig } from "../env";
 import type { JenkinsClient } from "../jenkins/client";
 import type { ArtifactEntry } from "../types/jenkins";
@@ -86,6 +86,7 @@ function validateArtifactsOptions(options: ArtifactsOptions): void {
     throw new CliError(
       "--json supports artifact listing only and cannot be combined with download options.",
       ["Remove --download, --dest, --artifact, and --force."],
+      "INVALID_USAGE",
     );
   }
 }
@@ -110,7 +111,11 @@ async function resolveBuildTarget(
     };
   }
   if (target.kind !== "job") {
-    throw new CliError("Artifacts require a build or job target.");
+    throw new CliError(
+      "Artifacts require a build or job target.",
+      [],
+      "INVALID_USAGE",
+    );
   }
 
   const completed = await options.client.getPermalinkBuild(
@@ -118,9 +123,11 @@ async function resolveBuildTarget(
     "lastCompletedBuild",
   );
   if (!completed) {
-    throw new CliError(`No completed builds found for ${target.jobLabel}.`, [
-      "Trigger a build first, or pass --build <number> or --build-url <url>.",
-    ]);
+    throw new CliError(
+      `No completed builds found for ${target.jobLabel}.`,
+      ["Trigger a build first, or pass --build <number> or --build-url <url>."],
+      "NO_COMPLETED_BUILD",
+    );
   }
   return {
     buildUrl: completed.buildUrl,
@@ -189,6 +196,7 @@ function filterArtifacts(
     throw new CliError(
       `Requested artifact${unknown.length === 1 ? "" : "s"} not found: ${unknown.join(", ")}.`,
       ["Run `artifacts` without --download to list available artifacts."],
+      "ARTIFACT_NOT_FOUND",
     );
   }
   return selected;
@@ -219,7 +227,7 @@ async function promptForDest(destOption: string | undefined): Promise<string> {
     initialValue: fallback,
   });
   if (isCancel(response)) {
-    throw new CliError("Operation cancelled.");
+    throw new CliError("Operation cancelled.", [], "OPERATION_CANCELLED");
   }
   const value = String(response).trim();
   return value ? path.resolve(value) : fallback;
@@ -280,9 +288,13 @@ function resolveArtifactDestPath(
     path.win32.isAbsolute(relativePath) ||
     segments.some((segment) => segment === "..")
   ) {
-    throw new CliError(`Unsafe artifact path: ${artifact.relativePath}.`, [
-      "Jenkins returned an artifact path that would write outside the destination directory.",
-    ]);
+    throw new CliError(
+      `Unsafe artifact path: ${artifact.relativePath}.`,
+      [
+        "Jenkins returned an artifact path that would write outside the destination directory.",
+      ],
+      "ARTIFACT_PATH_UNSAFE",
+    );
   }
 
   const destRoot = path.resolve(dest);
@@ -293,15 +305,19 @@ function resolveArtifactDestPath(
     relativeToDest.startsWith(`..${path.sep}`) ||
     path.isAbsolute(relativeToDest)
   ) {
-    throw new CliError(`Unsafe artifact path: ${artifact.relativePath}.`, [
-      "Jenkins returned an artifact path that would write outside the destination directory.",
-    ]);
+    throw new CliError(
+      `Unsafe artifact path: ${artifact.relativePath}.`,
+      [
+        "Jenkins returned an artifact path that would write outside the destination directory.",
+      ],
+      "ARTIFACT_PATH_UNSAFE",
+    );
   }
   return destPath;
 }
 
 function renderArtifactsTable(artifacts: ArtifactEntry[]): void {
-  console.log(
+  printLine(
     formatTable([
       ["File", "Relative Path"],
       ...artifacts.map((entry) => [entry.fileName, entry.relativePath]),

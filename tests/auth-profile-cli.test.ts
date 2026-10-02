@@ -157,7 +157,7 @@ describe("auth profile management CLI", () => {
       "missing",
     ]);
 
-    expect(result.exitCode).toBe(1);
+    expect(result.exitCode).toBe(4);
     expect(result.output).toContain('ERROR: Profile "missing" was not found.');
     expect(result.output).toContain("Available profiles: work, home.");
   });
@@ -185,7 +185,7 @@ describe("auth profile management CLI", () => {
       "missing",
     ]);
 
-    expect(result.exitCode).toBe(1);
+    expect(result.exitCode).toBe(4);
     expect(result.output).toContain(
       'ERROR: Profile "missing" is not configured.',
     );
@@ -194,7 +194,7 @@ describe("auth profile management CLI", () => {
   test("auth current fails when no credential source is resolvable", () => {
     const result = runCli(makeHome(), ["auth", "current"]);
 
-    expect(result.exitCode).toBe(1);
+    expect(result.exitCode).toBe(3);
     expect(result.output).toContain("ERROR: Missing JENKINS_URL.");
   });
 
@@ -226,7 +226,7 @@ describe("auth profile management CLI", () => {
       "--non-interactive",
     ]);
 
-    expect(result.exitCode).toBe(1);
+    expect(result.exitCode).toBe(2);
     expect(result.output).toContain(
       "ERROR: --all and --profile are mutually exclusive.",
     );
@@ -284,7 +284,7 @@ describe("auth profile management CLI", () => {
       "home",
     ]);
 
-    expect(result.exitCode).toBe(1);
+    expect(result.exitCode).toBe(2);
     expect(result.output).toContain('ERROR: Profile "home" already exists.');
   });
 

@@ -486,9 +486,11 @@ describe("runList", () => {
       .mockImplementationOnce(async () => "search");
 
     runCancelMock.mockImplementationOnce(async () => {
-      throw new CliError("No running or queued build found.", [
-        "Trigger a build first, then try cancelling again.",
-      ]);
+      throw new CliError(
+        "No running or queued build found.",
+        ["Trigger a build first, then try cancelling again."],
+        "NO_ACTIVE_BUILD",
+      );
     });
 
     await runList({

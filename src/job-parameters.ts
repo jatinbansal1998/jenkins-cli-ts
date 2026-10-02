@@ -146,17 +146,21 @@ export function validateBuildParameters(
     }
     if (definition.type === "choice" && definition.choices?.length) {
       if (!definition.choices.includes(value)) {
-        throw new CliError(`Invalid value for choice parameter "${name}".`, [
-          `Allowed values: ${definition.choices.join(", ")}.`,
-        ]);
+        throw new CliError(
+          `Invalid value for choice parameter "${name}".`,
+          [`Allowed values: ${definition.choices.join(", ")}.`],
+          "INVALID_USAGE",
+        );
       }
     }
     if (definition.type === "boolean") {
       const parsed = parseBooleanParameter(value);
       if (parsed === undefined) {
-        throw new CliError(`Invalid boolean value for parameter "${name}".`, [
-          "Use true/false, yes/no, on/off, or 1/0.",
-        ]);
+        throw new CliError(
+          `Invalid boolean value for parameter "${name}".`,
+          ["Use true/false, yes/no, on/off, or 1/0."],
+          "INVALID_USAGE",
+        );
       }
       params[name] = String(parsed);
       continue;

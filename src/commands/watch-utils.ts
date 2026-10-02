@@ -199,6 +199,7 @@ export async function requestCancellationForWatchTarget(options: {
   throw new CliError(
     "No running or queued build found for the current watch.",
     ["The build may have already completed."],
+    "NO_ACTIVE_BUILD",
   );
 }
 

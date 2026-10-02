@@ -202,7 +202,7 @@ describe.skipIf(!integrationEnabled)(
               JENKINS_API_TOKEN: token,
             },
           );
-          expect(result.exitCode).toBe(1);
+          expect(result.exitCode).toBe(3);
           expect(deniedRequests).toBeGreaterThan(0);
           expect(
             parseJson<{ error: { message: string } }>(result).error.message,
@@ -1088,7 +1088,7 @@ describe.skipIf(!integrationEnabled)(
             ],
             { JENKINS_URL: root },
           );
-          expect(reportFailure.exitCode).toBe(1);
+          expect(reportFailure.exitCode).toBe(6);
           expect(parseJson(reportFailure)).toMatchObject({
             error: { code: "TEST_REPORT_TRANSPORT_ERROR" },
           });
@@ -3868,6 +3868,7 @@ describe.skipIf(!integrationEnabled)(
           ],
         ]) {
           const blocked = await runCliExpectFailure(home, args);
+          expect(blocked.exitCode, blocked.output).toBe(5);
           expect(blocked.stdout.split("\n").filter(Boolean)).toHaveLength(1);
           expect(JSON.parse(blocked.stdout)).toEqual({
             ok: false,
@@ -3895,6 +3896,103 @@ describe.skipIf(!integrationEnabled)(
           data: { result: "SUCCESS" },
         });
         expect(await buildNumber()).toBe((before ?? 0) + 1);
+      });
+    }, 120_000);
+
+    test("classifies failures by exit code and honors --quiet and --no-color", async () => {
+      await withCliHome(async (home) => {
+        const smokeUrl = `${jenkinsUrl}/job/cli-no-params/`;
+
+        const usage = await invokeCli(home, [
+          "logs",
+          "--job-url",
+          smokeUrl,
+          "--context",
+          "2",
+        ]);
+        expect(usage.exitCode, usage.output).toBe(2);
+        expect(usage.stderr).toContain("ERROR: --context requires --grep.");
+
+        const rejected = await invokeCli(
+          home,
+          ["status", "--job-url", smokeUrl, "--json"],
+          { JENKINS_API_TOKEN: "not-the-integration-token" },
+        );
+        expect(rejected.exitCode, rejected.output).toBe(3);
+        expect(parseJson(rejected)).toMatchObject({
+          error: { code: "JENKINS_AUTH_ERROR" },
+        });
+
+        const missing = await invokeCli(home, [
+          "status",
+          "--job-url",
+          `${jenkinsUrl}/job/cli-job-that-does-not-exist/`,
+          "--json",
+        ]);
+        expect(missing.exitCode, missing.output).toBe(4);
+        expect(parseJson(missing)).toMatchObject({
+          error: { code: "JENKINS_NOT_FOUND" },
+        });
+
+        const unreachable = await invokeCli(
+          home,
+          ["status", "--job-url", "http://127.0.0.1:9/job/x/", "--json"],
+          { JENKINS_URL: "http://127.0.0.1:9" },
+        );
+        expect(unreachable.exitCode, unreachable.output).toBe(6);
+        expect(parseJson(unreachable)).toMatchObject({
+          error: { code: "JENKINS_UNREACHABLE" },
+        });
+
+        const quietSuccess = await invokeCli(home, [
+          "build",
+          "--job-url",
+          smokeUrl,
+          "--without-params",
+          "--watch",
+          "--quiet",
+        ]);
+        expect(quietSuccess.exitCode, quietSuccess.output).toBe(0);
+        expect(quietSuccess.stdout).toBe("");
+        expect(quietSuccess.stderr).toBe("");
+
+        const quietFailure = await invokeCli(home, [
+          "build",
+          "--job-url",
+          `${jenkinsUrl}/job/cli-failure/`,
+          "--param",
+          "REASON=quiet-exit-code",
+          "--watch",
+          "--quiet",
+        ]);
+        expect(quietFailure.exitCode, quietFailure.output).toBe(1);
+        expect(quietFailure.stdout).toBe("");
+        expect(quietFailure.stderr).toBe("");
+
+        const quietError = await invokeCli(home, [
+          "status",
+          "--job-url",
+          `${jenkinsUrl}/job/cli-job-that-does-not-exist/`,
+          "--quiet",
+        ]);
+        expect(quietError.exitCode, quietError.output).toBe(4);
+        expect(quietError.stdout).toBe("");
+        expect(quietError.stderr).toStartWith("ERROR: ");
+
+        const forcedColor = { NO_COLOR: undefined, FORCE_COLOR: "1" };
+        const colored = await runCli(
+          home,
+          ["status", "--job-url", smokeUrl],
+          forcedColor,
+        );
+        expect(colored.stdout).toContain("\u001b[1mSUCCESS");
+        const plain = await runCli(
+          home,
+          ["status", "--job-url", smokeUrl, "--no-color"],
+          forcedColor,
+        );
+        expect(plain.stdout).toContain("SUCCESS");
+        expect(plain.stdout).not.toContain("\u001b");
       });
     }, 120_000);
 

@@ -39,14 +39,20 @@ async function performCreate(
 ): Promise<{ name: string; url: string; copiedFrom?: string }> {
   const name = options.name?.trim() ?? "";
   if (!name) {
-    throw new CliError("Missing required <name>.", [
-      "Run `jenkins-cli create <name> --config <file>` or `jenkins-cli create <name> --copy-from <job>`.",
-    ]);
+    throw new CliError(
+      "Missing required <name>.",
+      [
+        "Run `jenkins-cli create <name> --config <file>` or `jenkins-cli create <name> --copy-from <job>`.",
+      ],
+      "INVALID_USAGE",
+    );
   }
   if (name.includes("/")) {
-    throw new CliError("Item names cannot contain '/'.", [
-      "Pass --folder-url <url> to create the item inside a folder.",
-    ]);
+    throw new CliError(
+      "Item names cannot contain '/'.",
+      ["Pass --folder-url <url> to create the item inside a folder."],
+      "INVALID_USAGE",
+    );
   }
   if (Boolean(options.configPath) === Boolean(options.copyFrom)) {
     throw new CliError(
@@ -55,6 +61,7 @@ async function performCreate(
         "--config posts the file as the item's config.xml.",
         "--copy-from copies an existing job or folder.",
       ],
+      "INVALID_USAGE",
     );
   }
 
@@ -71,13 +78,19 @@ async function performCreate(
   if (options.configPath) {
     const file = Bun.file(options.configPath);
     if (!(await file.exists())) {
-      throw new CliError(`Config file not found: ${options.configPath}`, [
-        "Pass --config with a readable config.xml path.",
-      ]);
+      throw new CliError(
+        `Config file not found: ${options.configPath}`,
+        ["Pass --config with a readable config.xml path."],
+        "INVALID_USAGE",
+      );
     }
     const configXml = await file.text();
     if (!configXml.trim()) {
-      throw new CliError(`Config file is empty: ${options.configPath}`);
+      throw new CliError(
+        `Config file is empty: ${options.configPath}`,
+        [],
+        "INVALID_USAGE",
+      );
     }
     const url = await options.client.createItem({
       name,
@@ -117,9 +130,11 @@ async function resolveCopySource(
       ).jobUrl;
   const fullName = jobUrlToFullName(jobUrl);
   if (!fullName) {
-    throw new CliError("Could not resolve --copy-from to a Jenkins item.", [
-      "Pass a job name from `jenkins-cli list` or a full Jenkins job URL.",
-    ]);
+    throw new CliError(
+      "Could not resolve --copy-from to a Jenkins item.",
+      ["Pass a job name from `jenkins-cli list` or a full Jenkins job URL."],
+      "JOB_NOT_FOUND",
+    );
   }
   // Leading "/" makes Jenkins resolve the source from the controller root
   // even when the new item is created inside a folder.

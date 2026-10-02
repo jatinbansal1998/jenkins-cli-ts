@@ -30,7 +30,7 @@ describe("cli default command", () => {
         new TextDecoder().decode(result.stdout) +
         new TextDecoder().decode(result.stderr);
 
-      expect(result.exitCode).toBe(1);
+      expect(result.exitCode).toBe(6);
       expect(output).toContain("Network error while trying to list jobs.");
       expect(output).not.toContain("Missing command. Use --help to see usage.");
     } finally {
@@ -76,7 +76,7 @@ describe("cli default command", () => {
         new TextDecoder().decode(result.stdout) +
         new TextDecoder().decode(result.stderr);
 
-      expect(result.exitCode).toBe(1);
+      expect(result.exitCode).toBe(6);
       expect(output).toContain("Network error while trying to list jobs.");
 
       const migratedConfig = JSON.parse(
@@ -139,7 +139,7 @@ describe("cli default command", () => {
         new TextDecoder().decode(result.stdout) +
         new TextDecoder().decode(result.stderr);
 
-      expect(result.exitCode).toBe(1);
+      expect(result.exitCode).toBe(6);
       expect(output).toContain("Network error while trying to list jobs.");
       expect(output).not.toContain("api-prod");
     } finally {
@@ -215,7 +215,7 @@ describe("cli default command", () => {
         new TextDecoder().decode(result.stdout) +
         new TextDecoder().decode(result.stderr);
 
-      expect(result.exitCode).toBe(1);
+      expect(result.exitCode).toBe(6);
       expect(output).toContain("Network error while trying to list jobs.");
       expect(output).not.toContain("Minimum required version:");
     } finally {
@@ -268,7 +268,7 @@ describe("cli argument routing", () => {
 
   test("unknown commands fail fast with a usage hint", () => {
     const result = runCli(["bogus-command", "--non-interactive"]);
-    expect(result.exitCode).toBe(1);
+    expect(result.exitCode).toBe(2);
     expect(result.output).toContain("Unknown argument: bogus-command");
     expect(result.output).toContain("Run with --help to see usage.");
   });
@@ -282,7 +282,7 @@ describe("cli argument routing", () => {
       "--job-url",
       "http://127.0.0.1:9/job/api",
     ]);
-    expect(result.exitCode).toBe(1);
+    expect(result.exitCode).toBe(2);
     expect(result.output).toContain(
       "Provide either --job or --job-url, not both.",
     );
@@ -298,7 +298,7 @@ describe("cli argument routing", () => {
       "staging",
       "--without-params",
     ]);
-    expect(result.exitCode).toBe(1);
+    expect(result.exitCode).toBe(2);
     expect(result.output).toContain(
       "Use either --branch or --without-params, not both.",
     );
@@ -313,7 +313,7 @@ describe("cli argument routing", () => {
       "--param",
       "NO_EQUALS_SIGN",
     ]);
-    expect(result.exitCode).toBe(1);
+    expect(result.exitCode).toBe(2);
     expect(result.output).toContain("Invalid --param value.");
     expect(result.output).not.toContain("NO_EQUALS_SIGN");
   });
@@ -329,7 +329,7 @@ describe("cli argument routing", () => {
       "--param",
       "KEY=b",
     ]);
-    expect(result.exitCode).toBe(1);
+    expect(result.exitCode).toBe(2);
     expect(result.output).toContain('Duplicate --param key "KEY".');
   });
 
@@ -340,7 +340,7 @@ describe("cli argument routing", () => {
       "--build-url",
       "not-a-url",
     ]);
-    expect(result.exitCode).toBe(1);
+    expect(result.exitCode).toBe(2);
     expect(result.output).toContain("Invalid --build-url value.");
   });
 });

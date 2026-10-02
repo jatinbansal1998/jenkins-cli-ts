@@ -84,7 +84,7 @@ describe.skipIf(!integrationEnabled)(
             "--param",
             "Test=false",
           ],
-          exitCode: 1,
+          exitCode: 2,
           output:
             "Jenkins returned HTTP 400 while trying to trigger build: Parameter BRANCH_TAG provided value 'no-such-branch' is invalid",
         },
@@ -108,7 +108,7 @@ describe.skipIf(!integrationEnabled)(
             `${jenkinsUrl}/job/no-such-job/`,
             "--without-params",
           ],
-          exitCode: 1,
+          exitCode: 4,
           output: "Jenkins returned HTTP 404 while trying to trigger build:",
         },
       ];
@@ -165,7 +165,7 @@ describe.skipIf(!integrationEnabled)(
                 "--param",
                 "Test=false",
               ],
-              exitCode: 1,
+              exitCode: 6,
               output:
                 "Jenkins returned HTTP 409 while trying to trigger build: demo-app-deploy is not buildable",
             },

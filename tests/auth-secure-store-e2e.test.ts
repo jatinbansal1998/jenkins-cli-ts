@@ -302,7 +302,7 @@ describe("secure-store CLI lifecycle (real OS keychain)", () => {
       // With no cache the command fetches jobs from the unreachable controller
       // after migration; migration itself stays silent because this is a
       // non-interactive invocation.
-      expect(result.exitCode).toBe(1);
+      expect(result.exitCode).toBe(6);
       expect(result.output).toContain(
         "Network error while trying to list jobs.",
       );
@@ -347,7 +347,7 @@ describe("secure-store CLI lifecycle (real OS keychain)", () => {
         ["list", "--non-interactive", "--profile", identity.profileName],
         home,
       );
-      expect(use.exitCode).toBe(1);
+      expect(use.exitCode).toBe(6);
 
       const profile = readStoredConfig(home).profiles[identity.profileName];
       expect(profile?.jenkinsApiToken).toBe(identity.token);
@@ -409,7 +409,7 @@ describe("secure-store CLI fallback", () => {
       { TS_KEYRING_BACKEND: "null" },
     );
 
-    expect(result.exitCode).toBe(1);
+    expect(result.exitCode).toBe(6);
     expect(result.output).toContain("Network error while trying to list jobs.");
     expect(result.output).not.toContain(identity.token);
     const profile = readStoredConfig(home).profiles[identity.profileName];
@@ -443,7 +443,7 @@ describe("secure-store CLI fallback", () => {
       { ...cacheEnvForHome(home), TS_KEYRING_BACKEND: "null" },
     );
 
-    expect(result.exitCode).toBe(1);
+    expect(result.exitCode).toBe(3);
     expect(result.output).toContain("No Jenkins API token found in the");
     expect(result.output).toContain(`for profile "${identity.profileName}".`);
   });

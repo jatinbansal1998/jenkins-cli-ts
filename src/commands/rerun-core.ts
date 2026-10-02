@@ -29,9 +29,11 @@ export async function rerunLastBuildForJob(
 ): Promise<RerunBuildResult> {
   const status = await options.client.getJobStatus(options.jobUrl);
   if (typeof status.buildNumber !== "number" && !status.buildUrl) {
-    throw new CliError(`No previous build found for ${options.jobLabel}.`, [
-      "Run a build first, then rerun once a previous build exists.",
-    ]);
+    throw new CliError(
+      `No previous build found for ${options.jobLabel}.`,
+      ["Run a build first, then rerun once a previous build exists."],
+      "NO_BUILDS",
+    );
   }
 
   return await triggerBuildWithRecordedParams({
@@ -52,9 +54,11 @@ export async function rerunLastFailedBuildForJob(
     "lastFailedBuild",
   );
   if (!lastFailed) {
-    throw new CliError(`No failed build found for ${options.jobLabel}.`, [
-      "Run a build first, then rerun once a failed build exists.",
-    ]);
+    throw new CliError(
+      `No failed build found for ${options.jobLabel}.`,
+      ["Run a build first, then rerun once a failed build exists."],
+      "NO_BUILDS",
+    );
   }
 
   const failedStatus = await options.client.getBuildStatus(lastFailed.buildUrl);

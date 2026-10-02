@@ -372,12 +372,14 @@ empty. There are no TODO or FIXME comments in source.
       the normal case, and users cannot tell whether it is supported. - Do: document the two env vars now. Add `--ca-cert` and `--insecure`
       (with a loud warning) as profile fields.
 
-- [ ] **F9. No `NO_COLOR`, `--no-color` or `--quiet`.** - Today: color is decided only by the TTY check inside
+- [x] **F9. No `NO_COLOR`, `--no-color` or `--quiet`.** - Today: color is decided only by the TTY check inside
       `util.styleText`. No `--quiet` among the global options in
       `options.ts`. - Why it matters: `NO_COLOR` is a widely followed convention; CI logs
       and some terminals need it. `--quiet` matters for scripts that only
       care about exit codes. - Do: honor `NO_COLOR` and `FORCE_COLOR`, add `--no-color` and
-      `--quiet`.
+      `--quiet`. - Shipped: `--no-color`, `NO_COLOR` and `FORCE_COLOR`
+      apply to every styled string, including the status result that was
+      always bold. `--quiet` leaves only errors on stderr.
 
 - [ ] **F10. The config directory cannot be moved.** - Today: `CONFIG_DIR` is always `~/.config/jenkins-cli`
       (`config.ts:10`). No `XDG_CONFIG_HOME`, `%APPDATA%` on Windows, or a
@@ -385,11 +387,13 @@ empty. There are no TODO or FIXME comments in source.
       the platform convention, and tests have to monkeypatch `HOME`. - Do: honor `XDG_CONFIG_HOME` and `%APPDATA%`, and add a
       `JENKINS_CLI_CONFIG_DIR` override.
 
-- [ ] **F11. Exit codes are only defined for `wait`.** - Today: `wait` documents 0/1/124/130. Every other command exits 0 or 1
+- [x] **F11. Exit codes are only defined for `wait`.** - Today: `wait` documents 0/1/124/130. Every other command exits 0 or 1
       for everything, including auth failures and not-found. - Why it matters: scripts cannot tell "job does not exist" from "token
       rejected" without parsing text. - Do: define a small table (auth, not found, protected profile, Jenkins
       error, usage error), apply it everywhere, and document it in the
-      README.
+      README. - Shipped: every `CliError` now has a typed error code, and the
+      exit code is derived from it (`src/error-codes.ts`). The table is in
+      the README.
 
 - [ ] **F12. No `open` command.** - Today: only `run` opens a browser
       (`register-operations-commands.ts:1091`). - Why it matters: "open this build in the browser" is a two-second task

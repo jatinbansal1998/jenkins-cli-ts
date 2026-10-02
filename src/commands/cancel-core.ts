@@ -54,7 +54,11 @@ export async function runCancel(options: CancelOptions): Promise<void> {
         const targets = await resolveCancelTargets(structuredOptions);
         const target = targets[0];
         if (!target) {
-          throw new CliError("No cancellation target selected.");
+          throw new CliError(
+            "No cancellation target selected.",
+            [],
+            "NO_ACTIVE_BUILD",
+          );
         }
         if (target.kind === "build") {
           await options.client.stopBuild(target.buildUrl);
@@ -66,9 +70,11 @@ export async function runCancel(options: CancelOptions): Promise<void> {
         }
         const cancelled = await options.client.cancelQueueItem(target.queueUrl);
         if (!cancelled) {
-          throw new CliError("Queue item not found.", [
-            "The queue item may have already started or finished.",
-          ]);
+          throw new CliError(
+            "Queue item not found.",
+            ["The queue item may have already started or finished."],
+            "QUEUE_ITEM_NOT_FOUND",
+          );
         }
         return { targetType: "queue", url: target.queueUrl };
       },
@@ -86,7 +92,11 @@ export async function runCancel(options: CancelOptions): Promise<void> {
 
   const target = targets[0];
   if (!target) {
-    throw new CliError("No cancellation target selected.");
+    throw new CliError(
+      "No cancellation target selected.",
+      [],
+      "NO_ACTIVE_BUILD",
+    );
   }
 
   if (!options.nonInteractive) {
@@ -95,7 +105,7 @@ export async function runCancel(options: CancelOptions): Promise<void> {
       initialValue: true,
     });
     if (activeCancelDeps.isCancel(response)) {
-      throw new CliError("Operation cancelled.");
+      throw new CliError("Operation cancelled.", [], "OPERATION_CANCELLED");
     }
     if (!response) {
       printOk("Cancel skipped.");
@@ -119,9 +129,11 @@ export async function runCancel(options: CancelOptions): Promise<void> {
 
   const cancelled = await options.client.cancelQueueItem(target.queueUrl);
   if (!cancelled) {
-    throw new CliError("Queue item not found.", [
-      "The queue item may have already started or finished.",
-    ]);
+    throw new CliError(
+      "Queue item not found.",
+      ["The queue item may have already started or finished."],
+      "QUEUE_ITEM_NOT_FOUND",
+    );
   }
   printOk(`Cancelled queue item: ${target.queueUrl}`);
 }
@@ -162,7 +174,7 @@ async function resolveCancelTargets(
       ],
     });
     if (activeCancelDeps.isCancel(selection)) {
-      throw new CliError("Operation cancelled.");
+      throw new CliError("Operation cancelled.", [], "OPERATION_CANCELLED");
     }
     if (selection === SEARCH_VALUE) {
       try {
@@ -226,7 +238,7 @@ async function cancelBuildBatch(
     initialValue: true,
   });
   if (activeCancelDeps.isCancel(response)) {
-    throw new CliError("Operation cancelled.");
+    throw new CliError("Operation cancelled.", [], "OPERATION_CANCELLED");
   }
   if (!response) {
     printOk("Cancel skipped.");
@@ -270,7 +282,11 @@ async function cancelBuildBatch(
 
   printOk(`Cancellation summary: ${succeeded} succeeded, ${failed} failed.`);
   if (failed > 0) {
-    throw new CliError("One or more running builds could not be cancelled.");
+    throw new CliError(
+      "One or more running builds could not be cancelled.",
+      [],
+      "CANCEL_INCOMPLETE",
+    );
   }
 }
 
@@ -357,5 +373,6 @@ async function resolveCancelTarget(
   throw new CliError(
     `No running or queued build found for ${target.jobLabel}.`,
     ["Trigger a build first, then try cancelling again."],
+    "NO_ACTIVE_BUILD",
   );
 }

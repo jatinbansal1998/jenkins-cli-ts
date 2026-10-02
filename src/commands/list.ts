@@ -3,7 +3,7 @@
  * Displays all cached Jenkins jobs with optional search filtering.
  */
 
-import { printOk } from "../cli";
+import { printLine, printOk } from "../cli";
 import { runMenuAction } from "./menu-action";
 import type { EnvConfig } from "../env";
 import type { JenkinsClient } from "../jenkins/client";
@@ -175,7 +175,7 @@ function printJobs(entries: JenkinsJob[], search: string): void {
   }
 
   for (const job of entries) {
-    console.log(`${listDeps.getJobDisplayLabel(job)}  ${job.url}`);
+    printLine(`${listDeps.getJobDisplayLabel(job)}  ${job.url}`);
   }
 }
 

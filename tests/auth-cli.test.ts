@@ -99,14 +99,14 @@ describe("auth CLI routing and help", () => {
   test("auth login fails fast without --url in non-interactive mode", () => {
     const canonical = runCli(["auth", "login", "--non-interactive"]);
 
-    expect(canonical.exitCode).toBe(1);
+    expect(canonical.exitCode).toBe(2);
     expect(canonical.output).toContain("Missing required --url.");
   });
 
   test("auth status renders known configuration fields before failing", () => {
     const result = runCli(["auth", "status", "--non-interactive"]);
 
-    expect(result.exitCode).toBe(1);
+    expect(result.exitCode).toBe(3);
     expect(result.output).toContain("Profile:          Environment");
     expect(result.output).toContain("Controller:       Unknown");
     expect(result.output).toContain("Token storage:    Environment variables");
@@ -126,7 +126,7 @@ describe("auth CLI routing and help", () => {
       },
     });
 
-    expect(result.exitCode).toBe(1);
+    expect(result.exitCode).toBe(3);
     expect(result.output).toContain("Profile:          work");
     expect(result.output).toContain("Token storage:    Config file");
     expect(result.output).toContain("Token present:    No");

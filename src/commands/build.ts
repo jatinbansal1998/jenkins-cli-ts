@@ -1,3 +1,4 @@
+import { EXIT_CODES } from "../error-codes";
 import { shellEscape } from "../shell-escape";
 /**
  * Build command implementation.
@@ -20,6 +21,7 @@ import {
   getScriptName,
   handleCliError,
   printHint,
+  printLine,
   printOk,
 } from "../cli";
 import { runMenuAction } from "./menu-action";
@@ -347,7 +349,7 @@ export async function runBuild(options: BuildOptions): Promise<BuildRunResult> {
           }),
         });
         if (finalStatus.result !== "SUCCESS") {
-          process.exitCode = 1;
+          process.exitCode = EXIT_CODES.FAILURE;
         }
       }
     }
@@ -386,7 +388,7 @@ export async function runBuild(options: BuildOptions): Promise<BuildRunResult> {
               }),
             });
             if (finalStatus.result !== "SUCCESS") {
-              process.exitCode = 1;
+              process.exitCode = EXIT_CODES.FAILURE;
             }
           }
           return "action_ok";
@@ -732,7 +734,7 @@ async function runBuildOnce(options: {
         }),
       });
       if (finalStatus.result !== "SUCCESS") {
-        process.exitCode = 1;
+        process.exitCode = EXIT_CODES.FAILURE;
       }
     }
     return {
@@ -815,23 +817,29 @@ async function watchBuildStatusStructured(options: {
 
 function validateBuildOptions(options: BuildOptions): void {
   if (options.job && options.jobUrl) {
-    throw new CliError("Provide either --job or --job-url, not both.", [
-      "Remove one of the flags and try again.",
-    ]);
+    throw new CliError(
+      "Provide either --job or --job-url, not both.",
+      ["Remove one of the flags and try again."],
+      "INVALID_USAGE",
+    );
   }
 
   const hasCustomParams = hasParams(options.customParams);
 
   if (options.branch && options.defaultBranch) {
-    throw new CliError("Use either --branch or --without-params, not both.", [
-      "Remove one of the flags and try again.",
-    ]);
+    throw new CliError(
+      "Use either --branch or --without-params, not both.",
+      ["Remove one of the flags and try again."],
+      "INVALID_USAGE",
+    );
   }
 
   if (hasCustomParams && options.defaultBranch) {
-    throw new CliError("Use either --param or --without-params, not both.", [
-      "Remove one of the flags and try again.",
-    ]);
+    throw new CliError(
+      "Use either --param or --without-params, not both.",
+      ["Remove one of the flags and try again."],
+      "INVALID_USAGE",
+    );
   }
 }
 
@@ -862,7 +870,7 @@ function printNonInteractiveBuildTip(options: {
 }): void {
   const rerunCommand = formatNonInteractiveBuildCommand(options);
   printOk("TIP: Non-interactive equivalent:");
-  console.log(rerunCommand);
+  printLine(rerunCommand);
 }
 
 function formatNonInteractiveBuildCommand(options: {
@@ -915,9 +923,11 @@ function formatNonInteractiveBuildCommand(options: {
 function normalizeBranchParam(value?: string): string {
   const branchParam = (value || "BRANCH").trim();
   if (!branchParam) {
-    throw new CliError("Invalid --branch-param value.", [
-      "Provide a non-empty parameter name (e.g., BRANCH).",
-    ]);
+    throw new CliError(
+      "Invalid --branch-param value.",
+      ["Provide a non-empty parameter name (e.g., BRANCH)."],
+      "INVALID_USAGE",
+    );
   }
   return branchParam;
 }
@@ -939,14 +949,18 @@ function resolveBuildTriggerConfig(options: {
 
   if (options.defaultBranch) {
     if (branch) {
-      throw new CliError("Use either --branch or --without-params, not both.", [
-        "Remove one of the flags and try again.",
-      ]);
+      throw new CliError(
+        "Use either --branch or --without-params, not both.",
+        ["Remove one of the flags and try again."],
+        "INVALID_USAGE",
+      );
     }
     if (hasCustom) {
-      throw new CliError("Use either --param or --without-params, not both.", [
-        "Remove one of the flags and try again.",
-      ]);
+      throw new CliError(
+        "Use either --param or --without-params, not both.",
+        ["Remove one of the flags and try again."],
+        "INVALID_USAGE",
+      );
     }
     return {
       branch: "",
@@ -962,6 +976,7 @@ function resolveBuildTriggerConfig(options: {
       throw new CliError(
         `Parameter key "${options.branchParam}" conflicts with --branch.`,
         [`Remove --param ${options.branchParam}=... or omit --branch.`],
+        "INVALID_USAGE",
       );
     }
     params[options.branchParam] = branch;
@@ -1038,7 +1053,7 @@ async function resolveWatchDecision(options: {
     initialValue: true,
   });
   if (deps.isCancel(response)) {
-    throw new CliError("Operation cancelled.");
+    throw new CliError("Operation cancelled.", [], "OPERATION_CANCELLED");
   }
   return Boolean(response);
 }
@@ -1374,9 +1389,11 @@ async function resolveInteractiveBuildSelection(options: {
     });
 
     if (jobs.length === 0) {
-      throw new CliError("No jobs found in cache.", [
-        "Run `jenkins-cli list --refresh` to fetch jobs from Jenkins.",
-      ]);
+      throw new CliError(
+        "No jobs found in cache.",
+        ["Run `jenkins-cli list --refresh` to fetch jobs from Jenkins."],
+        "JOB_CACHE_EMPTY",
+      );
     }
   }
 
@@ -1419,7 +1436,7 @@ async function resolveInteractiveBuildSelection(options: {
           confirm: deps.confirm,
           select: deps.select,
           isCancel: deps.isCancel,
-          writeLine: console.log,
+          writeLine: printLine,
         },
         selectBranch: async () =>
           await resolveBranchValue({
@@ -1446,7 +1463,7 @@ async function resolveInteractiveBuildSelection(options: {
   });
 
   if (result.terminal === "exit_command") {
-    throw new CliError("Operation cancelled.");
+    throw new CliError("Operation cancelled.", [], "OPERATION_CANCELLED");
   }
 
   if (result.terminal !== "complete") {
@@ -1473,13 +1490,13 @@ async function resolveInteractiveBuildSelection(options: {
       definitions: context.parameterDefinitions,
       params: defaults,
       sensitiveNames,
-      writeLine: console.log,
+      writeLine: printLine,
     });
   }
 
   const selectedJobUrl = normalizeOptionalJobUrl(context.selectedJobUrl);
   if (!selectedJobUrl) {
-    throw new CliError("Job name is required.");
+    throw new CliError("Job name is required.", [], "INVALID_USAGE");
   }
 
   const matchedFromSearch =
@@ -1529,16 +1546,20 @@ async function resolveJobTarget(options: {
   });
 
   if (jobs.length === 0) {
-    throw new CliError("No jobs found in cache.", [
-      "Run `jenkins-cli list --refresh` to fetch jobs from Jenkins.",
-    ]);
+    throw new CliError(
+      "No jobs found in cache.",
+      ["Run `jenkins-cli list --refresh` to fetch jobs from Jenkins."],
+      "JOB_CACHE_EMPTY",
+    );
   }
 
   const query = options.job?.trim() ?? "";
   if (!query) {
-    throw new CliError("Missing required --job.", [
-      "Pass --job <name> or use --job-url <url>.",
-    ]);
+    throw new CliError(
+      "Missing required --job.",
+      ["Pass --job <name> or use --job-url <url>."],
+      "INVALID_USAGE",
+    );
   }
 
   const selectedJob = await deps.resolveJobMatch({
@@ -1616,7 +1637,7 @@ async function promptForBranchSelection(options: {
     });
 
     if (deps.isCancel(response)) {
-      throw new CliError("Operation cancelled.");
+      throw new CliError("Operation cancelled.", [], "OPERATION_CANCELLED");
     }
 
     if (response === BRANCH_REMOVE_VALUE) {
@@ -1652,7 +1673,7 @@ async function promptForBranchRemoval(
     })),
   });
   if (deps.isCancel(response)) {
-    throw new CliError("Operation cancelled.");
+    throw new CliError("Operation cancelled.", [], "OPERATION_CANCELLED");
   }
   return String(response).trim();
 }
@@ -1664,7 +1685,7 @@ async function promptForBranchEntry(): Promise<string> {
     placeholder: "e.g. main",
   });
   if (deps.isCancel(response)) {
-    throw new CliError("Operation cancelled.");
+    throw new CliError("Operation cancelled.", [], "OPERATION_CANCELLED");
   }
   return String(response).trim();
 }

@@ -436,10 +436,14 @@ export async function resolveJobMatch(options: {
 
   if (options.nonInteractive || !options.selectFromOptions) {
     const optionNames = optionsList.map(getJobDisplayName).join(", ");
-    throw new CliError(`Job name is ambiguous for "${trimmedQuery}".`, [
-      `Options: ${optionNames}`,
-      "Pass `--job <exact name>` or `--job-url <url>`.",
-    ]);
+    throw new CliError(
+      `Job name is ambiguous for "${trimmedQuery}".`,
+      [
+        `Options: ${optionNames}`,
+        "Pass `--job <exact name>` or `--job-url <url>`.",
+      ],
+      "JOB_AMBIGUOUS",
+    );
   }
 
   return options.selectFromOptions(optionsList);
@@ -455,11 +459,15 @@ export function resolveJobCandidates(
   const topMatch = ranked[0];
   if (!topMatch || topMatch.score < MIN_SCORE) {
     const closest = findClosestJobs(trimmedQuery, jobs).map(getJobDisplayName);
-    throw new CliError(`No jobs match "${trimmedQuery}".`, [
-      ...(closest.length > 0 ? [`Closest: ${closest.join(", ")}.`] : []),
-      "Try a different description or run `jenkins-cli list --refresh`.",
-      "Or pass `--job-url` to skip cache matching.",
-    ]);
+    throw new CliError(
+      `No jobs match "${trimmedQuery}".`,
+      [
+        ...(closest.length > 0 ? [`Closest: ${closest.join(", ")}.`] : []),
+        "Try a different description or run `jenkins-cli list --refresh`.",
+        "Or pass `--job-url` to skip cache matching.",
+      ],
+      "JOB_NOT_FOUND",
+    );
   }
 
   const topScore = topMatch.score;
@@ -515,9 +523,11 @@ function isPartialTokenMatch(
 function ensureNonEmptyJobQuery(query: string): string {
   const trimmedQuery = query.trim();
   if (!trimmedQuery) {
-    throw new CliError("Job name is required.", [
-      "Pass --job <name> or use --job-url <url>.",
-    ]);
+    throw new CliError(
+      "Job name is required.",
+      ["Pass --job <name> or use --job-url <url>."],
+      "INVALID_USAGE",
+    );
   }
   return trimmedQuery;
 }

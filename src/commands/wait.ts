@@ -1,3 +1,4 @@
+import { EXIT_CODES, exitCodeFor } from "../error-codes";
 import { logCliError } from "../logger";
 import { type BuildSelection, resolveBuildSelector } from "../build-selector";
 import {
@@ -95,14 +96,18 @@ export async function runWait(options: WaitOptions): Promise<WaitResult> {
     ? parseOptionalDurationMs(options.timeout, 0, "timeout")
     : undefined;
   if (timeoutMs !== undefined && timeoutMs <= 0) {
-    throw new CliError("Invalid --timeout value.", [
-      "Use a timeout greater than 0ms (e.g. --timeout 10m).",
-    ]);
+    throw new CliError(
+      "Invalid --timeout value.",
+      ["Use a timeout greater than 0ms (e.g. --timeout 10m)."],
+      "INVALID_USAGE",
+    );
   }
   if (intervalMs <= 0) {
-    throw new CliError("Invalid --interval value.", [
-      "Use an interval greater than 0ms (e.g. --interval 5s).",
-    ]);
+    throw new CliError(
+      "Invalid --interval value.",
+      ["Use an interval greater than 0ms (e.g. --interval 5s)."],
+      "INVALID_USAGE",
+    );
   }
 
   const resolved = await resolveWaitTarget(options);
@@ -196,27 +201,25 @@ async function runWaitJson(options: WaitOptions): Promise<WaitResult> {
   } catch (error) {
     logCliError(error);
     emitJsonError(toJsonError(error), write);
-    if (!process.exitCode) {
-      process.exitCode = 1;
-    }
+    process.exitCode ||= exitCodeFor(error);
     return { result: "ERROR" };
   }
 }
 
 function applyWaitExitCode(result: WaitResult): void {
   if (result.timedOut) {
-    process.exitCode = 124;
+    process.exitCode = EXIT_CODES.TIMEOUT;
     return;
   }
   if (result.cancelled) {
-    process.exitCode = 130;
+    process.exitCode = EXIT_CODES.INTERRUPTED;
     return;
   }
   if (result.cancelIssued) {
     return;
   }
   if (result.result !== "SUCCESS") {
-    process.exitCode = 1;
+    process.exitCode = EXIT_CODES.FAILURE;
   }
 }
 
@@ -527,9 +530,11 @@ export async function waitForBuild(options: {
           emitOutput,
         });
       } else {
-        throw new CliError("Missing wait target.", [
-          "Provide --job, --job-url, --build-url, or --queue-url.",
-        ]);
+        throw new CliError(
+          "Missing wait target.",
+          ["Provide --job, --job-url, --build-url, or --queue-url."],
+          "INVALID_USAGE",
+        );
       }
 
       await waitForPollIntervalOrCancel(options.intervalMs, cancelSignal);

@@ -246,14 +246,14 @@ describe("compiled CLI", () => {
 
   test("handles offline validation errors through the compiled entry point", async () => {
     const login = await runCompiled(["auth", "login", "--non-interactive"]);
-    expect(login.exitCode).toBe(1);
+    expect(login.exitCode).toBe(2);
     expect(login.output).toContain("ERROR: Missing required --url.");
 
     const unknownOption = await runCompiled([
       "--definitely-not-a-real-option",
       "--non-interactive",
     ]);
-    expect(unknownOption.exitCode).toBe(1);
+    expect(unknownOption.exitCode).toBe(2);
     expect(unknownOption.output).toContain("ERROR: Unknown arguments:");
     expect(unknownOption.output).toContain("definitely-not-a-real-option");
   });
@@ -403,7 +403,7 @@ describe("compiled CLI local error logs", () => {
           JENKINS_API_TOKEN: "synthetic-token",
         },
       });
-      expect(result.exitCode).toBe(1);
+      expect(result.exitCode).toBe(6);
       expect(JSON.parse(result.stdout).error.message).toContain(
         "Invalid JSON response",
       );

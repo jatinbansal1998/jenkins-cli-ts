@@ -147,9 +147,11 @@ describe("history --json", () => {
 
   test("emits a JSON error envelope and non-zero exit code on failure", async () => {
     const listBuildHistory = mock(async () => {
-      throw new CliError("Jenkins returned HTTP 500 while trying to list.", [
-        "Try again.",
-      ]);
+      throw new CliError(
+        "Jenkins returned HTTP 500 while trying to list.",
+        ["Try again."],
+        "JENKINS_HTTP_ERROR",
+      );
     });
     const sink = capture();
 
@@ -167,8 +169,8 @@ describe("history --json", () => {
       error: { message: string; code: string };
     };
     expect(parsed.ok).toBe(false);
-    expect(parsed.error.code).toBe("CLI_ERROR");
-    expect(process.exitCode).toBe(1);
+    expect(parsed.error.code).toBe("JENKINS_HTTP_ERROR");
+    expect(process.exitCode).toBe(6);
     process.exitCode = 0;
   });
 });

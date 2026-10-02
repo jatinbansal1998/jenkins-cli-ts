@@ -88,7 +88,11 @@ export function unknownProfileError(
       : [
           "No profiles are configured yet. Run `jenkins-cli auth login --profile <name>`.",
         ];
-  return new CliError(`Profile "${profileName}" was not found.`, hints);
+  return new CliError(
+    `Profile "${profileName}" was not found.`,
+    hints,
+    "PROFILE_NOT_FOUND",
+  );
 }
 
 export async function listProfiles(
@@ -121,16 +125,18 @@ export async function selectProfile(
 ): Promise<SelectProfileResult> {
   const profileName = normalizeProfileName(name);
   if (!profileName) {
-    throw new CliError("Profile name is required.");
+    throw new CliError("Profile name is required.", [], "INVALID_USAGE");
   }
 
   const config = (await readCurrentConfig(deps))?.config;
   const profiles = config?.profiles ?? {};
   const names = Object.keys(profiles);
   if (names.length === 0) {
-    throw new CliError("No profiles are configured.", [
-      "Run `jenkins-cli auth login --profile <name>` to add one.",
-    ]);
+    throw new CliError(
+      "No profiles are configured.",
+      ["Run `jenkins-cli auth login --profile <name>` to add one."],
+      "PROFILE_NOT_FOUND",
+    );
   }
   if (!profiles[profileName]) {
     throw unknownProfileError(profileName, names);
@@ -159,7 +165,7 @@ export async function setProfileProtection(
 ): Promise<SetProfileProtectionResult> {
   const profileName = normalizeProfileName(name);
   if (!profileName) {
-    throw new CliError("Profile name is required.");
+    throw new CliError("Profile name is required.", [], "INVALID_USAGE");
   }
 
   const config = (await readCurrentConfig(deps))?.config;
@@ -207,7 +213,7 @@ export async function deleteProfilesStrict(
   const targets = names.map((name) => normalizeProfileName(name));
   for (const target of targets) {
     if (!target) {
-      throw new CliError("Profile name is required.");
+      throw new CliError("Profile name is required.", [], "INVALID_USAGE");
     }
     if (!profiles[target]) {
       throw unknownProfileError(target, available);
@@ -241,9 +247,11 @@ export async function renameProfile(
   const oldName = normalizeProfileName(oldNameRaw);
   const newName = normalizeProfileName(newNameRaw);
   if (!oldName || !newName) {
-    throw new CliError("Profile names are required.", [
-      "Run `jenkins-cli auth rename <old> <new>`.",
-    ]);
+    throw new CliError(
+      "Profile names are required.",
+      ["Run `jenkins-cli auth rename <old> <new>`."],
+      "INVALID_USAGE",
+    );
   }
 
   const config = (await readCurrentConfig(deps))?.config;
@@ -261,9 +269,11 @@ export async function renameProfile(
     return { from: oldName, to: newName, isDefault, changed: false };
   }
   if (profiles[newName]) {
-    throw new CliError(`Profile "${newName}" already exists.`, [
-      "Choose a different name or delete the existing profile first.",
-    ]);
+    throw new CliError(
+      `Profile "${newName}" already exists.`,
+      ["Choose a different name or delete the existing profile first."],
+      "INVALID_USAGE",
+    );
   }
 
   // Rebuild the profile map in place so the renamed profile keeps its position.
@@ -316,6 +326,7 @@ export async function renameProfile(
     throw new CliError(
       "Unable to write the renamed token to the OS secure store; no changes were made.",
       ["Ensure your login keychain / keyring is unlocked and try again."],
+      "SECURE_STORE_ERROR",
     );
   }
 
@@ -336,6 +347,7 @@ export async function renameProfile(
             "Check the config file permissions and your keychain, then try again.",
           ]
         : ["Check the config file permissions and try again."],
+      "CONFIG_WRITE_FAILED",
     );
   }
 
@@ -365,6 +377,7 @@ export async function renameProfile(
         ...rollbackFailures,
         "Ensure your login keychain / keyring is unlocked and try again.",
       ],
+      "SECURE_STORE_ERROR",
     );
   }
 
@@ -418,6 +431,7 @@ async function performDelete(
           ...describeRestoreFailures(restoreFailures),
           "Ensure your login keychain / keyring is unlocked and try again.",
         ],
+        "SECURE_STORE_ERROR",
       );
     }
     deletedEntries.push(entry);
@@ -454,6 +468,7 @@ async function performDelete(
         ...describeRestoreFailures(restoreFailures),
         "Check the config file permissions and try again.",
       ],
+      "CONFIG_WRITE_FAILED",
     );
   }
 
@@ -540,9 +555,11 @@ async function writeUpdatedConfig(
     if (options.rethrow) {
       throw error;
     }
-    throw new CliError("Failed to update the config file.", [
-      "Check the config file permissions and try again.",
-    ]);
+    throw new CliError(
+      "Failed to update the config file.",
+      ["Check the config file permissions and try again."],
+      "CONFIG_WRITE_FAILED",
+    );
   }
 }
 
@@ -550,5 +567,6 @@ function secureStoreAccessError(): CliError {
   return new CliError(
     "Unable to access the OS secure store; no changes were made.",
     ["Ensure your login keychain / keyring is unlocked and try again."],
+    "SECURE_STORE_ERROR",
   );
 }

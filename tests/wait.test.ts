@@ -342,7 +342,11 @@ describe("wait command", () => {
   test("waitForBuild shows a cancel error and continues watching when cancel fails", async () => {
     const errorSpy = trackRestore(spyOn(console, "error"));
     const stopBuild = mock(async () => {
-      throw new CliError("Cancel request failed.", ["Try again in a moment."]);
+      throw new CliError(
+        "Cancel request failed.",
+        ["Try again in a moment."],
+        "JENKINS_HTTP_ERROR",
+      );
     });
     const getBuildStatus = mock(async () => {
       if (getBuildStatus.mock.calls.length === 1) {

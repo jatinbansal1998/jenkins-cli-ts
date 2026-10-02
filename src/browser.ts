@@ -19,7 +19,11 @@ export async function openInBrowser(
   const command = browserCommand(url, platform);
   const exitCode = await launcher(command);
   if (exitCode !== 0) {
-    throw new CliError(`Browser launcher exited with code ${exitCode}.`);
+    throw new CliError(
+      `Browser launcher exited with code ${exitCode}.`,
+      [],
+      "BROWSER_FAILED",
+    );
   }
 }
 

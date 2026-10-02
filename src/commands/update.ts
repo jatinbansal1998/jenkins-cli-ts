@@ -1,7 +1,7 @@
 /**
  * Update command implementation.
  */
-import { CliError, printHint, printOk } from "../cli";
+import { CliError, printHint, printLine, printOk } from "../cli";
 import { withTimeout } from "../with-timeout";
 import { UPDATE_COMMAND_BREW } from "../cli-constants";
 import { fetchLatestRelease, fetchReleaseByTag } from "../github/api-wrapper";
@@ -59,12 +59,18 @@ export async function runUpdate(options: UpdateOptions): Promise<void> {
         : undefined;
 
     if (options.check && options.tag) {
-      throw new CliError("Cannot use --check with a version tag.");
+      throw new CliError(
+        "Cannot use --check with a version tag.",
+        [],
+        "INVALID_USAGE",
+      );
     }
     if (options.channel && !requestedChannel) {
-      throw new CliError(`Unknown update channel "${options.channel}".`, [
-        "Use one of: stable, prerelease.",
-      ]);
+      throw new CliError(
+        `Unknown update channel "${options.channel}".`,
+        ["Use one of: stable, prerelease."],
+        "INVALID_USAGE",
+      );
     }
 
     const state = await readUpdateState();
@@ -79,15 +85,15 @@ export async function runUpdate(options: UpdateOptions): Promise<void> {
 
     const updateChannel = resolveUpdateChannel(state);
     const requestedVersion = options.tag?.trim();
-    console.log(`Current version: ${options.currentVersion}`);
+    printLine(`Current version: ${options.currentVersion}`);
     if (requestedVersion) {
-      console.log(
+      printLine(
         `Checking for version ${normalizeVersionTag(requestedVersion)}...`,
       );
     } else if (updateChannel === "prerelease") {
-      console.log("Checking for updates on prerelease channel...");
+      printLine("Checking for updates on prerelease channel...");
     } else {
-      console.log("Checking for updates to latest version...");
+      printLine("Checking for updates to latest version...");
     }
 
     if (options.check) {
@@ -145,10 +151,11 @@ export async function runUpdate(options: UpdateOptions): Promise<void> {
             ? "Installing a specific tag is not supported via Homebrew installs."
             : "Homebrew keeps the installed binary and metadata in sync.",
         ],
+        "UPDATE_FAILED",
       );
     }
     const targetVersion = release.tag_name.replace(/^v/, "");
-    console.log(`Updating to ${targetVersion}...`);
+    printLine(`Updating to ${targetVersion}...`);
     await downloadAndInstall(
       assetUrl,
       targetPath,
@@ -173,21 +180,29 @@ async function runUpdateCheckJson(
   signal: AbortSignal,
 ): Promise<JsonUpdateCheck> {
   if (!options.check) {
-    throw new CliError("--json is supported only with update --check.", [
-      "Pass --check to inspect update availability without installing.",
-    ]);
+    throw new CliError(
+      "--json is supported only with update --check.",
+      ["Pass --check to inspect update availability without installing."],
+      "INVALID_USAGE",
+    );
   }
   if (options.tag) {
-    throw new CliError("--json --check cannot be combined with a version tag.");
+    throw new CliError(
+      "--json --check cannot be combined with a version tag.",
+      [],
+      "INVALID_USAGE",
+    );
   }
   const requestedChannel =
     typeof options.channel === "string"
       ? parseUpdateChannel(options.channel)
       : undefined;
   if (options.channel && !requestedChannel) {
-    throw new CliError(`Unknown update channel "${options.channel}".`, [
-      "Use one of: stable, prerelease.",
-    ]);
+    throw new CliError(
+      `Unknown update channel "${options.channel}".`,
+      ["Use one of: stable, prerelease."],
+      "INVALID_USAGE",
+    );
   }
   const state = await readUpdateState();
   const effectiveState = requestedChannel

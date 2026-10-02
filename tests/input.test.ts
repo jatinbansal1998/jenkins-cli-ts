@@ -270,7 +270,7 @@ describe("input list", () => {
     });
 
     expect(output.document().error?.code).toBe("PIPELINE_INPUT_UNSUPPORTED");
-    expect(process.exitCode).toBe(1);
+    expect(process.exitCode).toBe(6);
   });
 
   test("targets the job's latest build when no exact selector is given", async () => {
@@ -790,7 +790,7 @@ describe("input approve/abort outcomes", () => {
       const document = output.document();
       expect(document.ok).toBeFalse();
       expect(document.error?.code).toBe("PIPELINE_INPUT_INVALID_RESPONSE");
-      expect(process.exitCode).toBe(1);
+      expect(process.exitCode).toBe(6);
       process.exitCode = 0;
     }
   });
@@ -860,7 +860,7 @@ describe("input approve/abort outcomes", () => {
     expect(document.ok).toBeFalse();
     expect(document.error?.code).toBe("INPUT_ACTION_STALE");
     expect(document.error?.message).toContain("was not applied");
-    expect(process.exitCode).toBe(1);
+    expect(process.exitCode).toBe(4);
   });
 
   test("a lost response is unknown even when the action is gone afterwards", async () => {
@@ -887,7 +887,7 @@ describe("input approve/abort outcomes", () => {
     expect(document.ok).toBeFalse();
     expect(document.error?.code).toBe("INPUT_OUTCOME_UNKNOWN");
     expect(document.error?.message).not.toContain("Approved");
-    expect(process.exitCode).toBe(1);
+    expect(process.exitCode).toBe(6);
     expect(client.submitPendingInput).toHaveBeenCalledTimes(1);
   });
 

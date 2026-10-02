@@ -3,7 +3,7 @@
  * Shows Jenkins agents/computers with online/offline status, per-node
  * executor usage, and labels. Read-only.
  */
-import { printOk } from "../cli";
+import { printLine, printOk } from "../cli";
 import type { EnvConfig } from "../env";
 import type { JenkinsClient } from "../jenkins/client";
 import { formatTable, truncateCell } from "../table";
@@ -50,7 +50,7 @@ export async function runNodes(options: NodesOptions): Promise<void> {
     return;
   }
 
-  console.log(formatNodesTable(nodes));
+  printLine(formatNodesTable(nodes));
   printOk(formatNodesSummary(summary));
 }
 

@@ -354,7 +354,7 @@ describe("protected profile CLI output", () => {
       ["input", "abort", "--build-url", `${JOB_URL}12/`, "--json", "--yes"],
     ]) {
       const result = runCli(args);
-      expect(result.exitCode).toBe(1);
+      expect(result.exitCode).toBe(5);
       const lines = result.stdout.split("\n").filter(Boolean);
       expect(lines).toHaveLength(1);
       expect(JSON.parse(lines[0] as string)).toEqual({
@@ -375,7 +375,7 @@ describe("protected profile CLI output", () => {
       "--non-interactive",
       "--no-banner",
     ]);
-    expect(result.exitCode).toBe(1);
+    expect(result.exitCode).toBe(5);
     expect(result.stderr).toContain('ERROR: Profile "release" is read-only.');
     expect(result.stderr).toContain(
       "HINT: Re-run with --confirm-protected to allow builds, cancels, creates, reruns, and input approvals or aborts.",
@@ -445,7 +445,7 @@ describe("protected profile CLI output", () => {
       expect(storedProfile().protected).toBeTrue();
 
       const blocked = spawnCli(home, ["build", "--job-url", JOB_URL, "--json"]);
-      expect(blocked.exitCode).toBe(1);
+      expect(blocked.exitCode).toBe(5);
       expect(JSON.parse(blocked.output.trim()).error.code).toBe(
         "PROFILE_PROTECTED",
       );
@@ -494,7 +494,7 @@ describe("protected profile CLI output", () => {
       "one-off-token",
       "--json",
     ]);
-    expect(result.exitCode).toBe(1);
+    expect(result.exitCode).toBe(5);
     expect(JSON.parse(result.stdout.trim()).error.code).toBe(
       "PROFILE_PROTECTED",
     );

@@ -8,7 +8,7 @@ import { extractBranchParam } from "../job-parameters";
 import { mkdirSync } from "node:fs";
 import { rm } from "node:fs/promises";
 import { dirname } from "node:path";
-import { CliError } from "../cli";
+import { CliError, printWarning } from "../cli";
 
 import { normalizeJobParameterDefinitions } from "../job-parameters";
 import { normalizePendingInputActions } from "../pipeline-inputs";
@@ -144,9 +144,11 @@ export class JenkinsClient {
     const url = this.withBase(`api/json?tree=jobs[${treeFields}]`);
     const data = await this.requestJson<JenkinsJobsResponse>(url, "list jobs");
     if (!Array.isArray(data.jobs)) {
-      throw new CliError("Unexpected Jenkins response when listing jobs.", [
-        "Try `jenkins-cli --refresh` again.",
-      ]);
+      throw new CliError(
+        "Unexpected Jenkins response when listing jobs.",
+        ["Try `jenkins-cli --refresh` again."],
+        "JENKINS_INVALID_RESPONSE",
+      );
     }
 
     const jobs: JenkinsJob[] = [];
@@ -156,9 +158,11 @@ export class JenkinsClient {
     }
 
     if (jobs.length === 0) {
-      throw new CliError("Unexpected Jenkins response: no valid jobs found.", [
-        "Try `jenkins-cli --refresh` again.",
-      ]);
+      throw new CliError(
+        "Unexpected Jenkins response: no valid jobs found.",
+        ["Try `jenkins-cli --refresh` again."],
+        "JENKINS_INVALID_RESPONSE",
+      );
     }
 
     return jobs;
@@ -178,6 +182,7 @@ export class JenkinsClient {
       throw new CliError(
         "Unexpected Jenkins response when listing running builds.",
         ["Try again after checking the Jenkins connection."],
+        "JENKINS_INVALID_RESPONSE",
       );
     }
 
@@ -230,7 +235,7 @@ export class JenkinsClient {
 
     const normalized = normalizeJob(item);
     if (!normalized) {
-      console.warn("Skipping malformed job entry:", item);
+      printWarning(`Skipping malformed job entry: ${JSON.stringify(item)}`);
       return;
     }
     const key = normalizeUrl(normalized.url);
@@ -773,7 +778,7 @@ export class JenkinsClient {
         throw new CliError(
           `Request timed out while trying to download artifact ${relativePath}.`,
           [`Check your network and that ${this.baseUrl} is reachable.`],
-          undefined,
+          "JENKINS_TIMEOUT",
           { cause: error },
         );
       }
@@ -783,7 +788,7 @@ export class JenkinsClient {
       throw new CliError(
         `Network error while trying to download artifact ${relativePath}.`,
         [`Check your network and that ${this.baseUrl} is reachable.`],
-        undefined,
+        "JENKINS_UNREACHABLE",
         { cause: error },
       );
     } finally {
@@ -928,9 +933,11 @@ export class JenkinsClient {
 
   async cancelQueueItemById(queueId: number): Promise<void> {
     if (!Number.isFinite(queueId) || queueId <= 0) {
-      throw new CliError("Invalid queue id.", [
-        "Provide a valid queue item id (e.g. 123).",
-      ]);
+      throw new CliError(
+        "Invalid queue id.",
+        ["Provide a valid queue item id (e.g. 123)."],
+        "INVALID_USAGE",
+      );
     }
     const url = this.withBase(`queue/cancelItem?id=${queueId}`);
     await this.postWithCrumb(url, "cancel queue item");
@@ -1411,6 +1418,7 @@ export class JenkinsClient {
     throw new CliError(
       `Unable to complete request while trying to ${options.context}.`,
       ["Try again, or check the Jenkins server logs."],
+      "JENKINS_HTTP_ERROR",
     );
   }
 
@@ -1463,7 +1471,7 @@ export class JenkinsClient {
       throw new CliError(
         `Invalid JSON response while trying to ${context}.`,
         ["Try again, or verify your Jenkins server is healthy."],
-        undefined,
+        "JENKINS_INVALID_RESPONSE",
         { cause: error },
       );
     }
@@ -1543,7 +1551,7 @@ export class JenkinsClient {
         throw new CliError(
           `Request timed out while trying to ${context}.`,
           [`Check your network and that ${this.baseUrl} is reachable.`],
-          undefined,
+          "JENKINS_TIMEOUT",
           { cause: error },
         );
       }
@@ -1554,7 +1562,7 @@ export class JenkinsClient {
       throw new CliError(
         `Network error while trying to ${context}.`,
         [`Check your network and that ${this.baseUrl} is reachable.`],
-        undefined,
+        "JENKINS_UNREACHABLE",
         { cause: error },
       );
     } finally {
@@ -1575,7 +1583,9 @@ export class JenkinsClient {
           ? "BUILD_NOT_FOUND"
           : status === 404
             ? "JENKINS_NOT_FOUND"
-            : undefined;
+            : status === 400
+              ? "JENKINS_BAD_REQUEST"
+              : "JENKINS_HTTP_ERROR";
     throw new CliError(
       `Jenkins returned HTTP ${status} while trying to ${context}${detail ? `: ${detail}` : "."}`,
       [],
