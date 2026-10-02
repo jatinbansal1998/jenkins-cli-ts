@@ -5,28 +5,20 @@ import { CliError, printHint } from "./cli";
 import { MIN_SCORE, AMBIGUITY_GAP, MAX_OPTIONS, SCORES } from "./config/fuzzy";
 import type { EnvConfig } from "./env";
 import type { JenkinsClient } from "./jenkins/client";
-import { normalizeRecentJobs, pruneRecentJobs } from "./recent-job-data";
-import { findJobByUrl, getJobUrlKey, normalizeOptionalJobUrl } from "./job-url";
+import { normalizeOptionalJobUrl } from "./job-url";
 import { selfInvocation } from "./self-invocation";
 import type { JenkinsJob, JenkinsJobLastBuild } from "./types/jenkins";
 import { resolveUserHome } from "./user-home";
 
-type CachedJob = JenkinsJob & {
-  branches?: string[];
-};
-
-type CachedStageTotal = {
-  totalStages: number;
-  updatedAt: string;
-};
-
+/**
+ * The job list only. It is rewritten by a refresh alone; everyday commands
+ * keep their small, often-written state in `job-state.ts`.
+ */
 export type JobCache = {
   jenkinsUrl: string;
   user: string;
   fetchedAt: string;
-  jobs: CachedJob[];
-  recentJobs?: string[];
-  knownStageTotals?: Record<string, CachedStageTotal>;
+  jobs: JenkinsJob[];
   folderDepth?: number;
 };
 
@@ -42,6 +34,10 @@ export function getJobCachePath(jenkinsUrl?: string): string {
     return DEFAULT_CACHE_FILE;
   }
   return path.join(CACHE_DIR, `jobs-${buildCacheKey(jenkinsUrl)}.json`);
+}
+
+export function getJobStatePath(jenkinsUrl: string): string {
+  return path.join(CACHE_DIR, `state-${buildCacheKey(jenkinsUrl)}.json`);
 }
 
 function resolveCacheDir(): string {
@@ -172,34 +168,22 @@ export async function readJobCache(env: {
   return await readCacheFromPath(scopedPath);
 }
 
-export async function writeJobCache(cache: JobCache): Promise<void> {
-  const cachePath = getJobCachePath(cache.jenkinsUrl);
-  await writeCacheToPath(cachePath, cache);
-}
-
 async function fetchAndCacheJobs(
   client: JenkinsClient,
   env: JobCacheEnv,
 ): Promise<JenkinsJob[]> {
   const jobs = await client.listJobs();
-  const existingCache = await readJobCache(env);
-  const cachedJobs = mergeCachedBranches(jobs, existingCache);
-  const recentJobs = existingCache?.recentJobs
-    ? pruneRecentJobs({
-        jobs,
-        recentJobs: existingCache.recentJobs,
-      })
-    : undefined;
   const payload: JobCache = {
     jenkinsUrl: env.jenkinsUrl,
     user: env.jenkinsUser,
     fetchedAt: new Date().toISOString(),
-    jobs: cachedJobs,
-    recentJobs,
-    knownStageTotals: existingCache?.knownStageTotals,
+    jobs: jobs.map((job) => ({
+      ...job,
+      url: normalizeOptionalJobUrl(job.url) ?? job.url.trim(),
+    })),
     folderDepth: env.folderDepth,
   };
-  await writeJobCache(payload);
+  await writeJsonFile(getJobCachePath(env.jenkinsUrl), payload);
   return jobs;
 }
 
@@ -298,48 +282,33 @@ async function readCacheFromPath(cachePath: string): Promise<JobCache | null> {
       return null;
     }
     normalizeCachedJobs(parsed.jobs);
-    parsed.recentJobs = normalizeRecentJobs(parsed.recentJobs);
-    parsed.knownStageTotals = normalizeKnownStageTotals(
-      parsed.knownStageTotals,
-    );
     return parsed;
   } catch {
     return null;
   }
 }
 
-async function writeCacheToPath(
-  cachePath: string,
-  cache: JobCache,
+/** Writes compact JSON through a temp file so readers never see a partial file. */
+export async function writeJsonFile(
+  filePath: string,
+  value: unknown,
 ): Promise<void> {
   await mkdir(CACHE_DIR, { recursive: true });
-  const tempPath = `${cachePath}.${randomUUID()}.tmp`;
+  const tempPath = `${filePath}.${randomUUID()}.tmp`;
   try {
-    await Bun.file(tempPath).write(JSON.stringify(cache, null, 2));
-    await rename(tempPath, cachePath);
+    await Bun.file(tempPath).write(JSON.stringify(value));
+    await rename(tempPath, filePath);
   } catch (error) {
     await rm(tempPath, { force: true }).catch(() => undefined);
     throw error;
   }
 }
 
-export function jobCacheMatchesEnv(
-  cache: { jenkinsUrl: string; user: string },
-  env: Pick<EnvConfig, "jenkinsUrl" | "jenkinsUser">,
-): boolean {
-  return cache.jenkinsUrl === env.jenkinsUrl && cache.user === env.jenkinsUser;
-}
-
-export async function readUsableJobCache(
-  env: EnvConfig,
-): Promise<JobCache | null> {
-  const cache = await readJobCache(env);
-  return cache && jobCacheMatchesEnv(cache, env) ? cache : null;
-}
-
 function cacheMatchesEnv(cache: JobCache, env: JobCacheEnv): boolean {
   return (
-    jobCacheMatchesEnv(cache, env) && cache.folderDepth === env.folderDepth
+    cache.jenkinsUrl === env.jenkinsUrl &&
+    cache.user === env.jenkinsUser &&
+    cache.folderDepth === env.folderDepth
   );
 }
 
@@ -375,68 +344,9 @@ function isValidCache(cache: unknown): cache is JobCache {
   );
 }
 
-function normalizeKnownStageTotals(
-  value: unknown,
-): Record<string, CachedStageTotal> | undefined {
-  if (!value || typeof value !== "object" || Array.isArray(value)) {
-    return undefined;
-  }
-  const normalized = new Map<
-    string,
-    { url: string; entry: CachedStageTotal }
-  >();
-  for (const [jobUrl, entry] of Object.entries(value)) {
-    if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
-      continue;
-    }
-    const record = entry as Record<string, unknown>;
-    const totalStages = record.totalStages;
-    const updatedAt = record.updatedAt;
-    if (
-      typeof totalStages !== "number" ||
-      !Number.isFinite(totalStages) ||
-      totalStages <= 0 ||
-      typeof updatedAt !== "string"
-    ) {
-      continue;
-    }
-    const canonicalUrl = normalizeOptionalJobUrl(jobUrl);
-    const key = getJobUrlKey(canonicalUrl);
-    if (!canonicalUrl || !key) {
-      continue;
-    }
-    const nextEntry = {
-      totalStages,
-      updatedAt,
-    };
-
-    const existing = normalized.get(key);
-    if (!existing || updatedAt >= existing.entry.updatedAt) {
-      normalized.set(key, {
-        url: canonicalUrl,
-        entry: nextEntry,
-      });
-    }
-  }
-  if (normalized.size === 0) {
-    return undefined;
-  }
-
-  const result: Record<string, CachedStageTotal> = {};
-  for (const { url, entry } of normalized.values()) {
-    result[url] = entry;
-  }
-  return result;
-}
-
-function normalizeCachedJobs(jobs: CachedJob[]): void {
+function normalizeCachedJobs(jobs: JenkinsJob[]): void {
   for (const job of jobs) {
     job.url = normalizeOptionalJobUrl(job.url) ?? job.url.trim();
-    if (Array.isArray(job.branches)) {
-      job.branches = normalizeBranches(job.branches);
-    } else if (job.branches) {
-      job.branches = undefined;
-    }
     if (job.disabled !== undefined && typeof job.disabled !== "boolean") {
       job.disabled = undefined;
     }
@@ -492,49 +402,6 @@ function pickFiniteNumber(
   return typeof value === "number" && Number.isFinite(value)
     ? { [key]: value }
     : {};
-}
-
-function mergeCachedBranches(
-  jobs: JenkinsJob[],
-  existingCache: JobCache | null,
-): CachedJob[] {
-  return jobs.map((job) => {
-    const normalizedJob = {
-      ...job,
-      url: normalizeOptionalJobUrl(job.url) ?? job.url.trim(),
-    };
-    const existing = existingCache
-      ? findJobByUrl(existingCache.jobs, normalizedJob.url)
-      : undefined;
-    if (!Array.isArray(existing?.branches) || existing.branches.length === 0) {
-      return normalizedJob;
-    }
-    return {
-      ...normalizedJob,
-      branches: normalizeBranches(existing.branches),
-    };
-  });
-}
-
-function normalizeBranches(entries: unknown[]): string[] {
-  const deduped = new Set<string>();
-  const normalized: string[] = [];
-  for (const entry of entries) {
-    if (typeof entry !== "string") {
-      continue;
-    }
-    const trimmed = entry.trim();
-    if (!trimmed) {
-      continue;
-    }
-    const key = trimmed.toLowerCase();
-    if (deduped.has(key)) {
-      continue;
-    }
-    deduped.add(key);
-    normalized.push(trimmed);
-  }
-  return normalized;
 }
 
 type RankedJob = {

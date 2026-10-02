@@ -1,12 +1,10 @@
 import type { EnvConfig } from "./env";
-import { normalizeOptionalJobUrl, resolveJobUrlFromBuildUrl } from "./job-url";
 import {
-  jobCacheMatchesEnv,
-  readJobCache,
-  readUsableJobCache,
-  writeJobCache,
-  type JobCache,
-} from "./jobs";
+  getJobUrlKey,
+  normalizeOptionalJobUrl,
+  resolveJobUrlFromBuildUrl,
+} from "./job-url";
+import { readJobState, updateJobState } from "./job-state";
 
 export async function getKnownStageTotal(options: {
   env?: EnvConfig;
@@ -16,15 +14,12 @@ export async function getKnownStageTotal(options: {
   if (!options.env) {
     return undefined;
   }
-  const jobUrl = resolveStageCacheJobUrl(options);
-  if (!jobUrl) {
+  const jobKey = getJobUrlKey(resolveStageCacheJobUrl(options));
+  if (!jobKey) {
     return undefined;
   }
-  const cache = await readUsableJobCache(options.env);
-  if (!cache) {
-    return undefined;
-  }
-  return cache.knownStageTotals?.[jobUrl]?.totalStages;
+  const state = await readJobState(options.env.jenkinsUrl);
+  return state.knownStageTotals[jobKey]?.totalStages;
 }
 
 export async function recordKnownStageTotal(options: {
@@ -33,44 +28,31 @@ export async function recordKnownStageTotal(options: {
   buildUrl?: string;
   totalStages?: number;
 }): Promise<void> {
-  if (!options.env) {
-    return;
-  }
+  const totalStages = options.totalStages;
   if (
-    typeof options.totalStages !== "number" ||
-    !Number.isFinite(options.totalStages) ||
-    options.totalStages <= 0
+    !options.env ||
+    typeof totalStages !== "number" ||
+    !Number.isFinite(totalStages) ||
+    totalStages <= 0
   ) {
     return;
   }
-  const jobUrl = resolveStageCacheJobUrl(options);
-  if (!jobUrl) {
+  const jobKey = getJobUrlKey(resolveStageCacheJobUrl(options));
+  if (!jobKey) {
     return;
   }
-  const cache = await readJobCache(options.env);
-  if (cache && !jobCacheMatchesEnv(cache, options.env)) {
-    return;
-  }
-  const baseCache: JobCache =
-    cache ??
-    ({
-      jenkinsUrl: options.env.jenkinsUrl,
-      user: options.env.jenkinsUser,
-      fetchedAt: new Date().toISOString(),
-      jobs: [],
-      knownStageTotals: {},
-    } satisfies JobCache);
-  const newCache = {
-    ...baseCache,
-    knownStageTotals: {
-      ...baseCache.knownStageTotals,
-      [jobUrl]: {
-        totalStages: options.totalStages,
-        updatedAt: new Date().toISOString(),
+  await updateJobState(options.env.jenkinsUrl, (state) => {
+    if (state.knownStageTotals[jobKey]?.totalStages === totalStages) {
+      return undefined;
+    }
+    return {
+      ...state,
+      knownStageTotals: {
+        ...state.knownStageTotals,
+        [jobKey]: { totalStages, updatedAt: new Date().toISOString() },
       },
-    },
-  };
-  await writeJobCache(newCache);
+    };
+  });
 }
 
 export async function persistKnownTotalStages(options: {

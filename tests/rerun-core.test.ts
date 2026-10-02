@@ -9,7 +9,6 @@ const recordBranchSelectionMock = mock(async () => undefined);
 
 void mock.module("../src/recent-jobs", () => ({
   ...realRecentJobs,
-  loadRecentJobs: mock(async () => []),
   loadPreferredJobs: mock(async () => []),
   recordRecentJob: recordRecentJobMock,
 }));

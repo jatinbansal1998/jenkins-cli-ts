@@ -1,46 +1,20 @@
 /**
- * Recent job cache stored inside jobs.json.
+ * Recent job history stored in the per-controller job state file.
  */
 import type { JenkinsJob } from "./types/jenkins";
 import type { EnvConfig } from "./env";
 import { getJobUrlKey, normalizeJobUrl } from "./job-url";
-import {
-  readUsableJobCache,
-  sortJobsByDisplayName,
-  writeJobCache,
-} from "./jobs";
-import { MAX_RECENT_JOBS, normalizeRecentJobs } from "./recent-job-data";
-
-type RecentJob = {
-  url: string;
-  label: string;
-};
-
-export async function loadRecentJobs(options: {
-  env: EnvConfig;
-}): Promise<RecentJob[]> {
-  const cache = await readUsableJobCache(options.env);
-  if (!cache) {
-    return [];
-  }
-
-  const jobsByUrl = buildJobsByUrl(cache.jobs);
-  return normalizeRecentJobs(cache.recentJobs).map((url) =>
-    toRecentJob(url, jobsByUrl),
-  );
-}
+import { readJobState, updateJobState } from "./job-state";
+import { sortJobsByDisplayName } from "./jobs";
+import { MAX_RECENT_JOBS } from "./recent-job-data";
 
 export async function loadPreferredJobs(options: {
   env: EnvConfig;
   jobs: JenkinsJob[];
 }): Promise<JenkinsJob[]> {
-  const cache = await readUsableJobCache(options.env);
-  if (!cache) {
-    return sortJobsByDisplayName(options.jobs);
-  }
-
+  const { recentJobs } = await readJobState(options.env.jenkinsUrl);
   const jobsByUrl = buildJobsByUrl(options.jobs);
-  const preferredJobs = normalizeRecentJobs(cache.recentJobs)
+  const preferredJobs = recentJobs
     .map((url) => jobsByUrl.get(getJobUrlKey(url) ?? ""))
     .filter((job): job is JenkinsJob => Boolean(job));
   if (preferredJobs.length === 0) {
@@ -64,30 +38,26 @@ export async function recordRecentJob(options: {
       return;
     }
 
-    const cache = await readUsableJobCache(options.env);
-    if (!cache) {
-      return;
-    }
-
     const jobUrlKey = getJobUrlKey(jobUrl);
-    const recentJobs = [
-      jobUrl,
-      ...normalizeRecentJobs(cache.recentJobs).filter(
-        (entry) => getJobUrlKey(entry) !== jobUrlKey,
-      ),
-    ].slice(0, MAX_RECENT_JOBS);
-
-    await writeJobCache({
-      ...cache,
-      recentJobs,
+    await updateJobState(options.env.jenkinsUrl, (state) => {
+      if (state.recentJobs[0] === jobUrl) {
+        return undefined;
+      }
+      const recentJobs = [
+        jobUrl,
+        ...state.recentJobs.filter(
+          (entry) => getJobUrlKey(entry) !== jobUrlKey,
+        ),
+      ].slice(0, MAX_RECENT_JOBS);
+      return { ...state, recentJobs };
     });
   } catch {
     // Ignore recent job cache write failures.
   }
 }
 
-function buildJobsByUrl<T extends { url: string }>(jobs: T[]): Map<string, T> {
-  const jobsByUrl = new Map<string, T>();
+function buildJobsByUrl(jobs: JenkinsJob[]): Map<string, JenkinsJob> {
+  const jobsByUrl = new Map<string, JenkinsJob>();
   for (const job of jobs) {
     const key = getJobUrlKey(job.url);
     if (!key) {
@@ -97,15 +67,4 @@ function buildJobsByUrl<T extends { url: string }>(jobs: T[]): Map<string, T> {
   }
 
   return jobsByUrl;
-}
-
-function toRecentJob(
-  url: string,
-  jobsByUrl: Map<string, { name: string; fullName?: string }>,
-): RecentJob {
-  const job = jobsByUrl.get(getJobUrlKey(url) ?? "");
-  return {
-    url,
-    label: job ? job.fullName || job.name : url,
-  };
 }

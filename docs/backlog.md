@@ -104,7 +104,7 @@ file is read and rewritten. Most of the perf list below is one of those two.
       call sites above to it. `getLastBuild` at `client.ts:527` is a starting
       point.
 
-- [ ] **P4. The job cache file is read about 4 times and fully rewritten about
+- [x] **P4. The job cache file is read about 4 times and fully rewritten about
       2 times per command, with no lock.** - Today: the whole `jobs-*.json` file is read, parsed and normalized
       separately by `loadJobs` (`jobs.ts:150`), `loadPreferredJobs`
       (`recent-jobs.ts:37`), `recordRecentJob` (`recent-jobs.ts:67`, then
@@ -138,7 +138,7 @@ file is read and rewritten. Most of the perf list below is one of those two.
 
 ### Job list and picker
 
-- [ ] **P5. Merging branches into the refreshed job list is O(n²).** - Today: `mergeCachedBranches` (`jobs.ts:483-490`) calls `findJobByUrl`
+- [x] **P5. Merging branches into the refreshed job list is O(n²).** - Today: `mergeCachedBranches` (`jobs.ts:483-490`) calls `findJobByUrl`
       for every fetched job. `findJobByUrl` (`job-url.ts:28-33`) is a linear
       `.find`, and each comparison trims, runs a regex replace and lowercases
       both sides. - Why it matters: at 5k jobs that is 12-25 million string comparisons on
