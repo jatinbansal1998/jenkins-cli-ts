@@ -57,6 +57,18 @@ export const GLOBAL_OPTIONS = {
     describe:
       "Folder traversal depth for job discovery (default: 3, from config)",
   },
+  timeout: {
+    type: "string",
+    requiresArg: true,
+    describe:
+      "Per-request HTTP timeout, e.g. 30s or 2m; a bare number is ms (default: 10s, or JENKINS_TIMEOUT_MS / profile timeoutMs)",
+  },
+  retries: {
+    type: "string",
+    requiresArg: true,
+    describe:
+      "Transport retries for idempotent requests (default: 1, or JENKINS_RETRIES / profile retries); build triggers, creates, and input submits never retry",
+  },
   "confirm-protected": {
     type: "boolean",
     describe:

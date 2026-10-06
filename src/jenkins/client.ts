@@ -113,6 +113,8 @@ export class JenkinsClient {
   private readonly apiTokenSource: JenkinsClientOptions["apiToken"];
   private apiToken?: Promise<string>;
   private readonly timeoutMs: number;
+  /** Default for idempotent requests; non-idempotent POSTs pass 0. */
+  private readonly transportRetries: number;
   private readonly useCrumb: boolean;
   private readonly folderDepth: number;
   private crumbCache?: Crumb;
@@ -129,6 +131,7 @@ export class JenkinsClient {
     this.user = options.user;
     this.apiTokenSource = options.apiToken;
     this.timeoutMs = options.timeoutMs ?? 10_000;
+    this.transportRetries = options.transportRetries ?? 1;
     this.useCrumb = options.useCrumb === true;
     const inDepth = options.folderDepth;
     if (typeof inDepth !== "number" || !Number.isFinite(inDepth)) {
@@ -356,7 +359,7 @@ export class JenkinsClient {
     const response = await this.fetchWithTimeout(
       url,
       { method: "GET", headers: { Authorization: await this.authHeader() } },
-      1,
+      this.transportRetries,
       context,
     );
     if (!response.ok) {
@@ -651,7 +654,7 @@ export class JenkinsClient {
       response = await this.fetchWithTimeout(
         url.toString(),
         { method: "GET", headers },
-        1,
+        this.transportRetries,
         "fetch test report",
       );
     } catch (error) {
@@ -779,8 +782,8 @@ export class JenkinsClient {
         logNetworkError("GET", url, "TIMEOUT");
 
         throw new CliError(
-          `Request timed out while trying to download artifact ${relativePath}.`,
-          [`Check your network and that ${this.baseUrl} is reachable.`],
+          `Request timed out while trying to download artifact ${relativePath}: Jenkins did not respond within ${this.timeoutMs}ms.`,
+          timeoutHints(this.baseUrl),
           "JENKINS_TIMEOUT",
           { cause: error },
         );
@@ -968,7 +971,7 @@ export class JenkinsClient {
     const response = await this.fetchWithTimeout(
       url,
       { method: "GET", headers: await this.authHeaders(), redirect: "manual" },
-      1,
+      this.transportRetries,
       context,
     );
     if (isRedirect(response)) {
@@ -1152,7 +1155,7 @@ export class JenkinsClient {
     const response = await this.fetchWithTimeout(
       this.withJob(buildUrl, "logText/progressiveText"),
       { method: "HEAD", headers: await this.authHeaders() },
-      1,
+      this.transportRetries,
       "fetch build log size",
     );
     if (!response.ok) {
@@ -1261,7 +1264,7 @@ export class JenkinsClient {
     const response = await this.fetchWithTimeout(
       url.toString(),
       { method: "GET", headers: await this.authHeaders() },
-      1,
+      this.transportRetries,
       context,
     );
     if (!response.ok) {
@@ -1365,7 +1368,7 @@ export class JenkinsClient {
   }): Promise<Response> {
     const contentType =
       options.contentType ?? "application/x-www-form-urlencoded";
-    const transportRetries = options.transportRetries ?? 1;
+    const transportRetries = options.transportRetries ?? this.transportRetries;
     const redirect = options.redirect ?? "follow";
     if (!this.useCrumb) {
       const headers: Record<string, string> = {
@@ -1434,7 +1437,7 @@ export class JenkinsClient {
     const response = await this.fetchWithTimeout(
       url,
       { method: "GET", headers: await this.authHeaders() },
-      1,
+      this.transportRetries,
       "fetch crumb",
     );
 
@@ -1460,7 +1463,7 @@ export class JenkinsClient {
     const response = await this.fetchWithTimeout(
       url,
       { method: "GET", headers: await this.authHeaders() },
-      1,
+      this.transportRetries,
       context,
     );
 
@@ -1552,8 +1555,8 @@ export class JenkinsClient {
         logNetworkError(method, url, "TIMEOUT");
 
         throw new CliError(
-          `Request timed out while trying to ${context}.`,
-          [`Check your network and that ${this.baseUrl} is reachable.`],
+          `Request timed out while trying to ${context}: Jenkins did not respond within ${this.timeoutMs}ms.`,
+          timeoutHints(this.baseUrl),
           "JENKINS_TIMEOUT",
           { cause: error },
         );
@@ -1829,6 +1832,13 @@ export class JenkinsClient {
 
 function encodeBasicCredentials(user: string, token: string): string {
   return Buffer.from(`${user}:${token}`).toString("base64");
+}
+
+function timeoutHints(baseUrl: string): string[] {
+  return [
+    `Check your network and that ${baseUrl} is reachable.`,
+    "For a slow controller, raise the limit with --timeout or JENKINS_TIMEOUT_MS.",
+  ];
 }
 
 function loginRedirectError(context: string): CliError {

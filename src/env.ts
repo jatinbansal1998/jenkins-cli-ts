@@ -7,11 +7,13 @@ import { CliError } from "./cli";
 import {
   CONFIG_FILE,
   type JenkinsConfig,
+  type JenkinsProfileConfig,
   type LoadedConfig,
   migrateLegacyConfigSyncIfNeeded,
   resolveDefaultProfileName,
   type TokenStorage,
 } from "./config";
+import { parseDurationMs } from "./duration";
 import { ENV_KEYS } from "./env-keys";
 import { normalizeUrl } from "./jenkins-url";
 import {
@@ -27,6 +29,10 @@ type LoadEnvOptions = {
   user?: string;
   apiToken?: string;
   confirmProtected?: boolean;
+  /** Raw `--timeout` value; beats JENKINS_TIMEOUT_MS and the profile. */
+  timeout?: string;
+  /** Raw `--retries` value; beats JENKINS_RETRIES and the profile. */
+  retries?: string;
 };
 
 /** Jenkins connection configuration. */
@@ -44,6 +50,13 @@ export type EnvConfig = {
   useCrumb: boolean;
   /** How many levels deep to pre-fetch folder children in a single API call. */
   folderDepth: number;
+  /** Per-request HTTP timeout; unset leaves the client default. */
+  timeoutMs?: number;
+  /**
+   * Transport retries for idempotent requests; unset leaves the client
+   * default. Non-idempotent POSTs never retry, whatever this says.
+   */
+  transportRetries?: number;
   /**
    * How `jenkinsApiToken` is backed. When "keychain", `jenkinsApiToken` holds a
    * sentinel and the real token must be resolved via `resolveApiToken`.
@@ -125,6 +138,7 @@ export function loadEnv(
       branchParamDefault: resolveBranchParamDefault(),
       useCrumb: parseUseCrumb(process.env[ENV_KEYS.JENKINS_USE_CRUMB]),
       folderDepth: DEFAULT_FOLDER_DEPTH,
+      ...resolveHttpSettings(options),
       ...(protectedProfileName ? { protectedProfileName } : {}),
       confirmProtected,
     };
@@ -146,6 +160,7 @@ export function loadEnv(
         process.env[ENV_KEYS.JENKINS_USE_CRUMB] ?? activeProfile.useCrumb,
       ),
       folderDepth: activeProfile.folderDepth ?? DEFAULT_FOLDER_DEPTH,
+      ...resolveHttpSettings(options, activeProfile),
       ...(activeProfile.tokenStorage
         ? { tokenStorage: activeProfile.tokenStorage }
         : {}),
@@ -201,6 +216,7 @@ export function loadEnv(
     branchParamDefault: resolveBranchParamDefault(),
     useCrumb: parseUseCrumb(process.env[ENV_KEYS.JENKINS_USE_CRUMB]),
     folderDepth: DEFAULT_FOLDER_DEPTH,
+    ...resolveHttpSettings(options),
     confirmProtected,
   };
 }
@@ -356,6 +372,72 @@ function resolveBranchParamDefault(profileBranchParam?: string): string {
     return profileBranchParam;
   }
   return DEFAULT_BRANCH_PARAM;
+}
+
+/** Precedence: flag, then env var, then profile field. */
+function resolveHttpSettings(
+  options: LoadEnvOptions,
+  profile?: JenkinsProfileConfig,
+): Pick<EnvConfig, "timeoutMs" | "transportRetries"> {
+  const timeout = pickSetting(
+    options.timeout,
+    "--timeout",
+    ENV_KEYS.JENKINS_TIMEOUT_MS,
+  );
+  const retries = pickSetting(
+    options.retries,
+    "--retries",
+    ENV_KEYS.JENKINS_RETRIES,
+  );
+  const timeoutMs = timeout
+    ? parseTimeoutMs(timeout.value, timeout.label)
+    : profile?.timeoutMs;
+  const transportRetries = retries
+    ? parseRetries(retries.value, retries.label)
+    : profile?.retries;
+  return {
+    ...(timeoutMs !== undefined ? { timeoutMs } : {}),
+    ...(transportRetries !== undefined ? { transportRetries } : {}),
+  };
+}
+
+function pickSetting(
+  flagValue: string | undefined,
+  flagName: string,
+  envKey: string,
+): { value: string; label: string } | undefined {
+  // A passed flag is validated even when empty; an empty env var means unset.
+  if (flagValue !== undefined) {
+    return { value: flagValue, label: flagName };
+  }
+  const envValue = normalizeOptionalString(process.env[envKey]);
+  return envValue ? { value: envValue, label: envKey } : undefined;
+}
+
+function parseTimeoutMs(value: string, label: string): number {
+  const timeoutMs = parseDurationMs(value, label);
+  // The request timer treats 0 as "no deadline", so a hung controller would
+  // block the command forever.
+  if (timeoutMs <= 0) {
+    throw new CliError(
+      `Invalid ${label} value "${value}".`,
+      ["Use a timeout greater than 0ms (e.g. 30s)."],
+      "INVALID_USAGE",
+    );
+  }
+  return timeoutMs;
+}
+
+function parseRetries(value: string, label: string): number {
+  const trimmed = value.trim();
+  if (!/^\d+$/.test(trimmed)) {
+    throw new CliError(
+      `Invalid ${label} value "${value}".`,
+      ["Use a whole number of retries, 0 or more (e.g. 3)."],
+      "INVALID_USAGE",
+    );
+  }
+  return Number(trimmed);
 }
 
 function missingProfileError(

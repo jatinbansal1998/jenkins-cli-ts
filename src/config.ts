@@ -49,6 +49,10 @@ export type JenkinsProfileConfig = {
   branchParam?: string;
   useCrumb?: boolean;
   folderDepth?: number;
+  /** Per-request HTTP timeout in milliseconds. */
+  timeoutMs?: number;
+  /** Transport retries for idempotent Jenkins requests. */
+  retries?: number;
   tokenStorage?: TokenStorage;
   /** The user explicitly chose plaintext storage or declined migration. */
   secureStorageOptOut?: boolean;
@@ -181,6 +185,9 @@ export async function writeConfigFile(input: ConfigFileInput): Promise<string> {
       ? Math.floor(existingProfile.folderDepth)
       : undefined;
   const folderDepth = parsedInputFolderDepth ?? parsedExistingFolderDepth;
+  // Login has no flags for these; a re-login keeps what the file already set.
+  const timeoutMs = existingProfile?.timeoutMs;
+  const retries = existingProfile?.retries;
 
   const nextProfile: JenkinsProfileConfig = {
     jenkinsUrl: input.jenkinsUrl.trim(),
@@ -189,6 +196,8 @@ export async function writeConfigFile(input: ConfigFileInput): Promise<string> {
     ...(branchParam ? { branchParam } : {}),
     ...(typeof useCrumb === "boolean" ? { useCrumb } : {}),
     ...(typeof folderDepth === "number" ? { folderDepth } : {}),
+    ...(typeof timeoutMs === "number" ? { timeoutMs } : {}),
+    ...(typeof retries === "number" ? { retries } : {}),
     ...(input.tokenStorage ? { tokenStorage: input.tokenStorage } : {}),
     ...(input.secureStorageOptOut ? { secureStorageOptOut: true } : {}),
     // Only an explicit input clears protection; credential updates preserve it.
@@ -388,6 +397,8 @@ function parseProfileRecord(
     ENV_KEYS.JENKINS_USE_CRUMB,
   ]);
   const folderDepth = firstPositiveInt(record, ["folderDepth"]);
+  const timeoutMs = intAtLeast(record.timeoutMs, 1);
+  const retries = intAtLeast(record.retries, 0);
   const tokenStorage = parseTokenStorage(record.tokenStorage);
   const secureStorageOptOut = firstBoolean(record, ["secureStorageOptOut"]);
   const isProtected = firstBoolean(record, ["protected"]);
@@ -399,6 +410,8 @@ function parseProfileRecord(
     ...(branchParam ? { branchParam } : {}),
     ...(typeof useCrumb === "boolean" ? { useCrumb } : {}),
     ...(typeof folderDepth === "number" ? { folderDepth } : {}),
+    ...(typeof timeoutMs === "number" ? { timeoutMs } : {}),
+    ...(typeof retries === "number" ? { retries } : {}),
     ...(tokenStorage ? { tokenStorage } : {}),
     ...(secureStorageOptOut === true ? { secureStorageOptOut: true } : {}),
     ...(isProtected === true ? { protected: true } : {}),
@@ -457,6 +470,12 @@ function normalizeConfigForWrite(config: JenkinsConfig): JenkinsConfig {
       Number.isFinite(profile.folderDepth) &&
       profile.folderDepth >= 1
         ? { folderDepth: Math.floor(profile.folderDepth) }
+        : {}),
+      ...(typeof profile.timeoutMs === "number"
+        ? { timeoutMs: profile.timeoutMs }
+        : {}),
+      ...(typeof profile.retries === "number"
+        ? { retries: profile.retries }
         : {}),
       ...(profile.tokenStorage ? { tokenStorage: profile.tokenStorage } : {}),
       ...(profile.secureStorageOptOut ? { secureStorageOptOut: true } : {}),
@@ -548,6 +567,12 @@ function parseBooleanLike(value: unknown): boolean | undefined {
     return false;
   }
   return undefined;
+}
+
+function intAtLeast(value: unknown, min: number): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) && value >= min
+    ? Math.floor(value)
+    : undefined;
 }
 
 function firstPositiveInt(

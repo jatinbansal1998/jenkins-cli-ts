@@ -350,6 +350,8 @@ export type JenkinsClientOptions = {
   /** A token, or a lookup the client runs on its first request. */
   apiToken: string | (() => Promise<string>);
   timeoutMs?: number;
+  /** Default transport retries for idempotent requests. */
+  transportRetries?: number;
   useCrumb?: boolean;
   folderDepth?: number;
 };

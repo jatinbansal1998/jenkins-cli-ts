@@ -1991,8 +1991,56 @@ describe("JenkinsClient transport retry", () => {
     });
 
     await expect(client.listJobs()).rejects.toThrow(
-      "Request timed out while trying to list jobs.",
+      "Request timed out while trying to list jobs: Jenkins did not respond within 50ms.",
     );
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  test("a configured retry count applies to idempotent requests", async () => {
+    const fetchMock = mock(async (_input: FetchInput, _init?: FetchInit) => {
+      throw new Error("socket closed");
+    });
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+    const client = new JenkinsClient({
+      baseUrl: "https://jenkins.example.com",
+      user: "user",
+      apiToken: "token",
+      timeoutMs: 1_000,
+      transportRetries: 3,
+    });
+
+    await expect(client.listJobs()).rejects.toThrow(CliError);
+    expect(fetchMock).toHaveBeenCalledTimes(4);
+    fetchMock.mockClear();
+    await expect(
+      client.stopBuild("https://jenkins.example.com/job/my-job/123/"),
+    ).rejects.toThrow(CliError);
+    expect(fetchMock).toHaveBeenCalledTimes(4);
+  });
+
+  test("a configured retry count never retries non-idempotent POSTs", async () => {
+    const fetchMock = mock(async (_input: FetchInput, _init?: FetchInit) => {
+      throw new Error("socket closed");
+    });
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+    const client = new JenkinsClient({
+      baseUrl: "https://jenkins.example.com",
+      user: "user",
+      apiToken: "token",
+      timeoutMs: 1_000,
+      transportRetries: 3,
+    });
+
+    await expect(
+      client.triggerBuild("https://jenkins.example.com/job/my-job", {}),
+    ).rejects.toThrow(CliError);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    fetchMock.mockClear();
+    await expect(
+      client.createItem({ name: "once", configXml: "<project/>" }),
+    ).rejects.toThrow(CliError);
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 });

@@ -377,6 +377,77 @@ describe("--limit validation", () => {
   );
 });
 
+async function runAgainstHangingJenkins(
+  args: (root: string) => string[],
+  extraEnv: Record<string, string | undefined> = {},
+): Promise<{ exitCode: number; stdout: string }> {
+  const server = Bun.serve({
+    hostname: "127.0.0.1",
+    port: 0,
+    fetch: () => new Promise<Response>(() => {}),
+  });
+  const tempHome = fs.mkdtempSync(join(tmpdir(), "jenkins-cli-home-"));
+  stampFreshUpdateState(tempHome);
+  try {
+    const root = server.url.origin;
+    const proc = Bun.spawn({
+      cmd: ["bun", "run", "src/index.ts", ...args(root)],
+      cwd: process.cwd(),
+      env: {
+        ...process.env,
+        HOME: tempHome,
+        JENKINS_URL: root,
+        JENKINS_USER: "ci-user",
+        JENKINS_API_TOKEN: "ci-token",
+        JENKINS_TIMEOUT_MS: undefined,
+        JENKINS_RETRIES: undefined,
+        ...extraEnv,
+      },
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    const stdout = await new Response(proc.stdout).text();
+    return { exitCode: await proc.exited, stdout };
+  } finally {
+    await server.stop(true);
+    fs.rmSync(tempHome, { recursive: true, force: true });
+  }
+}
+
+describe("HTTP timeout wiring", () => {
+  test("--timeout reaches the client and the error states it", async () => {
+    const result = await runAgainstHangingJenkins((root) => [
+      "status",
+      "--job-url",
+      `${root}/job/api/`,
+      "--timeout",
+      "150ms",
+      "--json",
+    ]);
+    const document = JSON.parse(result.stdout);
+    expect(result.exitCode).toBe(6);
+    expect(document.error.code).toBe("JENKINS_TIMEOUT");
+    expect(document.error.message).toContain("did not respond within 150ms");
+  });
+
+  test("wait --timeout stays the wait deadline, not the request timeout", async () => {
+    const result = await runAgainstHangingJenkins(
+      (root) => [
+        "wait",
+        "--build-url",
+        `${root}/job/api/1/`,
+        "--timeout",
+        "1h",
+        "--json",
+      ],
+      { JENKINS_TIMEOUT_MS: "200" },
+    );
+    const document = JSON.parse(result.stdout);
+    expect(document.error.code).toBe("JENKINS_TIMEOUT");
+    expect(document.error.message).toContain("did not respond within 200ms");
+  });
+});
+
 describe("parseBuildCustomParams", () => {
   test("returns undefined for empty input", () => {
     expect(parseBuildCustomParams([])).toBeUndefined();

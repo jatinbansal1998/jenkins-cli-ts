@@ -124,6 +124,44 @@ describe("writeConfigFile", () => {
     expect(payload.profiles.default.branchParam).toBe("BRANCH");
   });
 
+  test("re-login keeps timeoutMs and retries; invalid values are dropped", async () => {
+    fileContents.set(
+      CONFIG_FILE,
+      JSON.stringify({
+        version: 2,
+        defaultProfile: "default",
+        profiles: {
+          default: {
+            jenkinsUrl: "https://jenkins.example.com",
+            jenkinsUser: "user",
+            jenkinsApiToken: "token",
+            timeoutMs: 30_000,
+            retries: 0,
+          },
+          broken: {
+            jenkinsUrl: "https://jenkins.example.com",
+            jenkinsUser: "user",
+            jenkinsApiToken: "token",
+            timeoutMs: 0,
+            retries: -1,
+          },
+        },
+      }),
+    );
+
+    await writeConfigFile({
+      jenkinsUrl: "https://jenkins.example.com",
+      jenkinsUser: "user",
+      jenkinsApiToken: "new-token",
+    });
+
+    const payload = JSON.parse(fileContents.get(CONFIG_FILE) ?? "");
+    expect(payload.profiles.default.timeoutMs).toBe(30_000);
+    expect(payload.profiles.default.retries).toBe(0);
+    expect(payload.profiles.broken).not.toHaveProperty("timeoutMs");
+    expect(payload.profiles.broken).not.toHaveProperty("retries");
+  });
+
   test("supports legacy key formats when preserving settings", async () => {
     fileContents.set(
       CONFIG_FILE,

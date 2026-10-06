@@ -364,7 +364,11 @@ empty. There are no TODO or FIXME comments in source.
       common, and the CLI sends the user back to the browser for them. - Do: prompt for the parameters (or accept `--param`), and submit them
       through `wfapi/inputSubmit`.
 
-- [ ] **F7. HTTP timeout and retry count are hardcoded.** - Today: `options.timeoutMs ?? 10_000` in `client.ts:123`; `index.ts:172`
+- [x] **F7. HTTP timeout and retry count are hardcoded.** Shipped:
+      `--timeout`/`JENKINS_TIMEOUT_MS`/`timeoutMs` and
+      `--retries`/`JENKINS_RETRIES`/`retries`, flag over env over profile;
+      the timeout error names the limit that applied, and non-idempotent
+      POSTs still never retry. - Today: `options.timeoutMs ?? 10_000` in `client.ts:123`; `index.ts:172`
       never passes it. Retries default to 1 (`client.ts:1337`). No env key
       or flag for either. `src/env-keys.ts` has only 6 keys. - Why it matters: slow controllers behind VPNs time out at 10s with no
       way to raise it. - Do: add `JENKINS_TIMEOUT_MS` and `--timeout`, plus a profile field,

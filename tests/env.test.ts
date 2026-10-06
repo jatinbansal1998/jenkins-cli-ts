@@ -3,7 +3,7 @@ import fs from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { LoadedConfig } from "../src/config";
-import { getDebugDefault, normalizeUrl } from "../src/env";
+import { getDebugDefault, loadEnv, normalizeUrl } from "../src/env";
 
 type LoadEnvResult = {
   ok: boolean;
@@ -688,5 +688,126 @@ describe("getDebugDefault", () => {
     delete process.env.JENKINS_DEBUG;
     expect(getDebugDefault(() => debugConfig)).toBeTrue();
     expect(getDebugDefault(() => null)).toBeFalse();
+  });
+});
+
+function setHttpEnv(timeout?: string, retries?: string): void {
+  for (const [key, value] of [
+    ["JENKINS_TIMEOUT_MS", timeout],
+    ["JENKINS_RETRIES", retries],
+  ] as const) {
+    if (value === undefined) {
+      delete process.env[key];
+    } else {
+      process.env[key] = value;
+    }
+  }
+}
+
+function httpProfileConfig(profile: {
+  timeoutMs?: number;
+  retries?: number;
+}): LoadedConfig {
+  return {
+    config: {
+      version: 2,
+      defaultProfile: "work",
+      profiles: {
+        work: {
+          jenkinsUrl: "https://jenkins.example.com",
+          jenkinsUser: "user",
+          jenkinsApiToken: "token",
+          ...profile,
+        },
+      },
+    },
+    legacyDetected: false,
+  };
+}
+
+describe("loadEnv HTTP timeout and retries", () => {
+  const HTTP_ENV_KEYS = ["JENKINS_TIMEOUT_MS", "JENKINS_RETRIES"] as const;
+  const originalEnv = HTTP_ENV_KEYS.map((key) => process.env[key]);
+  afterEach(() => {
+    HTTP_ENV_KEYS.forEach((key, index) => {
+      const value = originalEnv[index];
+      if (value === undefined) {
+        delete process.env[key];
+      } else {
+        process.env[key] = value;
+      }
+    });
+  });
+
+  const withProfile = httpProfileConfig({ timeoutMs: 20_000, retries: 2 });
+
+  test("leaves both unset so the client default applies", () => {
+    setHttpEnv();
+    const env = loadEnv(httpProfileConfig({}));
+    expect(env.timeoutMs).toBeUndefined();
+    expect(env.transportRetries).toBeUndefined();
+  });
+
+  test("reads the profile fields", () => {
+    setHttpEnv();
+    const env = loadEnv(withProfile);
+    expect(env.timeoutMs).toBe(20_000);
+    expect(env.transportRetries).toBe(2);
+  });
+
+  test("env vars beat the profile", () => {
+    setHttpEnv("30000", "4");
+    const env = loadEnv(withProfile);
+    expect(env.timeoutMs).toBe(30_000);
+    expect(env.transportRetries).toBe(4);
+  });
+
+  test("flags beat env vars and accept the duration syntax", () => {
+    setHttpEnv("30000", "4");
+    const env = loadEnv(withProfile, { timeout: "2m", retries: "0" });
+    expect(env.timeoutMs).toBe(120_000);
+    expect(env.transportRetries).toBe(0);
+  });
+
+  test("env duration syntax and one-off credentials skip the profile", () => {
+    setHttpEnv("45s", "3");
+    const env = loadEnv(withProfile, {
+      url: "https://other.example.com",
+      user: "u",
+      apiToken: "t",
+    });
+    expect(env.timeoutMs).toBe(45_000);
+    expect(env.transportRetries).toBe(3);
+  });
+
+  test.each([
+    [{ timeout: "0" }, 'Invalid --timeout value "0".'],
+    [{ timeout: "fast" }, 'Invalid --timeout value "fast".'],
+    [{ timeout: "" }, "Missing --timeout."],
+    [{ retries: "-1" }, 'Invalid --retries value "-1".'],
+    [{ retries: "1.5" }, 'Invalid --retries value "1.5".'],
+    [{ retries: "many" }, 'Invalid --retries value "many".'],
+  ])("rejects flag %p with INVALID_USAGE", (options, message) => {
+    setHttpEnv();
+    expect(() => loadEnv(withProfile, options)).toThrow(
+      expect.objectContaining({ code: "INVALID_USAGE", message }),
+    );
+  });
+
+  test("rejects bad env values and names the env var", () => {
+    setHttpEnv("0ms");
+    expect(() => loadEnv(withProfile)).toThrow(
+      expect.objectContaining({
+        code: "INVALID_USAGE",
+        message: 'Invalid JENKINS_TIMEOUT_MS value "0ms".',
+      }),
+    );
+    setHttpEnv(undefined, "-2");
+    expect(() => loadEnv(withProfile)).toThrow(
+      expect.objectContaining({
+        code: "INVALID_USAGE",
+        message: 'Invalid JENKINS_RETRIES value "-2".',
+      }),
+    );
   });
 });

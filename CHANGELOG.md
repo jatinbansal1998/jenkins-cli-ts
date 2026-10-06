@@ -15,6 +15,12 @@ lists everything since the previous stable release, including its prereleases.
 - `JENKINS_CLI_CONFIG_DIR` moves the config directory (config file, logs,
   update state) to any absolute path. `auth status` and `--help` print the
   resolved path.
+- `--timeout <dur>` sets the per-request HTTP timeout (default `10s`), and
+  `--retries <n>` the transport retries for requests that are safe to repeat
+  (default `1`). `JENKINS_TIMEOUT_MS` and `JENKINS_RETRIES`, or `timeoutMs` and
+  `retries` in the profile, set them too; the flag wins, then the env var, then
+  the profile. Build triggers, item creation, and input approve/abort still
+  never retry. Under `wait`, `--timeout` remains the wait deadline.
 
 ### Changed
 
@@ -22,6 +28,8 @@ lists everything since the previous stable release, including its prereleases.
   `%APPDATA%\jenkins-cli` on Windows. Users whose config lived in
   `~/.config/jenkins-cli` under a different `XDG_CONFIG_HOME`, or on Windows,
   must move that folder to the new location.
+- A `JENKINS_TIMEOUT` error states the limit that applied, for example
+  "Jenkins did not respond within 30000ms", and suggests raising it.
 
 ### Fixed
 

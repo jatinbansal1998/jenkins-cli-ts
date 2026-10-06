@@ -18,6 +18,8 @@ export type ContextArgv = {
   token?: unknown;
   apiToken?: unknown;
   folderDepth?: unknown;
+  timeout?: unknown;
+  retries?: unknown;
   confirmProtected?: unknown;
 };
 
