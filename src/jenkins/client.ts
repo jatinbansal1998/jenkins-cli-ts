@@ -12,6 +12,7 @@ import { CliError, printWarning } from "../cli";
 
 import { normalizeJobParameterDefinitions } from "../job-parameters";
 import { normalizePendingInputActions } from "../pipeline-inputs";
+import { JENKINS_READ_LIMIT, mapWithLimit } from "../map-with-limit";
 import {
   logApiRequest,
   logApiResponse,
@@ -502,8 +503,10 @@ export class JenkinsClient {
       .slice(0, limit)
       .map((build) => normalizeBuildHistoryEntry(build, jobUrl))
       .filter((entry): entry is BuildHistoryEntry => Boolean(entry));
-    const enrichedBuilds = await Promise.all(
-      pageBuilds.map(async (entry) => {
+    const enrichedBuilds = await mapWithLimit(
+      pageBuilds,
+      JENKINS_READ_LIMIT,
+      async (entry) => {
         const pipeline = await this.getPipelineInfo(entry.buildUrl, {
           includeFailure: true,
         });
@@ -512,7 +515,7 @@ export class JenkinsClient {
           ...(pipeline?.stages ? { stages: pipeline.stages } : {}),
           ...(pipeline?.failure ? { failure: pipeline.failure } : {}),
         };
-      }),
+      },
     );
 
     return {

@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { CliError } from "../src/cli";
 import { JenkinsClient } from "../src/jenkins/client";
+import { JENKINS_READ_LIMIT } from "../src/map-with-limit";
 
 const realFetch = globalThis.fetch;
 type FetchInput = Parameters<typeof fetch>[0];
@@ -1471,6 +1472,55 @@ async function captureCliError(promise: Promise<unknown>): Promise<CliError> {
 }
 
 describe("JenkinsClient listBuildHistory", () => {
+  test("caps concurrent wfapi/describe reads and keeps build order", async () => {
+    const buildCount = 20;
+    let inFlight = 0;
+    let peakInFlight = 0;
+    let describeCalls = 0;
+    const fetchMock = mock(async (input: FetchInput) => {
+      const url = String(input);
+      if (url.includes("/api/json?tree=builds")) {
+        return Response.json({
+          builds: Array.from({ length: buildCount }, (_, index) => {
+            const number = buildCount - index;
+            return {
+              number,
+              url: `https://jenkins.example.com/job/my-job/${number}/`,
+            };
+          }),
+        });
+      }
+      if (url.endsWith("/wfapi/describe")) {
+        describeCalls += 1;
+        inFlight += 1;
+        peakInFlight = Math.max(peakInFlight, inFlight);
+        await Bun.sleep(5);
+        inFlight -= 1;
+        return Response.json({ stages: [] });
+      }
+      return new Response("", { status: 404 });
+    });
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+    const client = new JenkinsClient({
+      baseUrl: "https://jenkins.example.com",
+      user: "user",
+      apiToken: "token",
+      timeoutMs: 1_000,
+    });
+
+    const page = await client.listBuildHistory(
+      "https://jenkins.example.com/job/my-job/",
+      { offset: 0, limit: buildCount },
+    );
+
+    expect(describeCalls).toBe(buildCount);
+    expect(peakInFlight).toBe(JENKINS_READ_LIMIT);
+    expect(page.builds.map((build) => build.buildNumber)).toEqual(
+      Array.from({ length: buildCount }, (_, index) => buildCount - index),
+    );
+  });
+
   test("keeps hasNext when the lookahead entry is malformed", async () => {
     const fetchMock = mock(async (input: FetchInput) => {
       const url = String(input);

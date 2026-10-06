@@ -10,6 +10,7 @@ import type { JenkinsClient } from "../jenkins/client";
 import type { JenkinsJob, JenkinsJobLastBuild } from "../types/jenkins";
 import { MIN_SCORE } from "../config/fuzzy";
 import { type JsonWrite, runJsonCommand } from "../json-output";
+import { canonicalJobUrl } from "../job-url";
 import { listDeps } from "./list-deps";
 import { runFlow } from "../flows/runner";
 import { flows } from "../flows/definition";
@@ -107,7 +108,7 @@ async function runListJson(options: ListOptions): Promise<void> {
       return filteredJobs.map((job) => ({
         name: job.name,
         ...(job.fullName ? { fullName: job.fullName } : {}),
-        url: job.url,
+        url: canonicalJobUrl(job.url),
         ...(typeof job.disabled === "boolean"
           ? { disabled: job.disabled }
           : {}),

@@ -21,7 +21,7 @@ import {
   jsonPendingInputAction,
   runJsonCommand,
 } from "../json-output";
-import { normalizeJobUrl } from "../job-url";
+import { canonicalJobUrl, normalizeJobUrl } from "../job-url";
 import { sanitizeInputText } from "../pipeline-inputs";
 import type {
   PendingInputAction,
@@ -817,7 +817,7 @@ function jsonPendingInputBuild(
   target: ResolvedInputBuild,
 ): JsonPendingInputBuild {
   return {
-    jobUrl: target.jobUrl,
+    jobUrl: canonicalJobUrl(target.jobUrl),
     url: target.buildUrl,
     number: target.buildNumber,
     building: target.building,

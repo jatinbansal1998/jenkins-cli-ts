@@ -23,6 +23,14 @@ lists everything since the previous stable release, including its prereleases.
   `~/.config/jenkins-cli` under a different `XDG_CONFIG_HOME`, or on Windows,
   must move that folder to the new location.
 
+### Fixed
+
+- Job URLs in `--json` output (`details.candidates[].url`, `list`, `queue`,
+  `build`, `rerun`, and `input` `jobUrl`) always end with `/`, as Jenkins
+  returns them. A job read from the local cache printed without the slash.
+- `history --limit <n>` reads the per-build stage data with at most 6 requests
+  in flight instead of `n` at once.
+
 ## [1.0.0-rc.5] - 2026-10-06
 
 ### Added

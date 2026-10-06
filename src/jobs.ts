@@ -5,7 +5,7 @@ import { CliError, type JobCandidate, printHint } from "./cli";
 import { MIN_SCORE, AMBIGUITY_GAP, MAX_OPTIONS, SCORES } from "./config/fuzzy";
 import type { EnvConfig } from "./env";
 import type { JenkinsClient } from "./jenkins/client";
-import { normalizeOptionalJobUrl } from "./job-url";
+import { canonicalJobUrl, normalizeOptionalJobUrl } from "./job-url";
 import { selfInvocation } from "./self-invocation";
 import type { JenkinsJob, JenkinsJobLastBuild } from "./types/jenkins";
 import { resolveUserHome } from "./user-home";
@@ -483,7 +483,7 @@ export function resolveJobCandidates(
 }
 
 function toJobCandidate(job: JenkinsJob): JobCandidate {
-  return { name: getJobDisplayName(job), url: job.url };
+  return { name: getJobDisplayName(job), url: canonicalJobUrl(job.url) };
 }
 
 const MAX_CLOSEST_JOBS = 5;

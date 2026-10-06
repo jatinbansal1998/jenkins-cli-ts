@@ -44,11 +44,11 @@ const jobs: JenkinsJob[] = [
 const deployCandidates = [
   {
     name: "platform/deploy-api",
-    url: "https://jenkins.example.com/job/platform/job/deploy-api",
+    url: "https://jenkins.example.com/job/platform/job/deploy-api/",
   },
   {
     name: "platform/deploy-web",
-    url: "https://jenkins.example.com/job/platform/job/deploy-web",
+    url: "https://jenkins.example.com/job/platform/job/deploy-web/",
   },
 ];
 
@@ -80,10 +80,13 @@ function capture(): {
   };
 }
 
-async function statusJson(job: string): Promise<ErrorDocument> {
+async function statusJson(
+  job: string,
+  jenkins: JenkinsClient = client,
+): Promise<ErrorDocument> {
   const output = capture();
   await runStatus({
-    client,
+    client: jenkins,
     env,
     job,
     nonInteractive: true,
@@ -189,6 +192,29 @@ describe("job candidates in --json", () => {
     );
     expect(document.error.details).toEqual({ candidates: deployCandidates });
     expect(process.exitCode).toBe(4);
+  });
+});
+
+describe("job candidate URLs", () => {
+  test("are identical whether the job list was fetched or read from cache", async () => {
+    // Jenkins returns job URLs with a trailing slash; the cache stores them
+    // without one.
+    let listJobsCalls = 0;
+    const jenkins = {
+      listJobs: async () => {
+        listJobsCalls += 1;
+        return jobs.map((job) => ({ ...job, url: `${job.url}/` }));
+      },
+    } as unknown as JenkinsClient;
+
+    const fresh = await statusJson("deploy", jenkins);
+    const cached = await statusJson("deploy", jenkins);
+
+    expect(listJobsCalls).toBe(1);
+    expect(JSON.stringify(cached.error.details)).toBe(
+      JSON.stringify(fresh.error.details),
+    );
+    expect(cached.error.details).toEqual({ candidates: deployCandidates });
   });
 });
 

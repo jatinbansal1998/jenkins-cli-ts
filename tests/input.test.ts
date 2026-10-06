@@ -177,7 +177,7 @@ describe("input list", () => {
       command: "input list",
       data: {
         build: {
-          jobUrl: JOB_URL,
+          jobUrl: `${JOB_URL}/`,
           url: BUILD_URL,
           number: 128,
           building: true,
@@ -320,7 +320,7 @@ describe("input list", () => {
       expect(url).toBe(BUILD_URL);
     }
     expect(output.document().data?.build).toEqual({
-      jobUrl: JOB_URL,
+      jobUrl: `${JOB_URL}/`,
       url: BUILD_URL,
       number: 128,
       building: true,
@@ -517,7 +517,7 @@ describe("non-interactive safety matrix", () => {
                 operation,
                 disposition: operation === "approve" ? "approved" : "aborted",
                 build: {
-                  jobUrl: JOB_URL,
+                  jobUrl: `${JOB_URL}/`,
                   url: BUILD_URL,
                   number: 128,
                   building: true,
