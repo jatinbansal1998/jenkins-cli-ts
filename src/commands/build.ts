@@ -36,7 +36,11 @@ import { recordRecentJob } from "../recent-jobs.ts";
 import { pickJob } from "../job-picker";
 import { assertProtectedMutationAllowed, type EnvConfig } from "../env";
 import type { JenkinsClient } from "../jenkins/client";
-import { areSameJobUrls, normalizeOptionalJobUrl } from "../job-url";
+import {
+  areSameJobUrls,
+  canonicalJobUrl,
+  normalizeOptionalJobUrl,
+} from "../job-url";
 import { getJobDisplayName, loadJobs, resolveJobMatch } from "../jobs";
 import { notifyBuildComplete } from "../notify";
 import {
@@ -676,6 +680,7 @@ async function runBuildOnce(options: {
   });
 
   const displayJob = jobLabel || jobUrl;
+  const receiptJobUrl = canonicalJobUrl(result.jobUrl ?? jobUrl);
   if (!options.structured) {
     if (result.buildUrl) {
       printOk(`Build started at ${result.buildUrl}.`);
@@ -716,7 +721,7 @@ async function runBuildOnce(options: {
     if (finalStatus.cancelled) {
       return {
         job: displayJob,
-        jobUrl: result.jobUrl ?? jobUrl,
+        jobUrl: receiptJobUrl,
         queueUrl: result.queueUrl,
         queueId: result.queueId,
         buildUrl: result.buildUrl,
@@ -739,7 +744,7 @@ async function runBuildOnce(options: {
     }
     return {
       job: displayJob,
-      jobUrl: result.jobUrl ?? jobUrl,
+      jobUrl: receiptJobUrl,
       queueUrl: result.queueUrl,
       queueId: result.queueId,
       buildUrl: finalStatus.buildUrl ?? result.buildUrl,
@@ -750,7 +755,7 @@ async function runBuildOnce(options: {
   }
   return {
     job: displayJob,
-    jobUrl: result.jobUrl ?? jobUrl,
+    jobUrl: receiptJobUrl,
     queueUrl: result.queueUrl,
     queueId: result.queueId,
     buildUrl: result.buildUrl,

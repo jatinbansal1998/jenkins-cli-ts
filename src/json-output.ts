@@ -12,6 +12,7 @@
 import { logCliError } from "./logger";
 import { CliError, type CliErrorDetails, writeStdout } from "./cli";
 import { exitCodeFor } from "./error-codes";
+import { canonicalJobUrl } from "./job-url";
 import type {
   ArtifactEntry,
   BuildStatus,
@@ -351,7 +352,8 @@ export function jsonQueueItem(item: QueueItemSummary): JsonQueueItem {
     id: item.id,
     url: item.queueUrl,
     jobName: item.jobName,
-    jobUrl: item.jobUrl,
+    jobUrl:
+      item.jobUrl === undefined ? undefined : canonicalJobUrl(item.jobUrl),
     state: item.stuck
       ? "stuck"
       : item.blocked
@@ -416,7 +418,8 @@ export function jsonTriggerTarget(
     queueId: result.queueId ?? queueIdFromUrl(result.queueUrl),
     buildUrl: result.buildUrl,
     buildNumber: result.buildNumber,
-    jobUrl: result.jobUrl,
+    jobUrl:
+      result.jobUrl === undefined ? undefined : canonicalJobUrl(result.jobUrl),
   };
 }
 

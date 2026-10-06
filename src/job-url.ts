@@ -2,6 +2,15 @@ export function normalizeJobUrl(value: string): string {
   return value.trim().replace(/\/+$/, "");
 }
 
+/**
+ * Jenkins's own form of a job URL, with the trailing slash its API returns.
+ * Every job URL printed in `--json` output goes through this, so the same job
+ * reads identically whether it came from the cache, a fresh fetch, or a flag.
+ */
+export function canonicalJobUrl(value: string): string {
+  return `${normalizeJobUrl(value)}/`;
+}
+
 export function normalizeOptionalJobUrl(
   value: string | undefined,
 ): string | undefined {

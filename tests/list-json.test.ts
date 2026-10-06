@@ -136,9 +136,9 @@ describe("list --json", () => {
         {
           name: "alpha",
           fullName: "team/alpha",
-          url: "https://jenkins.example.com/job/alpha",
+          url: "https://jenkins.example.com/job/alpha/",
         },
-        { name: "beta", url: "https://jenkins.example.com/job/beta" },
+        { name: "beta", url: "https://jenkins.example.com/job/beta/" },
       ]),
     );
     expect(logSpy).toHaveBeenCalledTimes(0);
@@ -177,19 +177,19 @@ describe("list --json", () => {
     expect(parsed.data).toEqual([
       {
         name: "disabled-job",
-        url: "https://jenkins.example.com/job/disabled-job",
+        url: "https://jenkins.example.com/job/disabled-job/",
         disabled: true,
         lastBuild: null,
       },
       {
         name: "never-built",
-        url: "https://jenkins.example.com/job/never-built",
+        url: "https://jenkins.example.com/job/never-built/",
         disabled: false,
         lastBuild: null,
       },
       {
         name: "partial",
-        url: "https://jenkins.example.com/job/partial",
+        url: "https://jenkins.example.com/job/partial/",
         disabled: false,
         lastBuild: {
           number: 3,
@@ -198,7 +198,7 @@ describe("list --json", () => {
       },
       {
         name: "shuttered",
-        url: "https://jenkins.example.com/job/shuttered",
+        url: "https://jenkins.example.com/job/shuttered/",
         disabled: true,
         lastBuild: {
           number: 9,
@@ -210,7 +210,7 @@ describe("list --json", () => {
       {
         name: "built",
         fullName: "team/built",
-        url: "https://jenkins.example.com/job/built",
+        url: "https://jenkins.example.com/job/built/",
         disabled: false,
         lastBuild: {
           number: 42,
@@ -224,7 +224,7 @@ describe("list --json", () => {
       },
       {
         name: "unknown",
-        url: "https://jenkins.example.com/job/unknown",
+        url: "https://jenkins.example.com/job/unknown/",
       },
     ]);
     expect(sink.output()).not.toContain("[disabled]");
@@ -235,7 +235,7 @@ describe("list --json", () => {
       ...activityJobs,
       {
         name: "unknown-disabled-state",
-        url: "https://jenkins.example.com/job/unknown-disabled-state",
+        url: "https://jenkins.example.com/job/unknown-disabled-state/",
         lastBuild: {
           number: 1,
           url: "https://jenkins.example.com/job/unknown-disabled-state/1/",

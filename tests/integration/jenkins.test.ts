@@ -3,6 +3,7 @@ import { mkdirSync, mkdtempSync, readdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { splitLogLines } from "../../src/log-filters";
+import { JENKINS_READ_LIMIT } from "../../src/map-with-limit";
 import { registerNetworkFaultTests } from "./jenkins/network-faults";
 import {
   cliLogFiles,
@@ -145,7 +146,9 @@ describe.skipIf(!integrationEnabled)(
 
     test("lists ambiguous job candidates in the --json error", async () => {
       await withCliHome(async (home) => {
-        await runCli(home, ["list", "--refresh", "--json"]);
+        const listed = parseJson<{ data: Array<{ url: string }> }>(
+          await runCli(home, ["list", "--refresh", "--json"]),
+        );
 
         const result = await runCliExpectFailure(home, [
           "status",
@@ -168,16 +171,24 @@ describe.skipIf(!integrationEnabled)(
               candidates: [
                 {
                   name: "team/cli-candidate-api",
-                  url: `${jenkinsUrl}/job/team/job/cli-candidate-api`,
+                  url: `${jenkinsUrl}/job/team/job/cli-candidate-api/`,
                 },
                 {
                   name: "team/cli-candidate-web",
-                  url: `${jenkinsUrl}/job/team/job/cli-candidate-web`,
+                  url: `${jenkinsUrl}/job/team/job/cli-candidate-web/`,
                 },
               ],
             },
           },
         });
+        // The candidates came from the cache that `list --refresh` wrote, yet
+        // read exactly like the freshly fetched list.
+        expect(listed.data.map((job) => job.url)).toEqual(
+          expect.arrayContaining([
+            `${jenkinsUrl}/job/team/job/cli-candidate-api/`,
+            `${jenkinsUrl}/job/team/job/cli-candidate-web/`,
+          ]),
+        );
       });
     }, 30_000);
 
@@ -3580,6 +3591,78 @@ describe.skipIf(!integrationEnabled)(
         expect(widePage.data.map((build) => build.number)).toEqual([
           10, 9, 8, 7, 6, 5, 4, 3, 2, 1,
         ]);
+
+        // A slow proxy holds every wfapi/describe open long enough to see how
+        // many history fires at once.
+        let describeRequests = 0;
+        let describesInFlight = 0;
+        let peakDescribesInFlight = 0;
+        const slowProxy = Bun.serve({
+          hostname: "127.0.0.1",
+          port: 0,
+          async fetch(request) {
+            const incoming = new URL(request.url);
+            const isDescribe = incoming.pathname.endsWith("/wfapi/describe");
+            if (isDescribe) {
+              describeRequests++;
+              describesInFlight++;
+              peakDescribesInFlight = Math.max(
+                peakDescribesInFlight,
+                describesInFlight,
+              );
+              await Bun.sleep(200);
+            }
+            try {
+              const target = new URL(jenkinsUrl!);
+              target.pathname = incoming.pathname;
+              target.search = incoming.search;
+              const headers = new Headers(request.headers);
+              headers.delete("host");
+              const response = await fetch(target, {
+                method: request.method,
+                headers,
+                redirect: "manual",
+              });
+              const responseHeaders = new Headers(response.headers);
+              responseHeaders.delete("content-length");
+              responseHeaders.delete("content-encoding");
+              return new Response(await response.arrayBuffer(), {
+                status: response.status,
+                headers: responseHeaders,
+              });
+            } finally {
+              if (isDescribe) describesInFlight--;
+            }
+          },
+        });
+        try {
+          const proxiedRoot = `${slowProxy.url.origin}/jenkins`;
+          const fullHistory = await invokeCli(
+            home,
+            [
+              "history",
+              "--job-url",
+              `${proxiedRoot}/job/cli-history/`,
+              "--limit",
+              "11",
+              "--json",
+            ],
+            { JENKINS_URL: proxiedRoot },
+          );
+          expect(fullHistory.exitCode, fullHistory.output).toBe(0);
+          expect(
+            parseJson<{ data: Array<{ number: number }> }>(
+              fullHistory,
+            ).data.map((build) => build.number),
+          ).toEqual([11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1]);
+          expect(describeRequests).toBe(11);
+          expect(peakDescribesInFlight).toBe(JENKINS_READ_LIMIT);
+          console.log(
+            `history --limit 11: wfapi/describe requests=${describeRequests}, peak in flight=${peakDescribesInFlight}`,
+          );
+        } finally {
+          await slowProxy.stop(true);
+        }
         const listed = parseJson<{ data: unknown[] }>(
           await runCli(home, ["list", "--limit", "1", "--json"]),
         );
