@@ -1,0 +1,56 @@
+name: Bug report
+description: Something in jenkins-cli does not work as expected.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Remove API tokens, passwords, and internal hostnames from everything you paste.
+        Report security problems privately as described in SECURITY.md, not here.
+  - type: input
+    id: version
+    attributes:
+      label: CLI version
+      description: Output of `jenkins-cli --version`.
+    validations:
+      required: true
+  - type: input
+    id: os
+    attributes:
+      label: Operating system
+      description: For example macOS 15 arm64, Ubuntu 24.04 x64, Alpine (musl), Windows 11.
+    validations:
+      required: true
+  - type: input
+    id: jenkins-version
+    attributes:
+      label: Jenkins version
+      description: Shown in the footer of the Jenkins web UI.
+    validations:
+      required: true
+  - type: textarea
+    id: command
+    attributes:
+      label: Command and debug output
+      description: The exact command you ran, re-run with `--debug`, and what it printed.
+      render: shell
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behaviour
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behaviour
+    validations:
+      required: true
+  - type: textarea
+    id: json-error
+    attributes:
+      label: JSON error envelope
+      description: If the command failed, re-run it with `--json` and paste the error output.
+      render: json

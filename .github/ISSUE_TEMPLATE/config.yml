@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Questions and ideas
+    url: https://github.com/jatinbansal1998/jenkins-cli-ts/discussions
+    about: Ask how to use the CLI or discuss an idea before filing an issue.
+  - name: README
+    url: https://github.com/jatinbansal1998/jenkins-cli-ts#readme
+    about: Install steps, commands, profiles, exit codes, and diagnostics.
+  - name: Security vulnerability
+    url: https://github.com/jatinbansal1998/jenkins-cli-ts/security/advisories/new
+    about: Report vulnerabilities privately, not as a public issue.
