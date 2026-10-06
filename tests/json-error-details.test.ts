@@ -132,6 +132,25 @@ describe("JSON error body", () => {
     });
   });
 
+  test("accepts details only for the code that carries them", () => {
+    const candidates = [
+      { name: "api", url: "https://jenkins.example.com/job/api" },
+    ];
+    expect(
+      new CliError("Ambiguous.", [], "JOB_AMBIGUOUS", {
+        details: { candidates },
+      }).details,
+    ).toEqual({ candidates });
+    // The check is compile-time: `bun run typecheck` fails if the constructor
+    // stops rejecting this.
+    const detailsForWrongCode = () =>
+      new CliError("Invalid.", [], "INVALID_USAGE", {
+        // @ts-expect-error INVALID_USAGE carries no details.
+        details: { candidates },
+      });
+    expect(detailsForWrongCode()).toBeInstanceOf(CliError);
+  });
+
   test("gives errors that are not CliErrors empty hints", () => {
     expect(toJsonError(new Error("boom"))).toEqual({
       code: "UNEXPECTED_ERROR",

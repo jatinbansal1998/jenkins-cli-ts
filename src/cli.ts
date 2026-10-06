@@ -22,8 +22,17 @@ type CliErrorDetailsByCode = {
   JOB_NOT_FOUND: { candidates: JobCandidate[] };
 };
 
-export type CliErrorDetails =
-  CliErrorDetailsByCode[keyof CliErrorDetailsByCode];
+type DetailedErrorCode = keyof CliErrorDetailsByCode;
+
+export type CliErrorDetails = CliErrorDetailsByCode[DetailedErrorCode];
+
+/** One `[code, options]` pair per detailed code, so details match their code. */
+type DetailedCodeAndOptions = {
+  [C in DetailedErrorCode]: [
+    code: C,
+    options?: ErrorOptions & { details?: CliErrorDetailsByCode[C] },
+  ];
+}[DetailedErrorCode];
 
 /** Structured error with hints for user guidance. `code` sets the exit code. */
 export class CliError extends Error {
@@ -31,6 +40,17 @@ export class CliError extends Error {
   public readonly code: ErrorCode;
   public readonly details?: CliErrorDetails;
 
+  constructor(
+    message: string,
+    hints: string[],
+    ...args: DetailedCodeAndOptions
+  );
+  constructor(
+    message: string,
+    hints: string[],
+    code: ErrorCode,
+    options?: ErrorOptions,
+  );
   constructor(
     message: string,
     hints: string[],
