@@ -104,7 +104,11 @@ describe("params command", () => {
     expect(chunks).toHaveLength(1);
     expect(JSON.parse(chunks[0] as string)).toEqual({
       ok: false,
-      error: { message: "Not allowed.", code: "JENKINS_AUTH_ERROR" },
+      error: {
+        message: "Not allowed.",
+        code: "JENKINS_AUTH_ERROR",
+        hints: [],
+      },
     });
     expect(logSpy).not.toHaveBeenCalled();
     process.exitCode = 0;

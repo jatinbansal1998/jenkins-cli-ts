@@ -33,6 +33,10 @@ lists everything since the previous stable release, including its prereleases.
 - Recent jobs, branch history, and stage totals live in `state-<key>.json` next
   to the job list, scoped per Jenkins URL. Values stored in old `jobs-*.json`
   files are not carried over and rebuild with use.
+- The `--json` and `--jsonl` error body is
+  `{ code, message, hints, details? }`. `hints` carries the same next steps the
+  text output prints. `JOB_AMBIGUOUS` and `JOB_NOT_FOUND` add
+  `details.candidates`, the `{ name, url }` of each job the hint lists.
 
 ### Fixed
 

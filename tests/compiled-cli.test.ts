@@ -424,6 +424,7 @@ describe("compiled CLI local error logs", () => {
       expect(JSON.parse(result.stdout).error).toEqual({
         code: "UNEXPECTED_ERROR",
         message: "synthetic failure token=local-detail",
+        hints: [],
       });
       expect(result.stderr).toBe("");
       expectLog(h.log);

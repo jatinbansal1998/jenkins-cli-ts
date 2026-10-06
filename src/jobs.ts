@@ -1,7 +1,7 @@
 import { mkdir, open, rename, rm } from "node:fs/promises";
 import { createHash, randomUUID } from "node:crypto";
 import path from "node:path";
-import { CliError, printHint } from "./cli";
+import { CliError, type JobCandidate, printHint } from "./cli";
 import { MIN_SCORE, AMBIGUITY_GAP, MAX_OPTIONS, SCORES } from "./config/fuzzy";
 import type { EnvConfig } from "./env";
 import type { JenkinsClient } from "./jenkins/client";
@@ -435,14 +435,16 @@ export async function resolveJobMatch(options: {
   }
 
   if (options.nonInteractive || !options.selectFromOptions) {
-    const optionNames = optionsList.map(getJobDisplayName).join(", ");
+    const candidates = optionsList.map(toJobCandidate);
+    const optionNames = candidates.map((candidate) => candidate.name);
     throw new CliError(
       `Job name is ambiguous for "${trimmedQuery}".`,
       [
-        `Options: ${optionNames}`,
+        `Options: ${optionNames.join(", ")}`,
         "Pass `--job <exact name>` or `--job-url <url>`.",
       ],
       "JOB_AMBIGUOUS",
+      { details: { candidates } },
     );
   }
 
@@ -458,7 +460,8 @@ export function resolveJobCandidates(
   const ranked = rankJobs(trimmedQuery, jobs);
   const topMatch = ranked[0];
   if (!topMatch || topMatch.score < MIN_SCORE) {
-    const closest = findClosestJobs(trimmedQuery, jobs).map(getJobDisplayName);
+    const candidates = findClosestJobs(trimmedQuery, jobs).map(toJobCandidate);
+    const closest = candidates.map((candidate) => candidate.name);
     throw new CliError(
       `No jobs match "${trimmedQuery}".`,
       [
@@ -467,6 +470,7 @@ export function resolveJobCandidates(
         "Or pass `--job-url` to skip cache matching.",
       ],
       "JOB_NOT_FOUND",
+      { details: { candidates } },
     );
   }
 
@@ -476,6 +480,10 @@ export function resolveJobCandidates(
       match.score >= MIN_SCORE && topScore - match.score <= AMBIGUITY_GAP,
   );
   return closeMatches.slice(0, MAX_OPTIONS).map((match) => match.job);
+}
+
+function toJobCandidate(job: JenkinsJob): JobCandidate {
+  return { name: getJobDisplayName(job), url: job.url };
 }
 
 const MAX_CLOSEST_JOBS = 5;

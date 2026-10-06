@@ -10,7 +10,7 @@
  * callback so tests can capture stdout without spying on `process.stdout`.
  */
 import { logCliError } from "./logger";
-import { CliError, writeStdout } from "./cli";
+import { CliError, type CliErrorDetails, writeStdout } from "./cli";
 import { exitCodeFor } from "./error-codes";
 import type {
   ArtifactEntry,
@@ -65,8 +65,10 @@ type JsonSuccess<T> = {
 };
 
 type JsonErrorBody = {
-  message: string;
   code: string;
+  message: string;
+  hints: string[];
+  details?: CliErrorDetails;
 };
 
 type JsonError = {
@@ -240,7 +242,7 @@ export function emitJsonSuccess<T>(
   write(`${JSON.stringify(payload)}\n`);
 }
 
-/** Emit an error envelope: `{ ok: false, error: { message, code } }`. */
+/** Emit an error envelope: `{ ok: false, error: { code, message, hints, details? } }`. */
 export function emitJsonError(
   error: JsonErrorBody,
   write: JsonWrite = writeStdout,
@@ -260,15 +262,21 @@ export function emitJsonLine(
 /** Convert an arbitrary thrown value into a stable JSON error body. */
 export function toJsonError(error: unknown): JsonErrorBody {
   if (error instanceof CliError) {
-    return { message: error.message, code: error.code };
+    return {
+      code: error.code,
+      message: error.message,
+      hints: error.hints,
+      details: error.details,
+    };
   }
   if (error instanceof Error) {
     return {
-      message: error.message || "Unexpected error.",
       code: "UNEXPECTED_ERROR",
+      message: error.message || "Unexpected error.",
+      hints: [],
     };
   }
-  return { message: "Unexpected error.", code: "UNEXPECTED_ERROR" };
+  return { code: "UNEXPECTED_ERROR", message: "Unexpected error.", hints: [] };
 }
 
 /**

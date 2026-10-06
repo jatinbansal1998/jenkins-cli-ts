@@ -387,7 +387,11 @@ describe("runTests", () => {
 
       expect(JSON.parse(output)).toEqual({
         ok: false,
-        error: { message: "No test report.", code: "TEST_REPORT_NOT_FOUND" },
+        error: {
+          message: "No test report.",
+          code: "TEST_REPORT_NOT_FOUND",
+          hints: [],
+        },
       });
     } finally {
       process.exitCode = previousExitCode ?? 0;

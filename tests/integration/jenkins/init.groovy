@@ -273,6 +273,10 @@ def teamFolder = jenkins.createProject(Folder.class, "team")
 def nestedJob = teamFolder.createProject(FreeStyleProject.class, "nested smoke")
 nestedJob.getBuildersList().add(new Shell("printf 'nested-success\\n'"))
 nestedJob.save()
+// Two near-identical names so `--job cli-candidate` is ambiguous.
+["cli-candidate-api", "cli-candidate-web"].each { name ->
+  teamFolder.createProject(FreeStyleProject.class, name).save()
+}
 
 def pipelineJob = jenkins.createProject(WorkflowJob.class, "cli-pipeline")
 pipelineJob.addProperty(new ParametersDefinitionProperty([
