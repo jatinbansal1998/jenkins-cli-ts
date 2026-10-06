@@ -3997,6 +3997,54 @@ describe.skipIf(!integrationEnabled)(
     }, 120_000);
 
     test.skipIf(process.platform === "win32")(
+      "prints several picked jobs' status in the order they were picked",
+      async () => {
+        await withCliHome(async (home) => {
+          await runCli(home, ["list", "--refresh", "--json"]);
+          // Picked out of name order: the output must follow the pick order.
+          const picked = ["cli-never-built", "cli-exact", "cli-history"];
+          const pickInput = picked
+            .map((name, index) => {
+              const clearPrevious = "\u007f".repeat(
+                index === 0 ? 0 : picked[index - 1]!.length,
+              );
+              return `${clearPrevious}${name}\t`;
+            })
+            .join("");
+
+          // `status --json` reads one job; picking several is interactive only.
+          const session = await observeInteractiveCli(
+            home,
+            ["status", "--no-banner"],
+            [
+              {
+                text: "Job name or description",
+                input: `${pickInput}\r`,
+              },
+              { text: "Check another job?", input: "\r" },
+            ],
+          );
+
+          // Earlier scenarios decide whether a job has builds yet.
+          const positions = picked.map((name) =>
+            session.output.search(
+              new RegExp(
+                `OK: (No builds found for|Last build for) ${name}[.:]`,
+              ),
+            ),
+          );
+          expect(
+            positions.every((position) => position >= 0),
+            session.output,
+          ).toBe(true);
+          expect(positions).toEqual(positions.toSorted((a, b) => a - b));
+          expect(session.output.split("-".repeat(60)).length - 1).toBe(2);
+        });
+      },
+      120_000,
+    );
+
+    test.skipIf(process.platform === "win32")(
       "keeps the interactive list action menu open after a protected block",
       async () => {
         await withCliHome(async (home) => {

@@ -33,8 +33,10 @@ import {
 } from "../status-format";
 import type { EnvConfig } from "../env";
 import type { JenkinsClient } from "../jenkins/client";
+import type { JobStatus } from "../types/jenkins";
 import { normalizeControllerTargetUrl } from "../jenkins-target-url";
 import { normalizeJobUrl, normalizeOptionalJobUrl } from "../job-url";
+import { JENKINS_READ_LIMIT, mapWithLimit } from "../map-with-limit";
 import { recordRecentJob } from "../recent-jobs";
 import { runFlow } from "../flows/runner";
 import { flows } from "../flows/definition";
@@ -119,6 +121,17 @@ export async function runStatus(options: StatusOptions): Promise<void> {
     // The build shown for each job is the one follow-up actions must act on,
     // even if a newer build starts while the menu is open.
     const displayedBuildUrls = new Map<string, string>();
+    // Read all jobs at once so N jobs cost about one round trip, not N. Each
+    // read is settled so output still stops at the first failed job in order.
+    const reads = await mapWithLimit(
+      targets,
+      JENKINS_READ_LIMIT,
+      (target): Promise<PromiseSettledResult<JobStatus>> =>
+        options.client.getJobStatus(target.jobUrl).then(
+          (value) => ({ status: "fulfilled", value }),
+          (reason: unknown) => ({ status: "rejected", reason }),
+        ),
+    );
     for (const [index, target] of targets.entries()) {
       if (showSeparators && index > 0) {
         printLine();
@@ -129,7 +142,11 @@ export async function runStatus(options: StatusOptions): Promise<void> {
         jobUrl: target.jobUrl,
       });
 
-      const status = await options.client.getJobStatus(target.jobUrl);
+      const read = reads[index]!;
+      if (read.status === "rejected") {
+        throw read.reason;
+      }
+      const status = read.value;
       const jobState = getJobState(status.disabled);
       if (!status.buildNumber) {
         printOk(

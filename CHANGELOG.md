@@ -41,6 +41,8 @@ lists everything since the previous stable release, including its prereleases.
   writes are compact and skipped when nothing changed.
 - Refresh no longer merges branches back into the job list, removing an O(n²)
   pass over large job lists.
+- Interactive `status` with several jobs picked reads them 6 at a time
+  instead of one after another, so 5 jobs take about as long as one.
 
 ## [1.0.0-rc.4] - 2026-09-30
 

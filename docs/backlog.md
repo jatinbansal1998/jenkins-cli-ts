@@ -281,7 +281,10 @@ file is read and rewritten. Most of the perf list below is one of those two.
       timeout. Keep retrying GETs on 502/503/504. Non-idempotent POSTs
       already never retry; keep that.
 
-- [ ] **P14. Multi-job `status` fetches each job one after another.** - Today: `status.ts:118-190` awaits `recordRecentJob`, then
+- [x] **P14. Multi-job `status` fetches each job one after another.**
+      Shipped: picked jobs are read 6 in flight (the P1 cap) and printed in
+      pick order; output still stops at the first failed job. Not done:
+      recent jobs are still recorded one at a time. - Today: `status.ts:118-190` awaits `recordRecentJob`, then
       `getJobStatus`, then a cache read and write, per target. - Why it matters: `status` with 5 jobs selected takes 5x the single-job
       latency. - Do: fetch all statuses with capped `Promise.all`, print in order,
       record recent jobs once at the end.
