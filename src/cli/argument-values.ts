@@ -66,3 +66,17 @@ export function parseBuildCustomParams(
 
   return params;
 }
+
+export function parseLimitOption(value: unknown): number | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+  if (typeof value !== "number" || !Number.isSafeInteger(value) || value <= 0) {
+    throw new CliError(
+      "Invalid --limit value.",
+      ["Provide a positive integer, for example --limit 20."],
+      "INVALID_USAGE",
+    );
+  }
+  return value;
+}

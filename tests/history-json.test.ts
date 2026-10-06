@@ -145,6 +145,48 @@ describe("history --json", () => {
     expect(logSpy).toHaveBeenCalledTimes(0);
   });
 
+  test("--limit returns up to n builds in one document", async () => {
+    const listBuildHistory = mock(
+      async (
+        jobUrl: string,
+        options?: { offset?: number; limit?: number },
+      ) => ({
+        builds: Array.from({ length: options?.limit ?? 0 }, (_, index) => ({
+          buildNumber: 100 - index,
+          buildUrl: `${jobUrl}${100 - index}/`,
+          result: "SUCCESS",
+          building: false,
+        })),
+        offset: options?.offset ?? 0,
+        limit: options?.limit ?? 0,
+        hasNext: true,
+        hasPrevious: false,
+      }),
+    );
+    const sink = capture();
+
+    await runHistory({
+      client: createClient({ listBuildHistory }),
+      env,
+      jobUrl: "https://jenkins.example.com/job/api/",
+      limit: 10,
+      nonInteractive: true,
+      json: true,
+      write: sink.write,
+    });
+
+    expect(listBuildHistory).toHaveBeenCalledWith(
+      "https://jenkins.example.com/job/api/",
+      { offset: 0, limit: 10 },
+    );
+    const lines = sink.output().split("\n").filter(Boolean);
+    expect(lines).toHaveLength(1);
+    const parsed = JSON.parse(lines[0] as string) as {
+      data: Array<{ number: number }>;
+    };
+    expect(parsed.data).toHaveLength(10);
+  });
+
   test("emits a JSON error envelope and non-zero exit code on failure", async () => {
     const listBuildHistory = mock(async () => {
       throw new CliError(

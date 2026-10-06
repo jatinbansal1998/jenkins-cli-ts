@@ -5,6 +5,7 @@ import { runList } from "../commands/list";
 import { runParams } from "../commands/params";
 import { runJobCacheRefresh } from "../commands/refresh-job-cache";
 import { JOB_CACHE_REFRESH_COMMAND } from "../jobs";
+import { parseLimitOption } from "./argument-values";
 import { addJobOptions, addJsonOption, optionalString } from "./options";
 import type {
   CommandRegistrationDependencies,
@@ -133,6 +134,11 @@ function configureListOptions(yargsInstance: Argv): Argv {
       default: false,
       describe: "Show built jobs not marked disabled by Jenkins",
     })
+    .option("limit", {
+      type: "number",
+      requiresArg: true,
+      describe: "Print or return at most N jobs after filtering",
+    })
     .option("json", {
       type: "boolean",
       default: false,
@@ -147,6 +153,7 @@ function createListHandler(runCommandWithContext: RunCommandWithContext) {
     search?: unknown;
     refresh?: unknown;
     activeOnly?: unknown;
+    limit?: unknown;
     nonInteractive?: unknown;
     json?: unknown;
     banner?: unknown;
@@ -165,6 +172,7 @@ function createListHandler(runCommandWithContext: RunCommandWithContext) {
         search: optionalString(argv.search),
         refresh: Boolean(argv.refresh),
         activeOnly: Boolean(argv.activeOnly),
+        limit: parseLimitOption(argv.limit),
         nonInteractive: Boolean(argv.nonInteractive),
         json: Boolean(argv.json),
       });

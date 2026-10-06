@@ -3394,7 +3394,7 @@ describe.skipIf(!integrationEnabled)(
       });
     }, 90_000);
 
-    test("uses CSRF crumbs, history offsets, and exact artifact targets", async () => {
+    test("uses CSRF crumbs, history offsets, --limit, and exact artifact targets", async () => {
       await withCliHome(async (home) => {
         const historyJobUrl = `${jenkinsUrl}/job/cli-history/`;
         for (let index = 0; index < 11; index++) {
@@ -3456,6 +3456,49 @@ describe.skipIf(!integrationEnabled)(
           ]),
         );
         expect(finalPage.data.map((build) => build.number)).toEqual([1]);
+
+        const limited = parseJson<{ data: Array<{ number: number }> }>(
+          await runCli(home, [
+            "history",
+            "--job",
+            "cli-history",
+            "--limit",
+            "2",
+            "--json",
+          ]),
+        );
+        expect(limited.data.map((build) => build.number)).toEqual([11, 10]);
+        const widePage = parseJson<{ data: Array<{ number: number }> }>(
+          await runCli(home, [
+            "history",
+            "--job",
+            "cli-history",
+            "--limit",
+            "10",
+            "--offset",
+            "1",
+            "--json",
+          ]),
+        );
+        expect(widePage.data.map((build) => build.number)).toEqual([
+          10, 9, 8, 7, 6, 5, 4, 3, 2, 1,
+        ]);
+        const listed = parseJson<{ data: unknown[] }>(
+          await runCli(home, ["list", "--limit", "1", "--json"]),
+        );
+        expect(listed.data).toHaveLength(1);
+        const rejected = await runCliExpectFailure(home, [
+          "history",
+          "--job",
+          "cli-history",
+          "--limit",
+          "0",
+          "--json",
+        ]);
+        expect(rejected.exitCode).toBe(2);
+        expect(
+          parseJson<{ error: { code: string } }>(rejected).error.code,
+        ).toBe("INVALID_USAGE");
 
         const smokeUrl = `${jenkinsUrl}/job/cli-smoke/`;
         await runCli(home, [

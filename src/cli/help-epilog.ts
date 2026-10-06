@@ -79,6 +79,7 @@ Command-specific options:
     --search <text>  Search jobs by name or description
     --refresh        Refresh the job cache from Jenkins [default: false]
     --active-only    Show built jobs not marked disabled by Jenkins
+    --limit <n>      Print or return at most N jobs after filtering
     --json           Output a single JSON document (implies non-interactive)
 
   params:
@@ -125,7 +126,8 @@ Command-specific options:
     [job-name]       Job name or description
     --job <text>     Job name or description
     --job-url <url>  Full Jenkins job URL
-    --offset <n>     Skip N builds before showing the next 5 [default: 0]
+    --offset <n>     Skip N builds before showing a page [default: 0]
+    --limit <n>      Show N builds per page (one document with --json) [default: 5]
     --json           Output a single JSON document (implies non-interactive)
 
   wait:

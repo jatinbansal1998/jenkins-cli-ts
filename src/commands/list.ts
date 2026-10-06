@@ -26,6 +26,7 @@ type ListOptions = {
   search?: string;
   refresh?: boolean;
   activeOnly?: boolean;
+  limit?: number;
   nonInteractive: boolean;
   json?: boolean;
   write?: JsonWrite;
@@ -69,7 +70,7 @@ export async function runList(options: ListOptions): Promise<void> {
 
   if (options.nonInteractive) {
     const search = options.search?.trim() ?? "";
-    const filteredJobs = getFilteredJobs(jobs, search);
+    const filteredJobs = getFilteredJobs(jobs, search).slice(0, options.limit);
     printJobs(filteredJobs, search);
     return;
   }
@@ -99,7 +100,10 @@ async function runListJson(options: ListOptions): Promise<void> {
         options.activeOnly,
       );
       const search = options.search?.trim() ?? "";
-      const filteredJobs = getFilteredJobs(jobs, search);
+      const filteredJobs = getFilteredJobs(jobs, search).slice(
+        0,
+        options.limit,
+      );
       return filteredJobs.map((job) => ({
         name: job.name,
         ...(job.fullName ? { fullName: job.fullName } : {}),

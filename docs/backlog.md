@@ -346,9 +346,11 @@ empty. There are no TODO or FIXME comments in source.
       daily task and today needs two commands. - Do: accept `--build lastSuccessful|lastStable|lastFailed|lastCompleted`
       on every build-scoped command, resolved through the existing selector.
 
-- [ ] **F4. `history` is fixed at 5 rows and `list` has no limit.** - Today: `HISTORY_PAGE_SIZE = 5` (`history.ts:22`), only `--offset`.
+- [x] **F4. `history` is fixed at 5 rows and `list` has no limit.** - Today: `HISTORY_PAGE_SIZE = 5` (`history.ts:22`), only `--offset`.
       `configureListOptions` has search, refresh, active-only and json but
-      no `--limit`. - Why it matters: scripts and agents have to page 5 at a time. - Do: add `--limit` to both.
+      no `--limit`. - Why it matters: scripts and agents have to page 5 at a time. - Do: add `--limit` to both. - Shipped: `history --limit` sets the
+      page size (default 5, works with `--offset`, one document with
+      `--json`); `list --limit` caps jobs after filtering. Bad values exit 2.
 
 - [ ] **F5. File parameters are not supported.** - Today: `triggerBuild` (`client.ts:1259`) sends `URLSearchParams` only.
       There is no `FileParameterDefinition` handling in `job-parameters.ts`

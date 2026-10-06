@@ -237,6 +237,24 @@ describe("runList", () => {
     ]);
   });
 
+  test("non-interactive --limit prints at most n jobs", async () => {
+    loadJobsMock.mockImplementationOnce(async () => activityJobs);
+    const logSpy = trackRestore(spyOn(console, "log"));
+
+    await runList({
+      client: {} as JenkinsClient,
+      env: {} as EnvConfig,
+      refresh: false,
+      limit: 2,
+      nonInteractive: true,
+    });
+
+    expect(logSpy.mock.calls.map((call) => call[0])).toEqual([
+      "active  https://jenkins.example.com/job/active",
+      "blocked [disabled]  https://jenkins.example.com/job/blocked",
+    ]);
+  });
+
   test("--active-only keeps a built job with unknown disabled state", async () => {
     loadJobsMock.mockImplementationOnce(async () => [
       {

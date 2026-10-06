@@ -345,6 +345,37 @@ describe("cli argument routing", () => {
   });
 });
 
+describe("--limit validation", () => {
+  test.each([
+    ["history", "0"],
+    ["history", "-3"],
+    ["history", "1.5"],
+    ["list", "0"],
+    ["list", "abc"],
+  ])("%s rejects --limit %s as a usage error", (command, value) => {
+    const result = runCli([command, "--json", `--limit=${value}`]);
+    expect(result.exitCode).toBe(2);
+    const parsed = JSON.parse(result.output) as {
+      ok: boolean;
+      error: { message: string; code: string };
+    };
+    expect(parsed.ok).toBe(false);
+    expect(parsed.error).toEqual({
+      message: "Invalid --limit value.",
+      code: "INVALID_USAGE",
+    });
+  });
+
+  test.each(["history", "list"])(
+    "%s rejects --limit without a value",
+    (command) => {
+      const result = runCli([command, "--non-interactive", "--limit"]);
+      expect(result.exitCode).toBe(2);
+      expect(result.output).toContain("Not enough arguments following: limit");
+    },
+  );
+});
+
 describe("parseBuildCustomParams", () => {
   test("returns undefined for empty input", () => {
     expect(parseBuildCustomParams([])).toBeUndefined();

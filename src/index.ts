@@ -158,7 +158,9 @@ function createParser(rawArgs: string[]): Argv {
     .help()
     .epilog(getRootHelpEpilog())
     .fail((message, error) => {
-      if (error) {
+      // A YError is yargs rejecting the arguments (e.g. a flag missing its
+      // value); anything else was thrown by a command and keeps its own code.
+      if (error && error.name !== "YError") {
         throw error;
       }
       throw new CliError(

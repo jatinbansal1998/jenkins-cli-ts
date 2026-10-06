@@ -3,7 +3,7 @@ import { parseBuildSelection } from "../build-selector";
 import { runArtifacts } from "../commands/artifacts";
 import { runBuild } from "../commands/build";
 import { DEFAULT_CHANGES_LIMIT, runChanges } from "../commands/changes";
-import { runHistory } from "../commands/history";
+import { HISTORY_PAGE_SIZE, runHistory } from "../commands/history";
 import { DEFAULT_LOG_POLL_MS, runLogs } from "../commands/logs";
 import { runStatus } from "../commands/status";
 import { runTests } from "../commands/tests";
@@ -12,6 +12,7 @@ import { DEFAULT_WATCH_INTERVAL_MS } from "../commands/watch-utils";
 import {
   parseArtifactFilters,
   parseBuildCustomParams,
+  parseLimitOption,
 } from "./argument-values";
 import {
   addBuildOption,
@@ -97,11 +98,18 @@ export function registerBuildCommands(
       "Show paginated build history for a job",
       (yargsInstance) =>
         addJsonOption(
-          addJobOptions(yargsInstance).option("offset", {
-            type: "number",
-            default: 0,
-            describe: "Skip the first N builds before showing the next 5",
-          }),
+          addJobOptions(yargsInstance)
+            .option("offset", {
+              type: "number",
+              default: 0,
+              describe: "Skip the first N builds before showing a page",
+            })
+            .option("limit", {
+              type: "number",
+              default: HISTORY_PAGE_SIZE,
+              requiresArg: true,
+              describe: "Show N builds per page (one document with --json)",
+            }),
         ).epilog(BUILD_METADATA_HELP),
       async (argv) => {
         await runCommandWithContext(
@@ -114,6 +122,7 @@ export function registerBuildCommands(
               job: optionalString(argv.job),
               jobUrl: optionalString(argv.jobUrl),
               offset: typeof argv.offset === "number" ? argv.offset : 0,
+              limit: parseLimitOption(argv.limit),
               nonInteractive: Boolean(argv.nonInteractive || argv.json),
               json: Boolean(argv.json),
             });
