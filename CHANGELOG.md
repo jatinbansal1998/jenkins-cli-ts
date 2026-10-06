@@ -17,6 +17,10 @@ lists everything since the previous stable release, including its prereleases.
   `--json` or `--jsonl`.
 - `--no-color`, `NO_COLOR`, and `FORCE_COLOR` apply to every styled string,
   including the status result, which was bold even when piped.
+- `history --limit <n>` sets the page size (default 5) and works with
+  `--offset`; with `--json` it returns up to `n` builds in one document.
+  `list --limit <n>` prints or returns at most `n` jobs after `--search` and
+  `--active-only`.
 
 ### Changed
 
@@ -34,6 +38,8 @@ lists everything since the previous stable release, including its prereleases.
 
 - Concurrent commands no longer overwrite each other's recent jobs or branch
   history: state writes are read-modify-write under a lock.
+- A flag given without its value (for example a bare `--limit`) exits `2` with
+  `INVALID_USAGE` instead of `1` as an unexpected error.
 
 ### Performance
 

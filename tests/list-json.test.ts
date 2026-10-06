@@ -263,6 +263,36 @@ describe("list --json", () => {
     ]);
   });
 
+  test("--limit caps the jobs returned after --active-only filtering", async () => {
+    trackRestore(spyOn(listDeps, "loadJobs")).mockResolvedValue([
+      ...activityJobs,
+      {
+        name: "unknown-disabled-state",
+        url: "https://jenkins.example.com/job/unknown-disabled-state",
+        lastBuild: {
+          number: 1,
+          url: "https://jenkins.example.com/job/unknown-disabled-state/1/",
+        },
+      },
+    ]);
+    const sink = capture();
+
+    await runList({
+      client: {} as JenkinsClient,
+      env,
+      activeOnly: true,
+      limit: 2,
+      nonInteractive: true,
+      json: true,
+      write: sink.write,
+    });
+
+    const parsed = JSON.parse(sink.output()) as {
+      data: Array<{ name: string }>;
+    };
+    expect(parsed.data.map((job) => job.name)).toEqual(["partial", "built"]);
+  });
+
   test("emits a JSON error envelope and non-zero exit code on failure", async () => {
     trackRestore(spyOn(listDeps, "loadJobs")).mockRejectedValue(
       new CliError(

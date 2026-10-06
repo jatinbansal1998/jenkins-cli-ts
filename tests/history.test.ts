@@ -220,6 +220,78 @@ describe("runHistory", () => {
     );
   });
 
+  test("non-interactive --limit sets the page size and keeps --offset", async () => {
+    const logSpy = spyOn(console, "log").mockImplementation(() => undefined);
+    const listBuildHistory = mock(async () => ({
+      builds: [],
+      offset: 3,
+      limit: 10,
+      hasNext: false,
+      hasPrevious: true,
+    }));
+
+    await runHistory({
+      client: { listBuildHistory } as unknown as JenkinsClient,
+      env: TEST_ENV,
+      jobUrl: "https://jenkins.example.com/job/api/",
+      offset: 3,
+      limit: 10,
+      nonInteractive: true,
+    });
+
+    expect(listBuildHistory).toHaveBeenCalledWith(
+      "https://jenkins.example.com/job/api/",
+      { offset: 3, limit: 10 },
+    );
+    logSpy.mockRestore();
+  });
+
+  test("interactive --limit pages by the limit", async () => {
+    const listBuildHistory = mock(
+      async (jobUrl: string, options?: { offset?: number }) => ({
+        builds: [
+          {
+            buildNumber: (options?.offset ?? 0) + 100,
+            buildUrl: `${jobUrl}${options?.offset ?? 0}/`,
+            result: "SUCCESS",
+          },
+        ],
+        offset: options?.offset ?? 0,
+        limit: 2,
+        hasNext: (options?.offset ?? 0) === 0,
+        hasPrevious: (options?.offset ?? 0) > 0,
+      }),
+    );
+    selectMock
+      .mockImplementationOnce(
+        async (): Promise<AutocompletePromptResult> => NEXT_PAGE_VALUE,
+      )
+      .mockImplementationOnce(
+        async (): Promise<AutocompletePromptResult> => CANCEL,
+      );
+
+    await runHistory({
+      client: { listBuildHistory } as unknown as JenkinsClient,
+      env: TEST_ENV,
+      jobUrl: "https://jenkins.example.com/job/api/",
+      limit: 2,
+      nonInteractive: false,
+    });
+
+    expect(listBuildHistory).toHaveBeenNthCalledWith(
+      2,
+      "https://jenkins.example.com/job/api/",
+      { offset: 2, limit: 2 },
+    );
+    const labels = selectMock.mock.calls.map((call) =>
+      (call[0] as { options: { label: string }[] }).options.map(
+        (option) => option.label,
+      ),
+    );
+    expect(labels[0]).toContain("Next 2");
+    expect(labels[1]).toContain("Previous 2");
+  });
+
   test("interactive can rebuild a selected historical build with its parameters", async () => {
     const listBuildHistory = mock(async () => ({
       builds: [

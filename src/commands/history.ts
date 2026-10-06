@@ -19,7 +19,7 @@ import type { ActionEffectResult, BuildPostContext } from "../flows/types";
 import { historyDeps } from "./history-deps";
 import { printRerunResult, rerunLastBuildForJob } from "./rerun-core";
 
-const HISTORY_PAGE_SIZE = 5;
+export const HISTORY_PAGE_SIZE = 5;
 const NEXT_PAGE_VALUE = "__jenkins_cli_history_next__";
 const PREVIOUS_PAGE_VALUE = "__jenkins_cli_history_previous__";
 const BACK_VALUE = "__jenkins_cli_history_back__";
@@ -42,6 +42,7 @@ type HistoryOptions = {
   jobUrl?: string;
   nonInteractive: boolean;
   offset?: number;
+  limit?: number;
   json?: boolean;
   write?: JsonWrite;
 };
@@ -81,11 +82,12 @@ export async function runHistory(
     nonInteractive: options.nonInteractive,
   });
   const initialOffset = normalizeOffset(options.offset);
+  const pageSize = options.limit ?? HISTORY_PAGE_SIZE;
 
   if (options.nonInteractive) {
     const page = await options.client.listBuildHistory(target.jobUrl, {
       offset: initialOffset,
-      limit: HISTORY_PAGE_SIZE,
+      limit: pageSize,
     });
     renderBuildHistory(page, target.jobLabel);
     return {};
@@ -96,7 +98,7 @@ export async function runHistory(
   while (true) {
     const page = await options.client.listBuildHistory(target.jobUrl, {
       offset,
-      limit: HISTORY_PAGE_SIZE,
+      limit: pageSize,
     });
 
     if (page.builds.length === 0) {
@@ -107,17 +109,17 @@ export async function runHistory(
     renderBuildHistory(page, target.jobLabel);
     const selection = await deps.select({
       message: "Select a build or action",
-      options: buildHistoryOptions(page),
+      options: buildHistoryOptions(page, pageSize),
     });
     if (deps.isCancel(selection) || selection === BACK_VALUE) {
       return latestActiveBuild ? { activeBuild: latestActiveBuild } : {};
     }
     if (selection === NEXT_PAGE_VALUE) {
-      offset += HISTORY_PAGE_SIZE;
+      offset += pageSize;
       continue;
     }
     if (selection === PREVIOUS_PAGE_VALUE) {
-      offset = Math.max(0, offset - HISTORY_PAGE_SIZE);
+      offset = Math.max(0, offset - pageSize);
       continue;
     }
 
@@ -162,7 +164,7 @@ async function runHistoryJson(options: HistoryOptions): Promise<void> {
       });
       const page = await options.client.listBuildHistory(target.jobUrl, {
         offset: normalizeOffset(options.offset),
-        limit: HISTORY_PAGE_SIZE,
+        limit: options.limit ?? HISTORY_PAGE_SIZE,
       });
       return page.builds.map(jsonBuild);
     },
@@ -523,16 +525,17 @@ function renderBuildHistory(page: BuildHistoryPage, jobLabel: string): void {
 
 function buildHistoryOptions(
   page: BuildHistoryPage,
+  pageSize: number,
 ): { value: string; label: string }[] {
   const options = page.builds.map((build) => ({
     value: build.buildUrl,
     label: formatBuildOptionLabel(build),
   }));
   if (page.hasPrevious) {
-    options.push({ value: PREVIOUS_PAGE_VALUE, label: "Previous 5" });
+    options.push({ value: PREVIOUS_PAGE_VALUE, label: `Previous ${pageSize}` });
   }
   if (page.hasNext) {
-    options.push({ value: NEXT_PAGE_VALUE, label: "Next 5" });
+    options.push({ value: NEXT_PAGE_VALUE, label: `Next ${pageSize}` });
   }
   options.push({ value: BACK_VALUE, label: "Back" });
   return options;

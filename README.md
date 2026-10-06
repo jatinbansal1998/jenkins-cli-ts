@@ -130,6 +130,8 @@ commands and options:
 ```bash
 jenkins-cli help --json
 jenkins-cli status --job api --json
+jenkins-cli history --job api --limit 20 --json
+jenkins-cli list --search api --limit 10 --json
 jenkins-cli build api --branch main --watch --json
 jenkins-cli logs --job api --build 42 --jsonl
 ```
@@ -137,6 +139,11 @@ jenkins-cli logs --job api --build 42 --jsonl
 `--json` disables prompts and writes one JSON document to stdout, with `ok`,
 `command`, and `data` on success or `ok: false` and `error` on failure. Log
 streaming uses `--jsonl` instead. Diagnostics go to stderr.
+
+`history --limit <n>` sets how many builds each page holds (default 5) and works
+with `--offset`; with `--json` it returns up to `n` builds in one document.
+`list --limit <n>` prints or returns at most `n` jobs after `--search` and
+`--active-only`.
 
 For text output without prompts, pass `--non-interactive`. Pipeline input
 approval and abort also require `--yes` in non-interactive runs.
