@@ -10,6 +10,8 @@ lists everything since the previous stable release, including its prereleases.
 
 ## [Unreleased]
 
+## [1.0.0-rc.5] - 2026-10-06
+
 ### Added
 
 - `--quiet` prints nothing except errors and their hints on stderr. It implies
@@ -542,7 +544,8 @@ No CLI behaviour change.
 
 - Backspace and Delete in the interactive branch picker under Bun.
 
-[Unreleased]: https://github.com/jatinbansal1998/jenkins-cli-ts/compare/v1.0.0-rc.4...HEAD
+[Unreleased]: https://github.com/jatinbansal1998/jenkins-cli-ts/compare/v1.0.0-rc.5...HEAD
+[1.0.0-rc.5]: https://github.com/jatinbansal1998/jenkins-cli-ts/releases/tag/v1.0.0-rc.5
 [1.0.0-rc.4]: https://github.com/jatinbansal1998/jenkins-cli-ts/releases/tag/v1.0.0-rc.4
 [1.0.0-rc.3]: https://github.com/jatinbansal1998/jenkins-cli-ts/releases/tag/v1.0.0-rc.3
 [1.0.0-rc.2]: https://github.com/jatinbansal1998/jenkins-cli-ts/releases/tag/v1.0.0-rc.2
