@@ -10,6 +10,8 @@ lists everything since the previous stable release, including its prereleases.
 
 ## [Unreleased]
 
+## [1.0.0-rc.6] - 2026-10-06
+
 ### Added
 
 - `JENKINS_CLI_CONFIG_DIR` moves the config directory (config file, logs,
@@ -573,7 +575,8 @@ No CLI behaviour change.
 
 - Backspace and Delete in the interactive branch picker under Bun.
 
-[Unreleased]: https://github.com/jatinbansal1998/jenkins-cli-ts/compare/v1.0.0-rc.5...HEAD
+[Unreleased]: https://github.com/jatinbansal1998/jenkins-cli-ts/compare/v1.0.0-rc.6...HEAD
+[1.0.0-rc.6]: https://github.com/jatinbansal1998/jenkins-cli-ts/releases/tag/v1.0.0-rc.6
 [1.0.0-rc.5]: https://github.com/jatinbansal1998/jenkins-cli-ts/releases/tag/v1.0.0-rc.5
 [1.0.0-rc.4]: https://github.com/jatinbansal1998/jenkins-cli-ts/releases/tag/v1.0.0-rc.4
 [1.0.0-rc.3]: https://github.com/jatinbansal1998/jenkins-cli-ts/releases/tag/v1.0.0-rc.3
