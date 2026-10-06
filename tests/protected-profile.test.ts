@@ -362,6 +362,9 @@ describe("protected profile CLI output", () => {
         error: {
           message: 'Profile "release" is read-only.',
           code: "PROFILE_PROTECTED",
+          hints: [
+            "Re-run with --confirm-protected to allow builds, cancels, creates, reruns, and input approvals or aborts.",
+          ],
         },
       });
     }

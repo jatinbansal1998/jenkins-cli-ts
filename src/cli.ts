@@ -7,21 +7,61 @@ import type { ErrorCode } from "./error-codes";
 import { logCliError } from "./logger";
 import { NATIVE_RELEASE_TARGETS } from "./release-targets";
 
+/** A job the caller may have meant. `name` is the full display name. */
+export type JobCandidate = {
+  name: string;
+  url: string;
+};
+
+/**
+ * Machine-readable context for `--json` consumers, keyed by the error code
+ * that carries it. A code gets its own shape by adding an entry here.
+ */
+type CliErrorDetailsByCode = {
+  JOB_AMBIGUOUS: { candidates: JobCandidate[] };
+  JOB_NOT_FOUND: { candidates: JobCandidate[] };
+};
+
+type DetailedErrorCode = keyof CliErrorDetailsByCode;
+
+export type CliErrorDetails = CliErrorDetailsByCode[DetailedErrorCode];
+
+/** One `[code, options]` pair per detailed code, so details match their code. */
+type DetailedCodeAndOptions = {
+  [C in DetailedErrorCode]: [
+    code: C,
+    options?: ErrorOptions & { details?: CliErrorDetailsByCode[C] },
+  ];
+}[DetailedErrorCode];
+
 /** Structured error with hints for user guidance. `code` sets the exit code. */
 export class CliError extends Error {
   public readonly hints: string[];
   public readonly code: ErrorCode;
+  public readonly details?: CliErrorDetails;
 
+  constructor(
+    message: string,
+    hints: string[],
+    ...args: DetailedCodeAndOptions
+  );
   constructor(
     message: string,
     hints: string[],
     code: ErrorCode,
     options?: ErrorOptions,
+  );
+  constructor(
+    message: string,
+    hints: string[],
+    code: ErrorCode,
+    options?: ErrorOptions & { details?: CliErrorDetails },
   ) {
     super(message, options);
     this.name = "CliError";
     this.hints = hints;
     this.code = code;
+    this.details = options?.details;
   }
 }
 

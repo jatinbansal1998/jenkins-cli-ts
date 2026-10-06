@@ -142,6 +142,44 @@ describe.skipIf(!integrationEnabled)(
       });
     }, 30_000);
 
+    test("lists ambiguous job candidates in the --json error", async () => {
+      await withCliHome(async (home) => {
+        await runCli(home, ["list", "--refresh", "--json"]);
+
+        const result = await runCliExpectFailure(home, [
+          "status",
+          "--job",
+          "cli-candidate",
+          "--json",
+          "--non-interactive",
+        ]);
+        expect(result.exitCode).toBe(2);
+        expect(parseJson<unknown>(result)).toEqual({
+          ok: false,
+          error: {
+            code: "JOB_AMBIGUOUS",
+            message: 'Job name is ambiguous for "cli-candidate".',
+            hints: [
+              "Options: team/cli-candidate-api, team/cli-candidate-web",
+              "Pass `--job <exact name>` or `--job-url <url>`.",
+            ],
+            details: {
+              candidates: [
+                {
+                  name: "team/cli-candidate-api",
+                  url: `${jenkinsUrl}/job/team/job/cli-candidate-api`,
+                },
+                {
+                  name: "team/cli-candidate-web",
+                  url: `${jenkinsUrl}/job/team/job/cli-candidate-web`,
+                },
+              ],
+            },
+          },
+        });
+      });
+    }, 30_000);
+
     test("masks credentials echoed by a proxy around real Jenkins failures", async () => {
       const token = process.env.JENKINS_INTEGRATION_READER_TOKEN!;
       const user =
@@ -3918,6 +3956,9 @@ describe.skipIf(!integrationEnabled)(
             error: {
               message: 'Profile "release" is read-only.',
               code: "PROFILE_PROTECTED",
+              hints: [
+                "Re-run with --confirm-protected to allow builds, cancels, creates, reruns, and input approvals or aborts.",
+              ],
             },
           });
         }

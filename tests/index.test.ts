@@ -357,12 +357,13 @@ describe("--limit validation", () => {
     expect(result.exitCode).toBe(2);
     const parsed = JSON.parse(result.output) as {
       ok: boolean;
-      error: { message: string; code: string };
+      error: { message: string; code: string; hints: string[] };
     };
     expect(parsed.ok).toBe(false);
     expect(parsed.error).toEqual({
       message: "Invalid --limit value.",
       code: "INVALID_USAGE",
+      hints: ["Provide a positive integer, for example --limit 20."],
     });
   });
 

@@ -767,7 +767,11 @@ describe("runChanges", () => {
 
       expect(JSON.parse(output)).toEqual({
         ok: false,
-        error: { message: "Malformed changes.", code: "CHANGES_MALFORMED" },
+        error: {
+          message: "Malformed changes.",
+          code: "CHANGES_MALFORMED",
+          hints: [],
+        },
       });
     } finally {
       process.exitCode = previousExitCode ?? 0;

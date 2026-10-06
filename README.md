@@ -140,6 +140,40 @@ jenkins-cli logs --job api --build 42 --jsonl
 `command`, and `data` on success or `ok: false` and `error` on failure. Log
 streaming uses `--jsonl` instead. Diagnostics go to stderr.
 
+A failure is `{ ok: false, error: { code, message, hints, details? } }`.
+`hints` holds the same next steps the text output prints, and is `[]` when
+there are none. `details` is present only for codes that carry structured
+context. `JOB_AMBIGUOUS` and `JOB_NOT_FOUND` list the jobs the name could mean:
+
+```json
+{
+  "ok": false,
+  "error": {
+    "code": "JOB_AMBIGUOUS",
+    "message": "Job name is ambiguous for \"deploy\".",
+    "hints": [
+      "Options: team/deploy-api, team/deploy-web",
+      "Pass `--job <exact name>` or `--job-url <url>`."
+    ],
+    "details": {
+      "candidates": [
+        {
+          "name": "team/deploy-api",
+          "url": "https://jenkins.example.com/job/team/job/deploy-api"
+        },
+        {
+          "name": "team/deploy-web",
+          "url": "https://jenkins.example.com/job/team/job/deploy-web"
+        }
+      ]
+    }
+  }
+}
+```
+
+A `--jsonl` stream ends with `{ "type": "error", "error": { ... } }` carrying
+the same `error` body.
+
 `history --limit <n>` sets how many builds each page holds (default 5) and works
 with `--offset`; with `--json` it returns up to `n` builds in one document.
 `list --limit <n>` prints or returns at most `n` jobs after `--search` and
