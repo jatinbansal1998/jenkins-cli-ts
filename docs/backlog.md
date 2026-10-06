@@ -386,11 +386,14 @@ empty. There are no TODO or FIXME comments in source.
       apply to every styled string, including the status result that was
       always bold. `--quiet` leaves only errors on stderr.
 
-- [ ] **F10. The config directory cannot be moved.** - Today: `CONFIG_DIR` is always `~/.config/jenkins-cli`
+- [x] **F10. The config directory cannot be moved.** - Today: `CONFIG_DIR` is always `~/.config/jenkins-cli`
       (`config.ts:10`). No `XDG_CONFIG_HOME`, `%APPDATA%` on Windows, or a
       `--config` / `JENKINS_CLI_CONFIG` override. - Why it matters: shared machines, CI runners and Windows users expect
       the platform convention, and tests have to monkeypatch `HOME`. - Do: honor `XDG_CONFIG_HOME` and `%APPDATA%`, and add a
-      `JENKINS_CLI_CONFIG_DIR` override.
+      `JENKINS_CLI_CONFIG_DIR` override. - Shipped: `src/config-dir.ts` resolves
+      `JENKINS_CLI_CONFIG_DIR`, then `XDG_CONFIG_HOME`, then `%APPDATA%` on
+      Windows, then `~/.config/jenkins-cli`. Config, logs and update state
+      follow it; `auth status` and `--help` print it.
 
 - [x] **F11. Exit codes are only defined for `wait`.** - Today: `wait` documents 0/1/124/130. Every other command exits 0 or 1
       for everything, including auth failures and not-found. - Why it matters: scripts cannot tell "job does not exist" from "token

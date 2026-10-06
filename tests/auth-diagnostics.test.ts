@@ -17,6 +17,7 @@ import {
 import { KEYCHAIN_TOKEN_SENTINEL, type JenkinsConfig } from "../src/config";
 
 const controller = "https://jenkins.example.com";
+const configFile = "/tmp/jenkins-cli/jenkins-cli-config.json";
 
 function configWith(
   profiles: JenkinsConfig["profiles"],
@@ -452,6 +453,7 @@ describe("auth status reporting", () => {
       tokenStorage: "macOS Keychain",
       tokenPresent: true,
       success: true,
+      configFile,
       probe: {
         kind: "authenticated",
         authenticated: true,
@@ -471,6 +473,7 @@ describe("auth status reporting", () => {
         "Authenticated:    Yes",
         "Jenkins user:     jatin.bansal",
         "Jenkins version:  2.516.1",
+        `Config file:      ${configFile}`,
       ].join("\n"),
     );
   });
@@ -481,6 +484,7 @@ describe("auth status reporting", () => {
       tokenStorage: "Command line",
       tokenPresent: true,
       success: false,
+      configFile,
       probe: {
         kind: "redirect",
         httpStatus: 302,
@@ -505,6 +509,7 @@ describe("auth status reporting", () => {
           tokenStorage: "Environment variables",
           tokenPresent: true,
           success: true,
+          configFile,
           probe: {
             kind: "authenticated",
             jenkinsUser: "ci",
@@ -530,6 +535,7 @@ describe("auth status reporting", () => {
           tokenStorage: "Environment variables",
           tokenPresent: true,
           success: true,
+          configFile,
           probe: {
             kind: "authenticated",
             jenkinsUser: "ci",
@@ -546,6 +552,7 @@ describe("auth status reporting", () => {
       data: {
         profileLabel: "Environment",
         success: true,
+        configFile,
         probe: { kind: "authenticated", jenkinsUser: "ci" },
       },
     });
@@ -563,6 +570,7 @@ describe("auth status reporting", () => {
           tokenStorage: "Config file",
           tokenPresent: true,
           success: false,
+          configFile,
           probe: { kind: "unauthorized", httpStatus: 401 },
         }),
       },
@@ -582,6 +590,7 @@ describe("auth status reporting", () => {
       tokenStorage: "macOS Keychain",
       tokenPresent: false,
       success: false,
+      configFile,
       probe: { kind: "anonymous" },
     });
     const inaccessible = authFailureMessage({
@@ -591,6 +600,7 @@ describe("auth status reporting", () => {
       tokenStorage: "macOS Keychain",
       keychainReadError: true,
       success: false,
+      configFile,
       probe: { kind: "network-error" },
     });
 

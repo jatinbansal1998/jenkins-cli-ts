@@ -10,6 +10,19 @@ lists everything since the previous stable release, including its prereleases.
 
 ## [Unreleased]
 
+### Added
+
+- `JENKINS_CLI_CONFIG_DIR` moves the config directory (config file, logs,
+  update state) to any absolute path. `auth status` and `--help` print the
+  resolved path.
+
+### Changed
+
+- The config directory follows `XDG_CONFIG_HOME` when it is set, and
+  `%APPDATA%\jenkins-cli` on Windows. Users whose config lived in
+  `~/.config/jenkins-cli` under a different `XDG_CONFIG_HOME`, or on Windows,
+  must move that folder to the new location.
+
 ## [1.0.0-rc.5] - 2026-10-06
 
 ### Added

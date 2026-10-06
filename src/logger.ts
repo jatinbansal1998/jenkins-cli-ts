@@ -6,10 +6,9 @@
  */
 import fs from "node:fs";
 import path from "node:path";
-import { resolveUserHome } from "./user-home";
+import { CONFIG_DIR } from "./config-dir";
 import packageJson from "../package.json";
 
-const CONFIG_DIR = path.join(resolveUserHome(), ".config", "jenkins-cli");
 const LEGACY_LOG_FILE = path.join(CONFIG_DIR, "api.log");
 const DATED_LOG_FILE_PATTERN = /^(?:api|error)-(\d{4}-\d{2}-\d{2})\.log$/;
 const LOG_RETENTION_DAYS = 7;
