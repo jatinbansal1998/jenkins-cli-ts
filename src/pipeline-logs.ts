@@ -1,5 +1,6 @@
 import { CliError } from "./cli";
 import type { JenkinsClient } from "./jenkins/client";
+import { JENKINS_READ_LIMIT, mapWithLimit } from "./map-with-limit";
 import type {
   JenkinsPipelineNodeResponse,
   JenkinsPipelineStage,
@@ -42,9 +43,6 @@ type PipelineGraphNode = {
   errorMessage?: string;
   path: string;
 };
-
-// Caps concurrent wfapi node reads so a wide Pipeline does not flood Jenkins.
-const NODE_FETCH_LIMIT = 6;
 
 export type PipelineLogSelector = {
   stage?: string;
@@ -115,7 +113,7 @@ export class PipelineLogResolver {
     const sources = (
       await mapWithLimit(
         sourceNodes.toSorted(compareNodes),
-        NODE_FETCH_LIMIT,
+        JENKINS_READ_LIMIT,
         (node) => this.readSource(node, stage),
       )
     ).filter((source) => source !== null);
@@ -145,7 +143,7 @@ export class PipelineLogResolver {
     graph: PipelineGraphNode[],
     stages: PipelineGraphNode[],
   ): Promise<void> {
-    const details = await mapWithLimit(stages, NODE_FETCH_LIMIT, (stage) =>
+    const details = await mapWithLimit(stages, JENKINS_READ_LIMIT, (stage) =>
       this.readStageDetail(stage),
     );
     // Merged in stage order: a node reported under two stages keeps the first.
@@ -373,25 +371,6 @@ function findNode(graph: PipelineGraphNode[], id: string): PipelineGraphNode {
     );
   }
   return match;
-}
-
-async function mapWithLimit<T, R>(
-  items: readonly T[],
-  limit: number,
-  map: (item: T) => Promise<R>,
-): Promise<R[]> {
-  const results: R[] = [];
-  let next = 0;
-  const worker = async (): Promise<void> => {
-    while (next < items.length) {
-      const index = next++;
-      results[index] = await map(items[index]!);
-    }
-  };
-  await Promise.all(
-    Array.from({ length: Math.min(limit, items.length) }, worker),
-  );
-  return results;
 }
 
 function buildDisplayPath(
