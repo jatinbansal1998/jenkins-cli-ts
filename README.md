@@ -129,6 +129,23 @@ The config directory holds the config file, logs, and update state. It is
 and `--help` print the resolved path. The job cache lives in the platform cache
 directory instead.
 
+Each Jenkins request times out after 10 seconds and a failed connection is
+retried once. For a slow controller, for example one behind a VPN, raise them per
+run, per shell, or per profile. The flag beats the env var, which beats the
+profile field:
+
+| Setting           | Flag              | Env var              | Profile field        | Default |
+| ----------------- | ----------------- | -------------------- | -------------------- | ------- |
+| Request timeout   | `--timeout <dur>` | `JENKINS_TIMEOUT_MS` | `"timeoutMs": 30000` | `10s`   |
+| Transport retries | `--retries <n>`   | `JENKINS_RETRIES`    | `"retries": 3`       | `1`     |
+
+Durations use the same syntax as `wait --timeout`: `500ms`, `30s`, `2m`, `1h`,
+or a bare number of milliseconds. Under `wait`, `--timeout` stays the overall
+wait deadline, so set the request timeout there with `JENKINS_TIMEOUT_MS` or the
+profile. Retries apply only to requests that are safe to repeat: triggering a
+build, creating an item, and approving or aborting an input never retry, because
+a lost response may hide a request that Jenkins already carried out.
+
 ## Scripts and agents
 
 Use `--json` for structured output and `help --json` to discover supported

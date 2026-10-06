@@ -172,6 +172,7 @@ function createParser(rawArgs: string[]): Argv {
 }
 
 function loadContextEnv(
+  command: string,
   loadedConfig: LoadedConfig | null,
   argv?: ContextArgv,
 ): ReturnType<typeof loadEnv> {
@@ -181,6 +182,9 @@ function loadContextEnv(
     user: optionalString(argv?.user),
     apiToken: optionalString(argv?.token) ?? optionalString(argv?.apiToken),
     confirmProtected: argv?.confirmProtected === true,
+    // `wait --timeout` is the overall wait deadline, not the request timeout.
+    timeout: command === "wait" ? undefined : optionalString(argv?.timeout),
+    retries: optionalString(argv?.retries),
   });
   const folderDepth =
     typeof argv?.folderDepth === "number" && Number.isFinite(argv.folderDepth)
@@ -197,6 +201,8 @@ function buildContext(env: ReturnType<typeof loadEnv>): CommandContext {
     baseUrl: env.jenkinsUrl,
     user: env.jenkinsUser,
     apiToken: () => resolveApiToken(env),
+    timeoutMs: env.timeoutMs,
+    transportRetries: env.transportRetries,
     useCrumb: env.useCrumb,
     folderDepth: env.folderDepth,
   });
@@ -205,12 +211,13 @@ function buildContext(env: ReturnType<typeof loadEnv>): CommandContext {
 }
 
 async function prepareContext(
+  command: string,
   argv: ContextArgv | undefined,
   showIntro: (target?: string) => void,
   interactive: boolean,
   loadedConfig: LoadedConfig | null,
 ): Promise<CommandContext> {
-  const env = loadContextEnv(loadedConfig, argv);
+  const env = loadContextEnv(command, loadedConfig, argv);
   showIntro(formatPromptTarget(env));
   // Automatically migrate an eligible plaintext profile before command work.
   // Non-interactive runs stay silent to preserve structured output contracts.
@@ -286,6 +293,7 @@ async function runCommandWithContext<TArgv extends ContextualCommandArgv>(
     async ({ showIntro, interactive, loadConfig }) => {
       try {
         const context = await prepareContext(
+          command,
           argv,
           showIntro,
           interactive,

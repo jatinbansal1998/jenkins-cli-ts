@@ -76,6 +76,8 @@ const loadEnv: EnvConfig = {
   branchParamDefault: "BRANCH",
   useCrumb: false,
   folderDepth: 3,
+  timeoutMs: 30_000,
+  transportRetries: 2,
 };
 
 let bunFileSpy = spyOn(Bun, "file");
@@ -175,6 +177,8 @@ describe("job cache refresh", () => {
         jenkinsApiToken: "test-token",
         useCrumb: false,
         folderDepth: 3,
+        timeoutMs: 30_000,
+        transportRetries: 2,
       });
       expect(files.has(lockPath)).toBe(true);
       // The claim must be an exclusive create, not check-then-write.

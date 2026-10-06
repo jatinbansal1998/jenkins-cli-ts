@@ -139,7 +139,7 @@ Command-specific options:
     --build-url <url> Full Jenkins build URL
     --queue-url <url> Full Jenkins queue item URL
     --interval <dur>  Polling interval (e.g. 30s, 1m) [default: ${DEFAULT_WATCH_INTERVAL_MS / 1000}s]
-    --timeout <dur>   Timeout (e.g. 30m, 2h)
+    --timeout <dur>   Overall wait deadline (e.g. 30m, 2h); not the request timeout
     --json            Output a single JSON document (implies non-interactive)
 
   logs:
@@ -294,8 +294,18 @@ Command-specific options:
     at a read-only profile's controller is read-only too. Blocked runs exit
     non-zero; with --json they emit one document with code PROFILE_PROTECTED.
 
+  network (any command):
+    --timeout <dur>  Per-request HTTP timeout (e.g. 30s, 2m; bare number is ms)
+                     [default: 10s]
+    --retries <n>    Transport retries for idempotent requests [default: 1];
+                     build triggers, creates, and input submits never retry
+    Under "wait", --timeout is the wait deadline; set the request timeout
+    with ${ENV_KEYS.JENKINS_TIMEOUT_MS} or the profile instead.
+
   config/env:
     ${ENV_KEYS.JENKINS_USE_CRUMB} / useCrumb  Jenkins CSRF crumb usage [default: enabled]
+    ${ENV_KEYS.JENKINS_TIMEOUT_MS} / timeoutMs  Per-request timeout (flag beats env beats profile)
+    ${ENV_KEYS.JENKINS_RETRIES} / retries  Transport retries (flag beats env beats profile)
 
   update:
     [tag]                  Install a specific version tag (e.g. v0.2.4)

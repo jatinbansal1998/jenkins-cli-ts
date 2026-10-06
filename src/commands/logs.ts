@@ -33,7 +33,7 @@ import type {
   BuildStatus,
   ConsoleChunk,
 } from "../types/jenkins";
-import { parseOptionalDurationMs } from "./ops-helpers";
+import { parseOptionalDurationMs } from "../duration";
 import { waitForPollIntervalOrCancel } from "./watch-utils";
 
 export const DEFAULT_LOG_POLL_MS = 1_000;
@@ -173,7 +173,7 @@ async function runLogsCore(
   const pollMs = parseOptionalDurationMs(
     options.poll,
     DEFAULT_LOG_POLL_MS,
-    "poll",
+    "--poll",
   );
   if (pollMs <= 0) {
     throw new CliError(

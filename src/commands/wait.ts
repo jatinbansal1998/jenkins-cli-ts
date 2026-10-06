@@ -33,7 +33,7 @@ import {
   toStatusDetails,
   formatDuration,
 } from "../status-format";
-import { parseOptionalDurationMs } from "./ops-helpers";
+import { parseOptionalDurationMs } from "../duration";
 import {
   createWatchControlSignal,
   DEFAULT_WATCH_INTERVAL_MS,
@@ -90,10 +90,10 @@ export async function runWait(options: WaitOptions): Promise<WaitResult> {
   const intervalMs = parseOptionalDurationMs(
     options.interval,
     DEFAULT_WATCH_INTERVAL_MS,
-    "interval",
+    "--interval",
   );
   const timeoutMs = options.timeout
-    ? parseOptionalDurationMs(options.timeout, 0, "timeout")
+    ? parseOptionalDurationMs(options.timeout, 0, "--timeout")
     : undefined;
   if (timeoutMs !== undefined && timeoutMs <= 0) {
     throw new CliError(
@@ -137,10 +137,10 @@ async function runWaitJson(options: WaitOptions): Promise<WaitResult> {
     const intervalMs = parseOptionalDurationMs(
       options.interval,
       DEFAULT_WATCH_INTERVAL_MS,
-      "interval",
+      "--interval",
     );
     const timeoutMs = options.timeout
-      ? parseOptionalDurationMs(options.timeout, 0, "timeout")
+      ? parseOptionalDurationMs(options.timeout, 0, "--timeout")
       : undefined;
     if (timeoutMs !== undefined && timeoutMs <= 0) {
       throw new CliError(

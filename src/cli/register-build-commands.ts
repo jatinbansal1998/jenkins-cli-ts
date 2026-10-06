@@ -323,7 +323,8 @@ function configureWaitOptions(yargsInstance: Argv): Argv {
       })
       .option("timeout", {
         type: "string",
-        describe: "Timeout (e.g. 30m, 2h)",
+        describe:
+          "Overall wait deadline (e.g. 30m, 2h); the request timeout comes from JENKINS_TIMEOUT_MS or the profile",
       }),
   ).epilog(BUILD_METADATA_HELP);
 }

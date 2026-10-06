@@ -144,6 +144,62 @@ describe.skipIf(!integrationEnabled)(
       });
     }, 30_000);
 
+    test("--timeout bounds each request and the error names the limit", async () => {
+      // A fixed delay on every request makes the outcome depend only on
+      // --timeout, not on how fast the controller happens to answer.
+      const slowJenkins = Bun.serve({
+        hostname: "127.0.0.1",
+        port: 0,
+        idleTimeout: 30,
+        async fetch(request) {
+          await Bun.sleep(500);
+          const incoming = new URL(request.url);
+          const response = await fetch(
+            new URL(incoming.pathname + incoming.search, jenkinsUrl),
+            { headers: request.headers },
+          );
+          const headers = new Headers(response.headers);
+          headers.delete("content-length");
+          headers.delete("content-encoding");
+          return new Response(await response.arrayBuffer(), {
+            status: response.status,
+            headers,
+          });
+        },
+      });
+      try {
+        await withCliHome(async (home) => {
+          const env = { JENKINS_URL: `${slowJenkins.url.origin}/jenkins` };
+          const timedOut = await invokeCli(
+            home,
+            ["status", "--job", "cli-smoke", "--timeout", "1ms", "--json"],
+            env,
+          );
+          expect(timedOut.exitCode, timedOut.output).toBe(6);
+          const failure = parseJson<{
+            ok: boolean;
+            error: { code: string; message: string };
+          }>(timedOut);
+          expect(failure.ok).toBeFalse();
+          expect(failure.error.code).toBe("JENKINS_TIMEOUT");
+          expect(failure.error.message).toContain(
+            "Jenkins did not respond within 1ms",
+          );
+
+          const status = parseJson(
+            await runCli(
+              home,
+              ["status", "--job", "cli-smoke", "--timeout", "30s", "--json"],
+              env,
+            ),
+          );
+          expect(status).toMatchObject({ ok: true, command: "status" });
+        });
+      } finally {
+        await slowJenkins.stop(true);
+      }
+    }, 60_000);
+
     test("lists ambiguous job candidates in the --json error", async () => {
       await withCliHome(async (home) => {
         const listed = parseJson<{ data: Array<{ url: string }> }>(
@@ -1206,7 +1262,7 @@ describe.skipIf(!integrationEnabled)(
             )
           ).join("\n");
           expect(errorLog).toContain(
-            "Caused by\nCliError: Request timed out while trying to fetch test report.",
+            "Caused by\nCliError: Request timed out while trying to fetch test report: Jenkins did not respond within 10000ms.",
           );
           expect(errorLog.match(/Caused by\n/g)).toHaveLength(2);
         } finally {

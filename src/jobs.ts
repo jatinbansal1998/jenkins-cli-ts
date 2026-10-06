@@ -99,7 +99,12 @@ export function getSuggestedJobs(
 
 export type JobCacheEnv = Pick<
   EnvConfig,
-  "jenkinsUrl" | "jenkinsUser" | "useCrumb" | "folderDepth"
+  | "jenkinsUrl"
+  | "jenkinsUser"
+  | "useCrumb"
+  | "folderDepth"
+  | "timeoutMs"
+  | "transportRetries"
 >;
 
 /** What the parent hands the detached `refresh-job-cache` process. */
@@ -207,6 +212,8 @@ async function scheduleBackgroundRefresh(
       jenkinsApiToken: await client.resolveApiToken(),
       useCrumb: env.useCrumb,
       folderDepth: env.folderDepth,
+      timeoutMs: env.timeoutMs,
+      transportRetries: env.transportRetries,
     };
     jobsDeps.spawnDetached(
       selfInvocation([JOB_CACHE_REFRESH_COMMAND, "--non-interactive"]),

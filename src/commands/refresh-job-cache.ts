@@ -20,6 +20,8 @@ export async function runJobCacheRefresh(): Promise<void> {
         baseUrl: env.jenkinsUrl,
         user: env.jenkinsUser,
         apiToken: env.jenkinsApiToken,
+        timeoutMs: env.timeoutMs,
+        transportRetries: env.transportRetries,
         useCrumb: env.useCrumb,
         folderDepth: env.folderDepth,
       }),
@@ -46,14 +48,23 @@ function parseRefreshEnv(raw: string | undefined): JobCacheRefreshPayload {
     );
   }
   const record = parsed as Record<string, unknown>;
-  const { jenkinsUrl, jenkinsUser, jenkinsApiToken, useCrumb, folderDepth } =
-    record;
+  const {
+    jenkinsUrl,
+    jenkinsUser,
+    jenkinsApiToken,
+    useCrumb,
+    folderDepth,
+    timeoutMs,
+    transportRetries,
+  } = record;
   if (
     typeof jenkinsUrl !== "string" ||
     typeof jenkinsUser !== "string" ||
     typeof jenkinsApiToken !== "string" ||
     typeof useCrumb !== "boolean" ||
-    typeof folderDepth !== "number"
+    typeof folderDepth !== "number" ||
+    (timeoutMs !== undefined && typeof timeoutMs !== "number") ||
+    (transportRetries !== undefined && typeof transportRetries !== "number")
   ) {
     throw new CliError(
       `${JOB_CACHE_REFRESH_ENV} is missing or malformed.`,
@@ -61,5 +72,13 @@ function parseRefreshEnv(raw: string | undefined): JobCacheRefreshPayload {
       "INVALID_USAGE",
     );
   }
-  return { jenkinsUrl, jenkinsUser, jenkinsApiToken, useCrumb, folderDepth };
+  return {
+    jenkinsUrl,
+    jenkinsUser,
+    jenkinsApiToken,
+    useCrumb,
+    folderDepth,
+    ...(timeoutMs !== undefined ? { timeoutMs } : {}),
+    ...(transportRetries !== undefined ? { transportRetries } : {}),
+  };
 }
