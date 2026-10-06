@@ -14,7 +14,7 @@ import {
 } from "./cli/options";
 import { BUILD_TARGET } from "./build-target";
 import { CliError, printHint } from "./cli";
-import { CONFIG_DIR } from "./config";
+import { CONFIG_DIR } from "./config-dir";
 import { isCompiledEntryPoint, selfInvocation } from "./self-invocation";
 import {
   downloadReleaseAsset,

@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { mkdirSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readdirSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { splitLogLines } from "../../src/log-filters";
 import { registerNetworkFaultTests } from "./jenkins/network-faults";
@@ -425,6 +426,64 @@ describe.skipIf(!integrationEnabled)(
         expect(deniedDocument.error.code).toBe("JENKINS_AUTH_ERROR");
       });
     }, 90_000);
+
+    test("keeps config and logs in JENKINS_CLI_CONFIG_DIR", async () => {
+      await withCliHome(async (home) => {
+        const homeConfigDir = join(home, ".config", "jenkins-cli");
+        const homeConfigFile = join(homeConfigDir, "jenkins-cli-config.json");
+        const homeConfig = JSON.stringify({
+          version: 2,
+          defaultProfile: "home-only",
+          profiles: {
+            "home-only": {
+              jenkinsUrl: "http://127.0.0.1:1",
+              jenkinsUser: "home-user",
+              jenkinsApiToken: "home-token",
+            },
+          },
+        });
+        await Bun.write(homeConfigFile, homeConfig);
+        const homeEntries = readdirSync(homeConfigDir).toSorted();
+        const overrideDir = mkdtempSync(
+          join(tmpdir(), "jenkins-cli-config-override-"),
+        );
+        try {
+          await Bun.write(
+            join(overrideDir, "update-state.json"),
+            JSON.stringify({
+              lastCheckedAt: new Date().toISOString(),
+              minAllowedVersion: "0.0.0",
+              minAllowedFetchedAt: new Date().toISOString(),
+            }),
+          );
+
+          const status = parseJson(
+            await runCli(home, ["auth", "status", "--json", "--debug"], {
+              JENKINS_CLI_CONFIG_DIR: overrideDir,
+            }),
+          );
+
+          expect(status).toMatchObject({
+            ok: true,
+            command: "auth status",
+            data: {
+              profileLabel: "Environment",
+              configFile: join(overrideDir, "jenkins-cli-config.json"),
+              success: true,
+            },
+          });
+          expect(
+            readdirSync(overrideDir).filter((file) =>
+              /^api-\d{4}-\d{2}-\d{2}\.log$/.test(file),
+            ),
+          ).toHaveLength(1);
+          expect(await Bun.file(homeConfigFile).text()).toBe(homeConfig);
+          expect(readdirSync(homeConfigDir).toSorted()).toEqual(homeEntries);
+        } finally {
+          rmSync(overrideDir, { recursive: true, force: true });
+        }
+      });
+    });
 
     test("fetches a missing job cache itself and refreshes a stale one in the background", async () => {
       await withCliHome(async (home) => {

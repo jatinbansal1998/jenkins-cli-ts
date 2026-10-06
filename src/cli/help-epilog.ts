@@ -1,5 +1,6 @@
 import { DEFAULT_LOG_POLL_MS } from "../commands/logs";
 import { DEFAULT_WATCH_INTERVAL_MS } from "../commands/watch-utils";
+import { CONFIG_DIR } from "../config-dir";
 import { ENV_KEYS } from "../env-keys";
 import { getJobCacheDir } from "../jobs";
 
@@ -302,6 +303,9 @@ Command-specific options:
     --channel <name>       Set update channel (stable or prerelease)
     --json                  Output update check data (requires --check)
 
+Config directory: ${CONFIG_DIR}
+  Override with ${ENV_KEYS.JENKINS_CLI_CONFIG_DIR}; otherwise XDG_CONFIG_HOME,
+  then %APPDATA% on Windows, then ~/.config.
 Cache directory: ${getJobCacheDir()}
 Cache files are separated by Jenkins URL. A missing cache is fetched on first
 use; a cache older than 24h is served immediately and refreshed in the

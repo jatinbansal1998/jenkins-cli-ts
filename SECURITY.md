@@ -24,7 +24,7 @@ In scope:
 - The update path: `jenkins-cli update`, the background update check, and the
   minimum-version check.
 - Credential storage: the OS keychain integration and the plaintext fallback in
-  `~/.config/jenkins-cli/`.
+  the config directory (`~/.config/jenkins-cli/` by default).
 
 Out of scope: Jenkins itself, Jenkins plugins, and controllers you point the CLI
 at.

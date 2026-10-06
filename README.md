@@ -106,7 +106,7 @@ removes local credentials; it does not revoke the token in Jenkins.
 
 Tokens use macOS Keychain, Linux Secret Service, or Windows Credential Manager
 when available. If the secure store is unavailable, login warns and stores the
-token in plaintext in `~/.config/jenkins-cli/jenkins-cli-config.json`.
+token in plaintext in `jenkins-cli-config.json` in the config directory.
 `auth login --no-keychain` explicitly selects plaintext storage.
 
 Credentials come from a complete `--url --user --token` set, then an explicit
@@ -121,6 +121,13 @@ jenkins-cli auth login --profile prod --protected
 
 CSRF crumbs are enabled by default. Controllers that do not need them can opt out
 with `JENKINS_USE_CRUMB=false` or `"useCrumb": false` in the profile.
+
+The config directory holds the config file, logs, and update state. It is
+`JENKINS_CLI_CONFIG_DIR` when set (an absolute path, used as-is), else
+`$XDG_CONFIG_HOME/jenkins-cli` when `XDG_CONFIG_HOME` is set, else
+`%APPDATA%\jenkins-cli` on Windows, else `~/.config/jenkins-cli`. `auth status`
+and `--help` print the resolved path. The job cache lives in the platform cache
+directory instead.
 
 ## Scripts and agents
 
@@ -213,7 +220,7 @@ The full list of error codes and their exit codes is in
 ## Diagnostics and privacy
 
 Use `auth status` to diagnose credentials and `--debug` for API diagnostics.
-Local logs are stored in `~/.config/jenkins-cli/` as `error-YYYY-MM-DD.log` and
+Local logs are stored in the config directory as `error-YYYY-MM-DD.log` and
 `api-YYYY-MM-DD.log` and retained for seven days. Active API tokens are masked,
 but other error details can contain sensitive data. Review logs before sharing.
 

@@ -62,6 +62,7 @@ export function formatAuthReport(result: AuthDiagnosticsResult): string {
     ["Authenticated:", formatAuthenticated(result)],
     ["Jenkins user:", result.probe?.jenkinsUser ?? "Unknown"],
     ["Jenkins version:", result.probe?.jenkinsVersion ?? "Unknown"],
+    ["Config file:", result.configFile],
   ];
   if (result.probe?.redirectLocation) {
     fields.push(["Redirect:", result.probe.redirectLocation]);

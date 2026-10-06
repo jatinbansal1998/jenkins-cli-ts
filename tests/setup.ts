@@ -7,6 +7,11 @@ import { join } from "node:path";
 const previousHome = process.env.HOME;
 const testHome = mkdtempSync(join(tmpdir(), "jenkins-cli-test-home-"));
 process.env.HOME = testHome;
+// These outrank HOME when resolving the config directory; a runner's value
+// would send every test, and every CLI it spawns, to the real config.
+delete process.env.JENKINS_CLI_CONFIG_DIR;
+delete process.env.XDG_CONFIG_HOME;
+delete process.env.APPDATA;
 afterAll(() => {
   if (previousHome === undefined) delete process.env.HOME;
   else process.env.HOME = previousHome;

@@ -90,6 +90,7 @@ type AuthProbeResult = {
 };
 
 export type AuthDiagnosticsResult = Omit<AuthCredentialResolution, "token"> & {
+  configFile: string;
   probe?: AuthProbeResult;
   success: boolean;
 };
@@ -325,7 +326,7 @@ export async function diagnoseAuthentication(
     credentials.tokenPresent === true &&
     probe?.kind === "authenticated";
   const { token: _token, ...safeCredentials } = credentials;
-  return { ...safeCredentials, probe, success };
+  return { ...safeCredentials, configFile: CONFIG_FILE, probe, success };
 }
 
 export function sanitizeRedirectLocation(
