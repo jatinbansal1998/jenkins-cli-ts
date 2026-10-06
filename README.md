@@ -194,6 +194,9 @@ bun run test:integration:jenkins
 The integration suite separately exercises the compiled CLI against disposable
 Jenkins. See [Testing](docs/testing.md) for prerequisites and focused suites.
 
+See [Contributing](CONTRIBUTING.md) before opening a pull request, and
+[Security](SECURITY.md) to report a vulnerability privately.
+
 - [Build flow](docs/flow/build-flow.md)
 - [Prompt system](docs/flow/prompt-system.md)
 - [Interactive state diagrams](docs/tui-state-diagrams.md)

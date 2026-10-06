@@ -450,8 +450,9 @@ upload, bearer/OIDC/mTLS auth.
       nothing compares results across runs. - Do: store the numbers as a workflow artifact and diff against the
       previous run.
 
-- [ ] **H8. Standard repo files missing.** - Today: no `CHANGELOG.md`, `CONTRIBUTING.md`, `SECURITY.md`,
-      `.github/ISSUE_TEMPLATE/` or PR template. - Do: add them. CHANGELOG can be generated from release notes.
+- [x] **H8. Standard repo files missing.** - Today: no `CHANGELOG.md`, `CONTRIBUTING.md`, `SECURITY.md`,
+      `.github/ISSUE_TEMPLATE/` or PR template. - Do: add them. CHANGELOG can be generated from release notes. - Shipped: all five added; `CHANGELOG.md` is seeded from the
+      `v0.8.0` to `v1.0.0-rc.4` release notes.
 
 - [ ] **H9. JSON output shapes are undocumented.** - Today: discoverable only through `help --json`. No page for the
       config file fields or the env vars either. - Do: a `docs/json-output.md` and `docs/configuration.md`.
