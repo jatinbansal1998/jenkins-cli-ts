@@ -54,8 +54,8 @@ function makeDeps(options: {
 describe("buildSecureStoreAccount", () => {
   test("derives the documented deterministic account", () => {
     expect(
-      buildSecureStoreAccount("default", "https://jenkins.pluang.org"),
-    ).toBe("v1.6wqHyJLxhkabpPotDmbQp23XKq4PPcDTbGiTq65bvWg");
+      buildSecureStoreAccount("default", "https://jenkins.example.com"),
+    ).toBe("v1.vPEMMXcaUy1Y2tLySwCscruOppdWfYQAoKefbTetkzw");
   });
 
   test("uses a fixed-length cross-keychain-safe format", () => {
