@@ -146,7 +146,7 @@ jobs:
           mkdir -p test-artifacts
 
           set +e
-          bun scripts/run-with-linux-keyring.ts -- bun test --isolate --only-failures --coverage --coverage-reporter=text --coverage-reporter=lcov 2>&1 | tee test-artifacts/bun-test.log
+          bun scripts/run-with-linux-keyring.ts -- bun test --isolate --only-failures --coverage-reporter=text --coverage-reporter=lcov 2>&1 | tee test-artifacts/bun-test.log
           TEST_EXIT=${PIPESTATUS[0]}
           set -e
 
