@@ -16,6 +16,12 @@ export const EXIT_CODES = {
   PROTECTED_PROFILE: 5,
   /** Jenkins could not be reached, timed out, or answered with an error. */
   JENKINS: 6,
+  /** The watched build finished UNSTABLE, so scripts can tell it from FAILURE. */
+  UNSTABLE: 7,
+  /** The watched build, or its queue item, was aborted on the controller. */
+  ABORTED: 8,
+  /** The watched build finished NOT_BUILT. */
+  NOT_BUILT: 9,
   TIMEOUT: 124,
   INTERRUPTED: 130,
 } as const;
@@ -99,6 +105,21 @@ const ERROR_EXIT_CODES = {
 } as const satisfies Record<string, ExitCode>;
 
 export type ErrorCode = keyof typeof ERROR_EXIT_CODES;
+
+export function exitCodeForBuildResult(result: string): ExitCode {
+  switch (result) {
+    case "SUCCESS":
+      return EXIT_CODES.SUCCESS;
+    case "UNSTABLE":
+      return EXIT_CODES.UNSTABLE;
+    case "ABORTED":
+      return EXIT_CODES.ABORTED;
+    case "NOT_BUILT":
+      return EXIT_CODES.NOT_BUILT;
+    default:
+      return EXIT_CODES.FAILURE;
+  }
+}
 
 export function exitCodeFor(error: unknown): ExitCode {
   return error instanceof CliError

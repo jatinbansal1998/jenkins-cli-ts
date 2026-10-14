@@ -10,6 +10,15 @@ lists everything since the previous stable release, including its prereleases.
 
 ## [Unreleased]
 
+### Changed
+
+- `build --watch`, `wait`, `replay --follow`, and `status --watch` without
+  its interactive menu exit `7` when the build finishes `UNSTABLE`, `8` when
+  it is aborted on Jenkins, and `9` for `NOT_BUILT`, so a script can tell them
+  from `FAILURE`, which still exits `1`. A queue item cancelled before its
+  build starts, reported as `ABORTED`, now exits `8` instead of `1`. Scripts
+  that only check for a non-zero exit are unaffected.
+
 ## [1.1.0-rc.3] - 2026-10-16
 
 ### Added

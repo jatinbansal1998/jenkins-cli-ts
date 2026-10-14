@@ -1,4 +1,4 @@
-import { EXIT_CODES } from "../error-codes";
+import { exitCodeForBuildResult } from "../error-codes";
 import { shellEscape } from "../shell-escape";
 /**
  * Build command implementation.
@@ -362,7 +362,7 @@ export async function runBuild(options: BuildOptions): Promise<BuildRunResult> {
           }),
         });
         if (finalStatus.result !== "SUCCESS") {
-          process.exitCode = EXIT_CODES.FAILURE;
+          process.exitCode = exitCodeForBuildResult(finalStatus.result);
         }
       }
     }
@@ -402,7 +402,7 @@ export async function runBuild(options: BuildOptions): Promise<BuildRunResult> {
               }),
             });
             if (finalStatus.result !== "SUCCESS") {
-              process.exitCode = EXIT_CODES.FAILURE;
+              process.exitCode = exitCodeForBuildResult(finalStatus.result);
             }
           }
           return "action_ok";
@@ -752,7 +752,7 @@ async function runBuildOnce(options: {
         }),
       });
       if (finalStatus.result !== "SUCCESS") {
-        process.exitCode = EXIT_CODES.FAILURE;
+        process.exitCode = exitCodeForBuildResult(finalStatus.result);
       }
     }
     return {

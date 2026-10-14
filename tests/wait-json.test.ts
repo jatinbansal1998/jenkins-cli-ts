@@ -137,36 +137,44 @@ describe("wait --json", () => {
     expect(logSpy).toHaveBeenCalledTimes(0);
   });
 
-  test("emits the JSON document with exit code 1 on a non-success build", async () => {
-    const sink = capture();
+  test.each([
+    ["FAILURE", 1],
+    ["UNSTABLE", 7],
+    ["ABORTED", 8],
+    ["NOT_BUILT", 9],
+  ])(
+    "emits the JSON document when the build ends %s, with exit code %d",
+    async (buildResult, exitCode) => {
+      const sink = capture();
 
-    await runWait({
-      client: createClient({
-        getBuildStatus: mock(async () => ({
-          buildNumber: 9,
-          buildUrl: "https://jenkins.example.com/job/api/9/",
-          result: "FAILURE",
-          building: false,
-          timestampMs: 1_700_000_000_000,
-          durationMs: 5_000,
-        })),
-      }),
-      env,
-      buildUrl: "https://jenkins.example.com/job/api/9/",
-      nonInteractive: true,
-      json: true,
-      write: sink.write,
-    });
+      await runWait({
+        client: createClient({
+          getBuildStatus: mock(async () => ({
+            buildNumber: 9,
+            buildUrl: "https://jenkins.example.com/job/api/9/",
+            result: buildResult,
+            building: false,
+            timestampMs: 1_700_000_000_000,
+            durationMs: 5_000,
+          })),
+        }),
+        env,
+        buildUrl: "https://jenkins.example.com/job/api/9/",
+        nonInteractive: true,
+        json: true,
+        write: sink.write,
+      });
 
-    const parsed = JSON.parse(sink.output()) as {
-      ok: boolean;
-      data: { result: string };
-    };
-    expect(parsed.ok).toBe(true);
-    expect(parsed.data.result).toBe("FAILURE");
-    expect(process.exitCode).toBe(1);
-    process.exitCode = 0;
-  });
+      const parsed = JSON.parse(sink.output()) as {
+        ok: boolean;
+        data: { result: string };
+      };
+      expect(parsed.ok).toBe(true);
+      expect(parsed.data.result).toBe(buildResult);
+      expect(process.exitCode).toBe(exitCode);
+      process.exitCode = 0;
+    },
+  );
 
   test("emits the JSON document with exit code 124 on timeout", async () => {
     const sink = capture();
@@ -199,7 +207,7 @@ describe("wait --json", () => {
     process.exitCode = 0;
   });
 
-  test("reports a cancelled queue item as an aborted result with exit code 1", async () => {
+  test("reports a cancelled queue item as an aborted result with exit code 8", async () => {
     const sink = capture();
 
     await runWait({
@@ -230,7 +238,7 @@ describe("wait --json", () => {
     expect(parsed.ok).toBe(true);
     expect(parsed.data.result).toBe("ABORTED");
     expect(parsed.data.build.number).toBeUndefined();
-    expect(process.exitCode).toBe(1);
+    expect(process.exitCode).toBe(8);
     process.exitCode = 0;
   });
 

@@ -2536,6 +2536,74 @@ describe.skipIf(!integrationEnabled)(
       });
     }, 120_000);
 
+    test("build --watch, wait, status --watch, and replay --follow exit with a code per build result", async () => {
+      await withCliHome(async (home) => {
+        const jobUrl = `${jenkinsUrl}/job/cli-build-results/`;
+        const scriptPath = join(home, "Jenkinsfile");
+        for (const [outcome, exitCode] of [
+          ["SUCCESS", 0],
+          ["FAILURE", 1],
+          ["UNSTABLE", 7],
+          ["ABORTED", 8],
+          ["NOT_BUILT", 9],
+        ] as const) {
+          const watched = await invokeCli(home, [
+            "build",
+            "--job-url",
+            jobUrl,
+            "--param",
+            `OUTCOME=${outcome}`,
+            "--watch",
+            "--json",
+          ]);
+          expect(watched.exitCode, watched.output).toBe(exitCode);
+          const receipt = parseJson<{
+            data: { result: string; buildUrl: string };
+          }>(watched);
+          expect(receipt.data.result).toBe(outcome);
+
+          const waited = await invokeCli(home, [
+            "wait",
+            "--build-url",
+            receipt.data.buildUrl,
+            "--json",
+          ]);
+          expect(waited.exitCode, waited.output).toBe(exitCode);
+          expect(
+            parseJson<{ data: { result: string } }>(waited).data.result,
+          ).toBe(outcome);
+
+          const status = await invokeCli(home, [
+            "status",
+            "--build-url",
+            receipt.data.buildUrl,
+            "--watch",
+            "--non-interactive",
+          ]);
+          expect(status.exitCode, status.output).toBe(exitCode);
+
+          // The replay copies OUTCOME from the source build.
+          const printed = await runCli(home, [
+            "replay",
+            "--build-url",
+            receipt.data.buildUrl,
+            "--print-script",
+          ]);
+          await Bun.write(scriptPath, printed.stdout);
+          const replayed = await invokeCli(home, [
+            "replay",
+            "--build-url",
+            receipt.data.buildUrl,
+            "--script",
+            scriptPath,
+            "--follow",
+          ]);
+          expect(replayed.exitCode, replayed.output).toBe(exitCode);
+          expect(replayed.output).toContain(`finished: ${outcome}.`);
+        }
+      });
+    }, 180_000);
+
     test("classifies failures by exit code and honors --quiet and --no-color", async () => {
       await withCliHome(async (home) => {
         const smokeUrl = `${jenkinsUrl}/job/cli-no-params/`;

@@ -234,7 +234,7 @@ describe("wait command", () => {
     });
 
     expect(result).toEqual({ result: "ABORTED" });
-    expect(process.exitCode).toBe(1);
+    expect(process.exitCode).toBe(8);
     expect(getQueueBuild).toHaveBeenCalledTimes(1);
     expect(getLastBuild).toHaveBeenCalledTimes(1);
     expect(errorSpy.mock.calls.flat().join("\n")).toContain(
@@ -328,6 +328,33 @@ describe("wait command", () => {
     });
     expect(process.exitCode).toBe(0);
     expect(getBuildStatus).toHaveBeenCalledTimes(1);
+  });
+
+  test.each([
+    ["FAILURE", 1],
+    ["UNSTABLE", 7],
+    ["ABORTED", 8],
+    ["NOT_BUILT", 9],
+  ])("runWait reports result %s via exit code %d", async (result, exitCode) => {
+    const logSpy = trackRestore(spyOn(console, "log")).mockImplementation(
+      () => undefined,
+    );
+    const getBuildStatus = mock(async () => ({
+      buildNumber: 9,
+      buildUrl: "https://jenkins.example.com/job/api/9/",
+      result,
+      building: false,
+    }));
+
+    await runWait({
+      client: createClient({ getBuildStatus }),
+      env,
+      buildUrl: "https://jenkins.example.com/job/api/9/",
+      nonInteractive: true,
+    });
+
+    expect(process.exitCode).toBe(exitCode);
+    expect(logSpy).toHaveBeenCalled();
   });
 
   test("waitForBuild persists stage totals for unstable build results", async () => {

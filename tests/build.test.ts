@@ -996,43 +996,53 @@ describe("build command", () => {
     ).rejects.toThrow("Missing required --job.");
   });
 
-  test("non-interactive watch reports failure via exit code and notification", async () => {
-    const originalExitCode = process.exitCode;
-    process.exitCode = 0;
+  test.each([
+    ["FAILURE", 1],
+    ["UNSTABLE", 7],
+    ["ABORTED", 8],
+    ["NOT_BUILT", 9],
+  ])(
+    "non-interactive watch reports %s via exit code %d and notification",
+    async (buildResult, exitCode) => {
+      const originalExitCode = process.exitCode;
+      process.exitCode = 0;
 
-    const getLastBuild = mock(async () => lastBuildSummary(380));
-    const triggerBuild = mock(async () => ({
-      buildUrl: BUILD_URL,
-      buildNumber: 381,
-      jobUrl: JOB_URL,
-    }));
-    const getBuildStatus = mock(async () => ({
-      buildNumber: 381,
-      buildUrl: BUILD_URL,
-      result: "FAILURE",
-      building: false,
-    }));
-
-    try {
-      await runBuild({
-        client: createClient({ getLastBuild, triggerBuild, getBuildStatus }),
-        env: {} as EnvConfig,
+      const getLastBuild = mock(async () => lastBuildSummary(380));
+      const triggerBuild = mock(async () => ({
+        buildUrl: BUILD_URL,
+        buildNumber: 381,
         jobUrl: JOB_URL,
-        branch: "staging",
-        nonInteractive: true,
-        watch: true,
-      });
+      }));
+      const getBuildStatus = mock(async () => ({
+        buildNumber: 381,
+        buildUrl: BUILD_URL,
+        result: buildResult,
+        building: false,
+      }));
 
-      expect(process.exitCode).toBe(1);
-      expect(notifyBuildCompleteMock).toHaveBeenCalledTimes(1);
-      const notifyCalls = notifyBuildCompleteMock.mock.calls as unknown as [
-        [{ message: string }],
-      ];
-      expect(notifyCalls[0]?.[0]?.message).toContain("Build #381 FAILURE");
-    } finally {
-      process.exitCode = originalExitCode;
-    }
-  });
+      try {
+        await runBuild({
+          client: createClient({ getLastBuild, triggerBuild, getBuildStatus }),
+          env: {} as EnvConfig,
+          jobUrl: JOB_URL,
+          branch: "staging",
+          nonInteractive: true,
+          watch: true,
+        });
+
+        expect(process.exitCode).toBe(exitCode);
+        expect(notifyBuildCompleteMock).toHaveBeenCalledTimes(1);
+        const notifyCalls = notifyBuildCompleteMock.mock.calls as unknown as [
+          [{ message: string }],
+        ];
+        expect(notifyCalls[0]?.[0]?.message).toContain(
+          `Build #381 ${buildResult}`,
+        );
+      } finally {
+        process.exitCode = originalExitCode;
+      }
+    },
+  );
 
   test("non-interactive watch keeps polling through a Jenkins restart", async () => {
     const originalExitCode = process.exitCode;
@@ -1354,7 +1364,7 @@ describe("build command", () => {
       });
 
       expect(notification).toContain("Build ABORTED");
-      expect(process.exitCode).toBe(1);
+      expect(process.exitCode).toBe(8);
       if (mode === "text") {
         expect(errorSpy).toHaveBeenCalledWith(
           expect.stringContaining("was cancelled before it started"),

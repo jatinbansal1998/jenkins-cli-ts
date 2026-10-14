@@ -50,7 +50,10 @@ describe("root help for agents", () => {
     expect(result.output).toContain(
       "OK: (success), ERROR: (failure), HINT: (guidance)",
     );
-    expect(result.output).toContain("Exit code is 0 on success and 1 on any");
+    expect(result.output).toContain(
+      "status --watch outside its menu exit 1 for FAILURE,\n" +
+        "  7 for UNSTABLE, 8 for ABORTED, 9 for NOT_BUILT",
+    );
     // Internal worker command spawned for background cache refreshes.
     expect(result.output).not.toContain("refresh-job-cache");
   });

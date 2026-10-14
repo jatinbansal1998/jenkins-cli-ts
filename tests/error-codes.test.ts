@@ -1,6 +1,12 @@
 import { describe, expect, test } from "bun:test";
 import { CliError } from "../src/cli";
-import { EXIT_CODES, exitCodeFor, type ErrorCode } from "../src/error-codes";
+import {
+  EXIT_CODES,
+  exitCodeFor,
+  exitCodeForBuildResult,
+  type ErrorCode,
+  type ExitCode,
+} from "../src/error-codes";
 
 function cliError(code: ErrorCode): CliError {
   return new CliError("message", [], code);
@@ -25,6 +31,18 @@ describe("exit codes", () => {
   test("an error that is not a CliError exits 1", () => {
     expect(exitCodeFor(new Error("boom"))).toBe(1);
     expect(exitCodeFor("boom")).toBe(1);
+  });
+
+  test.each<[string, ExitCode]>([
+    ["SUCCESS", 0],
+    ["FAILURE", 1],
+    ["UNSTABLE", 7],
+    ["ABORTED", 8],
+    ["NOT_BUILT", 9],
+    ["UNKNOWN", 1],
+    ["", 1],
+  ])("build result %p exits %d", (result, exitCode) => {
+    expect(exitCodeForBuildResult(result)).toBe(exitCode);
   });
 
   test("the README documents every exit code", async () => {
