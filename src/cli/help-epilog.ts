@@ -1,5 +1,5 @@
 import { DEFAULT_LOG_POLL_MS } from "../commands/logs";
-import { DEFAULT_WATCH_INTERVAL_MS } from "../commands/watch-utils";
+import { WATCH_INTERVAL_DEFAULT_LABEL } from "../commands/watch-utils";
 import { CONFIG_DIR } from "../config-dir";
 import { ENV_KEYS } from "../env-keys";
 import { getJobCacheDir } from "../jobs";
@@ -112,6 +112,7 @@ Command-specific options:
     --param KEY=VALUE      Custom build parameter (repeatable)
     --without-params       Trigger without parameters (non-interactive only)
     --watch                Watch build status until completion [default: false]
+    --interval <dur>       Watch polling interval (e.g. 2s, 1m) [default: ${WATCH_INTERVAL_DEFAULT_LABEL}]
     --json                 Output one build receipt (implies non-interactive)
 
   status:
@@ -121,6 +122,7 @@ Command-specific options:
     --build <n|alias> Build number or alias such as lastSuccessful (with --job/--job-url)
     --build-url <url> Full Jenkins build URL
     --watch          Watch selected build until completion [default: false]
+    --interval <dur> Watch polling interval (e.g. 2s, 1m) [default: ${WATCH_INTERVAL_DEFAULT_LABEL}]
     --json           Output a single JSON document (implies non-interactive)
 
   history:
@@ -138,7 +140,7 @@ Command-specific options:
     --build <n|alias> Build number or alias such as lastSuccessful (with --job/--job-url)
     --build-url <url> Full Jenkins build URL
     --queue-url <url> Full Jenkins queue item URL
-    --interval <dur>  Polling interval (e.g. 30s, 1m) [default: ${DEFAULT_WATCH_INTERVAL_MS / 1000}s]
+    --interval <dur>  Polling interval (e.g. 2s, 1m) [default: ${WATCH_INTERVAL_DEFAULT_LABEL}]
     --timeout <dur>   Overall wait deadline (e.g. 30m, 2h); not the request timeout
     --json            Output a single JSON document (implies non-interactive)
 

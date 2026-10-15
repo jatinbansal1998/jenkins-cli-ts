@@ -1,6 +1,7 @@
 import type { Argv, Options } from "yargs";
 import parseArgs from "yargs-parser";
 import { CliError, setQuietMode } from "../cli";
+import { WATCH_INTERVAL_DESCRIPTION } from "../commands/watch-utils";
 
 export const GLOBAL_OPTIONS = {
   "non-interactive": {
@@ -182,10 +183,19 @@ export function addJsonLinesOption(yargsInstance: Argv): Argv {
 }
 
 export function addWatchOption(yargsInstance: Argv, describe: string): Argv {
-  return yargsInstance.option("watch", {
-    type: "boolean",
-    default: false,
-    describe,
+  return addPollIntervalOption(
+    yargsInstance.option("watch", {
+      type: "boolean",
+      default: false,
+      describe,
+    }),
+  );
+}
+
+export function addPollIntervalOption(yargsInstance: Argv): Argv {
+  return yargsInstance.option("interval", {
+    type: "string",
+    describe: WATCH_INTERVAL_DESCRIPTION,
   });
 }
 

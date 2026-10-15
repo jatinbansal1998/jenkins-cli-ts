@@ -1224,7 +1224,7 @@ describe.skipIf(!integrationEnabled)(
           async fetch(request) {
             const incoming = new URL(request.url);
             if (incoming.pathname.endsWith("/testReport/api/json")) {
-              await Bun.sleep(11_000);
+              await Bun.sleep(3_000);
               return new Response("delayed test report");
             }
             const response = await fetch(
@@ -1248,6 +1248,8 @@ describe.skipIf(!integrationEnabled)(
               "tests",
               "--build-url",
               `${root}/job/cli-test-results/${mixedBuild.data.buildNumber}/`,
+              "--timeout",
+              "1s",
               "--json",
             ],
             { JENKINS_URL: root },
@@ -1262,7 +1264,7 @@ describe.skipIf(!integrationEnabled)(
             )
           ).join("\n");
           expect(errorLog).toContain(
-            "Caused by\nCliError: Request timed out while trying to fetch test report: Jenkins did not respond within 10000ms.",
+            "Caused by\nCliError: Request timed out while trying to fetch test report: Jenkins did not respond within 1000ms.",
           );
           expect(errorLog.match(/Caused by\n/g)).toHaveLength(2);
         } finally {
@@ -1829,6 +1831,58 @@ describe.skipIf(!integrationEnabled)(
               .stdout,
           ).toContain('"result":"SUCCESS"');
         }
+      });
+    }, 90_000);
+
+    test("build --watch and status --watch poll at an explicit --interval", async () => {
+      await withCliHome(async (home) => {
+        const jobUrl = `${jenkinsUrl}/job/cli-watch-interval/`;
+        const rejected = await runCliExpectFailure(home, [
+          "build",
+          "--job-url",
+          jobUrl,
+          "--without-params",
+          "--watch",
+          "--interval",
+          "0s",
+          "--json",
+        ]);
+        expect(rejected.exitCode).toBe(2);
+        expect(
+          parseJson<{ error: { code: string } }>(rejected).error.code,
+        ).toBe("INVALID_USAGE");
+        // An invalid interval fails before Jenkins sees a trigger.
+        expect(
+          parseJson<{ data: { build: unknown } }>(
+            await runCli(home, ["status", "--job-url", jobUrl, "--json"]),
+          ).data.build,
+        ).toBeNull();
+
+        const built = parseJson<{
+          data: { result: string; buildUrl: string };
+        }>(
+          await runCli(home, [
+            "build",
+            "--job-url",
+            jobUrl,
+            "--without-params",
+            "--watch",
+            "--interval",
+            "250ms",
+            "--json",
+          ]),
+        );
+        expect(built.data.result).toBe("SUCCESS");
+
+        const watched = await runCli(home, [
+          "status",
+          "--build-url",
+          built.data.buildUrl,
+          "--watch",
+          "--interval",
+          "250ms",
+        ]);
+        expect(watched.output).toContain("SUCCESS");
       });
     }, 90_000);
 

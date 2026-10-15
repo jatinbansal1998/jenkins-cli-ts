@@ -8,7 +8,6 @@ import { DEFAULT_LOG_POLL_MS, runLogs } from "../commands/logs";
 import { runStatus } from "../commands/status";
 import { runTests } from "../commands/tests";
 import { runWait } from "../commands/wait";
-import { DEFAULT_WATCH_INTERVAL_MS } from "../commands/watch-utils";
 import {
   parseArtifactFilters,
   parseBuildCustomParams,
@@ -20,6 +19,7 @@ import {
   addJobOptions,
   addJsonOption,
   addJsonLinesOption,
+  addPollIntervalOption,
   addQueueUrlOption,
   addWatchOption,
   optionalString,
@@ -61,6 +61,7 @@ export function registerBuildCommands(
               (Boolean(argv.withoutParams) || Boolean(argv.defaultBranch)),
             nonInteractive: Boolean(argv.nonInteractive || argv.json),
             watch: watchExplicitlyPassed ? Boolean(argv.watch) : undefined,
+            interval: optionalString(argv.interval),
             json: Boolean(argv.json),
           });
         });
@@ -88,6 +89,7 @@ export function registerBuildCommands(
             buildUrl: optionalString(argv.buildUrl),
             nonInteractive: Boolean(argv.nonInteractive || argv.json),
             watch: watchExplicitlyPassed ? Boolean(argv.watch) : undefined,
+            interval: optionalString(argv.interval),
             json: Boolean(argv.json),
           });
         });
@@ -314,18 +316,15 @@ function configureBuildOptions(yargsInstance: Argv): Argv {
 
 function configureWaitOptions(yargsInstance: Argv): Argv {
   return addJsonOption(
-    addQueueUrlOption(
-      addBuildUrlOption(addBuildOption(addJobOptions(yargsInstance))),
-    )
-      .option("interval", {
-        type: "string",
-        describe: `Polling interval (e.g. ${DEFAULT_WATCH_INTERVAL_MS / 1000}s, 1m)`,
-      })
-      .option("timeout", {
-        type: "string",
-        describe:
-          "Overall wait deadline (e.g. 30m, 2h); the request timeout comes from JENKINS_TIMEOUT_MS or the profile",
-      }),
+    addPollIntervalOption(
+      addQueueUrlOption(
+        addBuildUrlOption(addBuildOption(addJobOptions(yargsInstance))),
+      ),
+    ).option("timeout", {
+      type: "string",
+      describe:
+        "Overall wait deadline (e.g. 30m, 2h); the request timeout comes from JENKINS_TIMEOUT_MS or the profile",
+    }),
   ).epilog(BUILD_METADATA_HELP);
 }
 

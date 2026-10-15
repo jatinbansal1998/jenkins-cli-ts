@@ -62,8 +62,9 @@ import {
 } from "../status-format";
 import {
   createWatchControlSignal,
-  DEFAULT_WATCH_INTERVAL_MS,
   findWatchedBuild,
+  nextWatchPollMs,
+  parseWatchIntervalMs,
   requestCancellationForWatchTarget,
   waitForPollIntervalOrCancel,
 } from "./watch-utils";
@@ -106,6 +107,7 @@ type BuildOptions = {
   defaultBranch?: boolean;
   nonInteractive: boolean;
   watch?: boolean;
+  interval?: string;
   returnToCaller?: boolean;
   json?: boolean;
   write?: JsonWrite;
@@ -204,6 +206,7 @@ export async function runBuild(options: BuildOptions): Promise<BuildRunResult> {
           defaultBranch: options.defaultBranch ?? false,
           branchParam: normalizeBranchParam(options.branchParam),
           watch: options.watch,
+          watchIntervalMs: parseWatchIntervalMs(options.interval),
           structured: true,
         });
       },
@@ -213,6 +216,7 @@ export async function runBuild(options: BuildOptions): Promise<BuildRunResult> {
   }
   validateBuildOptions(options);
   const branchParam = normalizeBranchParam(options.branchParam);
+  const watchIntervalMs = parseWatchIntervalMs(options.interval);
 
   if (options.nonInteractive) {
     await runBuildOnce({
@@ -225,6 +229,7 @@ export async function runBuild(options: BuildOptions): Promise<BuildRunResult> {
       defaultBranch: options.defaultBranch ?? false,
       branchParam,
       watch: options.watch,
+      watchIntervalMs,
     });
     return {};
   }
@@ -343,6 +348,7 @@ export async function runBuild(options: BuildOptions): Promise<BuildRunResult> {
         buildNumber: activeBuild.buildNumber,
         queueUrl: activeBuild.queueUrl,
         baselineBuildNumber,
+        intervalMs: watchIntervalMs,
       });
       if (!finalStatus.cancelled && !finalStatus.cancelIssued) {
         await deps.notifyBuildComplete({
@@ -374,6 +380,7 @@ export async function runBuild(options: BuildOptions): Promise<BuildRunResult> {
                 buildUrl: activeBuild.buildUrl,
                 buildNumber: activeBuild.buildNumber,
                 queueUrl: activeBuild.queueUrl,
+                intervalMs: watchIntervalMs,
               }),
             "action_error",
           );
@@ -596,6 +603,7 @@ async function runBuildOnce(options: {
   defaultBranch: boolean;
   branchParam: string;
   watch?: boolean;
+  watchIntervalMs?: number;
   structured?: boolean;
 }): Promise<JsonBuildReceipt> {
   const deps = activeBuildDeps;
@@ -706,6 +714,7 @@ async function runBuildOnce(options: {
           buildNumber: result.buildNumber,
           queueUrl: result.queueUrl,
           baselineBuildNumber,
+          intervalMs: options.watchIntervalMs,
         })
       : await watchBuildStatus({
           client: options.client,
@@ -717,6 +726,7 @@ async function runBuildOnce(options: {
           queueUrl: result.queueUrl,
           nonInteractive: true,
           baselineBuildNumber,
+          intervalMs: options.watchIntervalMs,
         });
     if (finalStatus.cancelled) {
       return {
@@ -772,6 +782,7 @@ async function watchBuildStatusStructured(options: {
   queueUrl?: string;
   baselineBuildNumber?: number;
   nonInteractive?: boolean;
+  intervalMs?: number;
 }): Promise<{
   result: string;
   buildNumber?: number;
@@ -781,6 +792,7 @@ async function watchBuildStatusStructured(options: {
 }> {
   let buildUrl = options.buildUrl;
   let buildNumber = options.buildNumber;
+  let completedPolls = 0;
   while (true) {
     if (!buildUrl && options.queueUrl) {
       const queued = await options.client.getQueueBuild(options.queueUrl);
@@ -816,7 +828,7 @@ async function watchBuildStatusStructured(options: {
         }
       }
     }
-    await Bun.sleep(DEFAULT_WATCH_INTERVAL_MS);
+    await Bun.sleep(nextWatchPollMs(completedPolls++, options.intervalMs));
   }
 }
 
@@ -1073,6 +1085,7 @@ async function watchBuildStatus(options: {
   queueUrl?: string;
   baselineBuildNumber?: number;
   nonInteractive?: boolean;
+  intervalMs?: number;
 }): Promise<{
   result: string;
   buildNumber?: number;
@@ -1081,7 +1094,7 @@ async function watchBuildStatus(options: {
   cancelIssued?: boolean;
 }> {
   const deps = activeBuildDeps;
-  const pollIntervalMs = DEFAULT_WATCH_INTERVAL_MS;
+  let completedPolls = 0;
 
   const useSpinner = Boolean(process.stdout.isTTY) && !options.nonInteractive;
   const statusSpinner = useSpinner ? deps.spinner() : null;
@@ -1263,7 +1276,10 @@ async function watchBuildStatus(options: {
         });
       }
 
-      await waitForPollIntervalOrCancel(pollIntervalMs, cancelSignal);
+      await waitForPollIntervalOrCancel(
+        nextWatchPollMs(completedPolls++, options.intervalMs),
+        cancelSignal,
+      );
     }
   } catch (error) {
     if (statusSpinner) {

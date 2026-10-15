@@ -1,10 +1,49 @@
 import { CliError } from "../cli";
+import { parseDurationMs } from "../duration";
 import { assertProtectedMutationAllowed, type EnvConfig } from "../env";
 import { areSameJobUrls, normalizeOptionalJobUrl } from "../job-url";
 import type { JenkinsClient } from "../jenkins/client";
 import type { LastBuildSummary, QueueItemSummary } from "../types/jenkins";
 
-export const DEFAULT_WATCH_INTERVAL_MS = 5_000;
+const DEFAULT_WATCH_INTERVAL_MS = 5_000;
+const WATCH_INTERVAL_RAMP_STEP_MS = 1_000;
+export const WATCH_INTERVAL_DEFAULT_LABEL = `${WATCH_INTERVAL_RAMP_STEP_MS / 1000}s rising to ${DEFAULT_WATCH_INTERVAL_MS / 1000}s`;
+export const WATCH_INTERVAL_DESCRIPTION = `Polling interval (e.g. 2s, 1m) [default: ${WATCH_INTERVAL_DEFAULT_LABEL}]`;
+
+/**
+ * Delay before the next watch poll. An explicit interval is used as is.
+ * Otherwise polls start at 1s and grow by 1s up to the default, so a short
+ * build reports as soon as it finishes while a long one costs no extra load.
+ */
+export function nextWatchPollMs(
+  completedPolls: number,
+  intervalMs: number | undefined,
+): number {
+  return (
+    intervalMs ??
+    Math.min(
+      DEFAULT_WATCH_INTERVAL_MS,
+      (completedPolls + 1) * WATCH_INTERVAL_RAMP_STEP_MS,
+    )
+  );
+}
+
+export function parseWatchIntervalMs(
+  value: string | undefined,
+): number | undefined {
+  if (!value?.trim()) {
+    return undefined;
+  }
+  const intervalMs = parseDurationMs(value, "--interval");
+  if (intervalMs <= 0) {
+    throw new CliError(
+      "Invalid --interval value.",
+      ["Use an interval greater than 0ms (e.g. --interval 5s)."],
+      "INVALID_USAGE",
+    );
+  }
+  return intervalMs;
+}
 
 /**
  * The job's newest build, if it is the one a watch is waiting for: any build

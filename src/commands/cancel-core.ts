@@ -5,7 +5,7 @@ import { assertProtectedMutationAllowed, type EnvConfig } from "../env";
 import type { JenkinsClient } from "../jenkins/client";
 import type { RunningBuildSummary } from "../types/jenkins";
 import { cancelDeps } from "./cancel-deps";
-import { DEFAULT_WATCH_INTERVAL_MS, findQueueItemForJob } from "./watch-utils";
+import { findQueueItemForJob } from "./watch-utils";
 import {
   type JsonCancelReceipt,
   runJsonCommand,
@@ -121,7 +121,6 @@ export async function runCancel(options: CancelOptions): Promise<void> {
       env: options.env,
       jobLabel: target.label,
       buildUrl: target.buildUrl,
-      intervalMs: DEFAULT_WATCH_INTERVAL_MS,
       nonInteractive: options.nonInteractive,
     });
     return;
@@ -267,7 +266,6 @@ async function cancelBuildBatch(
         env: options.env,
         jobLabel: build.label,
         buildUrl: build.buildUrl,
-        intervalMs: DEFAULT_WATCH_INTERVAL_MS,
         nonInteractive: options.nonInteractive,
       });
       succeeded++;
