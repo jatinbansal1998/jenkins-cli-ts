@@ -157,6 +157,22 @@ describe("server build URL trust", () => {
     });
   });
 
+  test("queue references are null only once Jenkins forgets the item", async () => {
+    globalThis.fetch = mock(
+      async () => new Response("", { status: 404 }),
+    ) as unknown as typeof fetch;
+    expect(
+      await client().getQueueBuild(`${baseUrl}/queue/item/17/`),
+    ).toBeNull();
+
+    globalThis.fetch = mock(
+      async () => new Response("", { status: 500 }),
+    ) as unknown as typeof fetch;
+    await expect(
+      client().getQueueBuild(`${baseUrl}/queue/item/17/`),
+    ).rejects.toMatchObject({ code: "JENKINS_HTTP_ERROR" });
+  });
+
   test("queue references ignore malformed numbers and task paths", async () => {
     for (const [number, url] of [
       [-1, jobUrl],

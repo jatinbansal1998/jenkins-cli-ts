@@ -1699,24 +1699,18 @@ export class JenkinsClient {
       queueUrl,
       "api/json?tree=id,cancelled,task[url],executable[number]",
     );
-    const headers = await this.authHeaders();
     try {
-      const response = await this.fetchWithTimeout(
+      return await this.requestJson<JenkinsApiQueueItem>(
         url,
-        { method: "GET", headers },
-        this.transportRetries,
         "fetch queue item",
       );
-      if (isGatewayError(response.status)) {
-        await this.raiseHttpError(response, "fetch queue item");
-      }
-      if (!response.ok) {
+    } catch (error) {
+      // Only a 404 means the item is gone: Jenkins forgets an item a few
+      // minutes after it leaves the queue. Any other failure says nothing.
+      if (error instanceof CliError && error.code === "JENKINS_NOT_FOUND") {
         return null;
       }
-      return (await response.json()) as JenkinsApiQueueItem;
-    } catch (error) {
-      rethrowIfUnavailable(error);
-      return null;
+      throw error;
     }
   }
 

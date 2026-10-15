@@ -23,6 +23,10 @@ lists everything since the previous stable release, including its prereleases.
   queue item, and falls back to the job only once the item is gone, and then
   only to a build newer than the wait's start. A cancelled queue item ends the
   wait with result `ABORTED` (exit code 1).
+- A queue item lookup that fails (HTTP error other than 404, timeout, invalid
+  JSON) now surfaces as an error instead of being read as "item gone", in
+  `wait`, `logs --queue-url`, `build --watch`, `input`, and `cancel
+--queue-url`.
 - `build --watch` no longer follows the previous build when the new one queues
   behind it, for example on a job that disallows concurrent builds.
 
