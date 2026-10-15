@@ -66,9 +66,22 @@ and, when fixture configuration is needed, `tests/integration/jenkins/init.groov
 A new suite file must be added to `INTEGRATION_SHARDS` in
 `scripts/test-jenkins-integration.ts` or it never runs.
 
+Each shard runs as its own CI job against its own controller, so placement sets
+both correctness and wall-clock time:
+
+- Put a scenario in the suite that matches its topic; when two fit, pick the
+  shard with less test time so the CI jobs stay balanced.
+- `jenkins.test.ts` checks for an idle queue and executor near its top. A
+  scenario that leaves builds queued or running, or restarts Jenkins, goes
+  last in its shard, never ahead of other scenarios.
+- No scenario may depend on Jenkins state another scenario created; compare
+  against build numbers read inside the scenario itself.
+
 - Run `bun run test:integration:jenkins`; it must build and exercise
   `dist/jenkins-cli` against the disposable `jenkins/jenkins:lts-jdk21`
   controller. Unit tests or a successful compile are not substitutes.
+  `--shard <n>` runs one shard for a faster loop; run every shard before
+  publishing.
 - Use only synthetic disposable-controller jobs and credentials. Never target a
   production Jenkins controller.
 - Keep `test:integration:jenkins` in both pull-request and post-merge GitHub
