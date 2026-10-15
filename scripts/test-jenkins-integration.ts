@@ -1,5 +1,5 @@
 import { chmod, copyFile, mkdir, mkdtemp, rename, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { constants, tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { loadSettings } from "../tests/integration/jenkins/load";
@@ -7,6 +7,9 @@ import { loadSettings } from "../tests/integration/jenkins/load";
 const STARTUP_TIMEOUT_MS = 4 * 60_000;
 const DOWNLOAD_TIMEOUT_MS = 12 * 60_000;
 const POLL_INTERVAL_MS = 1_000;
+// Measured peak is about 1 GiB; the cap includes the tmpfs Jenkins home.
+const JENKINS_CONTAINER_MEMORY = "2g";
+const JENKINS_MAX_HEAP = "-Xmx1g";
 const DEFAULT_JENKINS_TEST_IMAGE =
   "jenkins/jenkins:lts-jdk21@sha256:f4f65e6cd1405cd889b7f5ac33f9d5cdc2a099de6b87fe8a3933b9c5d53d1d02";
 const JENKINS_VERSION = "2.568.1";
@@ -66,6 +69,7 @@ let nativeProcess: ReturnType<typeof Bun.spawn> | undefined;
 let toxiproxyProcess: ReturnType<typeof Bun.spawn> | undefined;
 let toxiproxyDir: string | undefined;
 let failed = false;
+let cleanup: Promise<void> | undefined;
 
 function readArgumentValue(name: string): string | undefined {
   const index = process.argv.indexOf(name);
@@ -102,6 +106,14 @@ if (prepareNativeManifestPath) {
     }
   }
 } else {
+  // A timeout or Ctrl-C must still remove the container.
+  for (const signal of ["SIGINT", "SIGTERM", "SIGHUP"] as const) {
+    process.on(signal, () => {
+      void cleanUp().finally(() =>
+        process.exit(128 + constants.signals[signal]),
+      );
+    });
+  }
   try {
     if (
       loadMode &&
@@ -169,10 +181,14 @@ if (prepareNativeManifestPath) {
         containerName,
         "--publish",
         "127.0.0.1::8080",
+        "--memory",
+        JENKINS_CONTAINER_MEMORY,
+        "--memory-swap",
+        JENKINS_CONTAINER_MEMORY,
         "--tmpfs",
         "/var/jenkins_home:rw,uid=1000,gid=1000",
         "--env",
-        "JAVA_OPTS=-Djenkins.install.runSetupWizard=false -Dhudson.plugins.git.GitSCM.ALLOW_LOCAL_CHECKOUT=true",
+        `JAVA_OPTS=${JENKINS_MAX_HEAP} -Djenkins.install.runSetupWizard=false -Dhudson.plugins.git.GitSCM.ALLOW_LOCAL_CHECKOUT=true`,
         "--env",
         "JENKINS_OPTS=--prefix=/jenkins",
         "--env",
@@ -270,6 +286,12 @@ if (prepareNativeManifestPath) {
     console.error(error instanceof Error ? error.message : String(error));
     process.exitCode = 1;
   } finally {
+    await cleanUp();
+  }
+}
+
+function cleanUp(): Promise<void> {
+  cleanup ??= (async () => {
     if (failed && containerStarted) {
       console.error("\nJenkins container logs:");
       await run(["docker", "logs", containerName], { inherit: true });
@@ -292,7 +314,8 @@ if (prepareNativeManifestPath) {
       await run(["docker", "image", "rm", image]);
     }
     await rm(runtimeDir, { recursive: true, force: true });
-  }
+  })();
+  return cleanup;
 }
 
 function selectIntegrationTests(): string[] {
@@ -570,6 +593,7 @@ async function prepareNativeJenkins(
     launch: {
       executable: java,
       args: [
+        JENKINS_MAX_HEAP,
         "-Djenkins.install.runSetupWizard=false",
         "-Dhudson.plugins.git.GitSCM.ALLOW_LOCAL_CHECKOUT=true",
         "-jar",
