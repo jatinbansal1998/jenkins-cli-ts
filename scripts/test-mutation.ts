@@ -196,9 +196,8 @@ async function runSuite(): Promise<{ ok: boolean; output: string }> {
       "bun",
       "test",
       network
-        ? "tests/integration/jenkins.test.ts"
+        ? "tests/integration/jenkins-network.test.ts"
         : "tests/integration/jenkins.contract.test.ts",
-      ...(network ? ["--test-name-pattern", "Toxiproxy"] : []),
     ]);
   }
   return await run(["bun", "test", "tests/client.test.ts"]);

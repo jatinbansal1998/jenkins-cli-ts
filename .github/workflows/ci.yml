@@ -243,19 +243,29 @@ jobs:
           if-no-files-found: ignore
 
   jenkins-integration:
-    name: Jenkins integration (${{ matrix.os }})
+    name: Jenkins integration (${{ matrix.os }}${{ matrix.shard && format(' shard {0}', matrix.shard) || '' }})
     needs: changes
     if: needs.changes.outputs.code == 'true'
     strategy:
       fail-fast: false
       matrix:
+        # Each shard starts its own controller; see INTEGRATION_SHARDS in
+        # scripts/test-jenkins-integration.ts. Windows runs its own acceptance
+        # script instead of the bun suites.
         include:
           - os: ubuntu-latest
+            shard: 1
+            test-script: test:integration:jenkins
+          - os: ubuntu-latest
+            shard: 2
             test-script: test:mutation:jenkins
           - os: macos-latest
+            shard: 1
+            test-script: test:integration:jenkins
+          - os: macos-latest
+            shard: 2
             test-script: test:integration:jenkins
           - os: windows-latest
-            test-script: test:integration:jenkins
     runs-on: ${{ matrix.os }}
     timeout-minutes: 40
     steps:
@@ -330,7 +340,7 @@ jobs:
       - name: Run Jenkins integration tests with Linux Secret Service
         if: runner.os == 'Linux'
         shell: bash
-        run: bun run "${{ matrix.test-script }}"
+        run: bun run "${{ matrix.test-script }}" --shard "${{ matrix.shard }}"
 
       - name: Run Jenkins integration tests with macOS Keychain
         if: runner.os == 'macOS'
@@ -338,7 +348,7 @@ jobs:
         env:
           REQUIRE_KEYCHAIN_INTEGRATION: "1"
           JENKINS_INTEGRATION_TOOL_CACHE: ${{ runner.temp }}/jenkins-cli-integration-tools
-        run: bun run "${{ matrix.test-script }}"
+        run: bun run "${{ matrix.test-script }}" --shard "${{ matrix.shard }}"
 
       - name: Run Jenkins integration tests on Windows
         if: runner.os == 'Windows'
@@ -354,6 +364,6 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: jenkins-reports-${{ matrix.os }}
+          name: jenkins-reports-${{ matrix.os }}${{ matrix.shard && format('-shard-{0}', matrix.shard) || '' }}
           path: test-artifacts
           if-no-files-found: ignore

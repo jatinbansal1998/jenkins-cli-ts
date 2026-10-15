@@ -507,3 +507,11 @@ export function cliLogFiles(home: string, kind: "api" | "error"): string[] {
     .toSorted()
     .map((file) => join(directory, file));
 }
+
+export async function findJobCachePath(home: string): Promise<string> {
+  const glob = new Bun.Glob("**/jenkins-cli/jobs-*.json");
+  for await (const match of glob.scan({ cwd: home, dot: true })) {
+    return join(home, match);
+  }
+  throw new Error(`No job cache written under ${home}`);
+}

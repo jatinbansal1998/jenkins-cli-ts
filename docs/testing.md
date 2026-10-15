@@ -26,6 +26,11 @@ random local port, exercises `dist/jenkins-cli`, and removes the controller.
 Use only this disposable controller for integration tests. Override the image
 with `JENKINS_TEST_IMAGE` when testing a different Jenkins version.
 
+The suites are split into shards listed in `INTEGRATION_SHARDS` in
+`scripts/test-jenkins-integration.ts`. With no flag the runner runs every
+shard in turn against one controller; `--shard <n>` runs one shard against
+its own controller, which is how CI runs them in parallel.
+
 Docker is required. Linux also needs `dbus-run-session`, `gnome-keyring-daemon`,
 `secret-tool`, and `strace`; the wrapper creates a temporary Secret Service session. macOS uses
 Keychain. CI runs acceptance tests on Linux, macOS, and Windows.
@@ -39,7 +44,8 @@ bun run test:network:jenkins --mutation
 
 Linux and macOS test latency, resets, truncated responses, and timeouts through
 Toxiproxy. Build/create cases drop responses after Jenkins commits and check
-that requests were not duplicated. These scenarios also run in the normal
+that requests were not duplicated. These scenarios live in
+`tests/integration/jenkins-network.test.ts` and also run in the normal
 integration suite. The runner downloads and verifies Toxiproxy automatically.
 
 Linux uses `strace` to record destination IPs and ports for non-interactive CLI

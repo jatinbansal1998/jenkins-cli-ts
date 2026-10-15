@@ -30,7 +30,8 @@ bun run test:integration:jenkins
   coverage, and the build. Run `bun run format` to fix formatting.
 - `test:integration:jenkins` builds `dist/jenkins-cli` and runs it against a
   disposable Jenkins controller. A change to Jenkins-facing behaviour must add
-  or update a scenario in `tests/integration/jenkins.test.ts`. Use only the
+  or update a scenario in one of the `tests/integration/jenkins*.test.ts`
+  suites. Use only the
   synthetic jobs and credentials of the disposable controller, never a real
   one.
 
