@@ -185,6 +185,11 @@ def noParamsJob = jenkins.createProject(FreeStyleProject.class, "cli-no-params")
 noParamsJob.getBuildersList().add(new Shell("printf 'no-params-success\\n'"))
 noParamsJob.save()
 
+// Runs long enough that a watch polls it several times before it finishes.
+def watchIntervalJob = jenkins.createProject(FreeStyleProject.class, "cli-watch-interval")
+watchIntervalJob.getBuildersList().add(new Shell("sleep 2; printf 'watch-interval-success\\n'"))
+watchIntervalJob.save()
+
 def networkJob = jenkins.createProject(FreeStyleProject.class, "cli-network")
 networkJob.setQuietPeriod(0)
 networkJob.getBuildersList().add(new Shell("printf 'network-test-success\\n'"))

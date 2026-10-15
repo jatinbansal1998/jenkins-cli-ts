@@ -7,6 +7,46 @@ permissions:
   contents: read
 
 jobs:
+  changes:
+    name: Detect changed areas
+    runs-on: ubuntu-latest
+    outputs:
+      code: ${{ steps.classify.outputs.code }}
+      readme: ${{ steps.classify.outputs.readme }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      # Docs-only changes skip the test suites. Anything else, or a base that
+      # cannot be diffed (a new branch), runs everything.
+      - name: Classify changed files
+        id: classify
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          set -euo pipefail
+          if ! changed="$(git diff --name-only "$BASE_SHA" HEAD)"; then
+            echo "code=true" >> "$GITHUB_OUTPUT"
+            echo "readme=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          printf "%s\n" "$changed"
+          code=false
+          readme=false
+          while IFS= read -r file; do
+            case "$file" in
+              "") ;;
+              # tests/error-codes.test.ts checks the README.
+              README.md) readme=true ;;
+              docs/* | assets/* | .github/ISSUE_TEMPLATE/* | *.md) ;;
+              *) code=true ;;
+            esac
+          done <<< "$changed"
+          echo "code=$code" >> "$GITHUB_OUTPUT"
+          echo "readme=$readme" >> "$GITHUB_OUTPUT"
+
   quality:
     name: Lint and typecheck
     runs-on: ubuntu-latest
@@ -40,6 +80,8 @@ jobs:
 
   test:
     name: Test (${{ matrix.os }})
+    needs: changes
+    if: needs.changes.outputs.code == 'true' || needs.changes.outputs.readme == 'true'
     strategy:
       fail-fast: false
       matrix:
@@ -144,14 +186,7 @@ jobs:
         run: |
           set -o pipefail
           mkdir -p test-artifacts
-
-          set +e
-          bun scripts/run-with-linux-keyring.ts -- bun test --isolate --only-failures --coverage-reporter=text --coverage-reporter=lcov 2>&1 | tee test-artifacts/bun-test.log
-          TEST_EXIT=${PIPESTATUS[0]}
-          set -e
-
-          bun scripts/run-with-linux-keyring.ts -- bun test --isolate --reporter=junit --reporter-outfile test-artifacts/bun-junit.xml >/dev/null 2>&1 || true
-          exit "$TEST_EXIT"
+          bun scripts/run-with-linux-keyring.ts -- bun test --isolate --only-failures --coverage-reporter=text --coverage-reporter=lcov --reporter=junit --reporter-outfile test-artifacts/bun-junit.xml 2>&1 | tee test-artifacts/bun-test.log
 
       - name: Run tests with macOS Keychain (capture failures)
         if: runner.os == 'macOS'
@@ -162,14 +197,7 @@ jobs:
         run: |
           set -o pipefail
           mkdir -p test-artifacts
-
-          set +e
-          bun test --isolate --only-failures 2>&1 | tee test-artifacts/bun-test.log
-          TEST_EXIT=${PIPESTATUS[0]}
-          set -e
-
-          bun test --isolate --reporter=junit --reporter-outfile test-artifacts/bun-junit.xml >/dev/null 2>&1 || true
-          exit "$TEST_EXIT"
+          bun test --isolate --only-failures --reporter=junit --reporter-outfile test-artifacts/bun-junit.xml 2>&1 | tee test-artifacts/bun-test.log
 
       - name: Run tests with Windows Credential Manager (capture failures)
         if: runner.os == 'Windows'
@@ -184,17 +212,11 @@ jobs:
             --isolate `
             --only-failures `
             --timeout 10000 `
-            --path-ignore-patterns="**/compiled-cli.test.ts" 2>&1 |
-            Tee-Object -FilePath test-artifacts\bun-test.log
-          $testExit = $LASTEXITCODE
-
-          bun test `
-            --isolate `
-            --timeout 10000 `
             --path-ignore-patterns="**/compiled-cli.test.ts" `
             --reporter=junit `
-            --reporter-outfile test-artifacts\bun-junit.xml *> $null
-          exit $testExit
+            --reporter-outfile test-artifacts\bun-junit.xml 2>&1 |
+            Tee-Object -FilePath test-artifacts\bun-test.log
+          exit $LASTEXITCODE
 
       - name: Summarize test output
         if: always()
@@ -221,17 +243,29 @@ jobs:
           if-no-files-found: ignore
 
   jenkins-integration:
-    name: Jenkins integration (${{ matrix.os }})
+    name: Jenkins integration (${{ matrix.os }}${{ matrix.shard && format(' shard {0}', matrix.shard) || '' }})
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     strategy:
       fail-fast: false
       matrix:
+        # Each shard starts its own controller; see INTEGRATION_SHARDS in
+        # scripts/test-jenkins-integration.ts. Windows runs its own acceptance
+        # script instead of the bun suites.
         include:
           - os: ubuntu-latest
+            shard: 1
+            test-script: test:integration:jenkins
+          - os: ubuntu-latest
+            shard: 2
             test-script: test:mutation:jenkins
           - os: macos-latest
+            shard: 1
+            test-script: test:integration:jenkins
+          - os: macos-latest
+            shard: 2
             test-script: test:integration:jenkins
           - os: windows-latest
-            test-script: test:integration:jenkins
     runs-on: ${{ matrix.os }}
     timeout-minutes: 40
     steps:
@@ -306,7 +340,7 @@ jobs:
       - name: Run Jenkins integration tests with Linux Secret Service
         if: runner.os == 'Linux'
         shell: bash
-        run: bun run "${{ matrix.test-script }}"
+        run: bun run "${{ matrix.test-script }}" --shard "${{ matrix.shard }}"
 
       - name: Run Jenkins integration tests with macOS Keychain
         if: runner.os == 'macOS'
@@ -314,7 +348,7 @@ jobs:
         env:
           REQUIRE_KEYCHAIN_INTEGRATION: "1"
           JENKINS_INTEGRATION_TOOL_CACHE: ${{ runner.temp }}/jenkins-cli-integration-tools
-        run: bun run "${{ matrix.test-script }}"
+        run: bun run "${{ matrix.test-script }}" --shard "${{ matrix.shard }}"
 
       - name: Run Jenkins integration tests on Windows
         if: runner.os == 'Windows'
@@ -330,6 +364,6 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: jenkins-reports-${{ matrix.os }}
+          name: jenkins-reports-${{ matrix.os }}${{ matrix.shard && format('-shard-{0}', matrix.shard) || '' }}
           path: test-artifacts
           if-no-files-found: ignore

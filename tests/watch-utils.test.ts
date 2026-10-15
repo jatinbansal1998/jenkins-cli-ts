@@ -1,10 +1,47 @@
 import { describe, expect, mock, test } from "bun:test";
 import {
   findWatchedBuild,
+  nextWatchPollMs,
+  parseWatchIntervalMs,
   waitForPollIntervalOrCancel,
 } from "../src/commands/watch-utils";
 import type { JenkinsClient } from "../src/jenkins/client";
 import type { LastBuildSummary } from "../src/types/jenkins";
+
+describe("nextWatchPollMs", () => {
+  test("starts at 1s and grows by 1s until it settles at 5s", () => {
+    const delays = Array.from({ length: 7 }, (_, completedPolls) =>
+      nextWatchPollMs(completedPolls, undefined),
+    );
+    expect(delays).toEqual([1_000, 2_000, 3_000, 4_000, 5_000, 5_000, 5_000]);
+  });
+
+  test("uses an explicit interval for every poll", () => {
+    expect(nextWatchPollMs(0, 30_000)).toBe(30_000);
+    expect(nextWatchPollMs(10, 250)).toBe(250);
+  });
+});
+
+describe("parseWatchIntervalMs", () => {
+  test("leaves the interval unset when the flag is absent or blank", () => {
+    expect(parseWatchIntervalMs(undefined)).toBeUndefined();
+    expect(parseWatchIntervalMs("  ")).toBeUndefined();
+  });
+
+  test("parses a duration", () => {
+    expect(parseWatchIntervalMs("2s")).toBe(2_000);
+    expect(parseWatchIntervalMs("1m")).toBe(60_000);
+  });
+
+  test("rejects a zero or malformed interval", () => {
+    expect(() => parseWatchIntervalMs("0s")).toThrow(
+      "Invalid --interval value.",
+    );
+    expect(() => parseWatchIntervalMs("soon")).toThrow(
+      'Invalid --interval value "soon".',
+    );
+  });
+});
 
 describe("waitForPollIntervalOrCancel", () => {
   test("returns quickly when cancel signal is already resolved", async () => {

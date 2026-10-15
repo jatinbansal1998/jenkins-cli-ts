@@ -53,6 +53,7 @@ type StatusOptions = {
   buildUrl?: string;
   nonInteractive: boolean;
   watch?: boolean;
+  interval?: string;
   json?: boolean;
   write?: JsonWrite;
 };
@@ -198,6 +199,7 @@ export async function runStatus(options: StatusOptions): Promise<void> {
         await runWait({
           client: options.client,
           env: options.env,
+          interval: options.interval,
           jobUrl: target.jobUrl,
           nonInteractive: false,
           suppressExitCode: true,
@@ -219,6 +221,7 @@ export async function runStatus(options: StatusOptions): Promise<void> {
               runWait({
                 client: options.client,
                 env: options.env,
+                interval: options.interval,
                 jobUrl: primaryTarget.jobUrl,
                 nonInteractive: false,
                 suppressExitCode: true,
@@ -450,6 +453,7 @@ async function runExactStatus(options: StatusOptions): Promise<void> {
     await runWait({
       client: options.client,
       env: options.env,
+      interval: options.interval,
       buildUrl,
       nonInteractive: options.nonInteractive,
       suppressExitCode: false,
@@ -512,6 +516,7 @@ async function runStatusOnce(options: StatusOptions): Promise<void> {
     await runWait({
       client: options.client,
       env: options.env,
+      interval: options.interval,
       jobUrl,
       nonInteractive: true,
       suppressExitCode: false,

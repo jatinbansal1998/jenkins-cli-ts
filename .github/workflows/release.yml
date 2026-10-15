@@ -64,14 +64,7 @@ jobs:
         run: |
           set -o pipefail
           mkdir -p test-artifacts
-
-          set +e
-          bun scripts/run-with-linux-keyring.ts -- bun test --isolate --only-failures 2>&1 | tee test-artifacts/bun-test.log
-          TEST_EXIT=${PIPESTATUS[0]}
-          set -e
-
-          bun scripts/run-with-linux-keyring.ts -- bun test --isolate --reporter=junit --reporter-outfile test-artifacts/bun-junit.xml >/dev/null 2>&1 || true
-          exit "$TEST_EXIT"
+          bun scripts/run-with-linux-keyring.ts -- bun test --isolate --only-failures --reporter=junit --reporter-outfile test-artifacts/bun-junit.xml 2>&1 | tee test-artifacts/bun-test.log
 
       - name: Summarize test output
         if: always()

@@ -61,8 +61,10 @@ Report any failures — do not claim work is validated if these fail.
 ## Real Jenkins validation
 
 Every implementation that changes Jenkins-facing behavior must add or update a
-synthetic scenario in `tests/integration/jenkins.test.ts` and, when fixture
-configuration is needed, `tests/integration/jenkins/init.groovy`.
+synthetic scenario in one of the `tests/integration/jenkins*.test.ts` suites
+and, when fixture configuration is needed, `tests/integration/jenkins/init.groovy`.
+A new suite file must be added to `INTEGRATION_SHARDS` in
+`scripts/test-jenkins-integration.ts` or it never runs.
 
 - Run `bun run test:integration:jenkins`; it must build and exercise
   `dist/jenkins-cli` against the disposable `jenkins/jenkins:lts-jdk21`

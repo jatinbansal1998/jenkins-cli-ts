@@ -24,6 +24,21 @@ const loadMode = process.argv.includes("--load");
 const networkOnly = process.argv.includes("--network");
 const buildErrorsOnly = process.argv.includes("--build-errors");
 const prepareNativeManifestPath = readArgumentValue("--prepare-native");
+const shardArgument = readArgumentValue("--shard");
+// CI runs each shard as its own job against its own controller. Order inside a
+// shard matters: jenkins.test.ts checks for an idle controller early on, and
+// the build-errors probes leave builds queued, so they run last.
+const INTEGRATION_SHARDS = [
+  [
+    "tests/integration/jenkins-network.test.ts",
+    "tests/integration/jenkins.test.ts",
+  ],
+  [
+    "tests/integration/jenkins-pipelines.test.ts",
+    "tests/integration/jenkins-build-errors.test.ts",
+  ],
+];
+const NETWORK_TESTS = "tests/integration/jenkins-network.test.ts";
 const nativeMode =
   process.argv.includes("--native") ||
   process.platform === "darwin" ||
@@ -96,6 +111,12 @@ if (prepareNativeManifestPath) {
         "--load requires a fresh local build and cannot be combined with other test modes.",
       );
     }
+    if (shardArgument && (loadMode || networkOnly || buildErrorsOnly)) {
+      throw new Error(
+        "--shard selects part of the full suite and cannot be combined with --load, --network, or --build-errors.",
+      );
+    }
+    const integrationTests = selectIntegrationTests();
     if (loadMode) loadSettings(process.env);
     if (process.platform === "linux" && !Bun.which("strace")) {
       throw new Error(
@@ -198,19 +219,7 @@ if (prepareNativeManifestPath) {
       `jenkins-${Date.now()}-${process.pid}`,
     );
     await mkdir(artifactDir, { recursive: true });
-    const integrationTests = loadMode
-      ? ["tests/integration/jenkins-load.test.ts"]
-      : networkOnly
-        ? ["tests/integration/jenkins.test.ts"]
-        : buildErrorsOnly
-          ? ["tests/integration/jenkins-build-errors.test.ts"]
-          : [
-              "tests/integration/jenkins.test.ts",
-              "tests/integration/jenkins-build-errors.test.ts",
-            ];
-    const toxiproxyUrl = integrationTests.includes(
-      "tests/integration/jenkins.test.ts",
-    )
+    const toxiproxyUrl = integrationTests.includes(NETWORK_TESTS)
       ? await startToxiproxy()
       : undefined;
     console.log(`Jenkins test artifacts: ${artifactDir}`);
@@ -235,19 +244,11 @@ if (prepareNativeManifestPath) {
       JENKINS_INTEGRATION_LOAD: loadMode ? "1" : undefined,
     };
     for (const integrationTest of integrationTests) {
-      await runChecked(
-        [
-          "bun",
-          "test",
-          integrationTest,
-          ...(networkOnly ? ["--test-name-pattern", "Toxiproxy"] : []),
-        ],
-        {
-          cwd: root,
-          inherit: true,
-          env: integrationEnv,
-        },
-      );
+      await runChecked(["bun", "test", integrationTest], {
+        cwd: root,
+        inherit: true,
+        env: integrationEnv,
+      });
     }
     if (mutationMode) {
       await runChecked(
@@ -292,6 +293,21 @@ if (prepareNativeManifestPath) {
     }
     await rm(runtimeDir, { recursive: true, force: true });
   }
+}
+
+function selectIntegrationTests(): string[] {
+  if (loadMode) return ["tests/integration/jenkins-load.test.ts"];
+  if (networkOnly) return [NETWORK_TESTS];
+  if (buildErrorsOnly)
+    return ["tests/integration/jenkins-build-errors.test.ts"];
+  if (!shardArgument) return INTEGRATION_SHARDS.flat();
+  const shard = INTEGRATION_SHARDS[Number(shardArgument) - 1];
+  if (!/^\d+$/.test(shardArgument) || !shard) {
+    throw new Error(
+      `--shard must be a number from 1 to ${INTEGRATION_SHARDS.length}, got "${shardArgument}".`,
+    );
+  }
+  return shard;
 }
 
 async function startToxiproxy(): Promise<string> {

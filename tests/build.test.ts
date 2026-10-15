@@ -1111,6 +1111,61 @@ describe("build command", () => {
     }
   });
 
+  test("non-interactive watch polls at an explicit --interval", async () => {
+    const originalExitCode = process.exitCode;
+    process.exitCode = 0;
+
+    const statuses = [true, true, false].map((building) => ({
+      buildNumber: 381,
+      buildUrl: BUILD_URL,
+      result: building ? null : "SUCCESS",
+      building,
+    }));
+    const getBuildStatus = mock(async () => statuses.shift()!);
+
+    try {
+      const startedAt = Date.now();
+      await runBuild({
+        client: createClient({
+          getLastBuild: mock(async () => lastBuildSummary(380)),
+          triggerBuild: mock(async () => ({
+            buildUrl: BUILD_URL,
+            buildNumber: 381,
+            jobUrl: JOB_URL,
+          })),
+          getBuildStatus,
+        }),
+        env: {} as EnvConfig,
+        jobUrl: JOB_URL,
+        branch: "staging",
+        nonInteractive: true,
+        watch: true,
+        interval: "10ms",
+      });
+
+      expect(getBuildStatus).toHaveBeenCalledTimes(3);
+      // The default schedule would sleep 1s then 2s between these polls.
+      expect(Date.now() - startedAt).toBeLessThan(900);
+    } finally {
+      process.exitCode = originalExitCode;
+    }
+  });
+
+  test("rejects an invalid --interval before triggering", async () => {
+    const triggerBuild = mock(async () => ({}));
+    await expect(
+      runBuild({
+        client: createClient({ triggerBuild }),
+        env: {} as EnvConfig,
+        jobUrl: JOB_URL,
+        nonInteractive: true,
+        watch: true,
+        interval: "0s",
+      }),
+    ).rejects.toThrow("Invalid --interval value.");
+    expect(triggerBuild).not.toHaveBeenCalled();
+  });
+
   test("non-interactive builds validate choices without prompting", async () => {
     const triggerBuild = mock(async () => ({}));
     await expect(

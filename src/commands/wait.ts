@@ -36,8 +36,9 @@ import {
 import { parseOptionalDurationMs } from "../duration";
 import {
   createWatchControlSignal,
-  DEFAULT_WATCH_INTERVAL_MS,
   findWatchedBuild,
+  nextWatchPollMs,
+  parseWatchIntervalMs,
   requestCancellationForWatchTarget,
   waitForPollIntervalOrCancel,
 } from "./watch-utils";
@@ -87,11 +88,7 @@ export async function runWait(options: WaitOptions): Promise<WaitResult> {
     return await runWaitJson(options);
   }
 
-  const intervalMs = parseOptionalDurationMs(
-    options.interval,
-    DEFAULT_WATCH_INTERVAL_MS,
-    "--interval",
-  );
+  const intervalMs = parseWatchIntervalMs(options.interval);
   const timeoutMs = options.timeout
     ? parseOptionalDurationMs(options.timeout, 0, "--timeout")
     : undefined;
@@ -99,13 +96,6 @@ export async function runWait(options: WaitOptions): Promise<WaitResult> {
     throw new CliError(
       "Invalid --timeout value.",
       ["Use a timeout greater than 0ms (e.g. --timeout 10m)."],
-      "INVALID_USAGE",
-    );
-  }
-  if (intervalMs <= 0) {
-    throw new CliError(
-      "Invalid --interval value.",
-      ["Use an interval greater than 0ms (e.g. --interval 5s)."],
       "INVALID_USAGE",
     );
   }
@@ -134,11 +124,7 @@ async function runWaitJson(options: WaitOptions): Promise<WaitResult> {
   const write = options.write;
   const startedAt = Date.now();
   try {
-    const intervalMs = parseOptionalDurationMs(
-      options.interval,
-      DEFAULT_WATCH_INTERVAL_MS,
-      "--interval",
-    );
+    const intervalMs = parseWatchIntervalMs(options.interval);
     const timeoutMs = options.timeout
       ? parseOptionalDurationMs(options.timeout, 0, "--timeout")
       : undefined;
@@ -146,13 +132,6 @@ async function runWaitJson(options: WaitOptions): Promise<WaitResult> {
       throw new CliError(
         "Invalid --timeout value.",
         ["Use a timeout greater than 0ms (e.g. --timeout 10m)."],
-        "INVALID_USAGE",
-      );
-    }
-    if (intervalMs <= 0) {
-      throw new CliError(
-        "Invalid --interval value.",
-        ["Use an interval greater than 0ms (e.g. --interval 5s)."],
         "INVALID_USAGE",
       );
     }
@@ -274,7 +253,8 @@ export async function waitForBuild(options: {
   buildUrl?: string;
   buildNumber?: number;
   queueUrl?: string;
-  intervalMs: number;
+  /** Fixed poll interval; omit to start fast and settle at the default. */
+  intervalMs?: number;
   timeoutMs?: number;
   nonInteractive: boolean;
   suppressOutput?: boolean;
@@ -355,6 +335,7 @@ export async function waitForBuild(options: {
       }
     }
 
+    let completedPolls = 0;
     while (true) {
       const elapsedMs = Date.now() - startedAt;
       if (options.timeoutMs !== undefined && elapsedMs >= options.timeoutMs) {
@@ -537,7 +518,10 @@ export async function waitForBuild(options: {
         );
       }
 
-      await waitForPollIntervalOrCancel(options.intervalMs, cancelSignal);
+      await waitForPollIntervalOrCancel(
+        nextWatchPollMs(completedPolls++, options.intervalMs),
+        cancelSignal,
+      );
     }
   } finally {
     cancelSignal?.cleanup();
