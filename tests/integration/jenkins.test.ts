@@ -1907,8 +1907,6 @@ describe.skipIf(!integrationEnabled)(
               started.push(cli);
               return cli;
             };
-            // Started before the build exists, so it is already polling.
-            const wait = start(["wait", "--job-url", jobUrl, "--json"]);
             const build = start([
               "build",
               "--job-url",
@@ -1916,7 +1914,10 @@ describe.skipIf(!integrationEnabled)(
               "--without-params",
               "--watch",
             ]);
+            // Started once this scenario's build runs, so the job's latest
+            // build is this one whatever builds the job had before.
             await build.waitForOutput("RUNNING");
+            const wait = start(["wait", "--job-url", jobUrl, "--json"]);
             const logs = start([
               "logs",
               "--job-url",
@@ -1951,7 +1952,10 @@ describe.skipIf(!integrationEnabled)(
             expect(built.exitCode, built.output).toBe(0);
             expect(built.stderr).toContain(unavailable);
             expect(built.stderr).toMatch(reachable);
-            expect(built.stdout).toMatch(/: #1 SUCCESS$/m);
+            const buildNumber = Number(
+              built.stdout.match(/: #(\d+) SUCCESS$/m)?.[1],
+            );
+            expect(buildNumber, built.output).toBeGreaterThan(0);
 
             expect(waited.exitCode, waited.output).toBe(0);
             expect(waited.stderr).toContain(unavailable);
@@ -1959,7 +1963,7 @@ describe.skipIf(!integrationEnabled)(
             expect(JSON.parse(waited.stdout)).toMatchObject({
               ok: true,
               command: "wait",
-              data: { result: "SUCCESS", build: { number: 1 } },
+              data: { result: "SUCCESS", build: { number: buildNumber } },
             });
 
             for (const result of followed) {
