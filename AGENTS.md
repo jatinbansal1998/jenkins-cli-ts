@@ -58,6 +58,23 @@ After making all changes, always ask to run:
 
 Report any failures — do not claim work is validated if these fail.
 
+## Bounded test runs
+
+- Run tests through the package scripts (`bun run test`, `bun run test:mutation`,
+  `bun run test:integration:jenkins`, ...). They go through
+  `scripts/run-bounded.ts`, which stops the run after a time limit and, on
+  Linux with a systemd user session, caps its memory with swap off. A bare
+  `bun test` or `bun scripts/test-jenkins-integration.ts` has neither.
+- Any loop that runs tests, mutation testing included, must wrap each run in
+  a timeout. Use `bun scripts/run-bounded.ts --minutes 2 --memory 3G -- bun test
+--isolate tests/build.test.ts`, which works on every platform and also caps
+  memory, or GNU `timeout -k 10s 120s bun run test tests/build.test.ts`.
+  Bun's per-test timeout is not enough: a test stuck in a loop of resolved
+  promises never yields to the timer that enforces it.
+- Nothing may be left running in the background. Let each run finish or kill
+  it before starting the next. After killing an integration run, check
+  `docker ps` for a leftover `jenkins-cli-integration-*` container.
+
 ## Real Jenkins validation
 
 Every implementation that changes Jenkins-facing behavior must add or update a
