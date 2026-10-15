@@ -861,6 +861,7 @@ export class JenkinsClient {
           ? this.withBase(`${jobPath}/${buildNumber}/`)
           : undefined,
       buildNumber: isBuildNumber(buildNumber) ? buildNumber : undefined,
+      cancelled: queueItem.cancelled === true,
     };
   }
 
@@ -1696,7 +1697,7 @@ export class JenkinsClient {
   ): Promise<JenkinsApiQueueItem | null> {
     const url = this.withJob(
       queueUrl,
-      "api/json?tree=id,task[url],executable[number]",
+      "api/json?tree=id,cancelled,task[url],executable[number]",
     );
     const headers = await this.authHeaders();
     try {

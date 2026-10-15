@@ -254,6 +254,20 @@ printf 'slow-build-finished\n'
 '''))
 slowJob.save()
 
+// Builds queue behind a running one, so a wait on the queued build must not
+// settle for the job's previous build.
+def queueWaitJob = jenkins.createProject(FreeStyleProject.class, "cli-queue-wait")
+queueWaitJob.setConcurrentBuild(false)
+queueWaitJob.addProperty(new ParametersDefinitionProperty([
+  new StringParameterDefinition("EXIT_CODE", "0", "Exit code of the build"),
+  new StringParameterDefinition("SLEEP", "0", "Seconds to run before exiting")
+]))
+queueWaitJob.getBuildersList().add(new Shell('''set -eu
+sleep "$SLEEP"
+exit "$EXIT_CODE"
+'''))
+queueWaitJob.save()
+
 def branchJob = jenkins.createProject(FreeStyleProject.class, "cli-branch")
 branchJob.addProperty(new ParametersDefinitionProperty([
   new StringParameterDefinition("BRANCH", "main", "Branch selected by the CLI"),

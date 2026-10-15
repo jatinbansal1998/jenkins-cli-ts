@@ -1894,6 +1894,131 @@ describe.skipIf(!integrationEnabled)(
       });
     }, 90_000);
 
+    test("waits for a queued build, never the job's previous build", async () => {
+      await withCliHome(async (home) => {
+        const jobUrl = `${jenkinsUrl}/job/cli-queue-wait/`;
+        const previous = parseJson<{
+          data: { result: string; buildNumber: number };
+        }>(
+          await runCliExpectFailure(home, [
+            "build",
+            "--job-url",
+            jobUrl,
+            "--param",
+            "EXIT_CODE=3",
+            "--watch",
+            "--json",
+          ]),
+        );
+        expect(previous.data.result).toBe("FAILURE");
+
+        // Hold the single executor so the next triggers stay queued.
+        const slowJobUrl = `${jenkinsUrl}/job/cli-slow/`;
+        await runCli(home, [
+          "build",
+          "--job-url",
+          slowJobUrl,
+          "--without-params",
+        ]);
+        const running = await pollCli(home, ["run"], (result) =>
+          result.output.includes("cli-slow #"),
+        );
+        const slowBuildUrl = running.output.match(
+          /(http:\/\/[^\s]+\/job\/cli-slow\/\d+\/)/,
+        )?.[1];
+        expect(slowBuildUrl).toBeDefined();
+
+        const triggerQueued = async (exitCode: string) =>
+          parseJson<{ data: { queueUrl: string; queued: boolean } }>(
+            await runCli(home, [
+              "build",
+              "--job-url",
+              jobUrl,
+              "--param",
+              `EXIT_CODE=${exitCode}`,
+              "--json",
+            ]),
+          ).data;
+        const waitArgs = (queueUrl: string) => [
+          "wait",
+          "--queue-url",
+          queueUrl,
+          "--job-url",
+          jobUrl,
+          "--interval",
+          "250ms",
+          "--timeout",
+          "60s",
+          "--json",
+        ];
+
+        // Different parameters keep Jenkins from merging the two items.
+        const cancelledItem = await triggerQueued("5");
+        expect(cancelledItem.queued).toBe(true);
+        await runCli(home, ["cancel", "--queue-url", cancelledItem.queueUrl]);
+        const cancelledWait = await invokeCli(
+          home,
+          waitArgs(cancelledItem.queueUrl),
+        );
+        expect(cancelledWait.exitCode, cancelledWait.output).toBe(1);
+        expect(parseJson(cancelledWait)).toMatchObject({
+          ok: true,
+          data: { result: "ABORTED" },
+        });
+
+        const queuedItem = await triggerQueued("0");
+        expect(queuedItem.queued).toBe(true);
+        const waitPromise = invokeCli(home, waitArgs(queuedItem.queueUrl));
+        // Give the wait a few polls while the build is still queued: that is
+        // when it used to settle for the previous build.
+        await Bun.sleep(1_000);
+        await runCli(home, ["cancel", "--build-url", slowBuildUrl!]);
+        const waited = await waitPromise;
+        expect(waited.exitCode, waited.output).toBe(0);
+        expect(parseJson(waited)).toMatchObject({
+          data: {
+            result: "SUCCESS",
+            build: { number: previous.data.buildNumber + 1 },
+          },
+        });
+
+        // A build triggered while the previous one still runs queues behind
+        // it; the watch must follow the new build, not the running one.
+        await runCli(home, [
+          "build",
+          "--job-url",
+          jobUrl,
+          "--param",
+          "EXIT_CODE=3",
+          "--param",
+          "SLEEP=5",
+        ]);
+        const runningPrevious = await pollCli(home, ["run"], (result) =>
+          result.output.includes("cli-queue-wait #"),
+        );
+        const runningNumber = Number(
+          runningPrevious.output.match(/cli-queue-wait #(\d+)/)?.[1],
+        );
+        const watched = parseJson<{
+          data: { result: string; buildNumber: number };
+        }>(
+          await runCli(home, [
+            "build",
+            "--job-url",
+            jobUrl,
+            "--param",
+            "EXIT_CODE=0",
+            "--watch",
+            "--json",
+          ]),
+        );
+        expect(watched.data).toMatchObject({
+          result: "SUCCESS",
+          buildNumber: runningNumber + 1,
+        });
+      });
+    }, 120_000);
+
     test("build --watch, wait, and logs --follow keep going while Jenkins restarts", async () => {
       const gateway = startRestartingGateway();
       try {

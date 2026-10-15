@@ -111,45 +111,135 @@ describe("wait command", () => {
     expect(persistKnownTotalStagesSpy).toHaveBeenCalledTimes(1);
   });
 
-  test("waitForBuild falls back from queue lookup to job/build status", async () => {
-    const getQueueBuild = mock(async () => null);
-    const getLastBuild = mock(async () => ({
+  test("waitForBuild keeps polling the queue instead of adopting the previous build", async () => {
+    const jobUrl = "https://jenkins.example.com/job/api/";
+    const queueUrl = "https://jenkins.example.com/queue/item/123/";
+    const newBuildUrl = `${jobUrl}8/`;
+    const queuedStates = [
+      { cancelled: false },
+      { cancelled: false },
+      { buildUrl: newBuildUrl, buildNumber: 8, cancelled: false },
+    ];
+    const getQueueBuild = mock(async (_queueUrl: string) =>
+      queuedStates.shift()!,
+    );
+    const getLastBuild = mock(async (_jobUrl: string) => ({
       buildNumber: 7,
-      buildUrl: "https://jenkins.example.com/job/api/7/",
-      result: "SUCCESS",
+      buildUrl: `${jobUrl}7/`,
+      result: "FAILURE",
       building: false,
     }));
-    const getBuildStatus = mock(async () => ({
-      buildNumber: 7,
-      buildUrl: "https://jenkins.example.com/job/api/7/",
+    const getBuildStatus = mock(async (_buildUrl: string) => ({
+      buildNumber: 8,
+      buildUrl: newBuildUrl,
       result: "SUCCESS",
       building: false,
-      timestampMs: 1700000000000,
-      durationMs: 10_000,
     }));
 
     const result = await waitForBuild({
       env,
-      client: createClient({
-        getQueueBuild,
-        getLastBuild,
-        getBuildStatus,
-      }),
-      jobUrl: "https://jenkins.example.com/job/api/",
-      queueUrl: "https://jenkins.example.com/queue/item/123/",
+      client: createClient({ getQueueBuild, getLastBuild, getBuildStatus }),
+      jobUrl,
+      queueUrl,
       jobLabel: "api",
       intervalMs: 1,
       nonInteractive: true,
+      suppressOutput: true,
     });
 
     expect(result).toMatchObject({
       result: "SUCCESS",
+      buildNumber: 8,
+      buildUrl: newBuildUrl,
+    });
+    expect(getQueueBuild).toHaveBeenCalledTimes(3);
+    // Only the baseline lookup: a queue item still in the queue is never
+    // resolved through the job.
+    expect(getLastBuild).toHaveBeenCalledTimes(1);
+    expect(getBuildStatus.mock.calls).toEqual([[newBuildUrl]]);
+  });
+
+  test("waitForBuild falls back to a new job build once the queue item is gone", async () => {
+    const jobUrl = "https://jenkins.example.com/job/api/";
+    const newBuildUrl = `${jobUrl}8/`;
+    const getQueueBuild = mock(async (_queueUrl: string) => null);
+    const lastBuilds = [
+      {
+        buildNumber: 7,
+        buildUrl: `${jobUrl}7/`,
+        result: "FAILURE",
+        building: false,
+      },
+      {
+        buildNumber: 7,
+        buildUrl: `${jobUrl}7/`,
+        result: "FAILURE",
+        building: false,
+      },
+      { buildNumber: 8, buildUrl: newBuildUrl, result: null, building: true },
+    ];
+    const getLastBuild = mock(async (_jobUrl: string) => lastBuilds.shift()!);
+    const getBuildStatus = mock(async (_buildUrl: string) => ({
+      buildNumber: 8,
+      buildUrl: newBuildUrl,
+      result: "SUCCESS",
+      building: false,
+    }));
+
+    const result = await waitForBuild({
+      env,
+      client: createClient({ getQueueBuild, getLastBuild, getBuildStatus }),
+      jobUrl,
+      queueUrl: "https://jenkins.example.com/queue/item/123/",
+      jobLabel: "api",
+      intervalMs: 1,
+      nonInteractive: true,
+      suppressOutput: true,
+    });
+
+    expect(result).toMatchObject({
+      result: "SUCCESS",
+      buildNumber: 8,
+      buildUrl: newBuildUrl,
+    });
+    expect(getQueueBuild).toHaveBeenCalledTimes(2);
+    expect(getLastBuild).toHaveBeenCalledTimes(3);
+    expect(getBuildStatus.mock.calls).toEqual([[newBuildUrl]]);
+  });
+
+  test("runWait reports a cancelled queue item as aborted", async () => {
+    const getQueueBuild = mock(async (_queueUrl: string) => ({
+      cancelled: true,
+    }));
+    const getLastBuild = mock(async (_jobUrl: string) => ({
       buildNumber: 7,
       buildUrl: "https://jenkins.example.com/job/api/7/",
+      result: "SUCCESS",
+      building: false,
+    }));
+    const getBuildStatus = mock(async () => {
+      throw new Error("a cancelled queue item has no build");
     });
+    const errorSpy = trackRestore(spyOn(console, "error")).mockImplementation(
+      () => undefined,
+    );
+
+    const result = await runWait({
+      client: createClient({ getQueueBuild, getLastBuild, getBuildStatus }),
+      env,
+      jobUrl: "https://jenkins.example.com/job/api/",
+      queueUrl: "https://jenkins.example.com/queue/item/123/",
+      interval: "1ms",
+      nonInteractive: true,
+    });
+
+    expect(result).toEqual({ result: "ABORTED" });
+    expect(process.exitCode).toBe(1);
     expect(getQueueBuild).toHaveBeenCalledTimes(1);
     expect(getLastBuild).toHaveBeenCalledTimes(1);
-    expect(getBuildStatus).toHaveBeenCalledTimes(1);
+    expect(errorSpy.mock.calls.flat().join("\n")).toContain(
+      "was cancelled before it started",
+    );
   });
 
   test("waitForBuild follows a running latest build by its build URL", async () => {

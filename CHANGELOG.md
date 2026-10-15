@@ -18,6 +18,13 @@ lists everything since the previous stable release, including its prereleases.
   say when Jenkins answers again, and give up with exit code 6 after 10 minutes. HTTP 502, 503, 504 and
   failed connections count as unavailable; request timeouts, auth errors, 404
   and other errors still fail at once.
+- `wait` with both `--queue-url` and `--job-url` no longer reports the job's
+  previous build while the queued build has not started. It keeps polling the
+  queue item, and falls back to the job only once the item is gone, and then
+  only to a build newer than the wait's start. A cancelled queue item ends the
+  wait with result `ABORTED` (exit code 1).
+- `build --watch` no longer follows the previous build when the new one queues
+  behind it, for example on a job that disallows concurrent builds.
 
 ### Added
 

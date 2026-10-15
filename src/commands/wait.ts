@@ -23,6 +23,7 @@ import type {
   BuildStatus,
   JenkinsBuildParameter,
   JenkinsRevision,
+  LastBuildSummary,
 } from "../types/jenkins";
 import {
   getKnownStageTotal,
@@ -37,6 +38,7 @@ import {
 import { parseOptionalDurationMs } from "../duration";
 import {
   createWatchControlSignal,
+  findWatchedBuild,
   nextWatchPollMs,
   parseWatchIntervalMs,
   requestCancellationForWatchTarget,
@@ -301,6 +303,9 @@ export async function waitForBuild(options: {
   let buildUrl = options.buildUrl;
   let buildNumber = options.buildNumber;
   let queueUrl = options.queueUrl;
+  // The job's newest build before the queued one could start; undefined until
+  // read. Only a newer build can be the queued one.
+  let baselineBuild: LastBuildSummary | null | undefined;
   let knownTotalStages = await getKnownStageTotal({
     env: options.env,
     jobUrl: options.jobUrl,
@@ -388,6 +393,9 @@ export async function waitForBuild(options: {
 
       try {
         if (queueUrl) {
+          if (options.jobUrl && baselineBuild === undefined) {
+            baselineBuild = await options.client.getLastBuild(options.jobUrl);
+          }
           const queued = await options.client.getQueueBuild(queueUrl);
           if (queued?.buildUrl) {
             buildUrl = queued.buildUrl;
@@ -400,12 +408,26 @@ export async function waitForBuild(options: {
             });
             continue;
           }
-          if (options.jobUrl) {
-            const lastBuild = await options.client.getLastBuild(options.jobUrl);
-            if (lastBuild) {
+          if (queued?.cancelled) {
+            const message = `Queue item for ${options.jobLabel} was cancelled before it started.`;
+            if (statusSpinner) {
+              statusSpinner.error(message);
+            } else if (emitOutput) {
+              printError(message);
+            }
+            return { result: "ABORTED" };
+          }
+          // The job's build is only a fallback once the queue item is gone.
+          if (!queued && options.jobUrl) {
+            const watched = await findWatchedBuild(
+              options.client,
+              options.jobUrl,
+              baselineBuild?.buildNumber,
+            );
+            if (watched) {
               queueUrl = undefined;
-              buildNumber = lastBuild.buildNumber;
-              buildUrl = lastBuild.buildUrl;
+              buildNumber = watched.buildNumber;
+              buildUrl = watched.buildUrl;
               continue;
             }
           }

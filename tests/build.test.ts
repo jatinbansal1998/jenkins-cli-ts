@@ -1223,6 +1223,7 @@ describe("build command", () => {
     const getQueueBuild = mock(async () => ({
       buildUrl: BUILD_URL,
       buildNumber: 381,
+      cancelled: false,
     }));
     const getBuildStatus = mock(async () => ({
       buildNumber: 381,
