@@ -7,6 +7,8 @@ import {
   spyOn,
   test,
 } from "bun:test";
+import { CliError } from "../src/cli";
+import { JENKINS_UNAVAILABLE_LIMIT_MS } from "../src/commands/watch-utils";
 import type { EnvConfig } from "../src/env";
 import type { JenkinsClient } from "../src/jenkins/client";
 import * as stageCountCacheModule from "../src/stage-count-cache";
@@ -32,6 +34,15 @@ const env: EnvConfig = {
 
 function createClient(stubs: Partial<JenkinsClient>): JenkinsClient {
   return stubs as JenkinsClient;
+}
+
+function unavailable(): CliError {
+  return new CliError(
+    "Jenkins returned HTTP 503 while trying to fetch build status.",
+    [],
+    "JENKINS_HTTP_ERROR",
+    { details: { httpStatus: 503 } },
+  );
 }
 
 function capture(): { write: (text: string) => void; output: () => string } {
@@ -213,5 +224,223 @@ describe("wait --json", () => {
     expect(parsed.error.code).toBe("INVALID_USAGE");
     expect(process.exitCode).toBe(2);
     process.exitCode = 0;
+  });
+
+  describe("while Jenkins is unavailable", () => {
+    const buildUrl = "https://jenkins.example.com/job/api/9/";
+    const running = { buildNumber: 9, buildUrl, result: null, building: true };
+
+    test.each([
+      ["while the build still runs", [running]],
+      ["when the build ends during it", []],
+    ])("reports recovery %s", async (_case, afterOutage) => {
+      const errorSpy = trackRestore(spyOn(console, "error")).mockImplementation(
+        () => undefined,
+      );
+      const sink = capture();
+      const getBuildStatus = mock().mockResolvedValueOnce(running);
+      getBuildStatus.mockRejectedValueOnce(unavailable());
+      for (const status of afterOutage) {
+        getBuildStatus.mockResolvedValueOnce(status);
+      }
+      getBuildStatus.mockResolvedValueOnce({
+        ...running,
+        result: "SUCCESS",
+        building: false,
+      });
+
+      await runWait({
+        client: createClient({ getBuildStatus }),
+        env,
+        buildUrl,
+        interval: "1ms",
+        nonInteractive: true,
+        json: true,
+        write: sink.write,
+      });
+
+      expect(JSON.parse(sink.output()).data.result).toBe("SUCCESS");
+      const warnings = errorSpy.mock.calls.map((call) => String(call[0]));
+      expect(warnings).toEqual([
+        "WARN: Jenkins is unavailable, retrying for up to 10m 0s. Jenkins returned HTTP 503 while trying to fetch build status.",
+        expect.stringMatching(
+          /^WARN: Jenkins is reachable again after \d+ms\.$/,
+        ),
+      ]);
+    });
+
+    test("keeps waiting through a restart and reports the final result", async () => {
+      const errorSpy = trackRestore(spyOn(console, "error")).mockImplementation(
+        () => undefined,
+      );
+      const sink = capture();
+      const getBuildStatus = mock()
+        .mockResolvedValueOnce(running)
+        .mockRejectedValueOnce(unavailable())
+        .mockRejectedValueOnce(
+          new CliError(
+            "Network error while trying to fetch build status.",
+            [],
+            "JENKINS_UNREACHABLE",
+          ),
+        )
+        .mockResolvedValueOnce(running)
+        .mockResolvedValueOnce({
+          ...running,
+          result: "SUCCESS",
+          building: false,
+        });
+
+      await runWait({
+        client: createClient({ getBuildStatus }),
+        env,
+        buildUrl,
+        interval: "1ms",
+        nonInteractive: true,
+        json: true,
+        write: sink.write,
+      });
+
+      const parsed = JSON.parse(sink.output()) as {
+        ok: boolean;
+        data: { result: string };
+      };
+      expect(parsed.ok).toBe(true);
+      expect(parsed.data.result).toBe("SUCCESS");
+      expect(process.exitCode).toBe(0);
+      expect(getBuildStatus).toHaveBeenCalledTimes(5);
+      const warnings = errorSpy.mock.calls.map((call) => String(call[0]));
+      expect(warnings).toEqual([
+        "WARN: Jenkins is unavailable, retrying for up to 10m 0s. Jenkins returned HTTP 503 while trying to fetch build status.",
+        expect.stringMatching(
+          /^WARN: Jenkins is reachable again after \d+ms\.$/,
+        ),
+      ]);
+    });
+
+    test("starts by job while Jenkins is still unavailable", async () => {
+      const errorSpy = trackRestore(spyOn(console, "error")).mockImplementation(
+        () => undefined,
+      );
+      const sink = capture();
+      const getLastBuild = mock()
+        .mockRejectedValueOnce(unavailable())
+        .mockResolvedValueOnce({
+          buildNumber: 9,
+          buildUrl,
+          building: false,
+          result: "SUCCESS",
+        });
+      const getBuildStatus = mock(async () => ({
+        ...running,
+        result: "SUCCESS",
+        building: false,
+      }));
+
+      await runWait({
+        client: createClient({ getLastBuild, getBuildStatus }),
+        env,
+        jobUrl: "https://jenkins.example.com/job/api/",
+        interval: "1ms",
+        nonInteractive: true,
+        json: true,
+        write: sink.write,
+      });
+
+      expect(JSON.parse(sink.output()).data.result).toBe("SUCCESS");
+      expect(process.exitCode).toBe(0);
+      const warnings = errorSpy.mock.calls.map((call) => String(call[0]));
+      expect(warnings).toEqual([
+        "WARN: Jenkins is unavailable, retrying for up to 10m 0s. Jenkins returned HTTP 503 while trying to fetch build status.",
+        expect.stringMatching(
+          /^WARN: Jenkins is reachable again after \d+ms\.$/,
+        ),
+      ]);
+    });
+
+    test("exits 6 once Jenkins stays unavailable past the limit", async () => {
+      trackRestore(spyOn(console, "error")).mockImplementation(() => undefined);
+      let now = 1_700_000_000_000;
+      trackRestore(spyOn(Date, "now")).mockImplementation(() => now);
+      const sink = capture();
+      const getBuildStatus = mock(async () => {
+        now += JENKINS_UNAVAILABLE_LIMIT_MS / 4;
+        throw unavailable();
+      });
+
+      await runWait({
+        client: createClient({ getBuildStatus }),
+        env,
+        buildUrl,
+        interval: "1ms",
+        nonInteractive: true,
+        json: true,
+        write: sink.write,
+      });
+
+      const parsed = JSON.parse(sink.output()) as {
+        ok: boolean;
+        error: { code: string; message: string };
+      };
+      expect(parsed.ok).toBe(false);
+      expect(parsed.error.code).toBe("JENKINS_UNREACHABLE");
+      expect(parsed.error.message).toBe(
+        "Jenkins stayed unavailable for 10m 0s, so the watch stopped. Jenkins returned HTTP 503 while trying to fetch build status.",
+      );
+      expect(process.exitCode).toBe(6);
+      expect(getBuildStatus).toHaveBeenCalledTimes(5);
+      process.exitCode = 0;
+    });
+
+    test.each<[string, CliError, number]>([
+      [
+        "401",
+        new CliError(
+          "Jenkins returned HTTP 401 while trying to fetch build status.",
+          [],
+          "JENKINS_AUTH_ERROR",
+        ),
+        3,
+      ],
+      [
+        "404",
+        new CliError(
+          "Jenkins returned HTTP 404 while trying to fetch build status.",
+          [],
+          "BUILD_NOT_FOUND",
+        ),
+        4,
+      ],
+    ])("fails at once on HTTP %s", async (_status, error, exitCode) => {
+      const errorSpy = trackRestore(spyOn(console, "error")).mockImplementation(
+        () => undefined,
+      );
+      const sink = capture();
+      const getBuildStatus = mock()
+        .mockResolvedValueOnce(running)
+        .mockRejectedValueOnce(error)
+        .mockResolvedValue({ ...running, result: "SUCCESS", building: false });
+
+      await runWait({
+        client: createClient({ getBuildStatus }),
+        env,
+        buildUrl,
+        interval: "1ms",
+        nonInteractive: true,
+        json: true,
+        write: sink.write,
+      });
+
+      const parsed = JSON.parse(sink.output()) as {
+        ok: boolean;
+        error: { code: string };
+      };
+      expect(parsed.ok).toBe(false);
+      expect(parsed.error.code).toBe(error.code);
+      expect(process.exitCode).toBe(exitCode);
+      expect(getBuildStatus).toHaveBeenCalledTimes(2);
+      expect(errorSpy).not.toHaveBeenCalled();
+      process.exitCode = 0;
+    });
   });
 });

@@ -23,6 +23,7 @@ import {
   printHint,
   printLine,
   printOk,
+  printWarning,
 } from "../cli";
 import { runMenuAction } from "./menu-action";
 import { CLI_FLAGS } from "../cli-constants";
@@ -66,6 +67,7 @@ import {
   nextWatchPollMs,
   parseWatchIntervalMs,
   requestCancellationForWatchTarget,
+  trackJenkinsOutage,
   waitForPollIntervalOrCancel,
 } from "./watch-utils";
 import { createWatchSpinner } from "./watch-output";
@@ -793,41 +795,53 @@ async function watchBuildStatusStructured(options: {
   let buildUrl = options.buildUrl;
   let buildNumber = options.buildNumber;
   let completedPolls = 0;
+  const outage = trackJenkinsOutage({
+    intervalMs: options.intervalMs,
+    report: printWarning,
+  });
   while (true) {
-    if (!buildUrl && options.queueUrl) {
-      const queued = await options.client.getQueueBuild(options.queueUrl);
-      if (queued?.buildUrl) {
-        buildUrl = queued.buildUrl;
-        buildNumber = queued.buildNumber;
-      }
-    }
-    if (buildUrl) {
-      const status = await options.client.getBuildStatus(buildUrl);
-      if (!status.building) {
-        return {
-          result: status.result ?? "UNKNOWN",
-          buildNumber: status.buildNumber ?? buildNumber,
-          buildUrl: status.buildUrl ?? buildUrl,
-        };
-      }
-    } else {
-      const watched = await findWatchedBuild(
-        options.client,
-        options.jobUrl,
-        options.baselineBuildNumber,
-      );
-      if (watched) {
-        buildNumber = watched.buildNumber;
-        buildUrl = watched.buildUrl;
-        if (!watched.building) {
-          return {
-            result: watched.result ?? "UNKNOWN",
-            buildNumber,
-            buildUrl,
-          };
+    try {
+      if (!buildUrl && options.queueUrl) {
+        const queued = await options.client.getQueueBuild(options.queueUrl);
+        if (queued?.buildUrl) {
+          buildUrl = queued.buildUrl;
+          buildNumber = queued.buildNumber;
         }
       }
+      if (buildUrl) {
+        const status = await options.client.getBuildStatus(buildUrl);
+        if (!status.building) {
+          outage.recovered();
+          return {
+            result: status.result ?? "UNKNOWN",
+            buildNumber: status.buildNumber ?? buildNumber,
+            buildUrl: status.buildUrl ?? buildUrl,
+          };
+        }
+      } else {
+        const watched = await findWatchedBuild(
+          options.client,
+          options.jobUrl,
+          options.baselineBuildNumber,
+        );
+        if (watched) {
+          buildNumber = watched.buildNumber;
+          buildUrl = watched.buildUrl;
+          if (!watched.building) {
+            outage.recovered();
+            return {
+              result: watched.result ?? "UNKNOWN",
+              buildNumber,
+              buildUrl,
+            };
+          }
+        }
+      }
+    } catch (error) {
+      await Bun.sleep(outage.retryDelayMs(error));
+      continue;
     }
+    outage.recovered();
     await Bun.sleep(nextWatchPollMs(completedPolls++, options.intervalMs));
   }
 }
@@ -1110,6 +1124,16 @@ async function watchBuildStatus(options: {
   if (statusSpinner) {
     statusSpinner.start(watchPrompt);
   }
+  const outage = trackJenkinsOutage({
+    intervalMs: options.intervalMs,
+    report: (message) => {
+      if (statusSpinner) {
+        persistWatchMessage({ spinner: statusSpinner, watchPrompt, message });
+      } else {
+        printWarning(message);
+      }
+    },
+  });
 
   let buildUrl = options.buildUrl;
   let buildNumber = options.buildNumber;
@@ -1183,98 +1207,110 @@ async function watchBuildStatus(options: {
         }
       }
 
-      if (buildUrl) {
-        const status = await options.client.getBuildStatus(buildUrl);
-        const result = status.building ? "RUNNING" : status.result || "UNKNOWN";
-        const details = toStatusDetails(status, { knownTotalStages });
-        const message = formatWatchMessage({
-          jobLabel: options.jobLabel,
-          buildNumber: status.buildNumber ?? buildNumber,
-          result,
-          details,
-        });
-        emitWatchMessage({ spinner: statusSpinner, message });
-        if (!status.building) {
-          if (statusSpinner) {
-            statusSpinner.stop("Build completed.");
-          }
-          const summary = formatCompletionSummary({
+      try {
+        if (buildUrl) {
+          const status = await options.client.getBuildStatus(buildUrl);
+          outage.recovered();
+          const result = status.building
+            ? "RUNNING"
+            : status.result || "UNKNOWN";
+          const details = toStatusDetails(status, { knownTotalStages });
+          const message = formatWatchMessage({
             jobLabel: options.jobLabel,
             buildNumber: status.buildNumber ?? buildNumber,
             result,
+            details,
           });
-          const url = status.buildUrl || buildUrl;
-          if (result === "SUCCESS") {
-            await persistKnownTotalStages({
-              env: options.env,
-              jobUrl: options.jobUrl,
-              buildUrl: url,
-              stages: status.stages,
+          emitWatchMessage({ spinner: statusSpinner, message });
+          if (!status.building) {
+            if (statusSpinner) {
+              statusSpinner.stop("Build completed.");
+            }
+            const summary = formatCompletionSummary({
               jobLabel: options.jobLabel,
+              buildNumber: status.buildNumber ?? buildNumber,
+              result,
             });
+            const url = status.buildUrl || buildUrl;
+            if (result === "SUCCESS") {
+              await persistKnownTotalStages({
+                env: options.env,
+                jobUrl: options.jobUrl,
+                buildUrl: url,
+                stages: status.stages,
+                jobLabel: options.jobLabel,
+              });
+            }
+            const detailsText = formatStatusDetails(details, url);
+            printOk(detailsText ? `${summary}\n${detailsText}` : summary);
+            return {
+              result,
+              buildNumber: status.buildNumber ?? buildNumber,
+              cancelIssued,
+            };
           }
-          const detailsText = formatStatusDetails(details, url);
-          printOk(detailsText ? `${summary}\n${detailsText}` : summary);
-          return {
-            result,
-            buildNumber: status.buildNumber ?? buildNumber,
-            cancelIssued,
-          };
-        }
-      } else if (queueUrl) {
-        const queueItem = await options.client.getQueueBuild(queueUrl);
-        if (queueItem?.buildUrl) {
-          buildUrl = queueItem.buildUrl;
-          buildNumber = queueItem.buildNumber;
-          if (knownTotalStages === undefined) {
-            knownTotalStages = await getKnownStageTotal({
-              env: options.env,
-              jobUrl: options.jobUrl,
-              buildUrl,
-            });
+        } else if (queueUrl) {
+          const queueItem = await options.client.getQueueBuild(queueUrl);
+          if (queueItem?.buildUrl) {
+            buildUrl = queueItem.buildUrl;
+            buildNumber = queueItem.buildNumber;
+            if (knownTotalStages === undefined) {
+              knownTotalStages = await getKnownStageTotal({
+                env: options.env,
+                jobUrl: options.jobUrl,
+                buildUrl,
+              });
+            }
+            continue;
           }
-          continue;
+          const watched = await findWatchedBuild(
+            options.client,
+            options.jobUrl,
+            baselineBuildNumber,
+          );
+          if (watched) {
+            queueUrl = undefined;
+            buildNumber = watched.buildNumber;
+            buildUrl = watched.buildUrl;
+            continue;
+          }
+          const elapsedMs = Date.now() - watchStartMs;
+          emitWatchMessage({
+            spinner: statusSpinner,
+            message: formatQueueMessage({
+              jobLabel: options.jobLabel,
+              elapsedMs,
+            }),
+          });
+        } else {
+          const watched = await findWatchedBuild(
+            options.client,
+            options.jobUrl,
+            baselineBuildNumber,
+          );
+          // Once the build is known, the build-URL branch reports its status.
+          if (watched) {
+            buildNumber = watched.buildNumber;
+            buildUrl = watched.buildUrl;
+            continue;
+          }
+          const elapsedMs = Date.now() - watchStartMs;
+          emitWatchMessage({
+            spinner: statusSpinner,
+            message: formatPendingMessage({
+              jobLabel: options.jobLabel,
+              elapsedMs,
+            }),
+          });
         }
-        const watched = await findWatchedBuild(
-          options.client,
-          options.jobUrl,
-          baselineBuildNumber,
+      } catch (error) {
+        await waitForPollIntervalOrCancel(
+          outage.retryDelayMs(error),
+          cancelSignal,
         );
-        if (watched) {
-          queueUrl = undefined;
-          buildNumber = watched.buildNumber;
-          buildUrl = watched.buildUrl;
-          continue;
-        }
-        const elapsedMs = Date.now() - watchStartMs;
-        emitWatchMessage({
-          spinner: statusSpinner,
-          message: formatQueueMessage({
-            jobLabel: options.jobLabel,
-            elapsedMs,
-          }),
-        });
-      } else {
-        const watched = await findWatchedBuild(
-          options.client,
-          options.jobUrl,
-          baselineBuildNumber,
-        );
-        // Once the build is known, the build-URL branch reports its status.
-        if (watched) {
-          buildNumber = watched.buildNumber;
-          buildUrl = watched.buildUrl;
-          continue;
-        }
-        const elapsedMs = Date.now() - watchStartMs;
-        emitWatchMessage({
-          spinner: statusSpinner,
-          message: formatPendingMessage({
-            jobLabel: options.jobLabel,
-            elapsedMs,
-          }),
-        });
+        continue;
       }
+      outage.recovered();
 
       await waitForPollIntervalOrCancel(
         nextWatchPollMs(completedPolls++, options.intervalMs),

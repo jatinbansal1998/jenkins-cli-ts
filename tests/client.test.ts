@@ -4,7 +4,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { CliError } from "../src/cli";
-import { JenkinsClient } from "../src/jenkins/client";
+import { isJenkinsUnavailable, JenkinsClient } from "../src/jenkins/client";
 import { JENKINS_READ_LIMIT } from "../src/map-with-limit";
 
 const realFetch = globalThis.fetch;
@@ -161,6 +161,47 @@ describe("server build URL trust", () => {
         (await client().getQueueBuild(`${baseUrl}/queue/item/17/`))?.buildUrl,
       ).toBeUndefined();
     }
+  });
+
+  test("queue lookups surface an unavailable Jenkins so a watch retries", async () => {
+    globalThis.fetch = mock(
+      async () => new Response("", { status: 503 }),
+    ) as unknown as typeof fetch;
+    const unavailable = await captureCliError(
+      client().getQueueBuild(`${baseUrl}/queue/item/17/`),
+    );
+    expect(isJenkinsUnavailable(unavailable)).toBe(true);
+
+    globalThis.fetch = mock(async () => {
+      throw new TypeError("Unable to connect");
+    }) as unknown as typeof fetch;
+    const refused = await captureCliError(
+      client().getQueueBuild(`${baseUrl}/queue/item/17/`),
+    );
+    expect(refused.code).toBe("JENKINS_UNREACHABLE");
+
+    globalThis.fetch = mock(
+      async () => new Response("", { status: 404 }),
+    ) as unknown as typeof fetch;
+    expect(
+      await client().getQueueBuild(`${baseUrl}/queue/item/17/`),
+    ).toBeNull();
+  });
+
+  test("a trigger succeeds when the queue lookup after it finds Jenkins unavailable", async () => {
+    globalThis.fetch = mock(async (input: FetchInput) => {
+      if (String(input).includes("/queue/item/17/"))
+        return new Response("", { status: 503 });
+      return new Response("", {
+        status: 201,
+        headers: { Location: `${baseUrl}/queue/item/17/` },
+      });
+    }) as unknown as typeof fetch;
+    expect(await client().triggerBuild(jobUrl, {})).toMatchObject({
+      jobUrl,
+      queueUrl: `${baseUrl}/queue/item/17/`,
+      buildUrl: undefined,
+    });
   });
 
   test("trigger results retain the submitted job URL", async () => {
@@ -569,6 +610,42 @@ describe("JenkinsClient triggerBuild", () => {
     );
 
     expect(error.code).toBe(code);
+  });
+
+  test.each<[number, boolean]>([
+    [502, true],
+    [503, true],
+    [504, true],
+    [500, false],
+    [401, false],
+    [404, false],
+  ])("HTTP %i means Jenkins is unavailable: %p", async (status, expected) => {
+    globalThis.fetch = mock(
+      async () => new Response("", { status }),
+    ) as unknown as typeof fetch;
+    const client = createClient();
+
+    const error = await captureCliError(
+      client.getLastBuild("https://jenkins.example.com/job/my-job/"),
+    );
+
+    expect(isJenkinsUnavailable(error)).toBe(expected);
+  });
+
+  test("a refused connection means Jenkins is unavailable", async () => {
+    globalThis.fetch = mock(async () => {
+      throw new TypeError(
+        "Unable to connect. Is the computer able to access the url?",
+      );
+    }) as unknown as typeof fetch;
+    const client = createClient();
+
+    const error = await captureCliError(
+      client.getLastBuild("https://jenkins.example.com/job/my-job/"),
+    );
+
+    expect(error.code).toBe("JENKINS_UNREACHABLE");
+    expect(isJenkinsUnavailable(error)).toBe(true);
   });
 });
 
@@ -1347,6 +1424,26 @@ describe("JenkinsClient build status polling", () => {
     expect(second.queueTimeMs).toBe(3_000);
     expect(third.queueTimeMs).toBe(3_000);
     expect(server.count("/queue/item/3/")).toBe(2);
+  });
+
+  test("an unavailable wfapi fails the poll so a watch retries it", async () => {
+    serveBuild({ wfapiStatus: 503 });
+    const error = await captureCliError(
+      createClient().getBuildStatus(buildUrl),
+    );
+    expect(isJenkinsUnavailable(error)).toBe(true);
+  });
+
+  test("an unavailable Jenkins fails a pipeline node read", async () => {
+    globalThis.fetch = mock(
+      async () => new Response("", { status: 502 }),
+    ) as unknown as typeof fetch;
+    const error = await captureCliError(
+      createClient().getPipelineNodeDescription(
+        "/job/my-job/7/execution/node/12/wfapi/describe",
+      ),
+    );
+    expect(isJenkinsUnavailable(error)).toBe(true);
   });
 
   test("a failing wfapi is retried on the next poll", async () => {

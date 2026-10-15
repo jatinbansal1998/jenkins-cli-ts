@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, mock, test } from "bun:test";
+import { afterEach, describe, expect, mock, spyOn, test } from "bun:test";
 import { CliError } from "../src/cli";
 import {
   MIN_CHUNK_INTERVAL_MS,
@@ -8,7 +8,7 @@ import {
 } from "../src/commands/logs";
 import type { EnvConfig } from "../src/env";
 import type { JenkinsClient } from "../src/jenkins/client";
-import type { BuildStatus } from "../src/types/jenkins";
+import type { BuildStatus, ConsoleChunk } from "../src/types/jenkins";
 
 const env: EnvConfig = {
   jenkinsUrl: "https://jenkins.example.com",
@@ -149,6 +149,255 @@ describe("logs command", () => {
     // One status read to start, one once the log closed; none per poll.
     expect(getBuildStatus).toHaveBeenCalledTimes(2);
   });
+
+  test("follow resumes after a Jenkins restart without repeating output", async () => {
+    const errorSpy = spyOn(console, "error").mockImplementation(
+      () => undefined,
+    );
+    const output: string[] = [];
+    const getBuildStatus = mock()
+      .mockResolvedValueOnce({ buildNumber: 9, buildUrl, building: true })
+      .mockResolvedValueOnce({
+        buildNumber: 9,
+        buildUrl,
+        building: false,
+        result: "SUCCESS",
+      });
+    const reads: Array<() => Promise<ConsoleChunk>> = [
+      async () => ({ text: "a\n", nextStart: 2, hasMore: true }),
+      async () => ({ text: "", nextStart: 2, hasMore: true }),
+      async () => ({ text: "b\n", nextStart: 4, hasMore: true }),
+      async () => {
+        throw new CliError(
+          "Jenkins returned HTTP 503 while trying to fetch build logs.",
+          [],
+          "JENKINS_HTTP_ERROR",
+          { details: { httpStatus: 503 } },
+        );
+      },
+      async () => ({ text: "", nextStart: 4, hasMore: false }),
+    ];
+    const getConsoleChunk = mock(
+      async (_url: string, _offset: number) => await reads.shift()!(),
+    );
+
+    try {
+      await runLogs({
+        client: client({ getBuildStatus, getConsoleChunk }),
+        env,
+        buildUrl,
+        follow: true,
+        plain: true,
+        poll: "1ms",
+        nonInteractive: true,
+        writeText: (value) => output.push(value),
+      });
+
+      expect(output.join("")).toBe("a\nb\n");
+      // The read after the outage starts after "b", which was already shown.
+      expect(getConsoleChunk.mock.calls.map((call) => call[1])).toEqual([
+        0, 2, 2, 4, 4,
+      ]);
+      const warnings = errorSpy.mock.calls
+        .map((call) => String(call[0]))
+        .filter((line) => line.startsWith("WARN:"));
+      expect(warnings).toEqual([
+        "WARN: Jenkins is unavailable, retrying for up to 10m 0s. Jenkins returned HTTP 503 while trying to fetch build logs.",
+        expect.stringMatching(/^WARN: Jenkins is reachable again after /),
+      ]);
+    } finally {
+      errorSpy.mockRestore();
+    }
+  });
+
+  test("waits for a queued build through a Jenkins restart", async () => {
+    const errorSpy = spyOn(console, "error").mockImplementation(
+      () => undefined,
+    );
+    const output: string[] = [];
+    const getQueueBuild = mock()
+      .mockResolvedValueOnce(null)
+      .mockRejectedValueOnce(
+        new CliError(
+          "Jenkins returned HTTP 503 while trying to fetch queue item.",
+          [],
+          "JENKINS_HTTP_ERROR",
+          { details: { httpStatus: 503 } },
+        ),
+      )
+      .mockResolvedValueOnce({ buildUrl, buildNumber: 9 });
+    const getBuildStatus = mock(async () => ({
+      buildNumber: 9,
+      buildUrl,
+      building: false,
+      result: "SUCCESS",
+    }));
+    const getConsoleChunk = mock(async () => ({
+      text: "a\n",
+      nextStart: 2,
+      hasMore: false,
+    }));
+
+    try {
+      await runLogs({
+        client: client({ getQueueBuild, getBuildStatus, getConsoleChunk }),
+        env,
+        queueUrl: "https://jenkins.example.com/queue/item/17/",
+        plain: true,
+        poll: "1ms",
+        nonInteractive: true,
+        writeText: (value) => output.push(value),
+      });
+
+      expect(output.join("")).toBe("a\n");
+      expect(getQueueBuild).toHaveBeenCalledTimes(3);
+      const warnings = errorSpy.mock.calls
+        .map((call) => String(call[0]))
+        .filter((line) => line.startsWith("WARN:"));
+      expect(warnings).toEqual([
+        "WARN: Jenkins is unavailable, retrying for up to 10m 0s. Jenkins returned HTTP 503 while trying to fetch queue item.",
+        expect.stringMatching(/^WARN: Jenkins is reachable again after /),
+      ]);
+    } finally {
+      errorSpy.mockRestore();
+    }
+  });
+
+  test("follow reports recovery when the build ends during an outage", async () => {
+    const errorSpy = spyOn(console, "error").mockImplementation(
+      () => undefined,
+    );
+    const output: string[] = [];
+    const getBuildStatus = mock()
+      .mockResolvedValueOnce({ buildNumber: 9, buildUrl, building: true })
+      .mockRejectedValueOnce(
+        new CliError(
+          "Jenkins returned HTTP 503 while trying to fetch build status.",
+          [],
+          "JENKINS_HTTP_ERROR",
+          { details: { httpStatus: 503 } },
+        ),
+      )
+      .mockResolvedValue({
+        buildNumber: 9,
+        buildUrl,
+        building: false,
+        result: "SUCCESS",
+      });
+    const getConsoleChunk = mock(async (_url: string, _offset: number) => ({
+      text: "a\n",
+      nextStart: 2,
+      hasMore: false,
+    }));
+
+    try {
+      await runLogs({
+        client: client({ getBuildStatus, getConsoleChunk }),
+        env,
+        buildUrl,
+        follow: true,
+        plain: true,
+        poll: "1ms",
+        nonInteractive: true,
+        writeText: (value) => output.push(value),
+      });
+
+      expect(output.join("")).toBe("a\n");
+      const warnings = errorSpy.mock.calls
+        .map((call) => String(call[0]))
+        .filter((line) => line.startsWith("WARN:"));
+      expect(warnings).toEqual([
+        "WARN: Jenkins is unavailable, retrying for up to 10m 0s. Jenkins returned HTTP 503 while trying to fetch build status.",
+        expect.stringMatching(/^WARN: Jenkins is reachable again after /),
+      ]);
+    } finally {
+      errorSpy.mockRestore();
+    }
+  });
+
+  test.each(["whole build", "stage"])(
+    "follow (%s) retries an outage during its first catch-up read",
+    async (target) => {
+      const errorSpy = spyOn(console, "error").mockImplementation(
+        () => undefined,
+      );
+      const output: string[] = [];
+      const stage = target === "stage";
+      const getBuildStatus = mock()
+        .mockResolvedValueOnce({
+          buildNumber: 9,
+          buildUrl,
+          building: true,
+          stages: buildAndTestStages("IN_PROGRESS"),
+        })
+        .mockResolvedValue({
+          buildNumber: 9,
+          buildUrl,
+          building: false,
+          result: "SUCCESS",
+          stages: buildAndTestStages("SUCCESS"),
+        });
+      const reads: Array<() => Promise<ConsoleChunk>> = [
+        async () => ({ text: "a\n", nextStart: 2, hasMore: true }),
+        async () => {
+          throw new CliError(
+            "Jenkins returned HTTP 503 while trying to fetch build logs.",
+            [],
+            "JENKINS_HTTP_ERROR",
+            { details: { httpStatus: 503 } },
+          );
+        },
+        async () => ({ text: "b\n", nextStart: 4, hasMore: false }),
+        // Only the stage path reads again after its final status refresh.
+        async () => ({ text: "", nextStart: 4, hasMore: false }),
+      ];
+      const readChunk = mock(
+        async (_url: string, _offset: number) => await reads.shift()!(),
+      );
+
+      try {
+        await runLogs({
+          client: client({
+            getBuildStatus,
+            getConsoleChunk: readChunk,
+            getPipelineNodeDescription: mock(async () => ({
+              id: "20",
+              stageFlowNodes: [
+                {
+                  id: "21",
+                  name: "Step 21",
+                  status: "IN_PROGRESS",
+                  startTimeMillis: 21,
+                  parentNodes: ["20"],
+                  _links: { log: { href: "/node/21/wfapi/log" } },
+                },
+              ],
+            })),
+            getPipelineNodeLog: mock(async () => ({
+              hasMore: false,
+              consoleUrl: "/node/21/log",
+            })),
+            getPipelineNodeConsoleChunk: readChunk,
+          }),
+          env,
+          buildUrl,
+          ...(stage ? { stage: "Test" } : {}),
+          follow: true,
+          plain: true,
+          poll: "1ms",
+          nonInteractive: true,
+          writeText: (value) => output.push(value),
+        });
+
+        expect(output.join("")).toBe("a\nb\n");
+        expect(readChunk.mock.calls.map((call) => call[1])).toEqual(
+          stage ? [0, 2, 2, 4] : [0, 2, 2],
+        );
+      } finally {
+        errorSpy.mockRestore();
+      }
+    },
+  );
 
   test("defaults redirected output to one snapshot", async () => {
     const stdoutDescriptor = Object.getOwnPropertyDescriptor(
@@ -793,6 +1042,88 @@ describe("logs command", () => {
         url.includes("/21/"),
       ),
     ).toHaveLength(1);
+  });
+
+  test("follows a stage through a Jenkins restart without repeating output", async () => {
+    const errorSpy = spyOn(console, "error").mockImplementation(
+      () => undefined,
+    );
+    const output: string[] = [];
+    const running = {
+      buildNumber: 9,
+      buildUrl,
+      building: true,
+      stages: buildAndTestStages("IN_PROGRESS"),
+    };
+    const getBuildStatus = mock()
+      .mockResolvedValueOnce(running)
+      .mockResolvedValueOnce(running)
+      .mockResolvedValueOnce({
+        ...running,
+        building: false,
+        result: "SUCCESS",
+        stages: buildAndTestStages("SUCCESS"),
+      });
+    const getPipelineNodeDescription = mock(async () => ({
+      id: "20",
+      stageFlowNodes: [
+        {
+          id: "21",
+          name: "Step 21",
+          status: "IN_PROGRESS",
+          startTimeMillis: 21,
+          parentNodes: ["20"],
+          _links: { log: { href: "/node/21/wfapi/log" } },
+        },
+      ],
+    }));
+    const getPipelineNodeLog = mock(async () => ({
+      hasMore: false,
+      consoleUrl: "/node/21/log",
+    }));
+    const reads: Array<() => Promise<ConsoleChunk>> = [
+      async () => ({ text: "a\n", nextStart: 2, hasMore: false }),
+      async () => ({ text: "b\n", nextStart: 4, hasMore: true }),
+      async () => {
+        throw new CliError(
+          "Jenkins returned HTTP 503 while trying to fetch pipeline node log.",
+          [],
+          "JENKINS_HTTP_ERROR",
+          { details: { httpStatus: 503 } },
+        );
+      },
+      async () => ({ text: "", nextStart: 4, hasMore: false }),
+    ];
+    const getPipelineNodeConsoleChunk = mock(
+      async (_url: string, _offset: number) => await reads.shift()!(),
+    );
+
+    try {
+      await runLogs({
+        client: client({
+          getBuildStatus,
+          getPipelineNodeDescription,
+          getPipelineNodeLog,
+          getPipelineNodeConsoleChunk,
+        }),
+        env,
+        buildUrl,
+        stage: "Test",
+        follow: true,
+        poll: "1ms",
+        nonInteractive: true,
+        writeText: (value) => output.push(value),
+      });
+
+      expect(output.join("")).toBe("a\nb\n");
+      // The read after the outage starts after "b", which was already shown.
+      expect(
+        getPipelineNodeConsoleChunk.mock.calls.map((call) => call[1]),
+      ).toEqual([0, 2, 4, 4]);
+      expect(getBuildStatus).toHaveBeenCalledTimes(3);
+    } finally {
+      errorSpy.mockRestore();
+    }
   });
 
   test("keeps a finished stage's detail while the build still runs", async () => {

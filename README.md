@@ -146,6 +146,14 @@ profile. Retries apply only to requests that are safe to repeat: triggering a
 build, creating an item, and approving or aborting an input never retry, because
 a lost response may hide a request that Jenkins already carried out.
 
+`build --watch`, `wait`, and `logs --follow` ride out a Jenkins restart. While
+Jenkins answers with HTTP 502, 503, or 504 or refuses the connection, they print
+one notice and keep polling with backoff. The notice goes to stderr unless a
+live terminal spinner shows it, so `--json` and `--jsonl` output stays valid.
+After 10 minutes without an answer they stop watching with exit code `6`. They
+do not cancel the build, which may finish while Jenkins is unavailable, so
+check it with `status` once Jenkins is back.
+
 ## Scripts and agents
 
 Use `--json` for structured output and `help --json` to discover supported
@@ -167,7 +175,8 @@ streaming uses `--jsonl` instead. Diagnostics go to stderr.
 A failure is `{ ok: false, error: { code, message, hints, details? } }`.
 `hints` holds the same next steps the text output prints, and is `[]` when
 there are none. `details` is present only for codes that carry structured
-context. `JOB_AMBIGUOUS` and `JOB_NOT_FOUND` list the jobs the name could mean:
+context. `JENKINS_HTTP_ERROR` carries the response status as `httpStatus`.
+`JOB_AMBIGUOUS` and `JOB_NOT_FOUND` list the jobs the name could mean:
 
 ```json
 {

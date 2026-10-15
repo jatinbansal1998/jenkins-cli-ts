@@ -1,10 +1,22 @@
-import { describe, expect, mock, test } from "bun:test";
+import {
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  mock,
+  spyOn,
+  test,
+} from "bun:test";
+import { CliError } from "../src/cli";
 import {
   findWatchedBuild,
+  JENKINS_UNAVAILABLE_LIMIT_MS,
+  trackJenkinsOutage,
   nextWatchPollMs,
   parseWatchIntervalMs,
   waitForPollIntervalOrCancel,
 } from "../src/commands/watch-utils";
+import { EXIT_CODES, exitCodeFor, type ErrorCode } from "../src/error-codes";
 import type { JenkinsClient } from "../src/jenkins/client";
 import type { LastBuildSummary } from "../src/types/jenkins";
 
@@ -134,5 +146,118 @@ describe("findWatchedBuild", () => {
     expect(
       await findWatchedBuild(clientReturning(null), jobUrl, undefined),
     ).toBeNull();
+  });
+});
+
+function jenkinsError(code: ErrorCode, httpStatus?: number): CliError {
+  const message = `Jenkins request failed (${httpStatus ?? code}).`;
+  return code === "JENKINS_HTTP_ERROR" && httpStatus !== undefined
+    ? new CliError(message, [], code, { details: { httpStatus } })
+    : new CliError(message, [], code);
+}
+
+describe("trackJenkinsOutage", () => {
+  let now = 0;
+  let nowSpy: ReturnType<typeof spyOn<DateConstructor, "now">>;
+
+  beforeEach(() => {
+    now = 1_700_000_000_000;
+    nowSpy = spyOn(Date, "now").mockImplementation(() => now);
+  });
+
+  afterEach(() => {
+    nowSpy.mockRestore();
+  });
+
+  test("reports an outage once, backs off, and reports recovery", () => {
+    const reports: string[] = [];
+    const outage = trackJenkinsOutage({
+      intervalMs: 5_000,
+      report: (message) => reports.push(message),
+    });
+
+    const delays = [
+      jenkinsError("JENKINS_HTTP_ERROR", 503),
+      jenkinsError("JENKINS_HTTP_ERROR", 502),
+      jenkinsError("JENKINS_UNREACHABLE"),
+      jenkinsError("JENKINS_HTTP_ERROR", 504),
+      jenkinsError("JENKINS_UNREACHABLE"),
+    ].map((error) => outage.retryDelayMs(error));
+
+    expect(delays).toEqual([5_000, 10_000, 20_000, 30_000, 30_000]);
+    expect(reports).toEqual([
+      "Jenkins is unavailable, retrying for up to 10m 0s. Jenkins request failed (503).",
+    ]);
+
+    now += 65_000;
+    outage.recovered();
+    outage.recovered();
+    expect(reports.slice(1)).toEqual([
+      "Jenkins is reachable again after 1m 5s.",
+    ]);
+  });
+
+  test.each<[ErrorCode, number | undefined]>([
+    ["JENKINS_AUTH_ERROR", undefined],
+    ["BUILD_NOT_FOUND", undefined],
+    ["JENKINS_NOT_FOUND", undefined],
+    ["JENKINS_HTTP_ERROR", 500],
+    ["JENKINS_TIMEOUT", undefined],
+    ["JENKINS_INVALID_RESPONSE", undefined],
+  ])("rethrows %s %p at once", (code, httpStatus) => {
+    const reports: string[] = [];
+    const outage = trackJenkinsOutage({
+      intervalMs: 5_000,
+      report: (message) => reports.push(message),
+    });
+    const error = jenkinsError(code, httpStatus);
+
+    expect(() => outage.retryDelayMs(error)).toThrow(error);
+    expect(reports).toEqual([]);
+  });
+
+  test("gives up with a Jenkins error once the outage outlasts the limit", () => {
+    const outage = trackJenkinsOutage({
+      intervalMs: 5_000,
+      report: () => undefined,
+    });
+    const unavailable = jenkinsError("JENKINS_HTTP_ERROR", 503);
+
+    outage.retryDelayMs(unavailable);
+    now += JENKINS_UNAVAILABLE_LIMIT_MS - 1;
+    expect(outage.retryDelayMs(unavailable)).toBe(10_000);
+    now += 1;
+
+    let thrown: unknown;
+    try {
+      outage.retryDelayMs(unavailable);
+    } catch (error) {
+      thrown = error;
+    }
+    expect(thrown).toBeInstanceOf(CliError);
+    const error = thrown as CliError;
+    expect(error.code).toBe("JENKINS_UNREACHABLE");
+    expect(exitCodeFor(error)).toBe(EXIT_CODES.JENKINS);
+    expect(error.message).toBe(
+      "Jenkins stayed unavailable for 10m 0s, so the watch stopped. Jenkins request failed (503).",
+    );
+    expect(error.cause).toBe(unavailable);
+  });
+
+  test("a new outage after recovery gets its own time limit", () => {
+    const outage = trackJenkinsOutage({
+      intervalMs: 5_000,
+      report: () => undefined,
+    });
+    const unavailable = jenkinsError("JENKINS_UNREACHABLE");
+
+    outage.retryDelayMs(unavailable);
+    now += JENKINS_UNAVAILABLE_LIMIT_MS - 1;
+    outage.recovered();
+    now += 1;
+
+    expect(outage.retryDelayMs(unavailable)).toBe(5_000);
+    now += JENKINS_UNAVAILABLE_LIMIT_MS - 1;
+    expect(outage.retryDelayMs(unavailable)).toBe(10_000);
   });
 });

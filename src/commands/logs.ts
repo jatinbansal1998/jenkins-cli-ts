@@ -3,7 +3,7 @@ import { logCliError } from "../logger";
 import { confirm, isCancel, select, text } from "../clack";
 
 import { type BuildSelection, resolveBuildSelector } from "../build-selector";
-import { CliError, printHint, writeStdout } from "../cli";
+import { CliError, printHint, printWarning, writeStdout } from "../cli";
 import type { EnvConfig } from "../env";
 import type { JenkinsClient } from "../jenkins/client";
 import {
@@ -32,9 +32,10 @@ import type {
   BuildHistoryEntry,
   BuildStatus,
   ConsoleChunk,
+  QueueBuildReference,
 } from "../types/jenkins";
 import { parseOptionalDurationMs } from "../duration";
-import { waitForPollIntervalOrCancel } from "./watch-utils";
+import { trackJenkinsOutage, waitForPollIntervalOrCancel } from "./watch-utils";
 
 export const DEFAULT_LOG_POLL_MS = 1_000;
 // X-More-Data stays true for as long as a build writes, so without a floor a
@@ -470,7 +471,7 @@ async function streamWholeBuildLogs(options: {
         more: options.effective.follow || snapshot.hasMore,
       });
     }
-  } else {
+  } else if (!options.effective.follow) {
     const streamed = await readAvailableChunks({
       getChunk: (start) =>
         options.client.getConsoleChunk(options.buildUrl, start),
@@ -480,7 +481,7 @@ async function streamWholeBuildLogs(options: {
           text: chunk.text,
           offset: start,
           nextOffset: chunk.nextStart,
-          more: chunk.hasMore || options.effective.follow,
+          more: chunk.hasMore,
         }),
       cancelSignal: options.cancelSignal,
     });
@@ -491,44 +492,62 @@ async function streamWholeBuildLogs(options: {
     logOpen = streamed.hasMore;
   }
 
+  const outage = trackJenkinsOutage({
+    intervalMs: options.pollMs,
+    report: printWarning,
+  });
+  // Without a snapshot, the first pass reads the log written so far, so an
+  // outage during that catch-up is retried too.
   while (options.effective.follow) {
     if (options.cancelSignal?.isCancelled()) {
       return true;
     }
-    // A proxy that strips X-More-Data makes every read look final; the status
-    // check below then keeps the loop going while the build still runs.
-    if (!logOpen) {
-      const status = await options.client.getBuildStatus(options.buildUrl);
-      if (!status.building) {
-        options.emitter.complete({
-          buildUrl: status.buildUrl ?? options.buildUrl,
-          offset,
-          result: status.result,
-        });
-        return false;
+    try {
+      // A proxy that strips X-More-Data makes every read look final; the status
+      // check below then keeps the loop going while the build still runs.
+      if (!logOpen) {
+        const status = await options.client.getBuildStatus(options.buildUrl);
+        if (!status.building) {
+          outage.recovered();
+          options.emitter.complete({
+            buildUrl: status.buildUrl ?? options.buildUrl,
+            offset,
+            result: status.result,
+          });
+          return false;
+        }
       }
+      const streamed = await readAvailableChunks({
+        getChunk: (start) =>
+          options.client.getConsoleChunk(options.buildUrl, start),
+        offset,
+        onChunk: (chunk, start) => {
+          options.emitter.chunk({
+            text: chunk.text,
+            offset: start,
+            nextOffset: chunk.nextStart,
+            more: true,
+          });
+          // A read that fails later resumes after the output emitted so far.
+          offset = chunk.nextStart;
+        },
+        cancelSignal: options.cancelSignal,
+      });
+      if (streamed.cancelled) {
+        return true;
+      }
+      offset = streamed.offset;
+      logOpen = streamed.hasMore;
+    } catch (error) {
+      if (await waitForPoll(outage.retryDelayMs(error), options.cancelSignal)) {
+        return true;
+      }
+      continue;
     }
+    outage.recovered();
     if (await waitForPoll(options.pollMs, options.cancelSignal)) {
       return true;
     }
-    const streamed = await readAvailableChunks({
-      getChunk: (start) =>
-        options.client.getConsoleChunk(options.buildUrl, start),
-      offset,
-      onChunk: (chunk, start) =>
-        options.emitter.chunk({
-          text: chunk.text,
-          offset: start,
-          nextOffset: chunk.nextStart,
-          more: true,
-        }),
-      cancelSignal: options.cancelSignal,
-    });
-    if (streamed.cancelled) {
-      return true;
-    }
-    offset = streamed.offset;
-    logOpen = streamed.hasMore;
   }
 
   const status = await options.client.getBuildStatus(options.buildUrl);
@@ -597,7 +616,7 @@ async function streamPipelineLogs(options: {
       });
       emittedBytes = tailed.skippedBytes + bytes;
     }
-  } else {
+  } else if (!options.effective.follow || !status.building) {
     for (const state of states.values()) {
       const streamed = await streamPipelineSource(
         options.client,
@@ -621,47 +640,67 @@ async function streamPipelineLogs(options: {
     }
   }
 
-  // Each poll reads status once; getBuildStatus carries the wfapi stage list
-  // too, so it doubles as the stage discovery input.
+  const outage = trackJenkinsOutage({
+    intervalMs: options.pollMs,
+    report: printWarning,
+  });
+  // Without a snapshot, the first pass reads the log written so far, so an
+  // outage during that catch-up is retried too. Each later poll reads status
+  // once; getBuildStatus carries the wfapi stage list too, so it doubles as
+  // the stage discovery input.
+  let caughtUp = Boolean(options.effective.tail);
   while (options.effective.follow && status.building) {
-    if ([...states.values()].some((entry) => !entry.source.consoleUrl)) {
-      throw new CliError(
-        "Jenkins exposes only a completed Pipeline node log for this running build.",
-        ["Retry after the node completes, or omit --follow."],
-        "PIPELINE_STAGE_LOG_UNAVAILABLE",
-      );
-    }
-    if (await waitForPoll(options.pollMs, options.cancelSignal)) {
-      return true;
-    }
-    status = await options.client.getBuildStatus(options.buildUrl);
-    mergePipelineSources(
-      states,
-      (await resolver.resolve(status.stages)).sources,
-    );
-    // Read after the status check, so the final pass also catches output
-    // written between the last poll and the build finishing.
-    for (const state of states.values()) {
-      const streamed = await streamPipelineSource(
-        options.client,
-        state,
-        options.cancelSignal,
-        (textValue) => {
-          const start = emittedBytes;
-          emittedBytes += Buffer.byteLength(textValue);
-          options.emitter.chunk({
-            text: textValue,
-            offset: start,
-            nextOffset: emittedBytes,
-            more: true,
-            identity: state.source.identity,
-          });
-        },
-      );
-      if (streamed) {
+    if (caughtUp) {
+      if ([...states.values()].some((entry) => !entry.source.consoleUrl)) {
+        throw new CliError(
+          "Jenkins exposes only a completed Pipeline node log for this running build.",
+          ["Retry after the node completes, or omit --follow."],
+          "PIPELINE_STAGE_LOG_UNAVAILABLE",
+        );
+      }
+      if (await waitForPoll(options.pollMs, options.cancelSignal)) {
         return true;
       }
     }
+    try {
+      if (caughtUp) {
+        status = await options.client.getBuildStatus(options.buildUrl);
+        mergePipelineSources(
+          states,
+          (await resolver.resolve(status.stages)).sources,
+        );
+      }
+      // Read after the status check, so the final pass also catches output
+      // written between the last poll and the build finishing.
+      for (const state of states.values()) {
+        const streamed = await streamPipelineSource(
+          options.client,
+          state,
+          options.cancelSignal,
+          (textValue) => {
+            const start = emittedBytes;
+            emittedBytes += Buffer.byteLength(textValue);
+            options.emitter.chunk({
+              text: textValue,
+              offset: start,
+              nextOffset: emittedBytes,
+              more: true,
+              identity: state.source.identity,
+            });
+          },
+        );
+        if (streamed) {
+          return true;
+        }
+      }
+    } catch (error) {
+      if (await waitForPoll(outage.retryDelayMs(error), options.cancelSignal)) {
+        return true;
+      }
+      continue;
+    }
+    caughtUp = true;
+    outage.recovered();
   }
 
   options.emitter.complete({
@@ -726,6 +765,8 @@ async function streamPipelineSource(
       if (chunk.text) {
         onText(chunk.text);
       }
+      // A read that fails later resumes after the output emitted so far.
+      state.offset = chunk.nextStart;
     },
     cancelSignal,
   });
@@ -955,8 +996,19 @@ async function waitForQueuedBuild(
   queueUrl: string,
   pollMs: number,
 ): Promise<string> {
+  const outage = trackJenkinsOutage({
+    intervalMs: pollMs,
+    report: printWarning,
+  });
   while (true) {
-    const queueBuild = await client.getQueueBuild(queueUrl);
+    let queueBuild: QueueBuildReference | null;
+    try {
+      queueBuild = await client.getQueueBuild(queueUrl);
+    } catch (error) {
+      await Bun.sleep(outage.retryDelayMs(error));
+      continue;
+    }
+    outage.recovered();
     if (queueBuild?.buildUrl) {
       return queueBuild.buildUrl;
     }

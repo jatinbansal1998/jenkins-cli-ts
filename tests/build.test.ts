@@ -8,6 +8,7 @@ import {
   test,
 } from "bun:test";
 import type * as clack from "../src/clack";
+import { CliError } from "../src/cli";
 import type { EnvConfig } from "../src/env";
 import { BUILD_WITHOUT_PARAMS_VALUE } from "../src/flows/constants";
 import type { JenkinsClient } from "../src/jenkins/client";
@@ -1032,6 +1033,148 @@ describe("build command", () => {
       process.exitCode = originalExitCode;
     }
   });
+
+  test("non-interactive watch keeps polling through a Jenkins restart", async () => {
+    const originalExitCode = process.exitCode;
+    process.exitCode = 0;
+    const sleepSpy = spyOn(Bun, "sleep").mockResolvedValue(undefined);
+    const warnSpy = spyOn(console, "error").mockImplementation(() => undefined);
+
+    const running = {
+      buildNumber: 381,
+      buildUrl: BUILD_URL,
+      result: null,
+      building: true,
+    };
+    const getLastBuild = mock(async () => lastBuildSummary(380));
+    const triggerBuild = mock(async () => ({
+      buildUrl: BUILD_URL,
+      buildNumber: 381,
+      jobUrl: JOB_URL,
+    }));
+    const getBuildStatus = mock()
+      .mockResolvedValueOnce(running)
+      .mockRejectedValueOnce(
+        new CliError(
+          "Jenkins returned HTTP 503 while trying to fetch build status.",
+          [],
+          "JENKINS_HTTP_ERROR",
+          { details: { httpStatus: 503 } },
+        ),
+      )
+      .mockRejectedValueOnce(
+        new CliError(
+          "Network error while trying to fetch build status.",
+          [],
+          "JENKINS_UNREACHABLE",
+        ),
+      )
+      .mockResolvedValueOnce({
+        ...running,
+        result: "SUCCESS",
+        building: false,
+      });
+
+    try {
+      await runBuild({
+        client: createClient({ getLastBuild, triggerBuild, getBuildStatus }),
+        env: {} as EnvConfig,
+        jobUrl: JOB_URL,
+        branch: "staging",
+        nonInteractive: true,
+        watch: true,
+      });
+
+      const notifyCalls = notifyBuildCompleteMock.mock.calls as unknown as [
+        [{ message: string }],
+      ];
+      expect(notifyCalls[0]?.[0]?.message).toContain("Build #381 SUCCESS");
+      expect(process.exitCode).toBe(0);
+      expect(getBuildStatus).toHaveBeenCalledTimes(4);
+      // The first ramped poll, then the outage backoff from the 5s default.
+      expect(sleepSpy.mock.calls.map((call) => call[0])).toEqual([
+        1_000, 5_000, 10_000,
+      ]);
+      const warnings = warnSpy.mock.calls
+        .map((call) => String(call[0]))
+        .filter((line) => line.startsWith("WARN:"));
+      expect(warnings).toEqual([
+        "WARN: Jenkins is unavailable, retrying for up to 10m 0s. Jenkins returned HTTP 503 while trying to fetch build status.",
+        // The first poll after the outage finds the build finished.
+        expect.stringMatching(
+          /^WARN: Jenkins is reachable again after \d+ms\.$/,
+        ),
+      ]);
+    } finally {
+      sleepSpy.mockRestore();
+      warnSpy.mockRestore();
+      process.exitCode = originalExitCode;
+    }
+  });
+
+  test.each(["build URL", "job"])(
+    "JSON watch by %s reports recovery when the build ends during an outage",
+    async (target) => {
+      const output: string[] = [];
+      const sleepSpy = spyOn(Bun, "sleep").mockResolvedValue(undefined);
+      const warnSpy = spyOn(console, "error").mockImplementation(
+        () => undefined,
+      );
+      const unavailable = new CliError(
+        "Jenkins returned HTTP 503 while trying to fetch build status.",
+        [],
+        "JENKINS_HTTP_ERROR",
+        { details: { httpStatus: 503 } },
+      );
+      const finished = lastBuildSummary(381);
+      const getLastBuild =
+        target === "job"
+          ? mock()
+              .mockResolvedValueOnce(lastBuildSummary(380))
+              .mockRejectedValueOnce(unavailable)
+              .mockResolvedValueOnce(finished)
+          : mock(async () => lastBuildSummary(380));
+      const triggerBuild = mock(async () =>
+        target === "job"
+          ? { jobUrl: JOB_URL }
+          : { buildUrl: BUILD_URL, buildNumber: 381, jobUrl: JOB_URL },
+      );
+      const getBuildStatus = mock()
+        .mockRejectedValueOnce(unavailable)
+        .mockResolvedValueOnce(finished);
+
+      try {
+        await runBuild({
+          client: createClient({ getLastBuild, triggerBuild, getBuildStatus }),
+          env: {} as EnvConfig,
+          jobUrl: JOB_URL,
+          branch: "staging",
+          nonInteractive: true,
+          json: true,
+          watch: true,
+          write: (value) => output.push(value),
+        });
+
+        expect(JSON.parse(output.join(""))).toMatchObject({
+          ok: true,
+          data: { result: "SUCCESS" },
+        });
+
+        const warnings = warnSpy.mock.calls
+          .map((call) => String(call[0]))
+          .filter((line) => line.startsWith("WARN:"));
+        expect(warnings).toEqual([
+          "WARN: Jenkins is unavailable, retrying for up to 10m 0s. Jenkins returned HTTP 503 while trying to fetch build status.",
+          expect.stringMatching(
+            /^WARN: Jenkins is reachable again after \d+ms\.$/,
+          ),
+        ]);
+      } finally {
+        sleepSpy.mockRestore();
+        warnSpy.mockRestore();
+      }
+    },
+  );
 
   test("non-interactive watch finds the new build by job when Jenkins returns no queue URL", async () => {
     const originalExitCode = process.exitCode;

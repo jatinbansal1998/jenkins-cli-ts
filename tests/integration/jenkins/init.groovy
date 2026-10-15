@@ -469,6 +469,18 @@ stage('Watch') {
 ''', true))
 stageFollowPipeline.save()
 
+// Runs outside `node`, so it holds no executor. The sleep keeps it running
+// while a test makes Jenkins unavailable to the CLI.
+def restartWatchPipeline = jenkins.createProject(WorkflowJob.class, "cli-restart-watch")
+restartWatchPipeline.setDefinition(new CpsFlowDefinition('''
+stage('Restart') {
+  echo 'restart-watch-started'
+  sleep 30
+  echo 'restart-watch-finished'
+}
+''', true))
+restartWatchPipeline.save()
+
 def timestampedLogJob = jenkins.createProject(WorkflowJob.class, "cli-timestamped-logs")
 timestampedLogJob.setDefinition(new CpsFlowDefinition('''
 timestamps {
