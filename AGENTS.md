@@ -66,7 +66,9 @@ Report any failures — do not claim work is validated if these fail.
   Linux with a systemd user session, caps its memory with swap off. A bare
   `bun test` or `bun scripts/test-jenkins-integration.ts` has neither.
 - Any loop that runs tests, mutation testing included, must wrap each run in
-  `timeout`, e.g. `timeout -k 10s 120s bun run test tests/build.test.ts`.
+  a timeout. Use `bun scripts/run-bounded.ts --minutes 2 --memory 3G -- bun test
+--isolate tests/build.test.ts`, which works on every platform and also caps
+  memory, or GNU `timeout -k 10s 120s bun run test tests/build.test.ts`.
   Bun's per-test timeout is not enough: a test stuck in a loop of resolved
   promises never yields to the timer that enforces it.
 - Nothing may be left running in the background. Let each run finish or kill

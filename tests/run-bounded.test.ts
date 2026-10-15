@@ -1,11 +1,16 @@
 import { describe, expect, test } from "bun:test";
+import { chmod, mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { parseArguments, systemdScopeAvailable } from "../scripts/run-bounded";
 
 async function runBounded(
   limits: string[],
   command: string[],
+  env: Record<string, string | undefined> = process.env,
 ): Promise<{ exitCode: number; stdout: string; stderr: string }> {
   const subprocess = Bun.spawn({
+    env,
     cmd: [
       process.execPath,
       "scripts/run-bounded.ts",
@@ -63,6 +68,34 @@ describe("bounded test runner", () => {
       expect(result.stderr).toContain("ran past 0.02 min");
       expect(Date.now() - started).toBeLessThan(10_000);
       expect(isRunning(backgroundPid)).toBe(false);
+    },
+    20_000,
+  );
+
+  test.skipIf(process.platform === "win32")(
+    "still enforces the time limit where systemd cannot start a scope",
+    async () => {
+      // Mirrors GitHub's Ubuntu runners: systemd is installed, but its scopes
+      // cannot be started from the runner's cgroup.
+      const fakeBin = await mkdtemp(join(tmpdir(), "run-bounded-systemd-"));
+      try {
+        const systemdRun = join(fakeBin, "systemd-run");
+        await Bun.write(
+          systemdRun,
+          '#!/bin/sh\n[ "$1" = --version ] && { echo "systemd 255"; exit 0; }\necho "Failed to get PID slice" >&2\nexit 1\n',
+        );
+        await chmod(systemdRun, 0o755);
+        const result = await runBounded(
+          ["--minutes", "0.02", "--memory", "1G"],
+          ["sleep", "30"],
+          { ...process.env, PATH: `${fakeBin}:${process.env.PATH ?? ""}` },
+        );
+
+        expect(result.exitCode).toBe(124);
+        expect(result.stderr).toContain("systemd scopes are unavailable");
+      } finally {
+        await rm(fakeBin, { recursive: true, force: true });
+      }
     },
     20_000,
   );

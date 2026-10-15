@@ -1,13 +1,18 @@
-import { existsSync } from "node:fs";
+import type { Subprocess } from "bun";
 import { constants } from "node:os";
-import { join } from "node:path";
 
 const USAGE =
   "Usage: bun scripts/run-bounded.ts --minutes <n> --memory <size, e.g. 4G> -- <command> [args...]";
 // Long enough for the Jenkins harness to remove its container after SIGTERM.
 const KILL_GRACE_MS = 15_000;
 // --slice-inherit keeps the scope inside the caller's slice (and its limits).
-const MIN_SYSTEMD_VERSION = 254;
+const SCOPE_COMMAND = [
+  "systemd-run",
+  "--user",
+  "--scope",
+  "--quiet",
+  "--slice-inherit",
+];
 const FORWARDED_SIGNALS = ["SIGINT", "SIGTERM", "SIGHUP"] as const;
 
 type Limits = { minutes: number; memory: string };
@@ -38,12 +43,14 @@ function readOption(options: string[], name: string): string | undefined {
  * pushed into swap, which is what froze the machine instead of killing the test.
  */
 export function systemdScopeAvailable(): boolean {
-  const runtimeDir = process.env.XDG_RUNTIME_DIR;
-  if (process.platform !== "linux" || !runtimeDir) return false;
-  if (!existsSync(join(runtimeDir, "systemd", "private"))) return false;
-  if (!Bun.which("systemd-run")) return false;
-  const version = Bun.spawnSync(["systemd-run", "--version"]).stdout.toString();
-  return Number(version.match(/^systemd (\d+)/)?.[1]) >= MIN_SYSTEMD_VERSION;
+  if (process.platform !== "linux" || !Bun.which("systemd-run")) return false;
+  // Probe instead of inspecting the host: CI runners have a user manager but
+  // their processes sit outside any user slice, so --slice-inherit fails.
+  const probe = Bun.spawnSync([...SCOPE_COMMAND, "true"], {
+    stdout: "ignore",
+    stderr: "ignore",
+  });
+  return probe.exitCode === 0;
 }
 
 async function main(): Promise<number> {
@@ -53,19 +60,39 @@ async function main(): Promise<number> {
     : undefined;
   if (!unit) {
     console.error(
-      `run-bounded: no systemd user manager; enforcing the ${limits.minutes} min limit only, not the ${limits.memory} memory cap.`,
+      `run-bounded: systemd scopes are unavailable here; enforcing the ${limits.minutes} min limit only, not the ${limits.memory} memory cap.`,
     );
   }
   // Windows has no process groups; there only the direct child can be signalled.
   const ownGroup = process.platform !== "win32";
-  const child = Bun.spawn({
+  let child: Subprocess | undefined;
+  let pendingSignal: NodeJS.Signals | undefined;
+  const signalChild = (signal: NodeJS.Signals): void => {
+    if (!child) return;
+    try {
+      if (ownGroup) process.kill(-child.pid, signal);
+      else child.kill(signal);
+    } catch {
+      // The group is already gone.
+    }
+  };
+  // A child that traps the signal still has to go within the grace period.
+  const stop = (signal: NodeJS.Signals): void => {
+    if (!child) {
+      pendingSignal = signal;
+      return;
+    }
+    signalChild(signal);
+    setTimeout(() => signalChild("SIGKILL"), KILL_GRACE_MS).unref();
+  };
+  for (const signal of FORWARDED_SIGNALS) {
+    process.on(signal, () => stop(signal));
+  }
+
+  child = Bun.spawn({
     cmd: unit
       ? [
-          "systemd-run",
-          "--user",
-          "--scope",
-          "--quiet",
-          "--slice-inherit",
+          ...SCOPE_COMMAND,
           `--unit=${unit}`,
           `--property=MemoryMax=${limits.memory}`,
           "--property=MemorySwapMax=0",
@@ -78,17 +105,7 @@ async function main(): Promise<number> {
     stderr: "inherit",
     detached: ownGroup,
   });
-  const signalChild = (signal: NodeJS.Signals): void => {
-    try {
-      if (ownGroup) process.kill(-child.pid, signal);
-      else child.kill(signal);
-    } catch {
-      // The group is already gone.
-    }
-  };
-  for (const signal of FORWARDED_SIGNALS) {
-    process.on(signal, () => signalChild(signal));
-  }
+  if (pendingSignal) stop(pendingSignal);
 
   let timedOut = false;
   const timeout = setTimeout(() => {
@@ -96,8 +113,7 @@ async function main(): Promise<number> {
     console.error(
       `\nrun-bounded: ${command.join(" ")} ran past ${limits.minutes} min; stopping it.`,
     );
-    signalChild("SIGTERM");
-    setTimeout(() => signalChild("SIGKILL"), KILL_GRACE_MS).unref();
+    stop("SIGTERM");
   }, limits.minutes * 60_000);
   const exitCode = await child.exited;
   clearTimeout(timeout);

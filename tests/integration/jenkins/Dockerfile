@@ -10,4 +10,4 @@ RUN git config --system --add safe.directory /run/jenkins-cli-integration/backen
 USER jenkins
 # The controller stops itself (and --rm removes it) even when the harness is
 # killed before it can clean up. Longer than any bounded integration run.
-ENTRYPOINT ["/usr/bin/tini", "--", "timeout", "60m", "/usr/local/bin/jenkins.sh"]
+ENTRYPOINT ["/usr/bin/tini", "--", "timeout", "-k", "10s", "60m", "/usr/local/bin/jenkins.sh"]

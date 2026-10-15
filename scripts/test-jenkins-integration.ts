@@ -64,6 +64,7 @@ const runtimeDir = await mkdtemp(
 );
 
 let containerStarted = false;
+let containerLaunch: Promise<string> | undefined;
 let imageBuilt = false;
 let nativeProcess: ReturnType<typeof Bun.spawn> | undefined;
 let toxiproxyProcess: ReturnType<typeof Bun.spawn> | undefined;
@@ -172,34 +173,40 @@ if (prepareNativeManifestPath) {
         { inherit: true },
       );
       imageBuilt = true;
-      await runChecked([
-        "docker",
-        "run",
-        "--detach",
-        "--rm",
-        "--name",
-        containerName,
-        "--publish",
-        "127.0.0.1::8080",
-        "--memory",
-        JENKINS_CONTAINER_MEMORY,
-        "--memory-swap",
-        JENKINS_CONTAINER_MEMORY,
-        "--tmpfs",
-        "/var/jenkins_home:rw,uid=1000,gid=1000",
-        "--env",
-        `JAVA_OPTS=${JENKINS_MAX_HEAP} -Djenkins.install.runSetupWizard=false -Dhudson.plugins.git.GitSCM.ALLOW_LOCAL_CHECKOUT=true`,
-        "--env",
-        "JENKINS_OPTS=--prefix=/jenkins",
-        "--env",
-        "JENKINS_INTEGRATION_RUNTIME_DIR=/run/jenkins-cli-integration",
-        "--mount",
-        `type=bind,source=${fixture},target=/usr/share/jenkins/ref/init.groovy.d/01-integration.groovy,readonly`,
-        "--mount",
-        `type=bind,source=${runtimeDir},target=/run/jenkins-cli-integration`,
-        image,
-      ]);
+      // A signal during `docker run` must still remove the container, so the
+      // launch runs outside the signalled process group and cleanup awaits it.
       containerStarted = true;
+      containerLaunch = runChecked(
+        [
+          "docker",
+          "run",
+          "--detach",
+          "--rm",
+          "--name",
+          containerName,
+          "--publish",
+          "127.0.0.1::8080",
+          "--memory",
+          JENKINS_CONTAINER_MEMORY,
+          "--memory-swap",
+          JENKINS_CONTAINER_MEMORY,
+          "--tmpfs",
+          "/var/jenkins_home:rw,uid=1000,gid=1000",
+          "--env",
+          `JAVA_OPTS=${JENKINS_MAX_HEAP} -Djenkins.install.runSetupWizard=false -Dhudson.plugins.git.GitSCM.ALLOW_LOCAL_CHECKOUT=true`,
+          "--env",
+          "JENKINS_OPTS=--prefix=/jenkins",
+          "--env",
+          "JENKINS_INTEGRATION_RUNTIME_DIR=/run/jenkins-cli-integration",
+          "--mount",
+          `type=bind,source=${fixture},target=/usr/share/jenkins/ref/init.groovy.d/01-integration.groovy,readonly`,
+          "--mount",
+          `type=bind,source=${runtimeDir},target=/run/jenkins-cli-integration`,
+          image,
+        ],
+        { detached: true },
+      );
+      await containerLaunch;
 
       const portOutput = await runChecked([
         "docker",
@@ -297,6 +304,7 @@ function cleanUp(): Promise<void> {
       await run(["docker", "logs", containerName], { inherit: true });
     }
     if (containerStarted) {
+      await containerLaunch?.catch(() => undefined);
       await run(["docker", "rm", "--force", containerName]);
     }
     if (nativeProcess) {
@@ -707,6 +715,7 @@ type RunOptions = {
   cwd?: string;
   env?: Record<string, string | undefined>;
   inherit?: boolean;
+  detached?: boolean;
 };
 
 async function run(
@@ -721,6 +730,7 @@ async function run(
       env: options.env,
       stdout: options.inherit ? "inherit" : "pipe",
       stderr: options.inherit ? "inherit" : "pipe",
+      detached: options.detached,
     });
   } catch (error) {
     return {
