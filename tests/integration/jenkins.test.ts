@@ -13,7 +13,9 @@ import {
   pollCli,
   runCli,
   runCliExpectFailure,
+  startCli,
   stripTerminalCodes,
+  type BackgroundCli,
   waitForNewBuild,
   withCliHome,
 } from "./jenkins/harness";
@@ -1891,5 +1893,173 @@ describe.skipIf(!integrationEnabled)(
         });
       });
     }, 90_000);
+
+    test("build --watch, wait, and logs --follow keep going while Jenkins restarts", async () => {
+      const gateway = startRestartingGateway();
+      try {
+        await withCliHome(async (home) => {
+          const started: BackgroundCli[] = [];
+          try {
+            const env = { JENKINS_URL: gateway.root };
+            const jobUrl = `${gateway.root}/job/cli-restart-watch/`;
+            const start = (args: string[]) => {
+              const cli = startCli(home, args, env);
+              started.push(cli);
+              return cli;
+            };
+            const build = start([
+              "build",
+              "--job-url",
+              jobUrl,
+              "--without-params",
+              "--watch",
+            ]);
+            // Started once this scenario's build runs, so the job's latest
+            // build is this one whatever builds the job had before.
+            await build.waitForOutput("RUNNING");
+            const wait = start(["wait", "--job-url", jobUrl, "--json"]);
+            const logs = start([
+              "logs",
+              "--job-url",
+              jobUrl,
+              "--follow",
+              "--plain",
+            ]);
+            const stageLogs = start([
+              "logs",
+              "--job-url",
+              jobUrl,
+              "--stage",
+              "Restart",
+              "--follow",
+              "--plain",
+            ]);
+            await logs.waitForOutput("restart-watch-started");
+            await stageLogs.waitForOutput("restart-watch-started");
+
+            await gateway.restart();
+            const [built, waited, ...followed] = await Promise.all([
+              build.finished,
+              wait.finished,
+              logs.finished,
+              stageLogs.finished,
+            ]);
+
+            const unavailable =
+              "WARN: Jenkins is unavailable, retrying for up to 10m 0s. Jenkins returned HTTP 503";
+            const reachable =
+              /^WARN: Jenkins is reachable again after (\d+m )?\d+s\.$/m;
+            expect(built.exitCode, built.output).toBe(0);
+            expect(built.stderr).toContain(unavailable);
+            expect(built.stderr).toMatch(reachable);
+            const buildNumber = Number(
+              built.stdout.match(/: #(\d+) SUCCESS$/m)?.[1],
+            );
+            expect(buildNumber, built.output).toBeGreaterThan(0);
+
+            expect(waited.exitCode, waited.output).toBe(0);
+            expect(waited.stderr).toContain(unavailable);
+            expect(waited.stderr).toMatch(reachable);
+            expect(JSON.parse(waited.stdout)).toMatchObject({
+              ok: true,
+              command: "wait",
+              data: { result: "SUCCESS", build: { number: buildNumber } },
+            });
+
+            for (const result of followed) {
+              expect(result.exitCode, result.output).toBe(0);
+              expect(result.stderr).toContain(unavailable);
+              expect(result.stderr).toMatch(reachable);
+              expect(
+                result.stdout.match(/^restart-watch-started$/gm),
+                result.output,
+              ).toHaveLength(1);
+              expect(
+                result.stdout.match(/^restart-watch-finished$/gm),
+                result.output,
+              ).toHaveLength(1);
+            }
+          } finally {
+            // A failed step must not leave a CLI polling after the test.
+            for (const cli of started) {
+              cli.kill("SIGKILL");
+            }
+            await Promise.all(started.map((cli) => cli.finished));
+          }
+        });
+      } finally {
+        await gateway.stop();
+      }
+    }, 180_000);
   },
 );
+
+/**
+ * A reverse proxy in front of the controller that acts out a Jenkins restart
+ * the way a gateway such as nginx shows one: HTTP 503 first, then refused
+ * connections, then Jenkins again. The real controller keeps running, because
+ * the Docker image cannot restart Jenkins in place.
+ */
+function startRestartingGateway(): {
+  root: string;
+  restart: () => Promise<void>;
+  stop: () => Promise<void>;
+} {
+  let restarting = false;
+  const fetchThroughGateway = async (request: Request): Promise<Response> => {
+    if (restarting) {
+      return new Response("Please wait while Jenkins is restarting", {
+        status: 503,
+      });
+    }
+    const incoming = new URL(request.url);
+    const target = new URL(jenkinsUrl!);
+    target.pathname = incoming.pathname;
+    target.search = incoming.search;
+    const headers = new Headers(request.headers);
+    headers.delete("host");
+    // Jenkins then builds its links on the gateway, as behind a real proxy.
+    headers.set("x-forwarded-host", incoming.host);
+    headers.set("x-forwarded-port", incoming.port);
+    headers.set("x-forwarded-proto", "http");
+    const response = await fetch(target, {
+      method: request.method,
+      headers,
+      body:
+        request.method === "GET" || request.method === "HEAD"
+          ? undefined
+          : await request.arrayBuffer(),
+      redirect: "manual",
+    });
+    const responseHeaders = new Headers(response.headers);
+    responseHeaders.delete("content-length");
+    responseHeaders.delete("content-encoding");
+    return new Response(await response.arrayBuffer(), {
+      status: response.status,
+      headers: responseHeaders,
+    });
+  };
+  const serve = (port: number) =>
+    Bun.serve({
+      hostname: "127.0.0.1",
+      port,
+      idleTimeout: 30,
+      fetch: fetchThroughGateway,
+    });
+  let server = serve(0);
+  const port = server.port!;
+  return {
+    root: `http://127.0.0.1:${port}/jenkins`,
+    async restart() {
+      // Shorter than the 15s a watch waits over its first two retries, so
+      // every watch recovers on its third try.
+      restarting = true;
+      await Bun.sleep(8_000);
+      await server.stop(true);
+      await Bun.sleep(6_000);
+      restarting = false;
+      server = serve(port);
+    },
+    stop: () => server.stop(true),
+  };
+}

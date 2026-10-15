@@ -10,6 +10,19 @@ lists everything since the previous stable release, including its prereleases.
 
 ## [Unreleased]
 
+### Fixed
+
+- `build --watch`, `wait`, and `logs --follow` keep polling while Jenkins is
+  unavailable, for example during a controller restart. They print one notice
+  (on stderr outside a live spinner), back off up to 30 seconds between polls,
+  say when Jenkins answers again, and give up with exit code 6 after 10 minutes. HTTP 502, 503, 504 and
+  failed connections count as unavailable; request timeouts, auth errors, 404
+  and other errors still fail at once.
+
+### Added
+
+- `JENKINS_HTTP_ERROR` errors in `--json` output carry `details.httpStatus`.
+
 ## [1.0.0-rc.6] - 2026-10-06
 
 ### Added

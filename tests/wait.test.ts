@@ -49,6 +49,20 @@ describe("wait command", () => {
     }
   });
 
+  test("waitForBuild rejects a missing target before polling", async () => {
+    const getQueueBuild = mock(async () => null);
+    await expect(
+      waitForBuild({
+        env,
+        client: createClient({ getQueueBuild }),
+        jobLabel: "api",
+        intervalMs: 1,
+        nonInteractive: true,
+      }),
+    ).rejects.toMatchObject({ code: "INVALID_USAGE" });
+    expect(getQueueBuild).not.toHaveBeenCalled();
+  });
+
   test("waitForBuild returns immediately when latest build is already complete", async () => {
     const persistKnownTotalStagesSpy = trackRestore(
       spyOn(stageCountCacheModule, "persistKnownTotalStages"),

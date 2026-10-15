@@ -2,7 +2,8 @@ import { CliError } from "../cli";
 import { parseDurationMs } from "../duration";
 import { assertProtectedMutationAllowed, type EnvConfig } from "../env";
 import { areSameJobUrls, normalizeOptionalJobUrl } from "../job-url";
-import type { JenkinsClient } from "../jenkins/client";
+import { isJenkinsUnavailable, type JenkinsClient } from "../jenkins/client";
+import { formatDuration } from "../status-format";
 import type { LastBuildSummary, QueueItemSummary } from "../types/jenkins";
 
 const DEFAULT_WATCH_INTERVAL_MS = 5_000;
@@ -43,6 +44,77 @@ export function parseWatchIntervalMs(
     );
   }
   return intervalMs;
+}
+
+/** How long a watch keeps polling while Jenkins cannot answer. */
+export const JENKINS_UNAVAILABLE_LIMIT_MS = 10 * 60_000;
+/** While Jenkins is unavailable, polls back off up to this delay. */
+const UNAVAILABLE_MAX_DELAY_MS = 30_000;
+
+type JenkinsOutage = {
+  /**
+   * Returns how long to wait before the next poll, or rethrows `error` when it
+   * does not mean Jenkins is unavailable or the outage outlasted the limit.
+   */
+  retryDelayMs: (error: unknown) => number;
+  /** Call after a poll succeeds. */
+  recovered: () => void;
+};
+
+/**
+ * Keeps a watch polling while Jenkins is temporarily unavailable, as while
+ * the controller restarts. Watches only read an existing build or queue item,
+ * so repeating a poll is safe.
+ */
+export function trackJenkinsOutage(options: {
+  /** The watch's explicit interval; undefined backs off from the default. */
+  intervalMs: number | undefined;
+  report: (message: string) => void;
+}): JenkinsOutage {
+  const pollIntervalMs = options.intervalMs ?? DEFAULT_WATCH_INTERVAL_MS;
+  let startedAt: number | undefined;
+  let delayMs = pollIntervalMs;
+  return {
+    retryDelayMs(error) {
+      if (!isJenkinsUnavailable(error)) {
+        throw error;
+      }
+      const now = Date.now();
+      if (startedAt === undefined) {
+        startedAt = now;
+        delayMs = pollIntervalMs;
+        options.report(
+          `Jenkins is unavailable, retrying for up to ${formatDuration(JENKINS_UNAVAILABLE_LIMIT_MS)}. ${error.message}`,
+        );
+        return delayMs;
+      }
+      const elapsedMs = now - startedAt;
+      if (elapsedMs >= JENKINS_UNAVAILABLE_LIMIT_MS) {
+        throw new CliError(
+          `Jenkins stayed unavailable for ${formatDuration(elapsedMs)}, so the watch stopped. ${error.message}`,
+          [
+            "The build may still be running. Check it with `status`, or resume with `wait`.",
+          ],
+          "JENKINS_UNREACHABLE",
+          { cause: error },
+        );
+      }
+      delayMs = Math.min(
+        delayMs * 2,
+        Math.max(pollIntervalMs, UNAVAILABLE_MAX_DELAY_MS),
+      );
+      return delayMs;
+    },
+    recovered() {
+      if (startedAt === undefined) {
+        return;
+      }
+      options.report(
+        `Jenkins is reachable again after ${formatDuration(Date.now() - startedAt)}.`,
+      );
+      startedAt = undefined;
+    },
+  };
 }
 
 /**

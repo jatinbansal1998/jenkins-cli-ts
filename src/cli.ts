@@ -18,6 +18,7 @@ export type JobCandidate = {
  * that carries it. A code gets its own shape by adding an entry here.
  */
 type CliErrorDetailsByCode = {
+  JENKINS_HTTP_ERROR: { httpStatus: number };
   JOB_AMBIGUOUS: { candidates: JobCandidate[] };
   JOB_NOT_FOUND: { candidates: JobCandidate[] };
 };

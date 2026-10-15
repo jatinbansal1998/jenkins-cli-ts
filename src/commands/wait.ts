@@ -7,6 +7,7 @@ import {
   printError,
   printHint,
   printOk,
+  printWarning,
 } from "../cli";
 import type { EnvConfig } from "../env";
 import type { JenkinsClient } from "../jenkins/client";
@@ -36,10 +37,10 @@ import {
 import { parseOptionalDurationMs } from "../duration";
 import {
   createWatchControlSignal,
-  findWatchedBuild,
   nextWatchPollMs,
   parseWatchIntervalMs,
   requestCancellationForWatchTarget,
+  trackJenkinsOutage,
   waitForPollIntervalOrCancel,
 } from "./watch-utils";
 import { createWatchSpinner } from "./watch-output";
@@ -259,6 +260,13 @@ export async function waitForBuild(options: {
   nonInteractive: boolean;
   suppressOutput?: boolean;
 }): Promise<WaitResult> {
+  if (!options.buildUrl && !options.queueUrl && !options.jobUrl) {
+    throw new CliError(
+      "Missing wait target.",
+      ["Provide --job, --job-url, --build-url, or --queue-url."],
+      "INVALID_USAGE",
+    );
+  }
   const emitOutput = !options.suppressOutput;
   const useSpinner = Boolean(process.stdout.isTTY) && !options.nonInteractive;
   const statusSpinner = useSpinner ? createWatchSpinner() : null;
@@ -275,11 +283,24 @@ export async function waitForBuild(options: {
   if (statusSpinner) {
     statusSpinner.start(watchPrompt);
   }
+  const outage = trackJenkinsOutage({
+    intervalMs: options.intervalMs,
+    report: (message) => {
+      if (statusSpinner) {
+        persistWatchMessage({
+          spinnerInstance: statusSpinner,
+          watchPrompt,
+          message,
+        });
+      } else {
+        printWarning(message);
+      }
+    },
+  });
 
   let buildUrl = options.buildUrl;
   let buildNumber = options.buildNumber;
   let queueUrl = options.queueUrl;
-  let baselineBuildNumber: number | undefined;
   let knownTotalStages = await getKnownStageTotal({
     env: options.env,
     jobUrl: options.jobUrl,
@@ -287,54 +308,6 @@ export async function waitForBuild(options: {
   });
 
   try {
-    if (!buildUrl && !queueUrl && options.jobUrl) {
-      const lastBuild = await options.client.getLastBuild(options.jobUrl);
-      baselineBuildNumber = lastBuild?.buildNumber;
-      if (lastBuild && !lastBuild.building) {
-        const initialStatus = await options.client.getBuildStatus(
-          lastBuild.buildUrl,
-        );
-        if (statusSpinner) {
-          statusSpinner.stop("Build already completed.");
-        }
-        const finalBuildNumber = lastBuild.buildNumber;
-        const finalBuildUrl = lastBuild.buildUrl;
-        return finalizeJobCompletion({
-          initialStatus,
-          knownTotalStages,
-          env: options.env,
-          jobUrl: options.jobUrl,
-          finalBuildUrl,
-          jobLabel: options.jobLabel,
-          emitOutput,
-          renderFinalStatus: (resolvedTotalStages) => {
-            printFinalStatus(
-              options.jobLabel,
-              initialStatus,
-              finalBuildUrl,
-              resolvedTotalStages,
-            );
-          },
-          buildResult: (result) => ({
-            result,
-            buildNumber: finalBuildNumber,
-            buildUrl: finalBuildUrl,
-            durationMs: initialStatus.durationMs,
-            queueTimeMs: initialStatus.queueTimeMs,
-            parameters: initialStatus.parameters,
-            branch: initialStatus.branch,
-            revisions: initialStatus.revisions,
-            triggeredBy: initialStatus.triggeredBy,
-            hadStageInfo: Boolean(initialStatus.stages?.length),
-          }),
-        });
-      }
-      if (lastBuild?.building) {
-        buildUrl = lastBuild.buildUrl;
-        buildNumber = lastBuild.buildNumber;
-      }
-    }
-
     let completedPolls = 0;
     while (true) {
       const elapsedMs = Date.now() - startedAt;
@@ -413,110 +386,106 @@ export async function waitForBuild(options: {
         }
       }
 
-      if (queueUrl) {
-        const queued = await options.client.getQueueBuild(queueUrl);
-        if (queued?.buildUrl) {
-          buildUrl = queued.buildUrl;
-          buildNumber = queued.buildNumber;
-          queueUrl = undefined;
-          knownTotalStages ??= await getKnownStageTotal({
-            env: options.env,
-            jobUrl: options.jobUrl,
-            buildUrl,
-          });
-          continue;
-        }
-        if (options.jobUrl) {
-          const watched = await findWatchedBuild(
-            options.client,
-            options.jobUrl,
-            baselineBuildNumber,
-          );
-          if (watched) {
+      try {
+        if (queueUrl) {
+          const queued = await options.client.getQueueBuild(queueUrl);
+          if (queued?.buildUrl) {
+            buildUrl = queued.buildUrl;
+            buildNumber = queued.buildNumber;
             queueUrl = undefined;
-            buildNumber = watched.buildNumber;
-            buildUrl = watched.buildUrl;
+            knownTotalStages ??= await getKnownStageTotal({
+              env: options.env,
+              jobUrl: options.jobUrl,
+              buildUrl,
+            });
             continue;
           }
-        }
-        emitProgress({
-          spinnerInstance: statusSpinner,
-          message: `${options.jobLabel}: queued | elapsed ${formatDuration(elapsedMs)}`,
-          emitOutput,
-        });
-      } else if (buildUrl) {
-        const status = await options.client.getBuildStatus(buildUrl);
-        const currentResult = status.building
-          ? "RUNNING"
-          : status.result || "UNKNOWN";
-        const message = formatBuildProgress(
-          options.jobLabel,
-          status.buildNumber ?? buildNumber,
-          currentResult,
-          status,
-          knownTotalStages,
-        );
-        emitProgress({ spinnerInstance: statusSpinner, message, emitOutput });
-        if (!status.building) {
-          if (statusSpinner) {
-            statusSpinner.stop("Build completed.");
+          if (options.jobUrl) {
+            const lastBuild = await options.client.getLastBuild(options.jobUrl);
+            if (lastBuild) {
+              queueUrl = undefined;
+              buildNumber = lastBuild.buildNumber;
+              buildUrl = lastBuild.buildUrl;
+              continue;
+            }
           }
-          const finalBuildUrl = status.buildUrl || buildUrl;
-          return finalizeJobCompletion({
-            initialStatus: status,
-            knownTotalStages,
-            env: options.env,
-            jobUrl: options.jobUrl,
-            finalBuildUrl,
-            jobLabel: options.jobLabel,
+          emitProgress({
+            spinnerInstance: statusSpinner,
+            message: `${options.jobLabel}: queued | elapsed ${formatDuration(elapsedMs)}`,
             emitOutput,
-            renderFinalStatus: (resolvedTotalStages) => {
-              printFinalStatus(
-                options.jobLabel,
-                status,
-                finalBuildUrl,
-                resolvedTotalStages,
-              );
-            },
-            buildResult: (result) => ({
-              result,
-              buildNumber: status.buildNumber ?? buildNumber,
-              buildUrl: finalBuildUrl,
-              cancelIssued,
-              durationMs: status.durationMs,
-              queueTimeMs: status.queueTimeMs,
-              parameters: status.parameters,
-              branch: status.branch,
-              revisions: status.revisions,
-              triggeredBy: status.triggeredBy,
-              hadStageInfo: Boolean(status.stages?.length),
-            }),
+          });
+        } else if (buildUrl) {
+          const status = await options.client.getBuildStatus(buildUrl);
+          outage.recovered();
+          const currentResult = status.building
+            ? "RUNNING"
+            : status.result || "UNKNOWN";
+          const message = formatBuildProgress(
+            options.jobLabel,
+            status.buildNumber ?? buildNumber,
+            currentResult,
+            status,
+            knownTotalStages,
+          );
+          emitProgress({ spinnerInstance: statusSpinner, message, emitOutput });
+          if (!status.building) {
+            if (statusSpinner) {
+              statusSpinner.stop("Build completed.");
+            }
+            const finalBuildUrl = status.buildUrl || buildUrl;
+            return finalizeJobCompletion({
+              initialStatus: status,
+              knownTotalStages,
+              env: options.env,
+              jobUrl: options.jobUrl,
+              finalBuildUrl,
+              jobLabel: options.jobLabel,
+              emitOutput,
+              renderFinalStatus: (resolvedTotalStages) => {
+                printFinalStatus(
+                  options.jobLabel,
+                  status,
+                  finalBuildUrl,
+                  resolvedTotalStages,
+                );
+              },
+              buildResult: (result) => ({
+                result,
+                buildNumber: status.buildNumber ?? buildNumber,
+                buildUrl: finalBuildUrl,
+                cancelIssued,
+                durationMs: status.durationMs,
+                queueTimeMs: status.queueTimeMs,
+                parameters: status.parameters,
+                branch: status.branch,
+                revisions: status.revisions,
+                triggeredBy: status.triggeredBy,
+                hadStageInfo: Boolean(status.stages?.length),
+              }),
+            });
+          }
+        } else if (options.jobUrl) {
+          const lastBuild = await options.client.getLastBuild(options.jobUrl);
+          // Once the build is known, the build-URL branch reports its status.
+          if (lastBuild) {
+            buildNumber = lastBuild.buildNumber;
+            buildUrl = lastBuild.buildUrl;
+            continue;
+          }
+          emitProgress({
+            spinnerInstance: statusSpinner,
+            message: `${options.jobLabel}: waiting for build start | elapsed ${formatDuration(elapsedMs)}`,
+            emitOutput,
           });
         }
-      } else if (options.jobUrl) {
-        const watched = await findWatchedBuild(
-          options.client,
-          options.jobUrl,
-          baselineBuildNumber,
+      } catch (error) {
+        await waitForPollIntervalOrCancel(
+          outage.retryDelayMs(error),
+          cancelSignal,
         );
-        // Once the build is known, the build-URL branch reports its status.
-        if (watched) {
-          buildNumber = watched.buildNumber;
-          buildUrl = watched.buildUrl;
-          continue;
-        }
-        emitProgress({
-          spinnerInstance: statusSpinner,
-          message: `${options.jobLabel}: waiting for build start | elapsed ${formatDuration(elapsedMs)}`,
-          emitOutput,
-        });
-      } else {
-        throw new CliError(
-          "Missing wait target.",
-          ["Provide --job, --job-url, --build-url, or --queue-url."],
-          "INVALID_USAGE",
-        );
+        continue;
       }
+      outage.recovered();
 
       await waitForPollIntervalOrCancel(
         nextWatchPollMs(completedPolls++, options.intervalMs),

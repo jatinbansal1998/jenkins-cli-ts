@@ -1333,7 +1333,10 @@ export class JenkinsClient {
         // The POST already committed. A malformed Location cannot be followed.
       }
     }
-    const queueItem = queueUrl ? await this.getQueueItem(queueUrl) : null;
+    // The POST already committed, so a failed lookup must not fail the trigger.
+    const queueItem = queueUrl
+      ? await this.getQueueItem(queueUrl).catch(() => null)
+      : null;
 
     return {
       queueUrl,
@@ -1582,6 +1585,7 @@ export class JenkinsClient {
   ): Promise<never> {
     const status = response.status;
     const detail = await readJenkinsErrorDetail(response);
+    const message = `Jenkins returned HTTP ${status} while trying to ${context}${detail ? `: ${detail}` : "."}`;
     const code =
       status === 401 || status === 403
         ? "JENKINS_AUTH_ERROR"
@@ -1591,12 +1595,13 @@ export class JenkinsClient {
             ? "JENKINS_NOT_FOUND"
             : status === 400
               ? "JENKINS_BAD_REQUEST"
-              : "JENKINS_HTTP_ERROR";
-    throw new CliError(
-      `Jenkins returned HTTP ${status} while trying to ${context}${detail ? `: ${detail}` : "."}`,
-      [],
-      code,
-    );
+              : null;
+    if (code) {
+      throw new CliError(message, [], code);
+    }
+    throw new CliError(message, [], "JENKINS_HTTP_ERROR", {
+      details: { httpStatus: status },
+    });
   }
 
   private withBase(path: string): string {
@@ -1698,14 +1703,18 @@ export class JenkinsClient {
       const response = await this.fetchWithTimeout(
         url,
         { method: "GET", headers },
-        0,
+        this.transportRetries,
         "fetch queue item",
       );
+      if (isGatewayError(response.status)) {
+        await this.raiseHttpError(response, "fetch queue item");
+      }
       if (!response.ok) {
         return null;
       }
       return (await response.json()) as JenkinsApiQueueItem;
-    } catch {
+    } catch (error) {
+      rethrowIfUnavailable(error);
       return null;
     }
   }
@@ -1726,11 +1735,14 @@ export class JenkinsClient {
       const response = await this.fetchWithTimeout(
         url,
         { method: "GET", headers },
-        0,
+        this.transportRetries,
         "fetch pipeline stage",
       );
       if (response.status === 404) {
         this.buildsWithoutWfapi.add(base);
+      }
+      if (isGatewayError(response.status)) {
+        await this.raiseHttpError(response, "fetch pipeline stage");
       }
       if (!response.ok) {
         return null;
@@ -1768,7 +1780,8 @@ export class JenkinsClient {
             : undefined,
         failure,
       };
-    } catch {
+    } catch (error) {
+      rethrowIfUnavailable(error);
       return null;
     }
   }
@@ -1817,14 +1830,18 @@ export class JenkinsClient {
       const response = await this.fetchWithTimeout(
         url,
         { method: "GET", headers },
-        0,
+        this.transportRetries,
         "fetch pipeline node",
       );
+      if (isGatewayError(response.status)) {
+        await this.raiseHttpError(response, "fetch pipeline node");
+      }
       if (!response.ok) {
         return null;
       }
       return (await response.json()) as JenkinsPipelineNodeResponse;
-    } catch {
+    } catch (error) {
+      rethrowIfUnavailable(error);
       return null;
     }
   }
@@ -1853,6 +1870,31 @@ function loginRedirectError(context: string): CliError {
 
 function isGatewayError(status: number): boolean {
   return status === 502 || status === 503 || status === 504;
+}
+
+/**
+ * Whether an error means Jenkins could not answer for now, as while the
+ * controller restarts, rather than that it rejected the request.
+ */
+export function isJenkinsUnavailable(error: unknown): error is CliError {
+  if (!(error instanceof CliError)) {
+    return false;
+  }
+  if (error.details && "httpStatus" in error.details) {
+    return isGatewayError(error.details.httpStatus);
+  }
+  // A timeout stays an error: a hung Jenkins is not one that is restarting.
+  return error.code === "JENKINS_UNREACHABLE";
+}
+
+/**
+ * Optional reads fall back to null, but an unavailable Jenkins must reach the
+ * watch loops, which retry the whole poll until it is back.
+ */
+function rethrowIfUnavailable(error: unknown): void {
+  if (isJenkinsUnavailable(error)) {
+    throw error;
+  }
 }
 
 function isRedirect(response: Response): boolean {
