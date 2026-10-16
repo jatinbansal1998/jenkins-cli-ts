@@ -10,14 +10,10 @@ lists everything since the previous stable release, including its prereleases.
 
 ## [Unreleased]
 
+## [1.1.0-rc.2] - 2026-10-16
+
 ### Fixed
 
-- `build --watch`, `wait`, and `logs --follow` keep polling while Jenkins is
-  unavailable, for example during a controller restart. They print one notice
-  (on stderr outside a live spinner), back off up to 30 seconds between polls,
-  say when Jenkins answers again, and give up with exit code 6 after 10 minutes. HTTP 502, 503, 504 and
-  failed connections count as unavailable; request timeouts, auth errors, 404
-  and other errors still fail at once.
 - `wait` with both `--queue-url` and `--job-url` no longer reports the job's
   previous build while the queued build has not started. It keeps polling the
   queue item, and falls back to the job only once the item is gone, and then
@@ -32,6 +28,23 @@ lists everything since the previous stable release, including its prereleases.
   starts first. It falls back to the job only once the queue item is gone. A
   cancelled queue item ends the watch with result `ABORTED` (exit code 1)
   instead of polling forever.
+
+## [1.1.0-rc.1] - 2026-10-15
+
+### Fixed
+
+- `build --watch`, `wait`, and `logs --follow` keep polling while Jenkins is
+  unavailable, for example during a controller restart. They print one notice
+  (on stderr outside a live spinner), back off up to 30 seconds between polls,
+  say when Jenkins answers again, and give up with exit code 6 after 10 minutes. HTTP 502, 503, 504 and
+  failed connections count as unavailable; request timeouts, auth errors, 404
+  and other errors still fail at once.
+
+### Changed
+
+- `build --watch`, `status --watch`, and `wait` poll after 1s and grow by 1s
+  up to 5s, instead of a fixed 5s. `--interval <dur>` now also works on
+  `build --watch` and `status --watch` and pins a fixed polling interval.
 
 ### Added
 
@@ -602,7 +615,9 @@ No CLI behaviour change.
 
 - Backspace and Delete in the interactive branch picker under Bun.
 
-[Unreleased]: https://github.com/jatinbansal1998/jenkins-cli-ts/compare/v1.0.0-rc.6...HEAD
+[Unreleased]: https://github.com/jatinbansal1998/jenkins-cli-ts/compare/v1.1.0-rc.2...HEAD
+[1.1.0-rc.2]: https://github.com/jatinbansal1998/jenkins-cli-ts/releases/tag/v1.1.0-rc.2
+[1.1.0-rc.1]: https://github.com/jatinbansal1998/jenkins-cli-ts/releases/tag/v1.1.0-rc.1
 [1.0.0-rc.6]: https://github.com/jatinbansal1998/jenkins-cli-ts/releases/tag/v1.0.0-rc.6
 [1.0.0-rc.5]: https://github.com/jatinbansal1998/jenkins-cli-ts/releases/tag/v1.0.0-rc.5
 [1.0.0-rc.4]: https://github.com/jatinbansal1998/jenkins-cli-ts/releases/tag/v1.0.0-rc.4
