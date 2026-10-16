@@ -45,6 +45,12 @@ Default to using Bun instead of Node.js.
 - Idempotent writes (cancel queue item, stop build) may keep the transport
   retry. The crumb retry on 403 is always safe: a 403 means Jenkins rejected
   the request, so nothing was committed.
+- When a write's response does not name what it created (a replay, or a
+  build trigger without a queue `Location`), find the result by baselines
+  captured before the write: the job's last build number and the highest
+  queue id. Apply the baseline to every place you look, builds and queue
+  alike, and give each place a test with a pre-existing match that must be
+  ignored.
 
 ## Validation
 
