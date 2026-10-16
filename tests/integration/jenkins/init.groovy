@@ -330,6 +330,16 @@ node {
 ''', true))
 pipelineTestResultsJob.save()
 
+def buildResultsJob = jenkins.createProject(WorkflowJob.class, "cli-build-results")
+buildResultsJob.addProperty(new ParametersDefinitionProperty([
+  new ChoiceParameterDefinition("OUTCOME", ["SUCCESS", "UNSTABLE", "FAILURE", "ABORTED", "NOT_BUILT"] as String[], "Result the build finishes with")
+]))
+buildResultsJob.setDefinition(new CpsFlowDefinition('''
+echo "build-result:${params.OUTCOME}"
+currentBuild.result = params.OUTCOME
+''', true))
+buildResultsJob.save()
+
 def revisionPipelineRepository = new File(runtimeDir, "pipeline-definitions.git").getAbsolutePath()
 def revisionApplicationRepository = new File(runtimeDir, "backend-api.git").getAbsolutePath()
 def revisionsJob = jenkins.createProject(WorkflowJob.class, "cli-git-revisions")

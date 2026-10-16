@@ -1,4 +1,8 @@
-import { EXIT_CODES, exitCodeFor } from "../error-codes";
+import {
+  EXIT_CODES,
+  exitCodeFor,
+  exitCodeForBuildResult,
+} from "../error-codes";
 import { logCliError } from "../logger";
 import { type BuildSelection, resolveBuildSelector } from "../build-selector";
 import {
@@ -201,7 +205,7 @@ function applyWaitExitCode(result: WaitResult): void {
     return;
   }
   if (result.result !== "SUCCESS") {
-    process.exitCode = EXIT_CODES.FAILURE;
+    process.exitCode = exitCodeForBuildResult(result.result);
   }
 }
 

@@ -1159,7 +1159,7 @@ describe.skipIf(!integrationEnabled)(
           "--watch",
           "--json",
         ]);
-        expect(mixedRun.exitCode, mixedRun.output).toBe(1);
+        expect(mixedRun.exitCode, mixedRun.output).toBe(7);
         const mixedBuild = parseJson<{
           data: { buildNumber: number; buildUrl: string; result: string };
         }>(mixedRun);
@@ -1367,7 +1367,7 @@ describe.skipIf(!integrationEnabled)(
           "--watch",
           "--json",
         ]);
-        expect(matrixRun.exitCode, matrixRun.output).toBe(1);
+        expect(matrixRun.exitCode, matrixRun.output).toBe(7);
         const matrixBuild = parseJson<{
           data: { buildUrl: string; result: string };
         }>(matrixRun);
@@ -1960,7 +1960,7 @@ describe.skipIf(!integrationEnabled)(
           home,
           waitArgs(cancelledItem.queueUrl),
         );
-        expect(cancelledWait.exitCode, cancelledWait.output).toBe(1);
+        expect(cancelledWait.exitCode, cancelledWait.output).toBe(8);
         expect(parseJson(cancelledWait)).toMatchObject({
           ok: true,
           data: { result: "ABORTED" },
@@ -2060,7 +2060,7 @@ describe.skipIf(!integrationEnabled)(
         ]);
         await runCli(home, ["cancel", "--build-url", slowAgainUrl!]);
         const own = await ownWatch;
-        expect(own.exitCode, own.output).toBe(1);
+        expect(own.exitCode, own.output).toBe(8);
         expect(parseJson(own)).toMatchObject({
           ok: true,
           data: { result: "ABORTED" },

@@ -27,6 +27,13 @@ void mock.module("../src/recent-jobs", () => ({
   recordRecentJob: recordRecentJobMock,
 }));
 
+const realLogs = await import("../src/commands/logs");
+const runLogsMock = mock(async () => undefined);
+void mock.module("../src/commands/logs", () => ({
+  ...realLogs,
+  runLogs: runLogsMock,
+}));
+
 const { runReplay } = await import("../src/commands/replay");
 
 const JENKINS_URL = "https://jenkins.example.com";
@@ -95,6 +102,7 @@ beforeEach(() => {
   dir = mkdtempSync(join(tmpdir(), "replay-test-"));
   output = [];
   recordRecentJobMock.mockClear();
+  runLogsMock.mockClear();
   stdoutSpy = spyOn(process.stdout, "write").mockImplementation(
     (chunk: string | Uint8Array) => {
       output.push(String(chunk));
@@ -449,4 +457,76 @@ describe("replay", () => {
     expect(error.message).toContain("redirected to /login");
     expect(client.findReplayedBuild).toHaveBeenCalled();
   });
+});
+
+describe("replay --follow", () => {
+  const RESULTS: [string, number][] = [
+    ["SUCCESS", 0],
+    ["FAILURE", 1],
+    ["UNSTABLE", 7],
+    ["ABORTED", 8],
+    ["NOT_BUILT", 9],
+  ];
+
+  function finishedClient(result: string) {
+    const replayed = `${JOB_URL}/14/`;
+    return {
+      ...fakeClient({
+        found: [{ jobUrl: JOB_URL, buildUrl: replayed, buildNumber: 14 }],
+      }),
+      getBuildStatus: mock(async () => ({
+        buildUrl: replayed,
+        buildNumber: 14,
+        building: false,
+        result,
+      })),
+    };
+  }
+
+  test.each(RESULTS)(
+    "exits with the code for result %s after streaming the logs",
+    async (result, exitCode) => {
+      const client = finishedClient(result);
+      const script = await writeScript("Jenkinsfile", "echo 1");
+
+      await replay(client, { script, follow: true });
+
+      expect(runLogsMock).toHaveBeenCalledTimes(1);
+      expect(process.exitCode).toBe(exitCode);
+    },
+  );
+
+  test("keeps the Ctrl+C exit code when the build ends while logs stop", async () => {
+    const client = finishedClient("FAILURE");
+    const script = await writeScript("Jenkinsfile", "echo 1");
+    runLogsMock.mockImplementationOnce(async () => {
+      process.exitCode = 130;
+    });
+
+    await replay(client, { script, follow: true });
+
+    expect(process.exitCode).toBe(130);
+  });
+
+  test.each(RESULTS)(
+    "exits with the code for result %s under --json",
+    async (result, exitCode) => {
+      const client = finishedClient(result);
+      const script = await writeScript("Jenkinsfile", "echo 1");
+      const written: string[] = [];
+
+      await replay(client, {
+        script,
+        follow: true,
+        json: true,
+        write: (text) => written.push(text),
+      });
+
+      expect(JSON.parse(written.join(""))).toMatchObject({
+        ok: true,
+        data: { result },
+      });
+      expect(process.exitCode).toBe(exitCode);
+    },
+  );
 });

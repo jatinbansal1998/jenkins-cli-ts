@@ -81,7 +81,10 @@ Scripting and AI agents:
           auth status/list/current, update --check, and help.
   --jsonl: logs.
   Output lines are prefixed OK: (success), ERROR: (failure), HINT: (guidance).
-  Exit code is 0 on success and 1 on any error.
+  Exit code is 0 on success and non-zero on any error. build --watch, wait,
+  replay --follow, and status --watch outside its menu exit 1 for FAILURE,
+  7 for UNSTABLE, 8 for ABORTED, 9 for NOT_BUILT; they and logs --follow exit 6
+  if Jenkins stays unavailable for 10 minutes.
   Run "$0 help --full" to print every command's full option reference at once.
   Run "$0 help --json" for the same catalog as one JSON document.
   Unsupported --json combinations fail with a clear message, never an unknown flag.

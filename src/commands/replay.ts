@@ -1,6 +1,6 @@
 import { type BuildSelection, resolveBuildSelector } from "../build-selector";
 import { CliError, printOk, printWarning, writeStdout } from "../cli";
-import { EXIT_CODES } from "../error-codes";
+import { exitCodeForBuildResult } from "../error-codes";
 import { assertProtectedMutationAllowed, type EnvConfig } from "../env";
 import type { JenkinsClient } from "../jenkins/client";
 import {
@@ -419,8 +419,9 @@ async function followReplay(
   }
   const result = status.result ?? "UNKNOWN";
   printOk(`Build #${status.buildNumber ?? "?"} finished: ${result}.`);
+  // Ctrl+C during the last log read sets 130 even when the build then ends.
   if (result !== "SUCCESS") {
-    process.exitCode = EXIT_CODES.FAILURE;
+    process.exitCode ||= exitCodeForBuildResult(result);
   }
 }
 
@@ -444,7 +445,7 @@ async function waitForReplay(
     suppressOutput: true,
   });
   if (waited.result !== "SUCCESS") {
-    process.exitCode = EXIT_CODES.FAILURE;
+    process.exitCode = exitCodeForBuildResult(waited.result);
   }
   return {
     target: {
