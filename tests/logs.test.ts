@@ -210,6 +210,25 @@ describe("logs command", () => {
     }
   });
 
+  test("stops waiting when the queue item is cancelled", async () => {
+    const getQueueBuild = mock()
+      .mockResolvedValueOnce({ cancelled: false })
+      .mockResolvedValue({ cancelled: true });
+
+    const error = await runLogs({
+      client: client({ getQueueBuild }),
+      env,
+      queueUrl: "https://jenkins.example.com/queue/item/17/",
+      poll: "1ms",
+      nonInteractive: true,
+      writeText: () => undefined,
+    }).catch((caught: unknown) => caught);
+
+    expect(error).toBeInstanceOf(CliError);
+    expect((error as CliError).code).toBe("NO_ACTIVE_BUILD");
+    expect(getQueueBuild).toHaveBeenCalledTimes(2);
+  });
+
   test("waits for a queued build through a Jenkins restart", async () => {
     const errorSpy = spyOn(console, "error").mockImplementation(
       () => undefined,

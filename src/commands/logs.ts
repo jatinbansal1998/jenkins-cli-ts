@@ -1012,6 +1012,13 @@ export async function waitForQueuedBuild(
     if (queueBuild?.buildUrl) {
       return queueBuild.buildUrl;
     }
+    if (queueBuild?.cancelled) {
+      throw new CliError(
+        `Queue item ${queueUrl} was cancelled before its build started.`,
+        [],
+        "NO_ACTIVE_BUILD",
+      );
+    }
     await Bun.sleep(pollMs);
   }
 }

@@ -18,7 +18,7 @@ export const REPLAY_HELP = `Replay is the Replay button on a Jenkins build page.
 The new build reuses build 25's parameters; Jenkins cannot change them on a replay, so edit the script to try other values.
 Only the main script and scripts loaded with \`load\` can be replaced, not shared library code (@Library).
 Replay needs the Run/Replay permission (Job/Configure implies it); a Pipeline outside the Groovy sandbox also needs Overall/Administer.
-Jenkins does not report which build a replay started. The CLI looks for a replay of the source build by you that is newer than the request.
+Jenkins does not report which build a replay started. The CLI looks for a replay of the source build by you that is newer than the request; two such replays started at the same moment cannot be told apart.
 The replay request is never resent. If its response is lost, the command fails with REPLAY_OUTCOME_UNKNOWN; check \`history\` before replaying again.`;
 
 export function getRootHelpEpilog(): string {

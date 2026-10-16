@@ -174,15 +174,22 @@ async function submitReplay(options: ReplayOptions): Promise<ReplayResult> {
       ([name, text]) => original.loadedScripts[name] !== text,
     );
 
-  const lastBuild = await options.client.getLastBuild(source.jobUrl);
-  const afterBuildNumber = lastBuild?.buildNumber ?? source.buildNumber;
+  // Build numbers and queue ids only grow, so anything newer than these
+  // baselines was created after the POST.
+  const [lastBuild, queueItems] = await Promise.all([
+    options.client.getLastBuild(source.jobUrl),
+    options.client.listQueueItems(),
+  ]);
+  const baseline = {
+    afterBuildNumber: lastBuild?.buildNumber ?? source.buildNumber,
+    afterQueueId: Math.max(0, ...queueItems.map((item) => item.id)),
+  };
   const submission = await options.client.replayBuild({
     buildUrl: source.buildUrl,
     jobUrl: source.jobUrl,
     scripts,
   });
-  const locate = () =>
-    locateReplayedBuild(options.client, source, afterBuildNumber);
+  const locate = () => locateReplayedBuild(options.client, source, baseline);
 
   let started: TriggerBuildResult | null;
   if (submission.outcome === "accepted") {
@@ -291,19 +298,19 @@ function loadedScript(
 
 /**
  * Jenkins does not say which build a replay queued, so look for it: a build
- * or queue item newer than the POST whose cause is a replay of `source`.
+ * or queue item newer than the baselines whose cause is a replay of `source`.
  */
 async function locateReplayedBuild(
   client: JenkinsClient,
   source: ReplayTarget,
-  afterBuildNumber: number,
+  baseline: { afterBuildNumber: number; afterQueueId: number },
 ): Promise<TriggerBuildResult | null> {
   const deadline = Date.now() + LOCATE_TIMEOUT_MS;
   while (true) {
     const found = await client.findReplayedBuild({
       jobUrl: source.jobUrl,
       sourceBuildNumber: source.buildNumber,
-      afterBuildNumber,
+      ...baseline,
     });
     if (found || Date.now() >= deadline) {
       return found;

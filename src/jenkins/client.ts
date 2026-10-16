@@ -1136,13 +1136,15 @@ export class JenkinsClient {
 
   /**
    * Finds the build a replay of `sourceBuildNumber` by this user started
-   * after `afterBuildNumber`, or its queue item while it waits. Replays of
-   * the same build by the same user at the same time cannot be told apart.
+   * after `afterBuildNumber`, or its queue item, newer than `afterQueueId`,
+   * while it waits. Replays of the same build by the same user at the same
+   * time cannot be told apart.
    */
   async findReplayedBuild(options: {
     jobUrl: string;
     sourceBuildNumber: number;
     afterBuildNumber: number;
+    afterQueueId: number;
   }): Promise<TriggerBuildResult | null> {
     const isOurs = (actions?: JenkinsApiBuildAction[]): boolean =>
       isReplayBy(actions, options.sourceBuildNumber, this.user);
@@ -1179,6 +1181,7 @@ export class JenkinsClient {
       .filter(
         (item): item is JenkinsApiQueueItem & { id: number } =>
           typeof item.id === "number" &&
+          item.id > options.afterQueueId &&
           urlPath(item.task?.url) === jobPath &&
           isOurs(item.actions),
       )

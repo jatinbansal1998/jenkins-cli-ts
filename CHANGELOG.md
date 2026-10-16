@@ -27,6 +27,11 @@ NAME=FILE` replace them. `--follow` streams the new build's logs and exits
   `REPLAY_PERMISSION_DENIED` (no Run/Replay permission; exit 3),
   `REPLAY_REJECTED` and `REPLAY_OUTCOME_UNKNOWN` (exit 6).
 
+### Fixed
+
+- `logs --queue-url` stops with `NO_ACTIVE_BUILD` (exit 4) when the queue item
+  is cancelled before its build starts, instead of waiting forever.
+
 ## [1.1.0-rc.2] - 2026-10-16
 
 ### Fixed

@@ -50,6 +50,7 @@ const ORIGINAL: ReplayScripts = {
 type FakeClient = {
   getReplayScripts: ReturnType<typeof mock>;
   getLastBuild: ReturnType<typeof mock>;
+  listQueueItems: ReturnType<typeof mock>;
   replayBuild: ReturnType<typeof mock>;
   findReplayedBuild: ReturnType<typeof mock>;
 };
@@ -69,6 +70,10 @@ function fakeClient(
       building: false,
       result: "SUCCESS",
     })),
+    listQueueItems: mock(async () => [
+      { id: 30, queueUrl: `${JENKINS_URL}/queue/item/30/` },
+      { id: 31, queueUrl: `${JENKINS_URL}/queue/item/31/` },
+    ]),
     replayBuild: mock(
       async () => options.submission ?? { outcome: "accepted" },
     ),
@@ -294,6 +299,7 @@ describe("replay", () => {
       jobUrl: JOB_URL,
       sourceBuildNumber: 12,
       afterBuildNumber: 13,
+      afterQueueId: 31,
     });
     expect(JSON.parse(written.join(""))).toEqual({
       ok: true,

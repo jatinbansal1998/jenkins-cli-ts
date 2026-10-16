@@ -377,6 +377,7 @@ describe("JenkinsClient.findReplayedBuild", () => {
       jobUrl: JOB_URL,
       sourceBuildNumber: 12,
       afterBuildNumber: 12,
+      afterQueueId: 0,
     });
 
     expect(found).toEqual({
@@ -405,6 +406,7 @@ describe("JenkinsClient.findReplayedBuild", () => {
       jobUrl: JOB_URL,
       sourceBuildNumber: 1234,
       afterBuildNumber: 1234,
+      afterQueueId: 0,
     });
 
     expect(found?.buildNumber).toBe(1235);
@@ -439,6 +441,7 @@ describe("JenkinsClient.findReplayedBuild", () => {
       jobUrl: JOB_URL,
       sourceBuildNumber: 12,
       afterBuildNumber: 12,
+      afterQueueId: 0,
     });
 
     expect(found).toEqual({
@@ -446,6 +449,31 @@ describe("JenkinsClient.findReplayedBuild", () => {
       queueUrl: `${BASE_URL}/queue/item/41/`,
       queueId: 41,
     });
+  });
+
+  test("ignores a matching queue item that existed before the request", async () => {
+    installFetch(async (url) =>
+      url.startsWith(`${BASE_URL}/queue/`)
+        ? jsonResponse({
+            items: [
+              {
+                id: 41,
+                task: { url: JOB_URL },
+                actions: [{ causes: [startedBy("alice"), replayOf(12)] }],
+              },
+            ],
+          })
+        : jsonResponse({ builds: [] }),
+    );
+
+    const found = await createClient().findReplayedBuild({
+      jobUrl: JOB_URL,
+      sourceBuildNumber: 12,
+      afterBuildNumber: 12,
+      afterQueueId: 41,
+    });
+
+    expect(found).toBeNull();
   });
 
   test("returns null when nothing matches", async () => {
@@ -459,6 +487,7 @@ describe("JenkinsClient.findReplayedBuild", () => {
       jobUrl: JOB_URL,
       sourceBuildNumber: 12,
       afterBuildNumber: 12,
+      afterQueueId: 0,
     });
 
     expect(found).toBeNull();
