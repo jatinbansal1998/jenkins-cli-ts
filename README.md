@@ -75,12 +75,22 @@ such as `status` and `logs` use the latest build unless you select one explicitl
 `--build` also accepts `lastSuccessful`, `lastStable`, `lastFailed`, or
 `lastCompleted`.
 
-| Task            | Commands                                                     |
-| --------------- | ------------------------------------------------------------ |
-| Monitor work    | `run`, `queue`, `nodes`, `wait`                              |
-| Inspect a build | `status`, `history`, `logs`, `tests`, `changes`, `artifacts` |
-| Change work     | `build`, `cancel`, `rerun`, `input approve`, `input abort`   |
-| Manage items    | `config`, `create`                                           |
+| Task            | Commands                                                             |
+| --------------- | -------------------------------------------------------------------- |
+| Monitor work    | `run`, `queue`, `nodes`, `wait`                                      |
+| Inspect a build | `status`, `history`, `logs`, `tests`, `changes`, `artifacts`         |
+| Change work     | `build`, `cancel`, `rerun`, `replay`, `input approve`, `input abort` |
+| Manage items    | `config`, `create`                                                   |
+
+`replay` runs a Pipeline build again with an edited Jenkinsfile, without
+committing it, like the Replay button in Jenkins. The new build reuses the
+source build's parameters:
+
+```bash
+jenkins-cli replay --job api --build 25 --print-script > Jenkinsfile
+# edit Jenkinsfile
+jenkins-cli replay --job api --build 25 --script Jenkinsfile --follow
+```
 
 Find options and examples in the CLI:
 

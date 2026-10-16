@@ -76,10 +76,11 @@ import type {
   NodeSummary,
   NodesSummary,
   PendingInputAction,
-  PendingInputSubmission,
+  PostSubmission,
   PipelineInfo,
   QueueBuildReference,
   QueueItemSummary,
+  ReplayScripts,
   RunningBuildSummary,
   TriggerBuildParams,
   TriggerBuildResult,
@@ -1028,19 +1029,205 @@ export class JenkinsClient {
 
   /**
    * Approves or aborts one pending input through the URL Jenkins returned for
-   * it. Settling an input is not idempotent, so the POST is never transport
-   * retried; a lost response is reported as `unconfirmed` for the caller to
-   * reconcile instead of being resent. The crumb refresh on a rejected 403 is
-   * kept because a 403 proves Jenkins committed nothing.
+   * it. Jenkins answers these POSTs with an empty or JSON body.
    */
   async submitPendingInput(options: {
     url: string;
     operation: "approve" | "abort";
-  }): Promise<PendingInputSubmission> {
-    const context =
-      options.operation === "approve"
-        ? "approve pending input"
-        : "abort pending input";
+  }): Promise<PostSubmission> {
+    return await this.submitOnce({
+      url: options.url,
+      context:
+        options.operation === "approve"
+          ? "approve pending input"
+          : "abort pending input",
+      // `wfapi/inputSubmit` parses a `json` form field; an empty object is
+      // the parameterless approval.
+      ...(options.operation === "approve"
+        ? { body: new URLSearchParams({ json: "{}" }).toString() }
+        : {}),
+    });
+  }
+
+  /**
+   * Reads the scripts a Pipeline build ran from its Replay page, the only
+   * place Jenkins exposes them over HTTP.
+   */
+  async getReplayScripts(buildUrl: string): Promise<ReplayScripts> {
+    const context = "open the replay page";
+    // A login redirect must surface as such, not as a page without scripts.
+    const response = await this.fetchWithTimeout(
+      this.withJob(buildUrl, "replay/"),
+      {
+        method: "GET",
+        headers: {
+          Authorization: await this.authHeader(),
+          Accept: "text/html",
+        },
+        redirect: "manual",
+      },
+      this.transportRetries,
+      context,
+    );
+    if (isRedirect(response)) {
+      throw loginRedirectError(context);
+    }
+    if (response.status === 404) {
+      // A missing build and a build without a Replay page both answer 404.
+      await this.assertBuildExists(buildUrl);
+      throw new CliError(
+        `Build ${buildUrl} has no Replay page.`,
+        [
+          "Replay works only for Pipeline builds, of a job that is enabled, with the Job/Build permission.",
+        ],
+        "REPLAY_UNAVAILABLE",
+      );
+    }
+    if (!response.ok) {
+      await this.raiseHttpError(response, context);
+    }
+    const page = await readResponseText(response);
+    const scripts = parseReplayPage(page);
+    if (scripts) {
+      return scripts;
+    }
+    if (/<form\b[^>]*\baction="rebuild"/i.test(page)) {
+      // Jenkins offers only an unchanged rebuild when it will not replay.
+      throw new CliError(
+        `Jenkins does not allow replaying ${buildUrl} with an edited script.`,
+        [
+          "Replay needs the Run/Replay permission, which Job/Configure implies. A Pipeline that runs outside the Groovy sandbox also needs Overall/Administer.",
+          "A build whose script never compiled cannot be replayed either; replay a build that ran.",
+        ],
+        "REPLAY_PERMISSION_DENIED",
+      );
+    }
+    throw new CliError(
+      `Jenkins did not return a Replay page while trying to ${context}.`,
+      [`Open ${this.withJob(buildUrl, "replay/")} in a browser to check.`],
+      "JENKINS_INVALID_RESPONSE",
+    );
+  }
+
+  /**
+   * Starts a new build of `buildUrl` with the given scripts. A replay is not
+   * idempotent, so the POST is sent once and a lost response is reported as
+   * `unconfirmed`. Jenkins answers success with a redirect to the job; it
+   * does not say which build it queued.
+   */
+  async replayBuild(options: {
+    buildUrl: string;
+    jobUrl: string;
+    scripts: ReplayScripts;
+  }): Promise<PostSubmission> {
+    // Stapler's getSubmittedForm() reads the whole form from the `json`
+    // field. A loaded script left out keeps its original text.
+    const form = {
+      ...options.scripts.loadedScripts,
+      mainScript: options.scripts.mainScript,
+    };
+    return await this.submitOnce({
+      url: this.withJob(options.buildUrl, "replay/run"),
+      context: "replay build",
+      body: new URLSearchParams({ json: JSON.stringify(form) }).toString(),
+      successRedirect: options.jobUrl,
+    });
+  }
+
+  /**
+   * Finds the build a replay of `sourceBuildNumber` by this user started
+   * after `afterBuildNumber`, or its queue item, newer than `afterQueueId`,
+   * while it waits. Replays of the same build by the same user at the same
+   * time cannot be told apart.
+   */
+  async findReplayedBuild(options: {
+    jobUrl: string;
+    sourceBuildNumber: number;
+    afterBuildNumber: number;
+    afterQueueId: number;
+  }): Promise<TriggerBuildResult | null> {
+    const isOurs = (actions?: JenkinsApiBuildAction[]): boolean =>
+      isReplayBy(actions, options.sourceBuildNumber, this.user);
+    const builds = await this.requestJson<JenkinsApiBuildsResponse>(
+      this.withJob(
+        options.jobUrl,
+        `api/json?tree=builds[number,actions[causes[${REPLAY_CAUSE_FIELDS}]]]{0,${REPLAY_SEARCH_DEPTH}}`,
+      ),
+      "list build history",
+    );
+    const started = (builds.builds ?? [])
+      .filter(
+        (build): build is JenkinsApiBuild & { number: number } =>
+          isBuildNumber(build.number) &&
+          build.number > options.afterBuildNumber &&
+          isOurs(build.actions),
+      )
+      .toSorted((a, b) => a.number - b.number)[0];
+    if (started) {
+      return {
+        jobUrl: options.jobUrl,
+        buildUrl: this.withJob(options.jobUrl, `${started.number}/`),
+        buildNumber: started.number,
+      };
+    }
+    const queue = await this.requestJson<JenkinsQueueItemsResponse>(
+      this.withBase(
+        `queue/api/json?tree=items[id,task[url],actions[causes[${REPLAY_CAUSE_FIELDS}]]]`,
+      ),
+      "list queue items",
+    );
+    const jobPath = urlPath(options.jobUrl);
+    const queued = (queue.items ?? [])
+      .filter(
+        (item): item is JenkinsApiQueueItem & { id: number } =>
+          typeof item.id === "number" &&
+          item.id > options.afterQueueId &&
+          urlPath(item.task?.url) === jobPath &&
+          isOurs(item.actions),
+      )
+      .toSorted((a, b) => b.id - a.id)[0];
+    return queued
+      ? {
+          jobUrl: options.jobUrl,
+          queueUrl: this.withBase(`queue/item/${queued.id}/`),
+          queueId: queued.id,
+        }
+      : null;
+  }
+
+  private async assertBuildExists(buildUrl: string): Promise<void> {
+    const context = "fetch build status";
+    const response = await this.fetchWithTimeout(
+      this.withJob(buildUrl, "api/json?tree=number"),
+      { method: "GET", headers: await this.authHeaders() },
+      this.transportRetries,
+      context,
+    );
+    if (response.status === 404) {
+      throw new CliError(
+        `Build ${buildUrl} does not exist.`,
+        ["Check the build number with `history`."],
+        "BUILD_NOT_FOUND",
+      );
+    }
+    if (!response.ok) {
+      await this.raiseHttpError(response, context);
+    }
+  }
+
+  /**
+   * Sends a POST that must never be resent. It is not transport retried; a
+   * lost response is reported as `unconfirmed` for the caller to reconcile.
+   * The crumb refresh on a rejected 403 is kept because a 403 proves Jenkins
+   * committed nothing. Success is a non-HTML 2xx, or with `successRedirect`,
+   * a redirect to that URL.
+   */
+  private async submitOnce(options: {
+    url: string;
+    context: string;
+    body?: string;
+    successRedirect?: string;
+  }): Promise<PostSubmission> {
     // Resolve the token and fetch (and cache) the crumb before the POST so
     // their failures are plain errors rather than an unconfirmed submission.
     await this.resolveApiToken();
@@ -1052,17 +1239,22 @@ export class JenkinsClient {
     // must not hang the command or keep the connection open.
     const { controller, cleanup } = withTimeout(this.timeoutMs);
     try {
-      return await this.sendPendingInputRequest(options, context, controller);
+      return await this.sendOnce(options, controller);
     } finally {
       cleanup();
     }
   }
 
-  private async sendPendingInputRequest(
-    options: { url: string; operation: "approve" | "abort" },
-    context: string,
+  private async sendOnce(
+    options: {
+      url: string;
+      context: string;
+      body?: string;
+      successRedirect?: string;
+    },
     controller: AbortController,
-  ): Promise<PendingInputSubmission> {
+  ): Promise<PostSubmission> {
+    const { context } = options;
     let response: Response;
     try {
       response = await this.sendPostWithCrumbRetry({
@@ -1071,13 +1263,9 @@ export class JenkinsClient {
         transportRetries: 0,
         signal: controller.signal,
         // Following a redirect would replay the crumb header elsewhere and
-        // turn the POST into a GET; a 3xx is treated as "not submitted".
+        // turn the POST into a GET.
         redirect: "manual",
-        // `wfapi/inputSubmit` parses a `json` form field; an empty object is
-        // the parameterless approval.
-        ...(options.operation === "approve"
-          ? { body: new URLSearchParams({ json: "{}" }).toString() }
-          : {}),
+        ...(options.body !== undefined ? { body: options.body } : {}),
       });
     } catch (error) {
       if (!(error instanceof CliError)) {
@@ -1087,6 +1275,13 @@ export class JenkinsClient {
     }
     if (isRedirect(response)) {
       const location = response.headers.get("location");
+      if (
+        options.successRedirect &&
+        location &&
+        urlPath(location, options.url) === urlPath(options.successRedirect)
+      ) {
+        return { outcome: "accepted" };
+      }
       return {
         outcome: "rejected",
         httpStatus: response.status,
@@ -1095,10 +1290,10 @@ export class JenkinsClient {
       };
     }
     if (response.ok) {
-      // Jenkins answers these POSTs with an empty or JSON body. An HTML page
-      // with 2xx is an SSO/login proxy that swallowed the request. A body
-      // that cannot be read completely, or that stalls past the request
-      // deadline (which only covered the headers), is not evidence of anything.
+      // An HTML page with 2xx is an SSO/login proxy that swallowed the
+      // request, or a Jenkins error page. A body that cannot be read
+      // completely, or that stalls past the request deadline (which only
+      // covered the headers), is not evidence of anything.
       let body: string;
       try {
         body = await response.text();
@@ -1112,12 +1307,16 @@ export class JenkinsClient {
       }
       const contentType =
         response.headers.get("content-type")?.toLowerCase() ?? "";
-      if (isHtmlBody(contentType, body)) {
+      // Where Jenkins answers success with a redirect, any page is from
+      // something in front of it.
+      if (options.successRedirect || isHtmlBody(contentType, body)) {
         return {
           outcome: "rejected",
           httpStatus: response.status,
           kind: "html_page",
-          detail: "received an HTML page instead of a Jenkins response",
+          detail: options.successRedirect
+            ? "received a page instead of a redirect to the job"
+            : "received an HTML page instead of a Jenkins response",
         };
       }
       return { outcome: "accepted" };
@@ -1127,7 +1326,7 @@ export class JenkinsClient {
     // detail rather than a hang.
     const detail = await readJenkinsErrorDetail(response);
     if (isGatewayError(response.status)) {
-      // A gateway can lose Jenkins' reply after Jenkins committed the input,
+      // A gateway can lose Jenkins' reply after Jenkins committed the POST,
       // so its error is not evidence of rejection.
       return {
         outcome: "unconfirmed",
@@ -1945,6 +2144,9 @@ const CAUSE_TYPE_BY_CLASS: Record<string, BuildCauseType> = {
   "hudson.cli.BuildCommand$CLICause": "cli",
 };
 const GIT_BUILD_DATA_CLASS = "hudson.plugins.git.util.BuildData";
+const REPLAY_CAUSE_FIELDS = "_class,shortDescription,userId";
+/** Newest builds searched for a replay; it starts right after the POST. */
+const REPLAY_SEARCH_DEPTH = 20;
 const BUILD_ACTION_FIELDS =
   "parameters[name,value],_class,lastBuiltRevision[SHA1,branch[name]],remoteUrls,causes[shortDescription,userId,userName]";
 const BUILD_HISTORY_FIELDS = `number,result,building,timestamp,duration,estimatedDuration,actions[${BUILD_ACTION_FIELDS}]`;
@@ -2260,6 +2462,89 @@ function extractBuildCauses(actions?: JenkinsApiBuildAction[]): BuildCause[] {
     }
   }
   return causes;
+}
+
+/**
+ * Whether a build or queue item is a replay of `sourceBuildNumber` started by
+ * `user`. The replay cause names its source only in its localized summary,
+ * "Replayed #12", so the number is read from the summary's digits.
+ */
+function isReplayBy(
+  actions: JenkinsApiBuildAction[] | undefined,
+  sourceBuildNumber: number,
+  user: string,
+): boolean {
+  const causes = extractBuildCauses(actions);
+  return (
+    causes.some(
+      (cause) =>
+        cause.type === "replay" &&
+        cause.summary?.replaceAll(/\D/g, "") === String(sourceBuildNumber),
+    ) &&
+    causes.some(
+      (cause) =>
+        cause.type === "user" &&
+        cause.userId?.toLowerCase() === user.toLowerCase(),
+    )
+  );
+}
+
+/** Reads the main and `load`ed scripts from a Replay page's textareas. */
+function parseReplayPage(page: string): ReplayScripts | null {
+  let mainScript: string | undefined;
+  const loadedScripts: Record<string, string> = {};
+  for (const [, attributes = "", content = ""] of page.matchAll(
+    /<textarea\b([^>]*)>([\s\S]*?)<\/textarea>/gi,
+  )) {
+    const field = attributes.match(/\bname="_\.([^"]+)"/)?.[1];
+    if (!field) {
+      continue;
+    }
+    // HTML drops a newline right after <textarea>; Jenkins adds one when the
+    // script itself starts with a newline.
+    const script = decodeHtmlText(content.replace(/^\r?\n/, ""));
+    if (field === "mainScript") {
+      mainScript = script;
+    } else {
+      loadedScripts[decodeHtmlText(field)] = script;
+    }
+  }
+  return mainScript === undefined ? null : { mainScript, loadedScripts };
+}
+
+const HTML_NAMED_ENTITIES: Record<string, string> = {
+  amp: "&",
+  apos: "'",
+  gt: ">",
+  lt: "<",
+  quot: '"',
+};
+
+/** Decodes the entities Jenkins escapes in text, in one pass. */
+function decodeHtmlText(value: string): string {
+  return value.replaceAll(
+    /&(?:#x([0-9a-f]+)|#(\d+)|([a-z]+));/gi,
+    (entity, hex?: string, decimal?: string, name?: string) => {
+      if (hex !== undefined || decimal !== undefined) {
+        const codePoint = hex ? parseInt(hex, 16) : Number(decimal);
+        return codePoint <= 0x10ffff ? String.fromCodePoint(codePoint) : entity;
+      }
+      return HTML_NAMED_ENTITIES[name?.toLowerCase() ?? ""] ?? entity;
+    },
+  );
+}
+
+/** A URL's path with a trailing slash, resolved against `base`. */
+function urlPath(value: string | undefined, base?: string): string | undefined {
+  if (!value) {
+    return undefined;
+  }
+  try {
+    const path = new URL(value, base).pathname;
+    return path.endsWith("/") ? path : `${path}/`;
+  } catch {
+    return undefined;
+  }
 }
 
 function normalizeChangeItem(

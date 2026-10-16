@@ -15,6 +15,7 @@ export const JSON_COMMANDS = new Set([
   "queue",
   "nodes",
   "rerun",
+  "replay",
   "input:list",
   "input:approve",
   "input:abort",

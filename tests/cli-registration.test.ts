@@ -162,6 +162,7 @@ describe("command help and global options", () => {
     ["tests"],
     ["cancel"],
     ["rerun"],
+    ["replay"],
     ["input", "list"],
     ["input", "approve"],
     ["input", "abort"],

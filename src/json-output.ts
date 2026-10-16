@@ -142,6 +142,9 @@ export type JsonRerunReceipt = {
   target: JsonMutationTarget;
 };
 
+/** A replay receipt; `result` is present when the build was followed. */
+export type JsonReplayReceipt = JsonRerunReceipt & { result?: string };
+
 /** The exact build a pending-input command resolved. */
 export type JsonPendingInputBuild = {
   jobUrl: string;

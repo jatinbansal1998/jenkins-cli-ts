@@ -192,6 +192,7 @@ export type JenkinsApiQueueItem = {
   cancelled?: boolean;
   task?: JenkinsApiQueueTask;
   executable?: JenkinsApiQueueExecutable;
+  actions?: JenkinsApiBuildAction[];
 };
 
 export type JenkinsQueueItemsResponse = {

@@ -17,10 +17,7 @@ import {
 import { inputDeps } from "../src/commands/input-deps";
 import type { EnvConfig } from "../src/env";
 import type { JenkinsClient } from "../src/jenkins/client";
-import type {
-  PendingInputAction,
-  PendingInputSubmission,
-} from "../src/types/jenkins";
+import type { PendingInputAction, PostSubmission } from "../src/types/jenkins";
 
 const CANCEL = Symbol("cancel");
 const JENKINS_URL = "https://jenkins.example.com";
@@ -69,7 +66,7 @@ type FakeClient = {
  */
 function fakeClient(options: {
   pending: PendingInputAction[][];
-  submission?: PendingInputSubmission;
+  submission?: PostSubmission;
   building?: boolean;
 }): FakeClient {
   const pages = [...options.pending];
@@ -810,7 +807,7 @@ describe("input approve/abort outcomes", () => {
   });
 
   test("a redirect or HTML page followed by disappearance is unknown, not stale", async () => {
-    const submissions: PendingInputSubmission[] = [
+    const submissions: PostSubmission[] = [
       {
         outcome: "rejected",
         httpStatus: 302,

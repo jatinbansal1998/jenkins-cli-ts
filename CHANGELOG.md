@@ -10,6 +10,28 @@ lists everything since the previous stable release, including its prereleases.
 
 ## [Unreleased]
 
+### Added
+
+- `replay` runs a Pipeline build again with an edited script, without
+  committing it, like the Replay button in Jenkins. `--print-script` (and
+  `--print-loaded NAME` for a script loaded with `load`) writes the build's
+  script to stdout; `--script FILE` (or `-` for stdin) and `--loaded
+NAME=FILE` replace them. `--follow` streams the new build's logs and exits
+  with its result; `--json` returns the source and new build, plus `result`
+  with `--follow`. The new build reuses the source build's parameters.
+  Replay needs an exact `--build` or `--build-url`, is blocked on a read-only
+  profile, and never resends its request: a lost response that leaves no new
+  build fails with `REPLAY_OUTCOME_UNKNOWN`. New error codes:
+  `REPLAY_UNAVAILABLE` (not a Pipeline build, job disabled, or no
+  Job/Build permission; exit 4), `REPLAY_SCRIPT_NOT_FOUND` (exit 4),
+  `REPLAY_PERMISSION_DENIED` (no Run/Replay permission; exit 3),
+  `REPLAY_REJECTED` and `REPLAY_OUTCOME_UNKNOWN` (exit 6).
+
+### Fixed
+
+- `logs --queue-url` stops with `NO_ACTIVE_BUILD` (exit 4) when the queue item
+  is cancelled before its build starts, instead of waiting forever.
+
 ## [1.1.0-rc.2] - 2026-10-16
 
 ### Fixed

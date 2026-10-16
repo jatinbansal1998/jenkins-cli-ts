@@ -11,6 +11,16 @@ export const BUILD_METADATA_HELP = `JSON build metadata (status, history, wait):
                branch, SHA. Duplicate checkouts are merged; omitted
                when the build's metadata could not be fetched.`;
 
+export const REPLAY_HELP = `Replay is the Replay button on a Jenkins build page. Edit the script locally and run it without committing:
+  $0 replay --job api --build 25 --print-script > Jenkinsfile
+  $0 replay --job api --build 25 --script Jenkinsfile --follow
+
+The new build reuses build 25's parameters; Jenkins cannot change them on a replay, so edit the script to try other values.
+Only the main script and scripts loaded with \`load\` can be replaced, not shared library code (@Library).
+Replay needs the Run/Replay permission (Job/Configure implies it); a Pipeline outside the Groovy sandbox also needs Overall/Administer.
+Jenkins does not report which build a replay started. The CLI looks for a replay of the source build by you that is newer than the request; two such replays started at the same moment cannot be told apart.
+The replay request is never resent. If its response is lost, the command fails with REPLAY_OUTCOME_UNKNOWN; check \`history\` before replaying again.`;
+
 export function getRootHelpEpilog(): string {
   return `Examples:
   $0 auth login
@@ -46,14 +56,14 @@ export function getRootHelpEpilog(): string {
   $0 auth logout --all --non-interactive
       Remove all locally stored credentials.
 
-Job selection (build, status, history, wait, logs, tests, changes, artifacts, cancel, rerun, input, params, config):
+Job selection (build, status, history, wait, logs, tests, changes, artifacts, cancel, rerun, replay, input, params, config):
   [job-name]        Fuzzy match on job name or description (positional form)
   --job <text>      Fuzzy match on job name or description (uses the local job cache)
   --job-url <url>   Exact Jenkins job URL (skips the cache and search)
   The positional form and --job are equivalent; if both are passed, they must match.
   With no job argument or flag, an interactive job picker opens (requires a TTY).
 
-Exact build selection (status, wait, logs, tests, changes, artifacts, cancel, rerun, input):
+Exact build selection (status, wait, logs, tests, changes, artifacts, cancel, rerun, replay, input):
   --build <n|alias> Positive build number, or one of lastSuccessful, lastStable,
                     lastFailed, lastCompleted; requires --job or --job-url
   --build-url <url> Complete numeric Jenkins build URL; cannot be combined with
@@ -66,7 +76,8 @@ ${BUILD_METADATA_HELP}
 Scripting and AI agents:
   Pass --non-interactive to disable every prompt and fail fast; --json/--jsonl imply it.
   --json: list, params, build, status, history, wait, tests, changes, artifacts,
-          run, cancel, create, queue, nodes, rerun, input list/approve/abort,
+          run, cancel, create, queue, nodes, rerun, replay,
+          input list/approve/abort,
           auth status/list/current, update --check, and help.
   --jsonl: logs.
   Output lines are prefixed OK: (success), ERROR: (failure), HINT: (guidance).
@@ -224,6 +235,21 @@ Command-specific options:
     --build-url <url> Full Jenkins build URL
     --json           Output source and new target receipt
 
+  replay:
+    [job-name]        Job name or description
+    --job <text>      Job name or description
+    --job-url <url>   Full Jenkins job URL
+    --build <n|alias> Build to replay (required, with --job/--job-url)
+    --build-url <url> Full Jenkins build URL (instead of --build)
+    --script <file>   Edited main script; - reads stdin
+    --loaded <NAME=file> Replace a script loaded with \`load\` (repeatable)
+    --print-script    Print the build's main script and exit
+    --print-loaded <NAME> Print one loaded script and exit
+    --follow          Stream the new build's logs; exit with its result
+    --json            Output source and new target receipt (with --follow,
+                      also the result)
+    The new build reuses the source build's parameters.
+
   input list / approve / abort:
     [job-name]        Job name or description
     --job <text>      Job name or description
@@ -289,10 +315,10 @@ Command-specific options:
     Make a profile read-only with "auth login --protected" (interactive login
     asks and defaults to no) or by setting "protected": true in the config file.
     Blocked without the flag: build, cancel, create, rerun, rerun last
-    build, input approve/abort, and the same actions reached from
+    build, replay, input approve/abort, and the same actions reached from
     list/build/status/history menus. Everything that only reads (list, params,
     status, wait, logs, tests, changes, history, queue, nodes, artifacts,
-    input list, auth) still works. A direct --url pointing
+    replay --print-script, input list, auth) still works. A direct --url pointing
     at a read-only profile's controller is read-only too. Blocked runs exit
     non-zero; with --json they emit one document with code PROFILE_PROTECTED.
 
