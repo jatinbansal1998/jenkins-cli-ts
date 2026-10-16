@@ -1223,6 +1223,7 @@ describe("build command", () => {
     const getQueueBuild = mock(async () => ({
       buildUrl: BUILD_URL,
       buildNumber: 381,
+      cancelled: false,
     }));
     const getBuildStatus = mock(async () => ({
       buildNumber: 381,
@@ -1250,6 +1251,182 @@ describe("build command", () => {
       expect(getBuildStatus).toHaveBeenCalledWith(BUILD_URL);
       expect(process.exitCode).toBe(1);
     } finally {
+      process.exitCode = originalExitCode;
+    }
+  });
+
+  describe.each(["text", "JSON"])("%s watch of a queued build", (mode) => {
+    let sleepSpy: ReturnType<typeof spyOn<typeof Bun, "sleep">>;
+    let errorSpy: ReturnType<typeof spyOn<typeof console, "error">>;
+    let originalExitCode: typeof process.exitCode;
+
+    beforeEach(() => {
+      originalExitCode = process.exitCode;
+      process.exitCode = 0;
+      sleepSpy = spyOn(Bun, "sleep").mockResolvedValue(undefined);
+      errorSpy = spyOn(console, "error").mockImplementation(() => undefined);
+    });
+
+    afterEach(() => {
+      sleepSpy.mockRestore();
+      errorSpy.mockRestore();
+      process.exitCode = originalExitCode;
+    });
+
+    const otherRunningBuild = {
+      ...lastBuildSummary(381),
+      building: true,
+      result: null,
+    };
+    const finishedStatus = mock(async (buildUrl: string) => ({
+      buildNumber: Number(buildUrl.match(/(\d+)\/$/)?.[1]),
+      buildUrl,
+      result: "SUCCESS",
+      building: false,
+    }));
+
+    async function watchQueuedBuild(client: Partial<JenkinsClient>) {
+      const output: string[] = [];
+      await runBuild({
+        client: createClient({
+          triggerBuild: mock(async () => ({
+            queueUrl: QUEUE_URL,
+            jobUrl: JOB_URL,
+          })),
+          getBuildStatus: finishedStatus,
+          ...client,
+        }),
+        env: {} as EnvConfig,
+        jobUrl: JOB_URL,
+        branch: "staging",
+        nonInteractive: true,
+        watch: true,
+        json: mode === "JSON",
+        write: (value) => output.push(value),
+      });
+      const notifyCalls = notifyBuildCompleteMock.mock.calls as unknown as [
+        [{ message: string }],
+      ];
+      return notifyCalls[0]?.[0]?.message;
+    }
+
+    beforeEach(() => {
+      finishedStatus.mockClear();
+    });
+
+    test("keeps polling the queue while someone else's build runs", async () => {
+      const getLastBuild = mock()
+        .mockResolvedValueOnce(lastBuildSummary(380))
+        .mockResolvedValue(otherRunningBuild);
+      const getQueueBuild = mock()
+        .mockResolvedValueOnce({ cancelled: false })
+        .mockResolvedValueOnce({ cancelled: false })
+        .mockResolvedValue({
+          buildUrl: `${JOB_URL}382/`,
+          buildNumber: 382,
+          cancelled: false,
+        });
+
+      const notification = await watchQueuedBuild({
+        getLastBuild,
+        getQueueBuild,
+      });
+
+      expect(notification).toContain("Build #382 SUCCESS");
+      expect(finishedStatus.mock.calls).toEqual([[`${JOB_URL}382/`]]);
+      expect(getLastBuild).toHaveBeenCalledTimes(1);
+    });
+
+    test("reports a cancelled queue item as aborted, not someone else's build", async () => {
+      const getLastBuild = mock()
+        .mockResolvedValueOnce(lastBuildSummary(380))
+        .mockResolvedValue(otherRunningBuild);
+      // Jenkins later forgets the cancelled item; by then someone else's
+      // build is the newest one.
+      const getQueueBuild = mock()
+        .mockResolvedValueOnce({ cancelled: false })
+        .mockResolvedValueOnce({ cancelled: true })
+        .mockResolvedValue(null);
+
+      const notification = await watchQueuedBuild({
+        getLastBuild,
+        getQueueBuild,
+      });
+
+      expect(notification).toContain("Build ABORTED");
+      expect(process.exitCode).toBe(1);
+      if (mode === "text") {
+        expect(errorSpy).toHaveBeenCalledWith(
+          expect.stringContaining("was cancelled before it started"),
+        );
+      }
+      expect(finishedStatus).not.toHaveBeenCalled();
+      expect(getLastBuild).toHaveBeenCalledTimes(1);
+    });
+
+    test("falls back to a new job build once the queue item is gone", async () => {
+      const getLastBuild = mock()
+        .mockResolvedValueOnce(lastBuildSummary(380))
+        .mockResolvedValue(otherRunningBuild);
+      const getQueueBuild = mock(async () => null);
+
+      const notification = await watchQueuedBuild({
+        getLastBuild,
+        getQueueBuild,
+      });
+
+      expect(notification).toContain("Build #381 SUCCESS");
+      expect(finishedStatus.mock.calls).toEqual([[`${JOB_URL}381/`]]);
+    });
+  });
+
+  test("non-interactive watch without a baseline never adopts a running build for a queued one", async () => {
+    const originalExitCode = process.exitCode;
+    const sleepSpy = spyOn(Bun, "sleep").mockResolvedValue(undefined);
+    // The pre-trigger read fails, so the watch reads the baseline itself while
+    // the previous build is still running.
+    const getLastBuild = mock()
+      .mockRejectedValueOnce(new Error("socket hang up"))
+      .mockResolvedValue({
+        ...lastBuildSummary(380),
+        building: true,
+        result: null,
+      });
+    const getQueueBuild = mock()
+      .mockResolvedValueOnce({ cancelled: false })
+      .mockResolvedValue({
+        buildUrl: BUILD_URL,
+        buildNumber: 381,
+        cancelled: false,
+      });
+    const getBuildStatus = mock(async (buildUrl: string) => ({
+      buildNumber: 381,
+      buildUrl,
+      result: "SUCCESS",
+      building: false,
+    }));
+
+    try {
+      await runBuild({
+        client: createClient({
+          getLastBuild,
+          triggerBuild: mock(async () => ({
+            queueUrl: QUEUE_URL,
+            jobUrl: JOB_URL,
+          })),
+          getQueueBuild,
+          getBuildStatus,
+        }),
+        env: {} as EnvConfig,
+        jobUrl: JOB_URL,
+        branch: "staging",
+        nonInteractive: true,
+        watch: true,
+      });
+
+      expect(getBuildStatus.mock.calls).toEqual([[BUILD_URL]]);
+    } finally {
+      sleepSpy.mockRestore();
       process.exitCode = originalExitCode;
     }
   });

@@ -20,6 +20,7 @@ import {
   CliError,
   getScriptName,
   handleCliError,
+  printError,
   printHint,
   printLine,
   printOk,
@@ -794,6 +795,7 @@ async function watchBuildStatusStructured(options: {
 }> {
   let buildUrl = options.buildUrl;
   let buildNumber = options.buildNumber;
+  let queueUrl = options.queueUrl;
   let completedPolls = 0;
   const outage = trackJenkinsOutage({
     intervalMs: options.intervalMs,
@@ -801,11 +803,17 @@ async function watchBuildStatusStructured(options: {
   });
   while (true) {
     try {
-      if (!buildUrl && options.queueUrl) {
-        const queued = await options.client.getQueueBuild(options.queueUrl);
+      if (!buildUrl && queueUrl) {
+        const queued = await options.client.getQueueBuild(queueUrl);
         if (queued?.buildUrl) {
           buildUrl = queued.buildUrl;
           buildNumber = queued.buildNumber;
+        } else if (queued?.cancelled) {
+          outage.recovered();
+          return { result: "ABORTED", buildNumber };
+        } else if (!queued) {
+          // The job's build is only a fallback once the queue item is gone.
+          queueUrl = undefined;
         }
       }
       if (buildUrl) {
@@ -818,7 +826,7 @@ async function watchBuildStatusStructured(options: {
             buildUrl: status.buildUrl ?? buildUrl,
           };
         }
-      } else {
+      } else if (!queueUrl) {
         const watched = await findWatchedBuild(
           options.client,
           options.jobUrl,
@@ -1150,7 +1158,8 @@ async function watchBuildStatus(options: {
     if (!buildUrl && baselineBuildNumber === undefined) {
       const lastBuild = await options.client.getLastBuild(options.jobUrl);
       baselineBuildNumber = lastBuild?.buildNumber;
-      if (lastBuild?.building) {
+      // A queued build has not started, so a running build is never it.
+      if (lastBuild?.building && !queueUrl) {
         buildUrl = lastBuild.buildUrl;
         buildNumber = lastBuild.buildNumber;
       }
@@ -1263,16 +1272,28 @@ async function watchBuildStatus(options: {
             }
             continue;
           }
-          const watched = await findWatchedBuild(
-            options.client,
-            options.jobUrl,
-            baselineBuildNumber,
-          );
-          if (watched) {
-            queueUrl = undefined;
-            buildNumber = watched.buildNumber;
-            buildUrl = watched.buildUrl;
-            continue;
+          if (queueItem?.cancelled) {
+            const message = `Queue item for ${options.jobLabel} was cancelled before it started.`;
+            if (statusSpinner) {
+              statusSpinner.error(message);
+            } else {
+              printError(message);
+            }
+            return { result: "ABORTED", buildNumber };
+          }
+          // The job's build is only a fallback once the queue item is gone.
+          if (!queueItem) {
+            const watched = await findWatchedBuild(
+              options.client,
+              options.jobUrl,
+              baselineBuildNumber,
+            );
+            if (watched) {
+              queueUrl = undefined;
+              buildNumber = watched.buildNumber;
+              buildUrl = watched.buildUrl;
+              continue;
+            }
           }
           const elapsedMs = Date.now() - watchStartMs;
           emitWatchMessage({

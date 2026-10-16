@@ -142,7 +142,35 @@ describe("server build URL trust", () => {
     expect(await client().getQueueBuild(`${baseUrl}/queue/item/17/`)).toEqual({
       buildNumber: 9,
       buildUrl: `${jobUrl}9/`,
+      cancelled: false,
     });
+  });
+
+  test("queue references report a cancelled item", async () => {
+    globalThis.fetch = mock(async () =>
+      Response.json({ cancelled: true, task: { url: jobUrl } }),
+    ) as unknown as typeof fetch;
+    expect(await client().getQueueBuild(`${baseUrl}/queue/item/17/`)).toEqual({
+      buildNumber: undefined,
+      buildUrl: undefined,
+      cancelled: true,
+    });
+  });
+
+  test("queue references are null only once Jenkins forgets the item", async () => {
+    globalThis.fetch = mock(
+      async () => new Response("", { status: 404 }),
+    ) as unknown as typeof fetch;
+    expect(
+      await client().getQueueBuild(`${baseUrl}/queue/item/17/`),
+    ).toBeNull();
+
+    globalThis.fetch = mock(
+      async () => new Response("", { status: 500 }),
+    ) as unknown as typeof fetch;
+    await expect(
+      client().getQueueBuild(`${baseUrl}/queue/item/17/`),
+    ).rejects.toMatchObject({ code: "JENKINS_HTTP_ERROR" });
   });
 
   test("queue references ignore malformed numbers and task paths", async () => {

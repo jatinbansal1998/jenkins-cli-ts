@@ -120,10 +120,16 @@ describe("findWatchedBuild", () => {
     ).toBeNull();
   });
 
-  test("returns the baseline build while it is still running", async () => {
+  test("ignores the baseline build even while it is still running", async () => {
     expect(
       await findWatchedBuild(clientReturning(build(5, true)), jobUrl, 5),
-    ).toEqual(build(5, true));
+    ).toBeNull();
+  });
+
+  test("ignores a build older than the baseline", async () => {
+    expect(
+      await findWatchedBuild(clientReturning(build(4, false)), jobUrl, 5),
+    ).toBeNull();
   });
 
   test("returns any newer build, running or finished", async () => {

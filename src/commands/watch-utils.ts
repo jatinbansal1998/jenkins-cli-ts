@@ -118,9 +118,10 @@ export function trackJenkinsOutage(options: {
 }
 
 /**
- * The job's newest build, if it is the one a watch is waiting for: any build
- * other than the one seen before the trigger, or that same build while it is
- * still running.
+ * The job's newest build, if it is the one a watch is waiting for: a build
+ * newer than the one seen before the trigger. The baseline itself is never
+ * the watched build, even while it is still running: a build queued behind it
+ * has not started yet.
  */
 export async function findWatchedBuild(
   client: JenkinsClient,
@@ -133,8 +134,7 @@ export async function findWatchedBuild(
   }
   const isWatched =
     baselineBuildNumber === undefined ||
-    lastBuild.buildNumber !== baselineBuildNumber ||
-    lastBuild.building;
+    lastBuild.buildNumber > baselineBuildNumber;
   return isWatched ? lastBuild : null;
 }
 

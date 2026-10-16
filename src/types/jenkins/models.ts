@@ -229,6 +229,8 @@ export type QueueItemSummary = {
 export type QueueBuildReference = {
   buildUrl?: string;
   buildNumber?: number;
+  /** Jenkins keeps a cancelled item, without an executable, for a while. */
+  cancelled: boolean;
 };
 
 export type NodeSummary = {

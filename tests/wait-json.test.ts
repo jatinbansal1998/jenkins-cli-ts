@@ -199,6 +199,41 @@ describe("wait --json", () => {
     process.exitCode = 0;
   });
 
+  test("reports a cancelled queue item as an aborted result with exit code 1", async () => {
+    const sink = capture();
+
+    await runWait({
+      client: createClient({
+        getQueueBuild: mock(async (_queueUrl: string) => ({
+          cancelled: true,
+        })),
+        getLastBuild: mock(async (_jobUrl: string) => ({
+          buildNumber: 7,
+          buildUrl: "https://jenkins.example.com/job/api/7/",
+          result: "SUCCESS",
+          building: false,
+        })),
+      }),
+      env,
+      jobUrl: "https://jenkins.example.com/job/api/",
+      queueUrl: "https://jenkins.example.com/queue/item/123/",
+      interval: "1ms",
+      nonInteractive: true,
+      json: true,
+      write: sink.write,
+    });
+
+    const parsed = JSON.parse(sink.output()) as {
+      ok: boolean;
+      data: { result: string; build: { number?: number } };
+    };
+    expect(parsed.ok).toBe(true);
+    expect(parsed.data.result).toBe("ABORTED");
+    expect(parsed.data.build.number).toBeUndefined();
+    expect(process.exitCode).toBe(1);
+    process.exitCode = 0;
+  });
+
   test("emits a JSON error envelope and non-zero exit code on invalid input", async () => {
     const sink = capture();
 
