@@ -324,14 +324,14 @@ export type PendingInputAction = {
 };
 
 /**
- * Evidence from one approve/abort POST, before any reconciliation.
- * `rejected` means Jenkins (or something in front of it) answered without
- * committing: an HTTP error, a redirect, or an HTML page where Jenkins would
- * have sent an empty/JSON body. `unconfirmed` means the request may have been
- * applied but the response is not trustworthy evidence either way (transport
- * failure or a gateway error).
+ * Evidence from one POST that must never be resent (an input approve/abort,
+ * a replay), before any reconciliation. `rejected` means Jenkins (or
+ * something in front of it) answered without committing: an HTTP error, a
+ * redirect, or an HTML page where Jenkins would have answered differently.
+ * `unconfirmed` means the request may have been applied but the response is
+ * not trustworthy evidence either way (transport failure or a gateway error).
  */
-export type PendingInputSubmission =
+export type PostSubmission =
   | { outcome: "accepted" }
   | {
       outcome: "rejected";
@@ -340,6 +340,16 @@ export type PendingInputSubmission =
       kind: "http_error" | "redirect" | "html_page";
     }
   | { outcome: "unconfirmed"; reason: string };
+
+/** The scripts a Pipeline build ran, as its Replay page shows them. */
+export type ReplayScripts = {
+  mainScript: string;
+  /**
+   * Scripts the build loaded with `load`, keyed by their Replay form field,
+   * such as `Script1`.
+   */
+  loadedScripts: Record<string, string>;
+};
 
 export type Crumb = {
   field: string;

@@ -433,7 +433,7 @@ empty. There are no TODO or FIXME comments in source.
 
 Job enable/disable/delete/rename, applying `config.xml`, node online/offline,
 credentials management, plugin install, script console, safe-restart and
-quiet-down, replay and restart-from-stage, views, fingerprints, artifact
+quiet-down, restart-from-stage, views, fingerprints, artifact
 upload, bearer/OIDC/mTLS auth.
 
 ## Hygiene: CI, tests, docs, repo

@@ -34,6 +34,7 @@ export const FULL_HELP_COMMANDS: string[][] = [
   ["queue"],
   ["nodes"],
   ["rerun"],
+  ["replay"],
   ["input"],
   ["input", "list"],
   ["input", "approve"],

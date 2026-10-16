@@ -23,10 +23,7 @@ import {
 } from "../json-output";
 import { canonicalJobUrl, normalizeJobUrl } from "../job-url";
 import { sanitizeInputText } from "../pipeline-inputs";
-import type {
-  PendingInputAction,
-  PendingInputSubmission,
-} from "../types/jenkins";
+import type { PendingInputAction, PostSubmission } from "../types/jenkins";
 import { inputDeps } from "./input-deps";
 import { printMenuActionError } from "./menu-action";
 
@@ -556,7 +553,7 @@ async function settlePendingInput(options: {
 }
 
 function describeRejection(
-  submission: Extract<PendingInputSubmission, { outcome: "rejected" }>,
+  submission: Extract<PostSubmission, { outcome: "rejected" }>,
 ): string {
   const detail = submission.detail ? ` (${submission.detail})` : "";
   switch (submission.kind) {
@@ -629,7 +626,7 @@ function staleActionError(
   id: string,
   target: ResolvedInputBuild,
   operation: InputOperation,
-  submission?: Extract<PendingInputSubmission, { outcome: "rejected" }>,
+  submission?: Extract<PostSubmission, { outcome: "rejected" }>,
 ): CliError {
   const rejection = submission
     ? ` Jenkins rejected this ${operation} with HTTP ${submission.httpStatus}${submission.detail ? ` (${submission.detail})` : ""}.`
@@ -645,7 +642,7 @@ function rejectionError(
   operation: InputOperation,
   action: PendingInputAction,
   target: ResolvedInputBuild,
-  submission: Extract<PendingInputSubmission, { outcome: "rejected" }>,
+  submission: Extract<PostSubmission, { outcome: "rejected" }>,
 ): CliError {
   const detail = submission.detail ?? "";
   const where = `input "${displayId(action)}" on ${buildLabel(target)}`;

@@ -991,7 +991,7 @@ function createLocalCancellationSignal(): {
   };
 }
 
-async function waitForQueuedBuild(
+export async function waitForQueuedBuild(
   client: JenkinsClient,
   queueUrl: string,
   pollMs: number,

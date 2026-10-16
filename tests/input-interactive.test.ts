@@ -14,10 +14,7 @@ import {
 import { inputDeps } from "../src/commands/input-deps";
 import type { EnvConfig } from "../src/env";
 import type { JenkinsClient } from "../src/jenkins/client";
-import type {
-  PendingInputAction,
-  PendingInputSubmission,
-} from "../src/types/jenkins";
+import type { PendingInputAction, PostSubmission } from "../src/types/jenkins";
 
 const CANCEL = Symbol("cancel");
 const BACK = "__jenkins_cli_input_back__";
@@ -54,7 +51,7 @@ const secondAction: PendingInputAction = {
 
 function fakeClient(options: {
   pending: PendingInputAction[][];
-  submission?: PendingInputSubmission;
+  submission?: PostSubmission;
 }) {
   const pages = [...options.pending];
   return {

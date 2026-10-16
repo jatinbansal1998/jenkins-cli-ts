@@ -13,8 +13,9 @@ import hudson.model.StringParameterDefinition
 import hudson.model.TextParameterDefinition
 import hudson.model.View
 import hudson.plugins.git.GitSCM
-import hudson.security.GlobalMatrixAuthorizationStrategy
+import hudson.security.AuthorizationMatrixProperty
 import hudson.security.HudsonPrivateSecurityRealm
+import hudson.security.ProjectMatrixAuthorizationStrategy
 import hudson.slaves.DumbSlave
 import hudson.slaves.JNLPLauncher
 import hudson.tasks.ArtifactArchiver
@@ -36,6 +37,8 @@ import org.jenkinsci.plugins.workflow.multibranch.WorkflowMultiBranchProject
 import net.uaznia.lukanus.hudson.plugins.gitparameter.GitParameterDefinition
 import net.uaznia.lukanus.hudson.plugins.gitparameter.SelectedValue
 import net.uaznia.lukanus.hudson.plugins.gitparameter.SortMode
+import org.jenkinsci.plugins.matrixauth.PermissionEntry
+import org.jenkinsci.plugins.matrixauth.inheritance.InheritParentStrategy
 
 def jenkins = Jenkins.get()
 jenkins.setNumExecutors(1)
@@ -45,7 +48,8 @@ def adminUser = securityRealm.createAccount("integration-test", "integration-tes
 def readerUser = securityRealm.createAccount("integration-reader", "integration-reader-password")
 jenkins.setSecurityRealm(securityRealm)
 
-def authorizationStrategy = new GlobalMatrixAuthorizationStrategy()
+// Project-based so one job can grant the reader extra permissions.
+def authorizationStrategy = new ProjectMatrixAuthorizationStrategy()
 authorizationStrategy.add(Jenkins.ADMINISTER, "integration-test")
 authorizationStrategy.add(Jenkins.READ, "integration-reader")
 authorizationStrategy.add(Item.DISCOVER, "integration-reader")
@@ -517,6 +521,25 @@ timestamps {
 }
 ''', true))
 largeLogJob.save()
+
+// Replay fixture: a `load`ed script, and a parameter replays must copy. The
+// reader may build this job but not replay it (no Job/Configure).
+def replayJob = jenkins.createProject(WorkflowJob.class, "cli-replay")
+replayJob.addProperty(new ParametersDefinitionProperty([
+  new StringParameterDefinition("GREETING", "hello", "Replay greeting")
+]))
+replayJob.addProperty(new AuthorizationMatrixProperty(
+  [(Item.BUILD): [PermissionEntry.user("integration-reader")] as Set],
+  new InheritParentStrategy()
+))
+replayJob.setDefinition(new CpsFlowDefinition('''node {
+  writeFile file: 'helper.groovy', text: 'def greet(name) { echo "replay-helper:${name}" }; return this'
+  def helper = load 'helper.groovy'
+  echo "replay-main:${params.GREETING} <&>"
+  helper.greet(params.GREETING)
+}
+''', true))
+replayJob.save()
 
 def offlineAgent = new DumbSlave(
   "offline-agent",

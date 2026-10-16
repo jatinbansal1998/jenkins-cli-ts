@@ -2287,6 +2287,175 @@ describe.skipIf(!integrationEnabled)(
       });
     }, 300_000);
 
+    test("replays a Pipeline build with its original and edited scripts", async () => {
+      await withCliHome(async (home) => {
+        const jobUrl = `${jenkinsUrl}/job/cli-replay/`;
+        const replayScript = [
+          "node {",
+          "  writeFile file: 'helper.groovy', text: 'def greet(name) { echo \"replay-helper:${name}\" }; return this'",
+          "  def helper = load 'helper.groovy'",
+          '  echo "replay-main:${params.GREETING} <&>"',
+          "  helper.greet(params.GREETING)",
+          "}",
+          "",
+        ].join("\n");
+        const latestBuildNumber = async (url: string): Promise<number> => {
+          const status = parseJson<{
+            data: { build: { number: number } | null };
+          }>(await runCli(home, ["status", "--job-url", url, "--json"]));
+          return status.data.build?.number ?? 0;
+        };
+        type ReplayReceipt = {
+          ok: true;
+          command: string;
+          data: {
+            source: { buildUrl: string; buildNumber: number };
+            target: { buildUrl: string; buildNumber: number };
+            result: string;
+          };
+        };
+
+        const source = parseJson<{ data: { buildNumber: number } }>(
+          await runCli(home, [
+            "build",
+            "--job-url",
+            jobUrl,
+            "--param",
+            "GREETING=integration",
+            "--watch",
+            "--json",
+          ]),
+        ).data.buildNumber;
+        const sourceUrl = `${jobUrl}${source}/`;
+
+        const printed = await runCli(home, [
+          "replay",
+          "--job-url",
+          jobUrl,
+          "--build",
+          String(source),
+          "--print-script",
+        ]);
+        expect(printed.stdout).toBe(replayScript);
+        const printedHelper = await runCli(home, [
+          "replay",
+          "--build-url",
+          sourceUrl,
+          "--print-loaded",
+          "Script1",
+        ]);
+        expect(printedHelper.stdout).toBe(
+          'def greet(name) { echo "replay-helper:${name}" }; return this',
+        );
+
+        // The printed script replayed unchanged behaves like a rebuild,
+        // including the source build's parameters.
+        const scriptPath = join(home, "Jenkinsfile");
+        await Bun.write(scriptPath, printed.stdout);
+        const unchanged = await runCli(home, [
+          "replay",
+          "--build-url",
+          sourceUrl,
+          "--script",
+          scriptPath,
+          "--follow",
+        ]);
+        expect(unchanged.output).toContain(
+          `with its original scripts. Parameters are copied from #${source}.`,
+        );
+        expect(unchanged.output).toContain("replay-main:integration <&>");
+        expect(unchanged.output).toContain("replay-helper:integration");
+        const unchangedNumber = Number(
+          unchanged.output.match(/Build started at \S+\/(\d+)\/\./)?.[1],
+        );
+        expect(unchangedNumber).toBeGreaterThan(source);
+        expect(unchanged.output).toContain(
+          `Build #${unchangedNumber} finished: SUCCESS.`,
+        );
+
+        await Bun.write(
+          scriptPath,
+          printed.stdout.replace("replay-main:", "replay-edited:"),
+        );
+        const helperPath = join(home, "helper.groovy");
+        await Bun.write(
+          helperPath,
+          'def greet(name) { echo "replay-edited-helper:${name}" }; return this',
+        );
+        const edited = parseJson<ReplayReceipt>(
+          await runCli(home, [
+            "replay",
+            "--build-url",
+            sourceUrl,
+            "--script",
+            scriptPath,
+            "--loaded",
+            `Script1=${helperPath}`,
+            "--follow",
+            "--json",
+          ]),
+        );
+        expect(edited).toMatchObject({
+          ok: true,
+          command: "replay",
+          data: {
+            source: { buildUrl: sourceUrl, buildNumber: source },
+            result: "SUCCESS",
+          },
+        });
+        const editedNumber = edited.data.target.buildNumber;
+        expect(editedNumber).toBeGreaterThan(unchangedNumber);
+        expect(edited.data.target.buildUrl).toBe(`${jobUrl}${editedNumber}/`);
+        const editedLogs = await runCli(home, [
+          "logs",
+          "--build-url",
+          edited.data.target.buildUrl,
+          "--plain",
+        ]);
+        expect(editedLogs.output).toContain("replay-edited:integration <&>");
+        expect(editedLogs.output).toContain("replay-edited-helper:integration");
+        expect(editedLogs.output).not.toContain("replay-main:");
+        expect(editedLogs.output).toContain(`Replayed #${source}`);
+
+        const freestyle = parseJson<{ data: { buildUrl: string } }>(
+          await runCli(home, [
+            "build",
+            "--job-url",
+            `${jenkinsUrl}/job/cli-no-params/`,
+            "--watch",
+            "--json",
+          ]),
+        ).data.buildUrl;
+        const readerEnv = {
+          JENKINS_USER:
+            process.env.JENKINS_INTEGRATION_READER_USER ?? "integration-reader",
+          JENKINS_API_TOKEN: process.env.JENKINS_INTEGRATION_READER_TOKEN ?? "",
+        };
+        for (const [args, envOverrides, exitCode, code] of [
+          [["--build-url", freestyle], {}, 4, "REPLAY_UNAVAILABLE"],
+          [["--job-url", jobUrl, "--build", "99999"], {}, 4, "BUILD_NOT_FOUND"],
+          [
+            ["--build-url", sourceUrl],
+            readerEnv,
+            3,
+            "REPLAY_PERMISSION_DENIED",
+          ],
+        ] as const) {
+          const failed = await runCliExpectFailure(
+            home,
+            ["replay", ...args, "--script", scriptPath, "--json"],
+            envOverrides,
+          );
+          expect(failed.exitCode, failed.output).toBe(exitCode);
+          expect(JSON.parse(failed.stdout)).toMatchObject({
+            ok: false,
+            error: { code },
+          });
+        }
+        expect(await latestBuildNumber(jobUrl)).toBe(editedNumber);
+      });
+    }, 180_000);
+
     test("blocks mutations for a protected profile until confirmed", async () => {
       await withCliHome(async (home) => {
         await writeProtectedProfile(home);
@@ -2309,6 +2478,14 @@ describe.skipIf(!integrationEnabled)(
           ["build", "--job-url", jobUrl, "--json"],
           ["cancel", "--job-url", jobUrl, "--json"],
           ["rerun", "--job-url", jobUrl, "--json"],
+          [
+            "replay",
+            "--build-url",
+            `${jobUrl}1/`,
+            "--script",
+            "Jenkinsfile",
+            "--json",
+          ],
           ["input", "approve", "--job-url", jobUrl, "--yes", "--json"],
           ["input", "abort", "--job-url", jobUrl, "--yes", "--json"],
           [

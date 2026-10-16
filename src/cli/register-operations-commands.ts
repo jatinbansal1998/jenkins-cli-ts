@@ -3,6 +3,7 @@ import { parseBuildSelection } from "../build-selector";
 import { runCancel } from "../commands/cancel";
 import { runNodes } from "../commands/nodes";
 import { runQueue } from "../commands/queue";
+import { runReplay } from "../commands/replay";
 import { runRerun } from "../commands/rerun";
 import { runRunningBuilds } from "../commands/run";
 import {
@@ -13,6 +14,7 @@ import {
   addQueueUrlOption,
   optionalString,
 } from "./options";
+import { REPLAY_HELP } from "./help-epilog";
 import type { CommandRegistrationDependencies } from "./registration-types";
 
 export function registerOperationsCommands(
@@ -127,5 +129,60 @@ export function registerOperationsCommands(
           });
         });
       },
+    )
+    .command(
+      "replay [job-name]",
+      "Run a Pipeline build again with an edited Jenkinsfile",
+      configureReplayOptions,
+      async (argv) => {
+        await runCommandWithContext("replay", argv, async ({ env, client }) => {
+          await runReplay({
+            client,
+            env,
+            job: optionalString(argv.job),
+            jobUrl: optionalString(argv.jobUrl),
+            build: parseBuildSelection(argv.build),
+            buildUrl: optionalString(argv.buildUrl),
+            script: optionalString(argv.script),
+            loaded: Array.isArray(argv.loaded) ? argv.loaded.map(String) : [],
+            printScript: Boolean(argv.printScript),
+            printLoaded: optionalString(argv.printLoaded),
+            follow: Boolean(argv.follow),
+            nonInteractive: Boolean(argv.nonInteractive || argv.json),
+            json: Boolean(argv.json),
+          });
+        });
+      },
     );
+}
+
+function configureReplayOptions(yargsInstance: Argv): Argv {
+  return addJsonOption(
+    addBuildUrlOption(addBuildOption(addJobOptions(yargsInstance))),
+  )
+    .option("script", {
+      type: "string",
+      describe: "Edited main script to run (a file path, or - for stdin)",
+    })
+    .option("loaded", {
+      type: "string",
+      array: true,
+      describe:
+        "Replace a script the build loaded with `load`, as NAME=file (repeatable)",
+    })
+    .option("print-script", {
+      type: "boolean",
+      default: false,
+      describe: "Print the build's main script to stdout and exit",
+    })
+    .option("print-loaded", {
+      type: "string",
+      describe: "Print one loaded script, such as Script1, to stdout and exit",
+    })
+    .option("follow", {
+      type: "boolean",
+      default: false,
+      describe: "Stream the new build's logs and exit with its result",
+    })
+    .epilog(REPLAY_HELP);
 }
