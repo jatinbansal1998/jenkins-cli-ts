@@ -10,6 +10,8 @@ lists everything since the previous stable release, including its prereleases.
 
 ## [Unreleased]
 
+## [1.1.0-rc.3] - 2026-10-16
+
 ### Added
 
 - `replay` runs a Pipeline build again with an edited script, without
@@ -739,7 +741,8 @@ No CLI behaviour change.
 
 - Backspace and Delete in the interactive branch picker under Bun.
 
-[Unreleased]: https://github.com/jatinbansal1998/jenkins-cli-ts/compare/v1.1.0-rc.2...HEAD
+[Unreleased]: https://github.com/jatinbansal1998/jenkins-cli-ts/compare/v1.1.0-rc.3...HEAD
+[1.1.0-rc.3]: https://github.com/jatinbansal1998/jenkins-cli-ts/releases/tag/v1.1.0-rc.3
 [1.1.0-rc.2]: https://github.com/jatinbansal1998/jenkins-cli-ts/releases/tag/v1.1.0-rc.2
 [1.1.0-rc.1]: https://github.com/jatinbansal1998/jenkins-cli-ts/releases/tag/v1.1.0-rc.1
 [1.0.0]: https://github.com/jatinbansal1998/jenkins-cli-ts/releases/tag/v1.0.0
