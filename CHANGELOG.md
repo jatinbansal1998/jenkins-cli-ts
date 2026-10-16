@@ -50,6 +50,108 @@ lists everything since the previous stable release, including its prereleases.
 
 - `JENKINS_HTTP_ERROR` errors in `--json` output carry `details.httpStatus`.
 
+## [1.0.0] - 2026-10-13
+
+Everything since 0.8.16, including 1.0.0-rc.1 through 1.0.0-rc.7.
+
+### Removed
+
+- Compatibility aliases. Use `auth login` instead of `login`, `auth list`,
+  `auth use`, and `auth logout` instead of `profile`, `build` instead of
+  `deploy`, `history` instead of `builds`, and `update` instead of `upgrade`.
+  `--api-token` still works as an alias for `--token`.
+- `--enable-auto`, `--disable-auto`, `--enable-auto-install`, and
+  `--disable-auto-install`.
+- The generic JS bundle and Bun bootstrap. Releases ship platform binaries
+  only, and a missing native asset fails instead of falling back.
+
+### Added
+
+- `list`, the job picker, and running-build discovery descend into multibranch
+  pipelines and organization folders. Branch jobs show and resolve by name as
+  `repo/branch`, so they no longer need `--job-url`.
+- `--build` accepts `lastSuccessful`, `lastStable`, `lastFailed`, and
+  `lastCompleted` on every build-scoped command. A job with no matching build
+  fails with `BUILD_NOT_FOUND`.
+- `--quiet` prints nothing except errors and their hints on stderr. It implies
+  `--non-interactive`, skips the background update check, and is rejected with
+  `--json` or `--jsonl`.
+- `history --limit <n>` sets the page size (default 5) and works with
+  `--offset`. `list --limit <n>` returns at most `n` jobs after `--search` and
+  `--active-only`.
+- `--timeout <dur>` sets the per-request HTTP timeout (default `10s`), and
+  `--retries <n>` the transport retries for requests that are safe to repeat
+  (default `1`). `JENKINS_TIMEOUT_MS` and `JENKINS_RETRIES`, or `timeoutMs` and
+  `retries` in the profile, set them too; the flag wins, then the env var, then
+  the profile. Under `wait`, `--timeout` remains the wait deadline.
+- `JENKINS_CLI_CONFIG_DIR` moves the config directory. `auth status` prints the
+  config file path, and `auth status --json` adds `configFile`.
+- `jenkins-cli help --json` (and `--json help`) prints a command catalog with
+  paths, structured-output support, and help text.
+- `JOB_AMBIGUOUS` and `JOB_NOT_FOUND` errors add `details.candidates`
+  (`{ name, url }`) so callers can retry with an exact job.
+- `CHANGELOG.md`, `CONTRIBUTING.md`, a security policy, and issue and PR
+  templates.
+
+### Changed
+
+- Exit codes follow the error class: `2` usage, `3` authentication, `4` not
+  found, `5` read-only profile, `6` Jenkins error, `130` interrupted or prompt
+  cancelled, `1` for failed outcomes and other errors. `124` stays for
+  `wait --timeout`. The exit code always matches the `--json` error `code`.
+- The config directory follows `XDG_CONFIG_HOME` when it is set, and
+  `%APPDATA%\jenkins-cli` on Windows. Config is not moved automatically:
+  Windows and custom `XDG_CONFIG_HOME` users must move their
+  `~/.config/jenkins-cli` folder.
+- Writes send CSRF crumbs by default unless `JENKINS_USE_CRUMB=false` or the
+  profile has `"useCrumb": false`.
+- Recent jobs, branch history, and stage totals moved to `state-<key>.json`,
+  scoped per Jenkins URL. Values in old `jobs-*.json` files are not carried
+  over and rebuild with use.
+- The `--json` and `--jsonl` error body is `{ code, message, hints, details? }`.
+  Jenkins HTTP 400 responses map to the usage class as `JENKINS_BAD_REQUEST`,
+  and a flag given without its value exits `2` with `INVALID_USAGE`.
+- Every job URL in `--json` output ends with `/`, as Jenkins returns it.
+- `--no-color`, `NO_COLOR`, and `FORCE_COLOR` apply to every styled string,
+  including the status result.
+- Faster startup: binaries are compiled with bytecode and minification,
+  `help --json` and `help --full` render in-process, the minimum-version policy
+  refresh runs in a detached worker, and the keychain is read only when a
+  command reaches Jenkins.
+- Fewer Jenkins requests: status polls fetch build details and stages in
+  parallel and reuse data across polls; multi-job `status` and
+  `history --limit` read 6 at a time; `logs --tail` reads backwards from the
+  end; `logs --stage`, `--failed`, and `--stage-id` read only the selected
+  stage, with at least 200ms between log reads.
+- Network errors wait 200–500ms (jittered) before the single retry; a header
+  timeout fails straight away. Build triggers, item creation, and input
+  approve/abort never retry. A `JENKINS_TIMEOUT` error states the limit that
+  applied.
+- `update` prints the current version, progress, target, and old/new versions,
+  stages downloads next to the installed executable, and replaces it with one
+  atomic rename. Standalone auto-update runs in a detached process. Update
+  requests cancel after five minutes; hung version probes are killed after five
+  seconds.
+- Binaries are built with Bun 1.4.3.
+
+### Fixed
+
+- Concurrent commands no longer overwrite each other's recent jobs or branch
+  history, and job list refresh no longer does an O(n²) branch merge.
+- Keychain token errors surface as auth errors from every command, including
+  best-effort background reads.
+- When `ldd` is unavailable, `update` detects musl from the build target
+  instead of scanning the executable, which used about 185MB and picked the
+  musl asset on glibc hosts.
+
+## [1.0.0-rc.7] - 2026-10-11
+
+No CLI behaviour change.
+
+### Changed
+
+- Binaries are built with Bun 1.4.3 (was 1.4.2).
+
 ## [1.0.0-rc.6] - 2026-10-06
 
 ### Added
@@ -618,6 +720,8 @@ No CLI behaviour change.
 [Unreleased]: https://github.com/jatinbansal1998/jenkins-cli-ts/compare/v1.1.0-rc.2...HEAD
 [1.1.0-rc.2]: https://github.com/jatinbansal1998/jenkins-cli-ts/releases/tag/v1.1.0-rc.2
 [1.1.0-rc.1]: https://github.com/jatinbansal1998/jenkins-cli-ts/releases/tag/v1.1.0-rc.1
+[1.0.0]: https://github.com/jatinbansal1998/jenkins-cli-ts/releases/tag/v1.0.0
+[1.0.0-rc.7]: https://github.com/jatinbansal1998/jenkins-cli-ts/releases/tag/v1.0.0-rc.7
 [1.0.0-rc.6]: https://github.com/jatinbansal1998/jenkins-cli-ts/releases/tag/v1.0.0-rc.6
 [1.0.0-rc.5]: https://github.com/jatinbansal1998/jenkins-cli-ts/releases/tag/v1.0.0-rc.5
 [1.0.0-rc.4]: https://github.com/jatinbansal1998/jenkins-cli-ts/releases/tag/v1.0.0-rc.4
