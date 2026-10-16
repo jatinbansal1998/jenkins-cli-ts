@@ -27,8 +27,11 @@ lists everything since the previous stable release, including its prereleases.
   JSON) now surfaces as an error instead of being read as "item gone", in
   `wait`, `logs --queue-url`, `build --watch`, `input`, and `cancel
 --queue-url`.
-- `build --watch` no longer follows the previous build when the new one queues
-  behind it, for example on a job that disallows concurrent builds.
+- `build --watch` no longer follows another build while its own is queued:
+  not the previous build it queues behind, and not someone else's build that
+  starts first. It falls back to the job only once the queue item is gone. A
+  cancelled queue item ends the watch with result `ABORTED` (exit code 1)
+  instead of polling forever.
 
 ### Added
 

@@ -2016,6 +2016,60 @@ describe.skipIf(!integrationEnabled)(
           result: "SUCCESS",
           buildNumber: runningNumber + 1,
         });
+
+        // Ours is cancelled while queued and someone else's build then
+        // starts: the watch must report ours as aborted, not follow theirs.
+        await runCli(home, [
+          "build",
+          "--job-url",
+          slowJobUrl,
+          "--without-params",
+        ]);
+        const runningAgain = await pollCli(home, ["run"], (result) =>
+          result.output.includes("cli-slow #"),
+        );
+        const slowAgainUrl = runningAgain.output.match(
+          /(http:\/\/[^\s]+\/job\/cli-slow\/\d+\/)/,
+        )?.[1];
+        expect(slowAgainUrl).toBeDefined();
+        const ownWatch = invokeCli(home, [
+          "build",
+          "--job-url",
+          jobUrl,
+          "--param",
+          "EXIT_CODE=0",
+          "--watch",
+          "--interval",
+          "250ms",
+          "--json",
+        ]);
+        const ownQueued = await pollCli(
+          home,
+          ["queue", "--job", "cli-queue-wait"],
+          (result) => /^\s*\d+\s+cli-queue-wait/m.test(result.output),
+        );
+        const ownQueueId = ownQueued.output.match(
+          /^\s*(\d+)\s+cli-queue-wait/m,
+        )?.[1];
+        expect(ownQueueId).toBeDefined();
+        const theirs = await triggerQueued("4");
+        await runCli(home, [
+          "cancel",
+          "--queue-url",
+          `${jenkinsUrl}/queue/item/${ownQueueId}/`,
+        ]);
+        await runCli(home, ["cancel", "--build-url", slowAgainUrl!]);
+        const own = await ownWatch;
+        expect(own.exitCode, own.output).toBe(1);
+        expect(parseJson(own)).toMatchObject({
+          ok: true,
+          data: { result: "ABORTED" },
+        });
+        const theirsWait = await invokeCli(home, waitArgs(theirs.queueUrl));
+        expect(theirsWait.exitCode, theirsWait.output).toBe(1);
+        expect(parseJson(theirsWait)).toMatchObject({
+          data: { result: "FAILURE" },
+        });
       });
     }, 120_000);
 
