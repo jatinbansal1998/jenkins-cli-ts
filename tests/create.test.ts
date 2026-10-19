@@ -19,15 +19,22 @@ function clientWith(
 
 describe("create command", () => {
   let tempDir: string;
+  let warnings: string[];
+  let errorSpy: ReturnType<typeof spyOn>;
 
   beforeEach(() => {
     process.exitCode = 0;
     tempDir = mkdtempSync(join(tmpdir(), "jenkins-cli-create-"));
+    warnings = [];
+    errorSpy = spyOn(console, "error").mockImplementation((line) => {
+      warnings.push(String(line));
+    });
   });
 
   afterEach(() => {
     process.exitCode = undefined;
     rmSync(tempDir, { recursive: true, force: true });
+    errorSpy.mockRestore();
   });
 
   test("rejects when neither --config nor --copy-from is passed", async () => {
@@ -154,30 +161,22 @@ describe("create command", () => {
 
   test("warns and reports when Jenkins still holds the copy, without failing", async () => {
     const released: string[] = [];
-    const warnings: string[] = [];
     const chunks: string[] = [];
-    const errorSpy = spyOn(console, "error").mockImplementation((line) => {
-      warnings.push(String(line));
+    await runCreate({
+      client: clientWith(
+        async () => "https://jenkins.example.com/job/api-copy/",
+        async (url) => {
+          released.push(url);
+          return [url];
+        },
+      ),
+      env,
+      name: "api-copy",
+      copyFrom: "https://jenkins.example.com/job/api/",
+      nonInteractive: true,
+      json: true,
+      write: (chunk) => chunks.push(chunk),
     });
-    try {
-      await runCreate({
-        client: clientWith(
-          async () => "https://jenkins.example.com/job/api-copy/",
-          async (url) => {
-            released.push(url);
-            return [url];
-          },
-        ),
-        env,
-        name: "api-copy",
-        copyFrom: "https://jenkins.example.com/job/api/",
-        nonInteractive: true,
-        json: true,
-        write: (chunk) => chunks.push(chunk),
-      });
-    } finally {
-      errorSpy.mockRestore();
-    }
 
     expect(released).toEqual(["https://jenkins.example.com/job/api-copy/"]);
     expect(JSON.parse(chunks.join(""))).toMatchObject({
