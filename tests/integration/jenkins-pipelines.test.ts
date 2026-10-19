@@ -2457,26 +2457,13 @@ describe.skipIf(!integrationEnabled)(
 
     test("edits a Pipeline job's script through config --apply", async () => {
       await withCliHome(async (home) => {
-        // Seed from config.xml, not --copy-from: Jenkins holds a copied
-        // job unbuildable until it is saved from the web UI.
-        const configPath = join(home, "config.xml");
-        await Bun.write(
-          configPath,
-          (
-            await runCli(home, [
-              "config",
-              "--job-url",
-              `${jenkinsUrl}/job/cli-pipeline/`,
-            ])
-          ).stdout,
-        );
         const name = `cli-config-edit-${Date.now().toString(36)}`;
         const jobUrl = parseJson<{ data: { url: string } }>(
           await runCli(home, [
             "create",
             name,
-            "--config",
-            configPath,
+            "--copy-from",
+            "cli-pipeline",
             "--json",
           ]),
         ).data.url;
@@ -2485,6 +2472,7 @@ describe.skipIf(!integrationEnabled)(
 
         const original = await readConfig();
         expect(original).toContain("pipeline-prepare");
+        const configPath = join(home, "config.xml");
         await Bun.write(
           configPath,
           // Non-ASCII proves the POST is decoded as UTF-8, not ISO-8859-1.
@@ -2527,6 +2515,8 @@ describe.skipIf(!integrationEnabled)(
         expect(logs.output).toContain("pipeline-edited-café-✓");
 
         // Jenkins rejects XML it cannot parse and keeps the previous config.
+        // Read it after the build: running a build re-saves the job.
+        const beforeRejected = await readConfig();
         await Bun.write(configPath, "<flow-definition>");
         const rejected = await runCliExpectFailure(home, [
           "config",
@@ -2537,7 +2527,7 @@ describe.skipIf(!integrationEnabled)(
           "--json",
         ]);
         expect(JSON.parse(rejected.stdout)).toMatchObject({ ok: false });
-        expect(await readConfig()).toBe(edited);
+        expect(await readConfig()).toBe(beforeRejected);
       });
     }, 120_000);
 

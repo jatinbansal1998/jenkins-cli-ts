@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -12,21 +12,29 @@ const env = { jenkinsUrl: "https://jenkins.example.com" } as EnvConfig;
 
 function clientWith(
   createItem: (options: CreateItemOptions) => Promise<string>,
+  releaseCopiedItem: (url: string) => Promise<string[]> = async () => [],
 ): JenkinsClient {
-  return { createItem } as unknown as JenkinsClient;
+  return { createItem, releaseCopiedItem } as unknown as JenkinsClient;
 }
 
 describe("create command", () => {
   let tempDir: string;
+  let warnings: string[];
+  let errorSpy: ReturnType<typeof spyOn>;
 
   beforeEach(() => {
     process.exitCode = 0;
     tempDir = mkdtempSync(join(tmpdir(), "jenkins-cli-create-"));
+    warnings = [];
+    errorSpy = spyOn(console, "error").mockImplementation((line) => {
+      warnings.push(String(line));
+    });
   });
 
   afterEach(() => {
     process.exitCode = undefined;
     rmSync(tempDir, { recursive: true, force: true });
+    errorSpy.mockRestore();
   });
 
   test("rejects when neither --config nor --copy-from is passed", async () => {
@@ -148,7 +156,36 @@ describe("create command", () => {
         parentUrl: "https://jenkins.example.com/job/team",
       },
     ]);
-    expect(chunks.join("")).toContain('"copiedFrom":"team/api"');
+    expect(chunks.join("")).toContain('"copiedFrom":"team/api","held":[]');
+  });
+
+  test("warns and reports when Jenkins still holds the copy, without failing", async () => {
+    const released: string[] = [];
+    const chunks: string[] = [];
+    await runCreate({
+      client: clientWith(
+        async () => "https://jenkins.example.com/job/api-copy/",
+        async (url) => {
+          released.push(url);
+          return [url];
+        },
+      ),
+      env,
+      name: "api-copy",
+      copyFrom: "https://jenkins.example.com/job/api/",
+      nonInteractive: true,
+      json: true,
+      write: (chunk) => chunks.push(chunk),
+    });
+
+    expect(released).toEqual(["https://jenkins.example.com/job/api-copy/"]);
+    expect(JSON.parse(chunks.join(""))).toMatchObject({
+      ok: true,
+      data: { held: ["https://jenkins.example.com/job/api-copy/"] },
+    });
+    expect(warnings).toEqual([
+      "WARN: Jenkins will not build https://jenkins.example.com/job/api-copy/ until it is saved. Open https://jenkins.example.com/job/api-copy/configure and click Save.",
+    ]);
   });
 
   test("rejects a --copy-from URL on another controller", async () => {

@@ -118,6 +118,8 @@ Command-specific options:
     --folder-url <url>  Folder URL to create the item in (default: root)
     --json              Output one creation receipt (implies non-interactive)
     Exactly one of --config or --copy-from is required.
+    --copy-from saves the copy (and every job in a copied folder) so Jenkins
+    builds it; the receipt's "held" lists any job it still will not build.
 
   build:
     [job-name]             Job name or description

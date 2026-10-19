@@ -686,6 +686,7 @@ describe.skipIf(!integrationEnabled)(
           [
             "<?xml version='1.1' encoding='UTF-8'?>",
             "<project>",
+            "  <description>Copié par le CLI ✓</description>",
             "  <builders>",
             "    <hudson.tasks.Shell>",
             "      <command>echo created-by-cli</command>",
@@ -735,6 +736,73 @@ describe.skipIf(!integrationEnabled)(
             ])
           ).output,
         ).toContain("created-by-cli");
+
+        // Jenkins holds a copied job until it is saved; create releases it,
+        // keeping the source's non-ASCII description intact.
+        const builtCopy = parseJson<{ data: { url: string } }>(
+          await runCli(home, [
+            "create",
+            `cli-copied-built-${suffix}`,
+            "--copy-from",
+            created.data.url,
+            "--json",
+          ]),
+        ).data.url;
+        expect(
+          (await runCli(home, ["config", "--job-url", builtCopy])).output,
+        ).toContain("<description>Copié par le CLI ✓</description>");
+        const copyBuild = await runCli(home, [
+          "build",
+          "--job-url",
+          builtCopy,
+          "--without-params",
+          "--watch",
+        ]);
+        expect(copyBuild.output).toContain("SUCCESS");
+
+        // A copied folder copies its jobs, and Jenkins holds each of those too.
+        const folderConfig = join(home, "folder-config.xml");
+        await Bun.write(
+          folderConfig,
+          "<com.cloudbees.hudson.plugins.folder.Folder/>\n",
+        );
+        const sourceFolder = parseJson<{ data: { url: string } }>(
+          await runCli(home, [
+            "create",
+            `cli-folder-source-${suffix}`,
+            "--config",
+            folderConfig,
+            "--json",
+          ]),
+        ).data.url;
+        await runCli(home, [
+          "create",
+          "inner",
+          "--config",
+          configPath,
+          "--folder-url",
+          sourceFolder,
+          "--json",
+        ]);
+        const folderCopy = parseJson<{ data: { url: string; held: string[] } }>(
+          await runCli(home, [
+            "create",
+            `cli-folder-copy-${suffix}`,
+            "--copy-from",
+            sourceFolder,
+            "--json",
+          ]),
+        ).data;
+        expect(folderCopy.held).toEqual([]);
+        const copiedFolder = folderCopy.url;
+        const innerBuild = await runCli(home, [
+          "build",
+          "--job-url",
+          `${copiedFolder}job/inner/`,
+          "--without-params",
+          "--watch",
+        ]);
+        expect(innerBuild.output).toContain("SUCCESS");
 
         const copyName = `cli-copied-${suffix}`;
         const copied = parseJson<{ data: { url: string } }>(

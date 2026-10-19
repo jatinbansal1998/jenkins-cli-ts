@@ -3,7 +3,7 @@
  * Creates a Jenkins item from a config.xml file or by copying an existing
  * item. Blocked on read-only profiles like other Jenkins writes.
  */
-import { CliError, printOk } from "../cli";
+import { CliError, printOk, printWarning } from "../cli";
 import { assertProtectedMutationAllowed, type EnvConfig } from "../env";
 import type { JenkinsClient } from "../jenkins/client";
 import { normalizeControllerTargetUrl } from "../jenkins-target-url";
@@ -35,9 +35,13 @@ export async function runCreate(options: CreateOptions): Promise<void> {
   printOk(`Created "${created.name}" at ${created.url}`);
 }
 
-async function performCreate(
-  options: CreateOptions,
-): Promise<{ name: string; url: string; copiedFrom?: string }> {
+async function performCreate(options: CreateOptions): Promise<{
+  name: string;
+  url: string;
+  copiedFrom?: string;
+  /** Copied jobs Jenkins still will not build until they are saved. */
+  held?: string[];
+}> {
   const name = options.name?.trim() ?? "";
   if (!name) {
     throw new CliError(
@@ -92,7 +96,36 @@ async function performCreate(
     copyFrom: source.from,
     ...(parentUrl ? { parentUrl } : {}),
   });
-  return { name, url, copiedFrom: source.label };
+  const held = await releaseCopy(options.client, url);
+  return { name, url, copiedFrom: source.label, held };
+}
+
+/**
+ * The item already exists here, so a failure to release it is a warning:
+ * failing the command would invite a retry that hits the duplicate name.
+ */
+async function releaseCopy(
+  client: JenkinsClient,
+  url: string,
+): Promise<string[]> {
+  let held: string[];
+  try {
+    held = await client.releaseCopiedItem(url);
+  } catch (error) {
+    if (!(error instanceof CliError)) {
+      throw error;
+    }
+    printWarning(
+      `Could not save the copy at ${url} (${error.message}). Jenkins will not build a copied job until it is saved: open its configure page and click Save.`,
+    );
+    return [url];
+  }
+  for (const jobUrl of held) {
+    printWarning(
+      `Jenkins will not build ${jobUrl} until it is saved. Open ${jobUrl}configure and click Save.`,
+    );
+  }
+  return held;
 }
 
 async function resolveCopySource(

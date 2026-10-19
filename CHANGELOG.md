@@ -27,6 +27,14 @@ lists everything since the previous stable release, including its prereleases.
   build starts, reported as `ABORTED`, now exits `8` instead of `1`. Scripts
   that only check for a non-zero exit are unaffected.
 
+### Fixed
+
+- A job made with `create --copy-from` can be built right away. Jenkins holds
+  a copied job until it is saved, which only its web UI did; `create` now
+  saves the copy without changing it, and every job inside a copied folder.
+  If that fails, `create` still succeeds, warns to open the job's configure
+  page and click Save, and lists the job in the `--json` receipt's `held`.
+
 ## [1.1.0-rc.3] - 2026-10-16
 
 ### Added
