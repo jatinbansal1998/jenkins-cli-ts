@@ -76,7 +76,7 @@ ${BUILD_METADATA_HELP}
 Scripting and AI agents:
   Pass --non-interactive to disable every prompt and fail fast; --json/--jsonl imply it.
   --json: list, params, build, status, history, wait, tests, changes, artifacts,
-          run, cancel, create, queue, nodes, rerun, replay,
+          run, cancel, config --apply, create, queue, nodes, rerun, replay,
           input list/approve/abort,
           auth status/list/current, update --check, and help.
   --jsonl: logs.
@@ -107,11 +107,13 @@ Command-specific options:
     [job-name]       Job name or description
     --job <text>     Job name or description
     --job-url <url>  Full Jenkins job or folder URL
-    Prints the item's raw config.xml to stdout.
+    --apply <file>   Replace the item's config.xml with this file (- for stdin)
+    --json           With --apply, output one update receipt
+    Without --apply, prints the item's raw config.xml to stdout.
 
   create:
     <name>              Name for the new item
-    --config <file>     Path to a config.xml file for the new item
+    --config <file>     Path to a config.xml file for the new item (- for stdin)
     --copy-from <job>   Job name or URL to copy the new item from
     --folder-url <url>  Folder URL to create the item in (default: root)
     --json              Output one creation receipt (implies non-interactive)
@@ -312,16 +314,16 @@ Command-specific options:
     (--url, --user, and --token must be passed together)
 
   read-only profiles (any command):
-    --confirm-protected  Allow builds, cancels, reruns, and input approvals or
-                         aborts on a read-only profile for this run only
-                         (never persisted)
+    --confirm-protected  Allow builds, cancels, creates, config changes,
+                         reruns, replays, and input approvals or aborts on a
+                         read-only profile for this run only (never persisted)
     Make a profile read-only with "auth login --protected" (interactive login
     asks and defaults to no) or by setting "protected": true in the config file.
-    Blocked without the flag: build, cancel, create, rerun, rerun last
-    build, replay, input approve/abort, and the same actions reached from
-    list/build/status/history menus. Everything that only reads (list, params,
-    status, wait, logs, tests, changes, history, queue, nodes, artifacts,
-    replay --print-script, input list, auth) still works. A direct --url pointing
+    Blocked without the flag: build, cancel, create, config --apply, rerun,
+    rerun last build, replay, input approve/abort, and the same actions reached
+    from list/build/status/history menus. Everything that only reads (list,
+    params, config, status, wait, logs, tests, changes, history, queue, nodes,
+    artifacts, replay --print-script, input list, auth) still works. A direct --url pointing
     at a read-only profile's controller is read-only too. Blocked runs exit
     non-zero; with --json they emit one document with code PROFILE_PROTECTED.
 

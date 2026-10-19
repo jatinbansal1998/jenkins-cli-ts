@@ -10,6 +10,14 @@ lists everything since the previous stable release, including its prereleases.
 
 ## [Unreleased]
 
+### Added
+
+- `config --apply FILE` (or `-` for stdin) replaces a job's or folder's
+  `config.xml`, so a Pipeline script or any other job setting can be edited
+  from the CLI: print it with `config`, edit it, apply it. `--json` emits one
+  receipt. Read-only profiles block it like other writes. `create --config`
+  also accepts `-` for stdin.
+
 ### Changed
 
 - `build --watch`, `wait`, `replay --follow`, and `status --watch` without

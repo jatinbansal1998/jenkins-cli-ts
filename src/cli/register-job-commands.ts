@@ -1,4 +1,5 @@
 import type { Argv } from "yargs";
+import { CliError } from "../cli";
 import { runCreate } from "../commands/create";
 import { runJobConfig } from "../commands/job-config";
 import { runList } from "../commands/list";
@@ -55,9 +56,24 @@ export function registerJobCommands(
     )
     .command(
       "config [job-name]",
-      "Print a job or folder's raw config.xml",
-      addJobOptions,
+      "Print a job or folder's raw config.xml, or replace it with --apply",
+      (yargsInstance) =>
+        addJsonOption(
+          addJobOptions(yargsInstance).option("apply", {
+            type: "string",
+            requiresArg: true,
+            describe: "Path to a config.xml to replace the item's config with",
+          }),
+        ),
       async (argv) => {
+        // A repeated flag parses as an array, which would read instead of write.
+        if (Array.isArray(argv.apply)) {
+          throw new CliError(
+            "Pass --apply only once.",
+            ["Remove the extra --apply and try again."],
+            "INVALID_USAGE",
+          );
+        }
         await dependencies.runCommandWithContext(
           "config",
           argv,
@@ -67,7 +83,10 @@ export function registerJobCommands(
               env,
               job: optionalString(argv.job),
               jobUrl: optionalString(argv.jobUrl),
-              nonInteractive: Boolean(argv.nonInteractive),
+              apply: optionalString(argv.apply),
+              nonInteractive:
+                Boolean(argv.nonInteractive) || Boolean(argv.json),
+              json: Boolean(argv.json),
             });
           },
         );
@@ -85,7 +104,9 @@ export function registerJobCommands(
             })
             .option("config", {
               type: "string",
-              describe: "Path to a config.xml file for the new item",
+              requiresArg: true,
+              describe:
+                "Path to a config.xml file for the new item (- for stdin)",
             })
             .option("copy-from", {
               type: "string",

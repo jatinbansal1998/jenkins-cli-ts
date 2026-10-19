@@ -369,6 +369,35 @@ export class JenkinsClient {
     return await response.text();
   }
 
+  async updateJobConfigXml(jobUrl: string, configXml: string): Promise<void> {
+    const context = "update job config";
+    // Replacing the whole config is idempotent, so the transport retry stays.
+    const response = await this.sendPostWithCrumbRetry({
+      url: this.withJob(jobUrl, "config.xml"),
+      context,
+      body: configXml,
+      contentType: XML_CONTENT_TYPE,
+      // A followed login redirect would end in a 200 page, not an update.
+      redirect: "manual",
+    });
+    if (isRedirect(response)) {
+      throw loginRedirectError(context);
+    }
+    if (!response.ok) {
+      await this.raiseHttpError(response, context);
+    }
+    // Jenkins accepts a config with an empty reply; a page came from a proxy.
+    if ((await readResponseText(response)).trim()) {
+      throw new CliError(
+        `Unexpected Jenkins response while trying to ${context}: received a page instead of an empty reply.`,
+        [
+          "A login page or proxy probably intercepted the request. Check the controller URL and credentials with `auth status`.",
+        ],
+        "JENKINS_INVALID_RESPONSE",
+      );
+    }
+  }
+
   async createItem(options: CreateItemOptions): Promise<string> {
     const context = "create item";
     const parentUrl = options.parentUrl ?? this.baseUrl;
@@ -385,7 +414,7 @@ export class JenkinsClient {
       context,
       transportRetries: 0,
       ...(options.configXml !== undefined
-        ? { body: options.configXml, contentType: "application/xml" }
+        ? { body: options.configXml, contentType: XML_CONTENT_TYPE }
         : {}),
     });
     if (!response.ok) {
@@ -2090,6 +2119,10 @@ function rethrowIfUnavailable(error: unknown): void {
     throw error;
   }
 }
+
+// Jenkins reads a config.xml POST as text, and without a charset the servlet
+// container decodes it as ISO-8859-1, corrupting every non-ASCII character.
+const XML_CONTENT_TYPE = "application/xml; charset=UTF-8";
 
 function isRedirect(response: Response): boolean {
   return response.status >= 300 && response.status < 400;

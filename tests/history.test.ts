@@ -581,7 +581,7 @@ describe("runHistory", () => {
       'ERROR: Profile "release" is read-only.',
     );
     expect(errorSpy).toHaveBeenCalledWith(
-      "HINT: Re-run with --confirm-protected to allow builds, cancels, creates, reruns, and input approvals or aborts.",
+      "HINT: Re-run with --confirm-protected to allow builds, cancels, creates, config changes, reruns, replays, and input approvals or aborts.",
     );
     // Both blocks kept the build action menu open: two blocked selections, the
     // read action, the back-out, then the history page prompt again.

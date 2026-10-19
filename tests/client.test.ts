@@ -2216,6 +2216,95 @@ describe("JenkinsClient getJobConfigXml", () => {
   });
 });
 
+describe("JenkinsClient updateJobConfigXml", () => {
+  test("posts the XML to the job's config.xml with a crumb", async () => {
+    const fetchMock = mock(async (input: FetchInput, _init?: FetchInit) => {
+      if (typeof input === "string" && input.includes("crumbIssuer")) {
+        return Response.json({
+          crumbRequestField: "Jenkins-Crumb",
+          crumb: "c1",
+        });
+      }
+      return new Response("", { status: 200 });
+    });
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+    const client = new JenkinsClient({
+      baseUrl: "https://jenkins.example.com",
+      user: "user",
+      apiToken: "token",
+      timeoutMs: 1_000,
+      useCrumb: true,
+    });
+
+    await client.updateJobConfigXml(
+      "https://jenkins.example.com/job/team/job/api",
+      "<flow-definition/>",
+    );
+
+    const call = fetchMock.mock.calls[1];
+    expect(call?.[0]).toBe(
+      "https://jenkins.example.com/job/team/job/api/config.xml",
+    );
+    expect(call?.[1]?.method).toBe("POST");
+    expect(call?.[1]?.body).toBe("<flow-definition/>");
+    expect(readHeader(call?.[1], "Content-Type")).toBe(
+      "application/xml; charset=UTF-8",
+    );
+    expect(readHeader(call?.[1], "Jenkins-Crumb")).toBe("c1");
+  });
+
+  test("reports a login redirect or a proxy page instead of success", async () => {
+    const client = new JenkinsClient({
+      baseUrl: "https://jenkins.example.com",
+      user: "user",
+      apiToken: "token",
+      timeoutMs: 1_000,
+    });
+    const fetchMock = mock(
+      async (_input: FetchInput, _init?: FetchInit) =>
+        new Response("", {
+          status: 302,
+          headers: { Location: "https://sso.example.com/login" },
+        }),
+    );
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+    await expect(
+      client.updateJobConfigXml("https://jenkins.example.com/job/api", "<a/>"),
+    ).rejects.toMatchObject({ code: "JENKINS_LOGIN_REDIRECT" });
+    expect(fetchMock.mock.calls[0]?.[1]?.redirect).toBe("manual");
+
+    globalThis.fetch = mock(
+      async () =>
+        new Response("<html><body>Sign in</body></html>", { status: 200 }),
+    ) as unknown as typeof fetch;
+    await expect(
+      client.updateJobConfigXml("https://jenkins.example.com/job/api", "<a/>"),
+    ).rejects.toMatchObject({ code: "JENKINS_INVALID_RESPONSE" });
+  });
+
+  test("raises a CliError when Jenkins rejects the XML", async () => {
+    globalThis.fetch = mock(
+      async () => new Response("Unable to read", { status: 500 }),
+    ) as unknown as typeof fetch;
+
+    const client = new JenkinsClient({
+      baseUrl: "https://jenkins.example.com",
+      user: "user",
+      apiToken: "token",
+      timeoutMs: 1_000,
+    });
+
+    await expect(
+      client.updateJobConfigXml(
+        "https://jenkins.example.com/job/api",
+        "<broken",
+      ),
+    ).rejects.toThrow("HTTP 500 while trying to update job config");
+  });
+});
+
 describe("JenkinsClient createItem", () => {
   test("posts config XML with an application/xml content type", async () => {
     const fetchMock = mock(async (_input: FetchInput, _init?: FetchInit) => {
@@ -2242,7 +2331,9 @@ describe("JenkinsClient createItem", () => {
     );
     expect(call?.[1]?.method).toBe("POST");
     expect(call?.[1]?.body).toBe("<project/>");
-    expect(readHeader(call?.[1], "Content-Type")).toBe("application/xml");
+    expect(readHeader(call?.[1], "Content-Type")).toBe(
+      "application/xml; charset=UTF-8",
+    );
   });
 
   test("copies an existing item with mode=copy and no body", async () => {

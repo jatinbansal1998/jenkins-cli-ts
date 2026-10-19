@@ -92,6 +92,16 @@ jenkins-cli replay --job api --build 25 --print-script > Jenkinsfile
 jenkins-cli replay --job api --build 25 --script Jenkinsfile --follow
 ```
 
+`config` prints a job's or folder's `config.xml`; `config --apply` replaces it,
+for example to change a Pipeline job's script for good. Jenkins validates the XML
+and keeps the old config if it rejects it:
+
+```bash
+jenkins-cli config api > config.xml
+# edit config.xml
+jenkins-cli config api --apply config.xml
+```
+
 Find options and examples in the CLI:
 
 ```bash

@@ -38,6 +38,19 @@ function isRunning(pid: number): boolean {
   }
 }
 
+/**
+ * Signals land asynchronously, and a killed orphan stays visible until init
+ * reaps it, so the process may still exist the instant run-bounded returns.
+ */
+async function isGoneWithin(pid: number, ms: number): Promise<boolean> {
+  const deadline = Date.now() + ms;
+  while (isRunning(pid)) {
+    if (Date.now() > deadline) return false;
+    await Bun.sleep(50);
+  }
+  return true;
+}
+
 describe("bounded test runner", () => {
   test("rejects a run without both limits", () => {
     expect(() => parseArguments(["--minutes", "1", "--", "bun"])).toThrow(
@@ -67,7 +80,7 @@ describe("bounded test runner", () => {
       expect(result.exitCode).toBe(124);
       expect(result.stderr).toContain("ran past 0.02 min");
       expect(Date.now() - started).toBeLessThan(10_000);
-      expect(isRunning(backgroundPid)).toBe(false);
+      expect(await isGoneWithin(backgroundPid, 5_000)).toBe(true);
     },
     20_000,
   );

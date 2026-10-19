@@ -74,7 +74,9 @@ describe("create command", () => {
         configPath: join(tempDir, "missing.xml"),
         nonInteractive: true,
       }),
-    ).rejects.toThrow("Config file not found");
+    ).rejects.toThrow(
+      `Cannot read config file ${join(tempDir, "missing.xml")}.`,
+    );
   });
 
   test("blocks creation on a read-only profile", async () => {
