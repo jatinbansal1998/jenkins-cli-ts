@@ -149,12 +149,13 @@ describe("create command", () => {
         parentUrl: "https://jenkins.example.com/job/team",
       },
     ]);
-    expect(chunks.join("")).toContain('"copiedFrom":"team/api"');
+    expect(chunks.join("")).toContain('"copiedFrom":"team/api","held":[]');
   });
 
-  test("warns when Jenkins still holds the copy, without failing", async () => {
+  test("warns and reports when Jenkins still holds the copy, without failing", async () => {
     const released: string[] = [];
     const warnings: string[] = [];
+    const chunks: string[] = [];
     const errorSpy = spyOn(console, "error").mockImplementation((line) => {
       warnings.push(String(line));
     });
@@ -171,12 +172,18 @@ describe("create command", () => {
         name: "api-copy",
         copyFrom: "https://jenkins.example.com/job/api/",
         nonInteractive: true,
+        json: true,
+        write: (chunk) => chunks.push(chunk),
       });
     } finally {
       errorSpy.mockRestore();
     }
 
     expect(released).toEqual(["https://jenkins.example.com/job/api-copy/"]);
+    expect(JSON.parse(chunks.join(""))).toMatchObject({
+      ok: true,
+      data: { held: ["https://jenkins.example.com/job/api-copy/"] },
+    });
     expect(warnings).toEqual([
       "WARN: Jenkins will not build https://jenkins.example.com/job/api-copy/ until it is saved. Open https://jenkins.example.com/job/api-copy/configure and click Save.",
     ]);

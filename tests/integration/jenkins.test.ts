@@ -784,7 +784,7 @@ describe.skipIf(!integrationEnabled)(
           sourceFolder,
           "--json",
         ]);
-        const copiedFolder = parseJson<{ data: { url: string } }>(
+        const folderCopy = parseJson<{ data: { url: string; held: string[] } }>(
           await runCli(home, [
             "create",
             `cli-folder-copy-${suffix}`,
@@ -792,7 +792,9 @@ describe.skipIf(!integrationEnabled)(
             sourceFolder,
             "--json",
           ]),
-        ).data.url;
+        ).data;
+        expect(folderCopy.held).toEqual([]);
+        const copiedFolder = folderCopy.url;
         const innerBuild = await runCli(home, [
           "build",
           "--job-url",
