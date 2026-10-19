@@ -55,8 +55,15 @@ export function registerJobCommands(
     )
     .command(
       "config [job-name]",
-      "Print a job or folder's raw config.xml",
-      addJobOptions,
+      "Print a job or folder's raw config.xml, or replace it with --apply",
+      (yargsInstance) =>
+        addJsonOption(
+          addJobOptions(yargsInstance).option("apply", {
+            type: "string",
+            requiresArg: true,
+            describe: "Path to a config.xml to replace the item's config with",
+          }),
+        ),
       async (argv) => {
         await dependencies.runCommandWithContext(
           "config",
@@ -67,7 +74,10 @@ export function registerJobCommands(
               env,
               job: optionalString(argv.job),
               jobUrl: optionalString(argv.jobUrl),
-              nonInteractive: Boolean(argv.nonInteractive),
+              apply: optionalString(argv.apply),
+              nonInteractive:
+                Boolean(argv.nonInteractive) || Boolean(argv.json),
+              json: Boolean(argv.json),
             });
           },
         );

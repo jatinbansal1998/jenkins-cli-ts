@@ -2456,6 +2456,91 @@ describe.skipIf(!integrationEnabled)(
       });
     }, 180_000);
 
+    test("edits a Pipeline job's script through config --apply", async () => {
+      await withCliHome(async (home) => {
+        // Seed from config.xml, not --copy-from: Jenkins holds a copied
+        // job unbuildable until it is saved from the web UI.
+        const configPath = join(home, "config.xml");
+        await Bun.write(
+          configPath,
+          (
+            await runCli(home, [
+              "config",
+              "--job-url",
+              `${jenkinsUrl}/job/cli-pipeline/`,
+            ])
+          ).stdout,
+        );
+        const name = `cli-config-edit-${Date.now().toString(36)}`;
+        const jobUrl = parseJson<{ data: { url: string } }>(
+          await runCli(home, [
+            "create",
+            name,
+            "--config",
+            configPath,
+            "--json",
+          ]),
+        ).data.url;
+        const readConfig = async (): Promise<string> =>
+          (await runCli(home, ["config", "--job-url", jobUrl])).stdout;
+
+        const original = await readConfig();
+        expect(original).toContain("pipeline-prepare");
+        await Bun.write(
+          configPath,
+          original.replace("pipeline-prepare", "pipeline-edited"),
+        );
+        const applied = parseJson(
+          await runCli(home, [
+            "config",
+            "--job-url",
+            jobUrl,
+            "--apply",
+            configPath,
+            "--json",
+          ]),
+        );
+        expect(applied).toEqual({
+          ok: true,
+          command: "config",
+          data: { url: jobUrl.replace(/\/$/, "") },
+        });
+        const edited = await readConfig();
+        expect(edited).toContain("pipeline-edited");
+        expect(edited).not.toContain("pipeline-prepare");
+
+        const built = await runCli(home, [
+          "build",
+          "--job-url",
+          jobUrl,
+          "--param",
+          "BRANCH=main",
+          "--watch",
+        ]);
+        expect(built.output).toContain("SUCCESS");
+        const logs = await runCli(home, [
+          "logs",
+          "--job-url",
+          jobUrl,
+          "--plain",
+        ]);
+        expect(logs.output).toContain("pipeline-edited");
+
+        // Jenkins rejects XML it cannot parse and keeps the previous config.
+        await Bun.write(configPath, "<flow-definition>");
+        const rejected = await runCliExpectFailure(home, [
+          "config",
+          "--job-url",
+          jobUrl,
+          "--apply",
+          configPath,
+          "--json",
+        ]);
+        expect(JSON.parse(rejected.stdout)).toMatchObject({ ok: false });
+        expect(await readConfig()).toBe(edited);
+      });
+    }, 120_000);
+
     test("blocks mutations for a protected profile until confirmed", async () => {
       await withCliHome(async (home) => {
         await writeProtectedProfile(home);
@@ -2486,6 +2571,7 @@ describe.skipIf(!integrationEnabled)(
             "Jenkinsfile",
             "--json",
           ],
+          ["config", "--job-url", jobUrl, "--apply", "config.xml", "--json"],
           ["input", "approve", "--job-url", jobUrl, "--yes", "--json"],
           ["input", "abort", "--job-url", jobUrl, "--yes", "--json"],
           [
@@ -2510,7 +2596,7 @@ describe.skipIf(!integrationEnabled)(
               message: 'Profile "release" is read-only.',
               code: "PROFILE_PROTECTED",
               hints: [
-                "Re-run with --confirm-protected to allow builds, cancels, creates, reruns, and input approvals or aborts.",
+                "Re-run with --confirm-protected to allow builds, cancels, creates, config changes, reruns, replays, and input approvals or aborts.",
               ],
             },
           });
@@ -2780,7 +2866,7 @@ describe.skipIf(!integrationEnabled)(
             'ERROR: Profile "release" is read-only.',
           );
           expect(session.output).toContain(
-            "HINT: Re-run with --confirm-protected to allow builds, cancels, creates, reruns, and input approvals or aborts.",
+            "HINT: Re-run with --confirm-protected to allow builds, cancels, creates, config changes, reruns, replays, and input approvals or aborts.",
           );
         });
       },

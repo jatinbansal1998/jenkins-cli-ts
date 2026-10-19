@@ -431,7 +431,7 @@ empty. There are no TODO or FIXME comments in source.
 
 ### Deliberately deferred (per #120, leave unless asked)
 
-Job enable/disable/delete/rename, applying `config.xml`, node online/offline,
+Job enable/disable/delete/rename, node online/offline,
 credentials management, plugin install, script console, safe-restart and
 quiet-down, restart-from-stage, views, fingerprints, artifact
 upload, bearer/OIDC/mTLS auth.

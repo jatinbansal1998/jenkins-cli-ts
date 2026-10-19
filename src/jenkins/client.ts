@@ -369,6 +369,20 @@ export class JenkinsClient {
     return await response.text();
   }
 
+  async updateJobConfigXml(jobUrl: string, configXml: string): Promise<void> {
+    const context = "update job config";
+    // Replacing the whole config is idempotent, so the transport retry stays.
+    const response = await this.sendPostWithCrumbRetry({
+      url: this.withJob(jobUrl, "config.xml"),
+      context,
+      body: configXml,
+      contentType: "application/xml",
+    });
+    if (!response.ok) {
+      await this.raiseHttpError(response, context);
+    }
+  }
+
   async createItem(options: CreateItemOptions): Promise<string> {
     const context = "create item";
     const parentUrl = options.parentUrl ?? this.baseUrl;

@@ -9,6 +9,7 @@ import type { JenkinsClient } from "../jenkins/client";
 import { normalizeControllerTargetUrl } from "../jenkins-target-url";
 import { jobUrlToFullName } from "../job-url";
 import { type JsonWrite, runJsonCommand } from "../json-output";
+import { readConfigXml } from "./job-config";
 import { resolveJobTarget } from "./ops-helpers";
 
 type CreateOptions = {
@@ -76,22 +77,7 @@ async function performCreate(
     : undefined;
 
   if (options.configPath) {
-    const file = Bun.file(options.configPath);
-    if (!(await file.exists())) {
-      throw new CliError(
-        `Config file not found: ${options.configPath}`,
-        ["Pass --config with a readable config.xml path."],
-        "INVALID_USAGE",
-      );
-    }
-    const configXml = await file.text();
-    if (!configXml.trim()) {
-      throw new CliError(
-        `Config file is empty: ${options.configPath}`,
-        [],
-        "INVALID_USAGE",
-      );
-    }
+    const configXml = await readConfigXml(options.configPath, "--config");
     const url = await options.client.createItem({
       name,
       configXml,

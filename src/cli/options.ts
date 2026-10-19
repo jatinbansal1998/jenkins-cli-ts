@@ -73,7 +73,7 @@ export const GLOBAL_OPTIONS = {
   "confirm-protected": {
     type: "boolean",
     describe:
-      "Allow builds, cancels, reruns, and input approvals on a read-only profile for this run",
+      "Allow builds, cancels, creates, config changes, reruns, replays, and input approvals on a read-only profile for this run",
   },
 } satisfies Record<string, Options>;
 

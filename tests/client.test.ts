@@ -2216,6 +2216,63 @@ describe("JenkinsClient getJobConfigXml", () => {
   });
 });
 
+describe("JenkinsClient updateJobConfigXml", () => {
+  test("posts the XML to the job's config.xml with a crumb", async () => {
+    const fetchMock = mock(async (input: FetchInput, _init?: FetchInit) => {
+      if (typeof input === "string" && input.includes("crumbIssuer")) {
+        return Response.json({
+          crumbRequestField: "Jenkins-Crumb",
+          crumb: "c1",
+        });
+      }
+      return new Response("", { status: 200 });
+    });
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+    const client = new JenkinsClient({
+      baseUrl: "https://jenkins.example.com",
+      user: "user",
+      apiToken: "token",
+      timeoutMs: 1_000,
+      useCrumb: true,
+    });
+
+    await client.updateJobConfigXml(
+      "https://jenkins.example.com/job/team/job/api",
+      "<flow-definition/>",
+    );
+
+    const call = fetchMock.mock.calls[1];
+    expect(call?.[0]).toBe(
+      "https://jenkins.example.com/job/team/job/api/config.xml",
+    );
+    expect(call?.[1]?.method).toBe("POST");
+    expect(call?.[1]?.body).toBe("<flow-definition/>");
+    expect(readHeader(call?.[1], "Content-Type")).toBe("application/xml");
+    expect(readHeader(call?.[1], "Jenkins-Crumb")).toBe("c1");
+  });
+
+  test("raises a CliError when Jenkins rejects the XML", async () => {
+    globalThis.fetch = mock(
+      async () => new Response("Unable to read", { status: 500 }),
+    ) as unknown as typeof fetch;
+
+    const client = new JenkinsClient({
+      baseUrl: "https://jenkins.example.com",
+      user: "user",
+      apiToken: "token",
+      timeoutMs: 1_000,
+    });
+
+    await expect(
+      client.updateJobConfigXml(
+        "https://jenkins.example.com/job/api",
+        "<broken",
+      ),
+    ).rejects.toThrow("HTTP 500 while trying to update job config");
+  });
+});
+
 describe("JenkinsClient createItem", () => {
   test("posts config XML with an application/xml content type", async () => {
     const fetchMock = mock(async (_input: FetchInput, _init?: FetchInit) => {

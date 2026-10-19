@@ -11,6 +11,7 @@ export const JSON_COMMANDS = new Set([
   "artifacts",
   "run",
   "cancel",
+  "config",
   "create",
   "queue",
   "nodes",
