@@ -113,6 +113,21 @@ describe("structured output registration", () => {
     }
   });
 
+  test("rejects a repeated config --apply instead of reading the config", () => {
+    const result = runCli([
+      "config",
+      "--job-url",
+      "https://jenkins.example.com/job/api/",
+      "--apply",
+      "a.xml",
+      "--apply",
+      "b.xml",
+      "--non-interactive",
+    ]);
+    expect(result.exitCode).toBe(2);
+    expect(result.output).toContain("Pass --apply only once.");
+  });
+
   test("unsupported commands recognize --json and fail informatively", () => {
     for (const command of [
       ["auth", "login"],

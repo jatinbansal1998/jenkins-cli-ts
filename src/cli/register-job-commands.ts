@@ -1,4 +1,5 @@
 import type { Argv } from "yargs";
+import { CliError } from "../cli";
 import { runCreate } from "../commands/create";
 import { runJobConfig } from "../commands/job-config";
 import { runList } from "../commands/list";
@@ -65,6 +66,14 @@ export function registerJobCommands(
           }),
         ),
       async (argv) => {
+        // A repeated flag parses as an array, which would read instead of write.
+        if (Array.isArray(argv.apply)) {
+          throw new CliError(
+            "Pass --apply only once.",
+            ["Remove the extra --apply and try again."],
+            "INVALID_USAGE",
+          );
+        }
         await dependencies.runCommandWithContext(
           "config",
           argv,

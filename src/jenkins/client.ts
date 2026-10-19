@@ -377,9 +377,24 @@ export class JenkinsClient {
       context,
       body: configXml,
       contentType: "application/xml",
+      // A followed login redirect would end in a 200 page, not an update.
+      redirect: "manual",
     });
+    if (isRedirect(response)) {
+      throw loginRedirectError(context);
+    }
     if (!response.ok) {
       await this.raiseHttpError(response, context);
+    }
+    // Jenkins accepts a config with an empty reply; a page came from a proxy.
+    if ((await readResponseText(response)).trim()) {
+      throw new CliError(
+        `Unexpected Jenkins response while trying to ${context}: received a page instead of an empty reply.`,
+        [
+          "A login page or proxy probably intercepted the request. Check the controller URL and credentials with `auth status`.",
+        ],
+        "JENKINS_INVALID_RESPONSE",
+      );
     }
   }
 

@@ -2252,6 +2252,36 @@ describe("JenkinsClient updateJobConfigXml", () => {
     expect(readHeader(call?.[1], "Jenkins-Crumb")).toBe("c1");
   });
 
+  test("reports a login redirect or a proxy page instead of success", async () => {
+    const client = new JenkinsClient({
+      baseUrl: "https://jenkins.example.com",
+      user: "user",
+      apiToken: "token",
+      timeoutMs: 1_000,
+    });
+    const fetchMock = mock(
+      async (_input: FetchInput, _init?: FetchInit) =>
+        new Response("", {
+          status: 302,
+          headers: { Location: "https://sso.example.com/login" },
+        }),
+    );
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+    await expect(
+      client.updateJobConfigXml("https://jenkins.example.com/job/api", "<a/>"),
+    ).rejects.toMatchObject({ code: "JENKINS_LOGIN_REDIRECT" });
+    expect(fetchMock.mock.calls[0]?.[1]?.redirect).toBe("manual");
+
+    globalThis.fetch = mock(
+      async () =>
+        new Response("<html><body>Sign in</body></html>", { status: 200 }),
+    ) as unknown as typeof fetch;
+    await expect(
+      client.updateJobConfigXml("https://jenkins.example.com/job/api", "<a/>"),
+    ).rejects.toMatchObject({ code: "JENKINS_INVALID_RESPONSE" });
+  });
+
   test("raises a CliError when Jenkins rejects the XML", async () => {
     globalThis.fetch = mock(
       async () => new Response("Unable to read", { status: 500 }),
