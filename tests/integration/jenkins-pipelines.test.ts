@@ -2365,13 +2365,12 @@ describe.skipIf(!integrationEnabled)(
         );
         expect(unchanged.output).toContain("replay-main:integration <&>");
         expect(unchanged.output).toContain("replay-helper:integration");
+        // The replay may be found still queued ("Build queued at") or
+        // already running ("Build started at"); --follow reports it either way.
         const unchangedNumber = Number(
-          unchanged.output.match(/Build started at \S+\/(\d+)\/\./)?.[1],
+          unchanged.output.match(/Build #(\d+) finished: SUCCESS\./)?.[1],
         );
         expect(unchangedNumber).toBeGreaterThan(source);
-        expect(unchanged.output).toContain(
-          `Build #${unchangedNumber} finished: SUCCESS.`,
-        );
 
         await Bun.write(
           scriptPath,
