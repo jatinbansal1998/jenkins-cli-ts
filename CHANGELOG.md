@@ -10,6 +10,8 @@ lists everything since the previous stable release, including its prereleases.
 
 ## [Unreleased]
 
+## [1.1.0-rc.4] - 2026-10-19
+
 ### Added
 
 - `config --apply FILE` (or `-` for stdin) replaces a job's or folder's
@@ -34,6 +36,9 @@ lists everything since the previous stable release, including its prereleases.
   saves the copy without changing it, and every job inside a copied folder.
   If that fails, `create` still succeeds, warns to open the job's configure
   page and click Save, and lists the job in the `--json` receipt's `held`.
+- `create --config` sends the XML as UTF-8, so non-ASCII text in the config
+  is no longer stored corrupted. An unreadable config file fails with
+  `INVALID_USAGE` instead of a raw file-system error.
 
 ## [1.1.0-rc.3] - 2026-10-16
 
@@ -766,7 +771,8 @@ No CLI behaviour change.
 
 - Backspace and Delete in the interactive branch picker under Bun.
 
-[Unreleased]: https://github.com/jatinbansal1998/jenkins-cli-ts/compare/v1.1.0-rc.3...HEAD
+[Unreleased]: https://github.com/jatinbansal1998/jenkins-cli-ts/compare/v1.1.0-rc.4...HEAD
+[1.1.0-rc.4]: https://github.com/jatinbansal1998/jenkins-cli-ts/releases/tag/v1.1.0-rc.4
 [1.1.0-rc.3]: https://github.com/jatinbansal1998/jenkins-cli-ts/releases/tag/v1.1.0-rc.3
 [1.1.0-rc.2]: https://github.com/jatinbansal1998/jenkins-cli-ts/releases/tag/v1.1.0-rc.2
 [1.1.0-rc.1]: https://github.com/jatinbansal1998/jenkins-cli-ts/releases/tag/v1.1.0-rc.1
