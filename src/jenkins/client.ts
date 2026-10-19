@@ -426,31 +426,43 @@ export class JenkinsClient {
   /**
    * Jenkins will not build a copied job until it is saved once, which the web
    * UI does from the configure page it opens after a copy. Re-submitting the
-   * job's own description is the smallest save the HTTP API offers. Returns
-   * false when Jenkins still holds the job afterwards.
+   * job's own description is the smallest save the HTTP API offers. A copied
+   * folder copies its jobs, and each of those is held too. Returns the URLs of
+   * jobs Jenkins still holds afterwards.
    */
-  async releaseCopiedJob(jobUrl: string): Promise<boolean> {
+  async releaseCopiedItem(itemUrl: string): Promise<string[]> {
     const context = "save the copied job";
     const readState = async () =>
       await this.requestJson<{
         buildable?: boolean;
         disabled?: boolean;
         description?: string | null;
+        jobs?: { url: string }[];
       }>(
-        this.withJob(jobUrl, "api/json?tree=buildable,disabled,description"),
+        this.withJob(
+          itemUrl,
+          "api/json?tree=buildable,disabled,description,jobs[url]",
+        ),
         context,
       );
     const state = await readState();
-    // Folders have no build state, and a disabled copy stays disabled.
+    if (state.jobs) {
+      const held: string[] = [];
+      for (const job of state.jobs) {
+        held.push(...(await this.releaseCopiedItem(job.url)));
+      }
+      return held;
+    }
+    // A disabled copy stays disabled.
     if (state.buildable !== false || state.disabled) {
-      return true;
+      return [];
     }
     // Without the parameter Jenkins sets the description to null, so send it
     // only when the copy has one.
     const description = state.description ?? undefined;
     // Saving the same description again is idempotent, so the transport retry stays.
     const response = await this.sendPostWithCrumbRetry({
-      url: this.withJob(jobUrl, "submitDescription"),
+      url: this.withJob(itemUrl, "submitDescription"),
       context,
       // Jenkins answers with a redirect to the job; the re-read below proves the save.
       redirect: "manual",
@@ -464,7 +476,7 @@ export class JenkinsClient {
     if (!response.ok && !isRedirect(response)) {
       await this.raiseHttpError(response, context);
     }
-    return (await readState()).buildable === true;
+    return (await readState()).buildable === true ? [] : [itemUrl];
   }
 
   async getJobParameterDefinitions(

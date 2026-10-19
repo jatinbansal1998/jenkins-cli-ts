@@ -2305,7 +2305,7 @@ describe("JenkinsClient updateJobConfigXml", () => {
   });
 });
 
-describe("JenkinsClient releaseCopiedJob", () => {
+describe("JenkinsClient releaseCopiedItem", () => {
   const jobUrl = "https://jenkins.example.com/job/api-copy";
 
   function jenkinsWith(states: object[]) {
@@ -2339,7 +2339,7 @@ describe("JenkinsClient releaseCopiedJob", () => {
       { buildable: true, disabled: false, description: "Déploie l'API & <b>" },
     ]);
 
-    expect(await client.releaseCopiedJob(jobUrl)).toBe(true);
+    expect(await client.releaseCopiedItem(jobUrl)).toEqual([]);
     expect(posts).toEqual([
       {
         url: `${jobUrl}/submitDescription`,
@@ -2357,21 +2357,42 @@ describe("JenkinsClient releaseCopiedJob", () => {
       { buildable: true, disabled: false, description: null },
     ]);
 
-    expect(await client.releaseCopiedJob(jobUrl)).toBe(true);
+    expect(await client.releaseCopiedItem(jobUrl)).toEqual([]);
     expect(posts).toEqual([
       { url: `${jobUrl}/submitDescription`, body: undefined },
     ]);
   });
 
-  test("leaves folders and disabled copies alone", async () => {
+  test("leaves a disabled copy disabled", async () => {
     const { client, posts } = jenkinsWith([
-      { description: null },
       { buildable: false, disabled: true, description: null },
     ]);
 
-    expect(await client.releaseCopiedJob(jobUrl)).toBe(true);
-    expect(await client.releaseCopiedJob(jobUrl)).toBe(true);
+    expect(await client.releaseCopiedItem(jobUrl)).toEqual([]);
     expect(posts).toEqual([]);
+  });
+
+  test("releases every job a copied folder copied, nested folders too", async () => {
+    const folder = "https://jenkins.example.com/job/team-copy/";
+    const { client, posts } = jenkinsWith([
+      {
+        description: null,
+        jobs: [{ url: `${folder}job/api/` }, { url: `${folder}job/inner/` }],
+      },
+      { buildable: false, disabled: false, description: null },
+      { buildable: true, disabled: false, description: null },
+      { description: null, jobs: [{ url: `${folder}job/inner/job/web/` }] },
+      { buildable: false, disabled: false, description: null },
+      { buildable: false, disabled: false, description: null },
+    ]);
+
+    expect(await client.releaseCopiedItem(folder)).toEqual([
+      `${folder}job/inner/job/web/`,
+    ]);
+    expect(posts.map((post) => post.url)).toEqual([
+      `${folder}job/api/submitDescription`,
+      `${folder}job/inner/job/web/submitDescription`,
+    ]);
   });
 
   test("reports a copy Jenkins still holds after the save", async () => {
@@ -2380,7 +2401,7 @@ describe("JenkinsClient releaseCopiedJob", () => {
       { buildable: false, disabled: false, description: null },
     ]);
 
-    expect(await client.releaseCopiedJob(jobUrl)).toBe(false);
+    expect(await client.releaseCopiedItem(jobUrl)).toEqual([jobUrl]);
   });
 });
 

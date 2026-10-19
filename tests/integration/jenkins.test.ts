@@ -760,6 +760,48 @@ describe.skipIf(!integrationEnabled)(
         ]);
         expect(copyBuild.output).toContain("SUCCESS");
 
+        // A copied folder copies its jobs, and Jenkins holds each of those too.
+        const folderConfig = join(home, "folder-config.xml");
+        await Bun.write(
+          folderConfig,
+          "<com.cloudbees.hudson.plugins.folder.Folder/>\n",
+        );
+        const sourceFolder = parseJson<{ data: { url: string } }>(
+          await runCli(home, [
+            "create",
+            `cli-folder-source-${suffix}`,
+            "--config",
+            folderConfig,
+            "--json",
+          ]),
+        ).data.url;
+        await runCli(home, [
+          "create",
+          "inner",
+          "--config",
+          configPath,
+          "--folder-url",
+          sourceFolder,
+          "--json",
+        ]);
+        const copiedFolder = parseJson<{ data: { url: string } }>(
+          await runCli(home, [
+            "create",
+            `cli-folder-copy-${suffix}`,
+            "--copy-from",
+            sourceFolder,
+            "--json",
+          ]),
+        ).data.url;
+        const innerBuild = await runCli(home, [
+          "build",
+          "--job-url",
+          `${copiedFolder}job/inner/`,
+          "--without-params",
+          "--watch",
+        ]);
+        expect(innerBuild.output).toContain("SUCCESS");
+
         const copyName = `cli-copied-${suffix}`;
         const copied = parseJson<{ data: { url: string } }>(
           await runCli(home, [

@@ -92,7 +92,7 @@ async function performCreate(
     copyFrom: source.from,
     ...(parentUrl ? { parentUrl } : {}),
   });
-  await releaseCopy(options.client, name, url);
+  await releaseCopy(options.client, url);
   return { name, url, copiedFrom: source.label };
 }
 
@@ -100,25 +100,24 @@ async function performCreate(
  * The item already exists here, so a failure to release it is a warning:
  * failing the command would invite a retry that hits the duplicate name.
  */
-async function releaseCopy(
-  client: JenkinsClient,
-  name: string,
-  url: string,
-): Promise<void> {
-  let detail = "";
+async function releaseCopy(client: JenkinsClient, url: string): Promise<void> {
+  let held: string[];
   try {
-    if (await client.releaseCopiedJob(url)) {
-      return;
-    }
+    held = await client.releaseCopiedItem(url);
   } catch (error) {
     if (!(error instanceof CliError)) {
       throw error;
     }
-    detail = ` (${error.message})`;
+    printWarning(
+      `Could not save the copy at ${url} (${error.message}). Jenkins will not build a copied job until it is saved: open its configure page and click Save.`,
+    );
+    return;
   }
-  printWarning(
-    `Jenkins will not build "${name}" until it is saved${detail}. Open ${url}configure and click Save.`,
-  );
+  for (const jobUrl of held) {
+    printWarning(
+      `Jenkins will not build ${jobUrl} until it is saved. Open ${jobUrl}configure and click Save.`,
+    );
+  }
 }
 
 async function resolveCopySource(

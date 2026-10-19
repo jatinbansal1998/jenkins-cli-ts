@@ -12,9 +12,9 @@ const env = { jenkinsUrl: "https://jenkins.example.com" } as EnvConfig;
 
 function clientWith(
   createItem: (options: CreateItemOptions) => Promise<string>,
-  releaseCopiedJob: (url: string) => Promise<boolean> = async () => true,
+  releaseCopiedItem: (url: string) => Promise<string[]> = async () => [],
 ): JenkinsClient {
-  return { createItem, releaseCopiedJob } as unknown as JenkinsClient;
+  return { createItem, releaseCopiedItem } as unknown as JenkinsClient;
 }
 
 describe("create command", () => {
@@ -164,7 +164,7 @@ describe("create command", () => {
           async () => "https://jenkins.example.com/job/api-copy/",
           async (url) => {
             released.push(url);
-            return false;
+            return [url];
           },
         ),
         env,
@@ -178,7 +178,7 @@ describe("create command", () => {
 
     expect(released).toEqual(["https://jenkins.example.com/job/api-copy/"]);
     expect(warnings).toEqual([
-      'WARN: Jenkins will not build "api-copy" until it is saved. Open https://jenkins.example.com/job/api-copy/configure and click Save.',
+      "WARN: Jenkins will not build https://jenkins.example.com/job/api-copy/ until it is saved. Open https://jenkins.example.com/job/api-copy/configure and click Save.",
     ]);
   });
 
