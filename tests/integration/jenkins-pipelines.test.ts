@@ -2515,6 +2515,8 @@ describe.skipIf(!integrationEnabled)(
         expect(logs.output).toContain("pipeline-edited-café-✓");
 
         // Jenkins rejects XML it cannot parse and keeps the previous config.
+        // Read it after the build: running a build re-saves the job.
+        const beforeRejected = await readConfig();
         await Bun.write(configPath, "<flow-definition>");
         const rejected = await runCliExpectFailure(home, [
           "config",
@@ -2525,7 +2527,7 @@ describe.skipIf(!integrationEnabled)(
           "--json",
         ]);
         expect(JSON.parse(rejected.stdout)).toMatchObject({ ok: false });
-        expect(await readConfig()).toBe(edited);
+        expect(await readConfig()).toBe(beforeRejected);
       });
     }, 120_000);
 
