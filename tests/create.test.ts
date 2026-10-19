@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -12,8 +12,9 @@ const env = { jenkinsUrl: "https://jenkins.example.com" } as EnvConfig;
 
 function clientWith(
   createItem: (options: CreateItemOptions) => Promise<string>,
+  releaseCopiedJob: (url: string) => Promise<boolean> = async () => true,
 ): JenkinsClient {
-  return { createItem } as unknown as JenkinsClient;
+  return { createItem, releaseCopiedJob } as unknown as JenkinsClient;
 }
 
 describe("create command", () => {
@@ -149,6 +150,36 @@ describe("create command", () => {
       },
     ]);
     expect(chunks.join("")).toContain('"copiedFrom":"team/api"');
+  });
+
+  test("warns when Jenkins still holds the copy, without failing", async () => {
+    const released: string[] = [];
+    const warnings: string[] = [];
+    const errorSpy = spyOn(console, "error").mockImplementation((line) => {
+      warnings.push(String(line));
+    });
+    try {
+      await runCreate({
+        client: clientWith(
+          async () => "https://jenkins.example.com/job/api-copy/",
+          async (url) => {
+            released.push(url);
+            return false;
+          },
+        ),
+        env,
+        name: "api-copy",
+        copyFrom: "https://jenkins.example.com/job/api/",
+        nonInteractive: true,
+      });
+    } finally {
+      errorSpy.mockRestore();
+    }
+
+    expect(released).toEqual(["https://jenkins.example.com/job/api-copy/"]);
+    expect(warnings).toEqual([
+      'WARN: Jenkins will not build "api-copy" until it is saved. Open https://jenkins.example.com/job/api-copy/configure and click Save.',
+    ]);
   });
 
   test("rejects a --copy-from URL on another controller", async () => {

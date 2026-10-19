@@ -423,6 +423,50 @@ export class JenkinsClient {
     return this.withJob(parentUrl, `job/${encodeURIComponent(options.name)}/`);
   }
 
+  /**
+   * Jenkins will not build a copied job until it is saved once, which the web
+   * UI does from the configure page it opens after a copy. Re-submitting the
+   * job's own description is the smallest save the HTTP API offers. Returns
+   * false when Jenkins still holds the job afterwards.
+   */
+  async releaseCopiedJob(jobUrl: string): Promise<boolean> {
+    const context = "save the copied job";
+    const readState = async () =>
+      await this.requestJson<{
+        buildable?: boolean;
+        disabled?: boolean;
+        description?: string | null;
+      }>(
+        this.withJob(jobUrl, "api/json?tree=buildable,disabled,description"),
+        context,
+      );
+    const state = await readState();
+    // Folders have no build state, and a disabled copy stays disabled.
+    if (state.buildable !== false || state.disabled) {
+      return true;
+    }
+    // Without the parameter Jenkins sets the description to null, so send it
+    // only when the copy has one.
+    const description = state.description ?? undefined;
+    // Saving the same description again is idempotent, so the transport retry stays.
+    const response = await this.sendPostWithCrumbRetry({
+      url: this.withJob(jobUrl, "submitDescription"),
+      context,
+      // Jenkins answers with a redirect to the job; the re-read below proves the save.
+      redirect: "manual",
+      ...(description !== undefined
+        ? {
+            body: new URLSearchParams({ description }).toString(),
+            contentType: "application/x-www-form-urlencoded; charset=UTF-8",
+          }
+        : {}),
+    });
+    if (!response.ok && !isRedirect(response)) {
+      await this.raiseHttpError(response, context);
+    }
+    return (await readState()).buildable === true;
+  }
+
   async getJobParameterDefinitions(
     jobUrl: string,
   ): Promise<JobParameterDefinition[]> {

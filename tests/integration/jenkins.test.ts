@@ -686,6 +686,7 @@ describe.skipIf(!integrationEnabled)(
           [
             "<?xml version='1.1' encoding='UTF-8'?>",
             "<project>",
+            "  <description>Copié par le CLI ✓</description>",
             "  <builders>",
             "    <hudson.tasks.Shell>",
             "      <command>echo created-by-cli</command>",
@@ -735,6 +736,29 @@ describe.skipIf(!integrationEnabled)(
             ])
           ).output,
         ).toContain("created-by-cli");
+
+        // Jenkins holds a copied job until it is saved; create releases it,
+        // keeping the source's non-ASCII description intact.
+        const builtCopy = parseJson<{ data: { url: string } }>(
+          await runCli(home, [
+            "create",
+            `cli-copied-built-${suffix}`,
+            "--copy-from",
+            created.data.url,
+            "--json",
+          ]),
+        ).data.url;
+        expect(
+          (await runCli(home, ["config", "--job-url", builtCopy])).output,
+        ).toContain("<description>Copié par le CLI ✓</description>");
+        const copyBuild = await runCli(home, [
+          "build",
+          "--job-url",
+          builtCopy,
+          "--without-params",
+          "--watch",
+        ]);
+        expect(copyBuild.output).toContain("SUCCESS");
 
         const copyName = `cli-copied-${suffix}`;
         const copied = parseJson<{ data: { url: string } }>(

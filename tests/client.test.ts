@@ -2305,6 +2305,85 @@ describe("JenkinsClient updateJobConfigXml", () => {
   });
 });
 
+describe("JenkinsClient releaseCopiedJob", () => {
+  const jobUrl = "https://jenkins.example.com/job/api-copy";
+
+  function jenkinsWith(states: object[]) {
+    const posts: { url: string; body: unknown; contentType?: string }[] = [];
+    globalThis.fetch = mock(async (input: FetchInput, init?: FetchInit) => {
+      if (init?.method === "POST") {
+        posts.push({
+          url: String(input),
+          body: init.body,
+          contentType: readHeader(init, "Content-Type"),
+        });
+        return new Response("", {
+          status: 302,
+          headers: { Location: `${jobUrl}/` },
+        });
+      }
+      return Response.json(states.shift());
+    }) as unknown as typeof fetch;
+    const client = new JenkinsClient({
+      baseUrl: "https://jenkins.example.com",
+      user: "user",
+      apiToken: "token",
+      timeoutMs: 1_000,
+    });
+    return { client, posts };
+  }
+
+  test("saves a held copy by re-submitting its own description", async () => {
+    const { client, posts } = jenkinsWith([
+      { buildable: false, disabled: false, description: "Déploie l'API & <b>" },
+      { buildable: true, disabled: false, description: "Déploie l'API & <b>" },
+    ]);
+
+    expect(await client.releaseCopiedJob(jobUrl)).toBe(true);
+    expect(posts).toEqual([
+      {
+        url: `${jobUrl}/submitDescription`,
+        body: new URLSearchParams({
+          description: "Déploie l'API & <b>",
+        }).toString(),
+        contentType: "application/x-www-form-urlencoded; charset=UTF-8",
+      },
+    ]);
+  });
+
+  test("sends no description when the copy has none", async () => {
+    const { client, posts } = jenkinsWith([
+      { buildable: false, disabled: false, description: null },
+      { buildable: true, disabled: false, description: null },
+    ]);
+
+    expect(await client.releaseCopiedJob(jobUrl)).toBe(true);
+    expect(posts).toEqual([
+      { url: `${jobUrl}/submitDescription`, body: undefined },
+    ]);
+  });
+
+  test("leaves folders and disabled copies alone", async () => {
+    const { client, posts } = jenkinsWith([
+      { description: null },
+      { buildable: false, disabled: true, description: null },
+    ]);
+
+    expect(await client.releaseCopiedJob(jobUrl)).toBe(true);
+    expect(await client.releaseCopiedJob(jobUrl)).toBe(true);
+    expect(posts).toEqual([]);
+  });
+
+  test("reports a copy Jenkins still holds after the save", async () => {
+    const { client } = jenkinsWith([
+      { buildable: false, disabled: false, description: null },
+      { buildable: false, disabled: false, description: null },
+    ]);
+
+    expect(await client.releaseCopiedJob(jobUrl)).toBe(false);
+  });
+});
+
 describe("JenkinsClient createItem", () => {
   test("posts config XML with an application/xml content type", async () => {
     const fetchMock = mock(async (_input: FetchInput, _init?: FetchInit) => {

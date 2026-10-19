@@ -3,7 +3,7 @@
  * Creates a Jenkins item from a config.xml file or by copying an existing
  * item. Blocked on read-only profiles like other Jenkins writes.
  */
-import { CliError, printOk } from "../cli";
+import { CliError, printOk, printWarning } from "../cli";
 import { assertProtectedMutationAllowed, type EnvConfig } from "../env";
 import type { JenkinsClient } from "../jenkins/client";
 import { normalizeControllerTargetUrl } from "../jenkins-target-url";
@@ -92,7 +92,33 @@ async function performCreate(
     copyFrom: source.from,
     ...(parentUrl ? { parentUrl } : {}),
   });
+  await releaseCopy(options.client, name, url);
   return { name, url, copiedFrom: source.label };
+}
+
+/**
+ * The item already exists here, so a failure to release it is a warning:
+ * failing the command would invite a retry that hits the duplicate name.
+ */
+async function releaseCopy(
+  client: JenkinsClient,
+  name: string,
+  url: string,
+): Promise<void> {
+  let detail = "";
+  try {
+    if (await client.releaseCopiedJob(url)) {
+      return;
+    }
+  } catch (error) {
+    if (!(error instanceof CliError)) {
+      throw error;
+    }
+    detail = ` (${error.message})`;
+  }
+  printWarning(
+    `Jenkins will not build "${name}" until it is saved${detail}. Open ${url}configure and click Save.`,
+  );
 }
 
 async function resolveCopySource(
