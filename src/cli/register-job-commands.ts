@@ -104,7 +104,9 @@ export function registerJobCommands(
             })
             .option("config", {
               type: "string",
-              describe: "Path to a config.xml file for the new item",
+              requiresArg: true,
+              describe:
+                "Path to a config.xml file for the new item (- for stdin)",
             })
             .option("copy-from", {
               type: "string",

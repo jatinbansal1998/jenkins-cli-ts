@@ -85,15 +85,21 @@ export async function readConfigXml(
   flag: string,
 ): Promise<string> {
   const fromStdin = path === "-";
-  const file = Bun.file(path);
-  if (!fromStdin && !(await file.exists())) {
+  let configXml: string;
+  try {
+    configXml = fromStdin
+      ? await Bun.stdin.text()
+      : await Bun.file(path).text();
+  } catch (error) {
     throw new CliError(
-      `Config file not found: ${path}`,
-      [`Pass ${flag} with a readable config.xml path, or - for stdin.`],
+      `Cannot read config file ${path}.`,
+      [
+        error instanceof Error ? error.message : String(error),
+        `Pass ${flag} with a readable config.xml path, or - for stdin.`,
+      ],
       "INVALID_USAGE",
     );
   }
-  const configXml = fromStdin ? await Bun.stdin.text() : await file.text();
   if (!configXml.trim()) {
     throw new CliError(
       `Config ${fromStdin ? "from stdin" : `file ${path}`} is empty.`,

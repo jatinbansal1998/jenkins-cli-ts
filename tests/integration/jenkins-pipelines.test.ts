@@ -2488,7 +2488,8 @@ describe.skipIf(!integrationEnabled)(
         expect(original).toContain("pipeline-prepare");
         await Bun.write(
           configPath,
-          original.replace("pipeline-prepare", "pipeline-edited"),
+          // Non-ASCII proves the POST is decoded as UTF-8, not ISO-8859-1.
+          original.replace("pipeline-prepare", "pipeline-edited-café-✓"),
         );
         const applied = parseJson(
           await runCli(home, [
@@ -2506,7 +2507,7 @@ describe.skipIf(!integrationEnabled)(
           data: { url: jobUrl.replace(/\/$/, "") },
         });
         const edited = await readConfig();
-        expect(edited).toContain("pipeline-edited");
+        expect(edited).toContain("pipeline-edited-café-✓");
         expect(edited).not.toContain("pipeline-prepare");
 
         const built = await runCli(home, [
@@ -2524,7 +2525,7 @@ describe.skipIf(!integrationEnabled)(
           jobUrl,
           "--plain",
         ]);
-        expect(logs.output).toContain("pipeline-edited");
+        expect(logs.output).toContain("pipeline-edited-café-✓");
 
         // Jenkins rejects XML it cannot parse and keeps the previous config.
         await Bun.write(configPath, "<flow-definition>");

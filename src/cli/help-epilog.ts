@@ -113,7 +113,7 @@ Command-specific options:
 
   create:
     <name>              Name for the new item
-    --config <file>     Path to a config.xml file for the new item
+    --config <file>     Path to a config.xml file for the new item (- for stdin)
     --copy-from <job>   Job name or URL to copy the new item from
     --folder-url <url>  Folder URL to create the item in (default: root)
     --json              Output one creation receipt (implies non-interactive)

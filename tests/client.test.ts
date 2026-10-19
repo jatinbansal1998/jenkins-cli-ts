@@ -2248,7 +2248,9 @@ describe("JenkinsClient updateJobConfigXml", () => {
     );
     expect(call?.[1]?.method).toBe("POST");
     expect(call?.[1]?.body).toBe("<flow-definition/>");
-    expect(readHeader(call?.[1], "Content-Type")).toBe("application/xml");
+    expect(readHeader(call?.[1], "Content-Type")).toBe(
+      "application/xml; charset=UTF-8",
+    );
     expect(readHeader(call?.[1], "Jenkins-Crumb")).toBe("c1");
   });
 
@@ -2329,7 +2331,9 @@ describe("JenkinsClient createItem", () => {
     );
     expect(call?.[1]?.method).toBe("POST");
     expect(call?.[1]?.body).toBe("<project/>");
-    expect(readHeader(call?.[1], "Content-Type")).toBe("application/xml");
+    expect(readHeader(call?.[1], "Content-Type")).toBe(
+      "application/xml; charset=UTF-8",
+    );
   });
 
   test("copies an existing item with mode=copy and no body", async () => {

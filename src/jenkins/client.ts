@@ -376,7 +376,7 @@ export class JenkinsClient {
       url: this.withJob(jobUrl, "config.xml"),
       context,
       body: configXml,
-      contentType: "application/xml",
+      contentType: XML_CONTENT_TYPE,
       // A followed login redirect would end in a 200 page, not an update.
       redirect: "manual",
     });
@@ -414,7 +414,7 @@ export class JenkinsClient {
       context,
       transportRetries: 0,
       ...(options.configXml !== undefined
-        ? { body: options.configXml, contentType: "application/xml" }
+        ? { body: options.configXml, contentType: XML_CONTENT_TYPE }
         : {}),
     });
     if (!response.ok) {
@@ -2119,6 +2119,10 @@ function rethrowIfUnavailable(error: unknown): void {
     throw error;
   }
 }
+
+// Jenkins reads a config.xml POST as text, and without a charset the servlet
+// container decodes it as ISO-8859-1, corrupting every non-ASCII character.
+const XML_CONTENT_TYPE = "application/xml; charset=UTF-8";
 
 function isRedirect(response: Response): boolean {
   return response.status >= 300 && response.status < 400;

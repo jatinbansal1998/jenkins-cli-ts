@@ -128,6 +128,24 @@ describe("structured output registration", () => {
     expect(result.output).toContain("Pass --apply only once.");
   });
 
+  test("create --config - reads stdin instead of rejecting '-'", () => {
+    const result = runCli([
+      "create",
+      "new-job",
+      "--config",
+      "-",
+      "--url",
+      "https://jenkins.example.com",
+      "--user",
+      "user",
+      "--token",
+      "token",
+      "--non-interactive",
+    ]);
+    expect(result.exitCode).toBe(2);
+    expect(result.output).toContain("Config from stdin is empty.");
+  });
+
   test("unsupported commands recognize --json and fail informatively", () => {
     for (const command of [
       ["auth", "login"],

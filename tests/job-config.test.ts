@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { runJobConfig } from "../src/commands/job-config";
@@ -83,6 +83,25 @@ describe("config --apply", () => {
         nonInteractive: true,
       }),
     ).rejects.toThrow(`Config file ${configPath} is empty.`);
+    expect(updates).toEqual([]);
+  });
+
+  test("reports an unreadable file as invalid usage", async () => {
+    chmodSync(configPath, 0o000);
+    const updates: Update[] = [];
+
+    await expect(
+      runJobConfig({
+        client: recordingClient(updates),
+        env,
+        jobUrl,
+        apply: configPath,
+        nonInteractive: true,
+      }),
+    ).rejects.toMatchObject({
+      message: `Cannot read config file ${configPath}.`,
+      code: "INVALID_USAGE",
+    });
     expect(updates).toEqual([]);
   });
 
