@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { chmodSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { runJobConfig } from "../src/commands/job-config";
@@ -86,8 +86,9 @@ describe("config --apply", () => {
     expect(updates).toEqual([]);
   });
 
-  test("reports an unreadable file as invalid usage", async () => {
-    chmodSync(configPath, 0o000);
+  test("reports an unreadable path as invalid usage", async () => {
+    // A directory cannot be read as a file on any platform, unlike chmod 000,
+    // which Windows ignores.
     const updates: Update[] = [];
 
     await expect(
@@ -95,11 +96,11 @@ describe("config --apply", () => {
         client: recordingClient(updates),
         env,
         jobUrl,
-        apply: configPath,
+        apply: tempDir,
         nonInteractive: true,
       }),
     ).rejects.toMatchObject({
-      message: `Cannot read config file ${configPath}.`,
+      message: `Cannot read config file ${tempDir}.`,
       code: "INVALID_USAGE",
     });
     expect(updates).toEqual([]);
