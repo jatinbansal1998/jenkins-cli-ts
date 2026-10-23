@@ -208,6 +208,19 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y libsecret-tools gnome-keyring dbus dbus-x11 util-linux strace
 
+      - name: Configure unlocked macOS test keychain
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          set -euo pipefail
+          TEST_KEYCHAIN="$RUNNER_TEMP/jenkins-cli-integration.keychain-db"
+          security create-keychain -p "jenkins-cli-ci" "$TEST_KEYCHAIN"
+          security set-keychain-settings -lut 21600 "$TEST_KEYCHAIN"
+          security unlock-keychain -p "jenkins-cli-ci" "$TEST_KEYCHAIN"
+          security list-keychains -d user -s "$TEST_KEYCHAIN"
+          security default-keychain -d user -s "$TEST_KEYCHAIN"
+          echo "JENKINS_CLI_TEST_KEYCHAIN=$TEST_KEYCHAIN" >> "$GITHUB_ENV"
+
       - name: Expose Git shell to Jenkins on Windows
         if: runner.os == 'Windows'
         shell: pwsh

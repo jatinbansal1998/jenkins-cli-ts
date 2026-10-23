@@ -19,6 +19,19 @@ const osBackends = [
   },
 ];
 
+const macOsBackends = [
+  {
+    id: "native-macos",
+    name: "Native macOS Keychain",
+    priority: 10,
+  },
+  {
+    id: "macos",
+    name: "macOS Keychain (CLI)",
+    priority: 5,
+  },
+];
+
 function makeDeps(options: {
   getPassword?: SecureStoreDeps["keychain"] extends infer K
     ? K extends { getPassword?: infer F }
@@ -140,6 +153,37 @@ describe("isSecureStoreAvailable", () => {
         makeDeps({ listBackends: async () => osBackends }),
       ),
     ).toBeTrue();
+  });
+
+  test("false when the macOS keychain cannot be read without a prompt", async () => {
+    const calls: string[][] = [];
+
+    expect(
+      await isSecureStoreAvailable({
+        keychain: { listBackends: async () => macOsBackends },
+        runSecurity: (args) => {
+          calls.push([...args]);
+          // `security show-keychain-info` on a locked login keychain.
+          return { exitCode: 36 };
+        },
+      }),
+    ).toBeFalse();
+    expect(calls).toEqual([["show-keychain-info"]]);
+  });
+
+  test("true when the macOS keychain answers without a prompt", async () => {
+    const calls: string[][] = [];
+
+    expect(
+      await isSecureStoreAvailable({
+        keychain: { listBackends: async () => macOsBackends },
+        runSecurity: (args) => {
+          calls.push([...args]);
+          return { exitCode: 0 };
+        },
+      }),
+    ).toBeTrue();
+    expect(calls).toEqual([["show-keychain-info"]]);
   });
 
   test("false for cross-keychain file/null fallback backends", async () => {
