@@ -2,7 +2,11 @@ import { describe, expect, test } from "bun:test";
 import { chmod, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { parseArguments, systemdScopeAvailable } from "../scripts/run-bounded";
+import {
+  exitCodeForSignal,
+  parseArguments,
+  systemdScopeAvailable,
+} from "../scripts/run-bounded";
 
 async function runBounded(
   limits: string[],
@@ -52,6 +56,12 @@ async function isGoneWithin(pid: number, ms: number): Promise<boolean> {
 }
 
 describe("bounded test runner", () => {
+  test("maps a named signal and an unnamed signal number to an exit code", () => {
+    expect(exitCodeForSignal(null)).toBeUndefined();
+    expect(exitCodeForSignal("SIGTERM")).toBe(143);
+    expect(exitCodeForSignal(35)).toBe(163);
+  });
+
   test("rejects a run without both limits", () => {
     expect(() => parseArguments(["--minutes", "1", "--", "bun"])).toThrow(
       "Usage:",

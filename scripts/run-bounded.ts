@@ -17,6 +17,16 @@ const FORWARDED_SIGNALS = ["SIGINT", "SIGTERM", "SIGHUP"] as const;
 
 type Limits = { minutes: number; memory: string };
 
+export function exitCodeForSignal(
+  signalCode: NodeJS.Signals | number | null,
+): number | undefined {
+  if (signalCode === null) return undefined;
+  // Bun 1.4.4 reports an unnamed signal (a Linux real-time signal) as its number.
+  if (typeof signalCode === "number") return 128 + signalCode;
+  const number = constants.signals[signalCode];
+  return number === undefined ? undefined : 128 + number;
+}
+
 export function parseArguments(argv: string[]): {
   limits: Limits;
   command: string[];
@@ -127,9 +137,7 @@ async function main(): Promise<number> {
     return 137;
   }
   if (timedOut) return 124;
-  return child.signalCode
-    ? 128 + constants.signals[child.signalCode]
-    : exitCode;
+  return exitCodeForSignal(child.signalCode) ?? exitCode;
 }
 
 function scopeResult(unit: string): string {
