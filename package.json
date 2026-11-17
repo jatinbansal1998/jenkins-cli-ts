@@ -16,7 +16,7 @@
     "lint": "oxlint --deny-warnings --type-aware && bun scripts/lint-guards.ts",
     "lint:fix": "oxlint --fix --type-aware",
     "knip": "knip",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "bun check --no-script",
     "verify": "bun run format:check && bun run lint && bun run typecheck && bun run knip && bun run test:coverage && bun run build",
     "format:check": "prettier . --check",
     "check": "bun run lint:fix && bun run format && bun run lint && bun run typecheck && bun run knip",
@@ -39,8 +39,7 @@
     "lint-staged": "^17.0.8",
     "oxlint": "^1.73.0",
     "oxlint-tsgolint": "^7.0.2001",
-    "prettier": "3.9.4",
-    "typescript": "^7.0.2"
+    "prettier": "3.9.4"
   },
   "dependencies": {
     "@clack/core": "1.4.3",
