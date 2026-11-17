@@ -241,7 +241,8 @@ describe("input list", () => {
     });
 
     const actions = output.document().data?.actions as
-      Array<Record<string, unknown>> | undefined;
+      | Array<Record<string, unknown>>
+      | undefined;
     expect(actions?.[0]?.requiresParameters).toBeNull();
     expect(actions?.[0]?.parameters).toBeNull();
   });
@@ -448,7 +449,8 @@ describe("input list", () => {
       write: output.write,
     });
     const actions = output.document().data?.actions as
-      Array<{ id: string }> | undefined;
+      | Array<{ id: string }>
+      | undefined;
     expect(actions?.[0]?.id).toBe("Rel\u001b[31mease\u0007");
   });
 });
@@ -969,7 +971,8 @@ describe("interactive confirmation", () => {
     });
 
     const prompt = confirm.mock.calls[0]?.[0] as
-      { message: string; initialValue?: boolean } | undefined;
+      | { message: string; initialValue?: boolean }
+      | undefined;
     expect(prompt?.message).toBe(`Approve input "Release" on ${JOB_URL} #128?`);
     expect(prompt?.initialValue).toBeFalse();
     expect(logged()).toContain("OK: Input: Release: Deploy to production?");
@@ -994,7 +997,8 @@ describe("interactive confirmation", () => {
     });
 
     const prompt = select.mock.calls[0]?.[0] as
-      { options: Array<{ value: string; label: string }> } | undefined;
+      | { options: Array<{ value: string; label: string }> }
+      | undefined;
     expect(prompt?.options.map((option) => option.value)).toEqual([
       "Release",
       "Pick",

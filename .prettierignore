@@ -1,7 +1,0 @@
-# Ignore artifacts:
-dist
-coverage
-test-artifacts
-node_modules
-*.lock
-.github/workflows/**

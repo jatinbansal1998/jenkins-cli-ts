@@ -18,7 +18,7 @@
     "knip": "knip",
     "typecheck": "bun check --no-script",
     "verify": "bun run format:check && bun run lint && bun run typecheck && bun run knip && bun run test:coverage && bun run build",
-    "format:check": "prettier . --check",
+    "format:check": "oxfmt . --check",
     "check": "bun run lint:fix && bun run format && bun run lint && bun run typecheck && bun run knip",
     "test": "bun scripts/run-bounded.ts --minutes 10 --memory 3G -- bun test --isolate",
     "test:coverage": "bun scripts/run-bounded.ts --minutes 10 --memory 3G -- bun test --isolate --coverage-reporter=text --coverage-reporter=lcov",
@@ -27,7 +27,7 @@
     "test:integration:jenkins": "bun scripts/run-with-linux-keyring.ts -- bun scripts/run-bounded.ts --minutes 20 --memory 3G -- bun scripts/test-jenkins-integration.ts",
     "test:mutation": "bun scripts/run-bounded.ts --minutes 10 --memory 3G -- bun scripts/test-mutation.ts",
     "test:mutation:jenkins": "bun scripts/run-with-linux-keyring.ts -- bun scripts/run-bounded.ts --minutes 30 --memory 3G -- bun scripts/test-jenkins-integration.ts --mutation",
-    "format": "prettier . --write"
+    "format": "oxfmt . --write"
   },
   "devDependencies": {
     "@types/bun": "1.4.4",
@@ -37,9 +37,9 @@
     "husky": "^9.1.7",
     "knip": "^6.32.0",
     "lint-staged": "^17.0.8",
+    "oxfmt": "0.79.0",
     "oxlint": "^1.73.0",
-    "oxlint-tsgolint": "^7.0.2001",
-    "prettier": "3.9.4"
+    "oxlint-tsgolint": "^7.0.2001"
   },
   "dependencies": {
     "@clack/core": "1.4.3",
@@ -53,7 +53,7 @@
   "lint-staged": {
     "**/*.{ts,tsx,js,jsx,json,css,md}": [
       "oxlint --fix",
-      "prettier --write"
+      "oxfmt --write"
     ]
   }
 }

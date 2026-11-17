@@ -71,7 +71,8 @@ describe("interactive targetless cancel", () => {
     expect(stopBuild).toHaveBeenCalledWith(builds[0]!.buildUrl);
     expect(waitForBuild).toHaveBeenCalledTimes(1);
     const firstPrompt = select.mock.calls[0]?.[0] as
-      { options: Array<{ label: string }> } | undefined;
+      | { options: Array<{ label: string }> }
+      | undefined;
     expect(firstPrompt).toBeDefined();
     const promptOptions = firstPrompt?.options ?? [];
     expect(promptOptions.map((entry) => entry.label)).toEqual([

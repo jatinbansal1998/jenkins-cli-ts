@@ -75,7 +75,10 @@ type AuthProbeKind =
   | "network-error";
 
 type UnexpectedAuthResponseReason =
-  "html" | "malformed-json" | "identity-shape" | "http-status";
+  | "html"
+  | "malformed-json"
+  | "identity-shape"
+  | "http-status";
 
 type AuthProbeResult = {
   kind: AuthProbeKind;
