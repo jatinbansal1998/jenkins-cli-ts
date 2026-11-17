@@ -12,7 +12,7 @@
       "settings": { "com.intellij:app:HttpConfigurable.use_proxy_pac": true }
     },
     "vscode": {
-      "extensions": ["oven.bun-vscode", "esbenp.prettier-vscode"],
+      "extensions": ["oven.bun-vscode", "oxc.oxc-vscode"],
       "settings": {
         "terminal.integrated.defaultProfile.linux": "zsh"
       }

@@ -15,7 +15,9 @@ const LOG_RETENTION_DAYS = 7;
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 type LogHeaders =
-  Headers | string[][] | Record<string, string | readonly string[]>;
+  | Headers
+  | string[][]
+  | Record<string, string | readonly string[]>;
 
 /** Whether debug mode is enabled; gates all api.log writes. */
 let debugMode = false;

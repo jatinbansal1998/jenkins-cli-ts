@@ -18,7 +18,12 @@ export type JenkinsRevision = {
 };
 
 export type JobParameterType =
-  "string" | "text" | "boolean" | "choice" | "password" | "unknown";
+  | "string"
+  | "text"
+  | "boolean"
+  | "choice"
+  | "password"
+  | "unknown";
 
 /** Stable parameter metadata independent of Jenkins' plugin-specific JSON. */
 export type JobParameterDefinition = {

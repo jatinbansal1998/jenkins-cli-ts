@@ -73,7 +73,7 @@ Report any failures — do not claim work is validated if these fail.
   `bun test` or `bun scripts/test-jenkins-integration.ts` has neither.
 - Any loop that runs tests, mutation testing included, must wrap each run in
   a timeout. Use `bun scripts/run-bounded.ts --minutes 2 --memory 3G -- bun test
---isolate tests/build.test.ts`, which works on every platform and also caps
+  --isolate tests/build.test.ts`, which works on every platform and also caps
   memory, or GNU `timeout -k 10s 120s bun run test tests/build.test.ts`.
   Bun's per-test timeout is not enough: a test stuck in a loop of resolved
   promises never yields to the timer that enforces it.

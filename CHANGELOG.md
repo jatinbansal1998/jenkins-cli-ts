@@ -48,7 +48,7 @@ lists everything since the previous stable release, including its prereleases.
   committing it, like the Replay button in Jenkins. `--print-script` (and
   `--print-loaded NAME` for a script loaded with `load`) writes the build's
   script to stdout; `--script FILE` (or `-` for stdin) and `--loaded
-NAME=FILE` replace them. `--follow` streams the new build's logs and exits
+  NAME=FILE` replace them. `--follow` streams the new build's logs and exits
   with its result; `--json` returns the source and new build, plus `result`
   with `--follow`. The new build reuses the source build's parameters.
   Replay needs an exact `--build` or `--build-url`, is blocked on a read-only
@@ -76,7 +76,7 @@ NAME=FILE` replace them. `--follow` streams the new build's logs and exits
 - A queue item lookup that fails (HTTP error other than 404, timeout, invalid
   JSON) now surfaces as an error instead of being read as "item gone", in
   `wait`, `logs --queue-url`, `build --watch`, `input`, and `cancel
---queue-url`.
+  --queue-url`.
 - `build --watch` no longer follows another build while its own is queued:
   not the previous build it queues behind, and not someone else's build that
   starts first. It falls back to the job only once the queue item is gone. A
