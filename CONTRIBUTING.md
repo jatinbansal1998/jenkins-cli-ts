@@ -12,7 +12,8 @@ field. If a change truly needs to, open an issue first.
 
 ## Setup
 
-The project uses [Bun](https://bun.sh). Follow the
+The project requires [Bun](https://bun.sh) 1.4.4 or newer: typechecking uses
+`bun check --no-script`, which requires that version. Follow the
 [Development](README.md#development) section of the README to install, run, and
 build. [Testing](docs/testing.md) lists the prerequisites for the integration
 suites.
